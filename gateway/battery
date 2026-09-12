@@ -1,0 +1,32 @@
+#!/bin/bash
+# battery - show the Dell's power state at a glance.
+#
+# Reads three files that the Linux kernel keeps under /sys/class/power_supply.
+# These are plain text files, not commands, so no extra packages are needed.
+#
+# Usage:  battery
+
+BAT=/sys/class/power_supply/BAT0
+AC=/sys/class/power_supply/AC
+
+# 1. Is the charger plugged in?  1 = yes, 0 = no
+if [ "$(cat $AC/online)" = "1" ]; then
+    PLUGGED="yes"
+else
+    PLUGGED="NO  <-- running on battery"
+fi
+
+# 2. Charging / Discharging / Full / Not charging
+STATUS=$(cat $BAT/status)
+
+# 3. Charge remaining, as a percentage
+PERCENT=$(cat $BAT/capacity)
+
+echo "Charger plugged in : $PLUGGED"
+echo "Battery status     : $STATUS"
+echo "Battery charge     : ${PERCENT}%"
+
+# Extra context that is useful but not one of the three core readings.
+echo
+echo "Battery health     : $(cat $BAT/cycle_count) charge cycles used"
+echo "Uptime             : $(uptime -p)"

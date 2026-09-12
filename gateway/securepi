@@ -1,0 +1,54 @@
+#!/bin/bash
+# securepi - status and control for the SecurePi Gateway.
+#
+#   securepi status     show everything at a glance
+#   securepi enroll     turn ON HTTPS inspection for the test phone
+#   securepi unenroll   turn it OFF
+#
+# HTTPS inspection is deliberately OFF after every reboot. It decrypts traffic,
+# so it should be switched on consciously rather than persisting silently.
+
+PHONE=10.10.0.50
+
+case "${1:-status}" in
+
+  status)
+    echo "== SecurePi Gateway =="
+    echo "uptime: $(uptime -p)"
+    echo
+    echo "services:"
+    for s in securepi-ap0 hostapd AdGuardHome nftables securepi-dpi securepi-ca-server; do
+        printf "   %-22s %s\n" "$s" "$(systemctl is-active $s)"
+    done
+    echo
+    echo "network:"
+    printf "   WAN   %-18s %s %s\n" "$(ip -br -4 addr show wlp2s0 | awk "{print \$3}")" \
+        "$(iw dev wlp2s0 link | grep -oP "SSID: \K.*")" "$(iw dev wlp2s0 link | grep -oP "signal: \K.*")"
+    printf "   AP    %-18s SecurePi-Test, %s client(s)\n" \
+        "$(ip -br -4 addr show ap0 | awk "{print \$3}")" "$(iw dev ap0 station dump | grep -c ^Station)"
+    printf "   MGMT  %-18s\n" "$(ip -br -4 addr show enp1s0 | awk "{print \$3}")"
+    printf "   internet: %s\n" "$(ping -c1 -W3 1.1.1.1 >/dev/null 2>&1 && echo ok || echo FAIL)"
+    echo
+    echo "filtering:"
+    printf "   ad domain blocked: %s\n" "$(dig +short +time=2 doubleclick.net @10.10.0.1 | head -1)"
+    printf "   HTTPS inspection:  %s\n" "$(nft list set ip nat enrolled 2>/dev/null | grep -q elements && echo "ON  ($(nft list set ip nat enrolled | grep -oP "elements = \K.*"))" || echo "off")"
+    echo
+    printf "power: %s, battery %s%%\n" \
+        "$([ "$(cat /sys/class/power_supply/AC/online)" = 1 ] && echo "plugged in" || echo "ON BATTERY")" \
+        "$(cat /sys/class/power_supply/BAT0/capacity)"
+    ;;
+
+  enroll)
+    nft add element ip nat enrolled "{ $PHONE }" && \
+        echo "HTTPS inspection ON for $PHONE (YouTube ad removal active)"
+    ;;
+
+  unenroll)
+    nft delete element ip nat enrolled "{ $PHONE }" 2>/dev/null && \
+        echo "HTTPS inspection OFF - no traffic is decrypted" || echo "was not enrolled"
+    ;;
+
+  *)
+    echo "usage: securepi [status|enroll|unenroll]"
+    ;;
+esac

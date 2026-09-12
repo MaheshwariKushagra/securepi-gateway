@@ -25,6 +25,7 @@
     <symbol id="i-chevron-down" viewBox="0 0 24 24"><polyline points="6,9 12,15 18,9"/></symbol>
     <symbol id="i-more" viewBox="0 0 24 24"><circle cx="5" cy="12" r="1.6" fill="currentColor" stroke="none"/><circle cx="12" cy="12" r="1.6" fill="currentColor" stroke="none"/><circle cx="19" cy="12" r="1.6" fill="currentColor" stroke="none"/></symbol>
     <symbol id="i-arrow-left" viewBox="0 0 24 24"><line x1="19" y1="12" x2="5" y2="12"/><polyline points="11,6 5,12 11,18"/></symbol>
+    <symbol id="i-filter" viewBox="0 0 24 24"><path d="M3 4 H21 L14 12.5 V19 L10 21 V12.5 Z"/></symbol>
 </svg>
 
 <div class="shell" id="shell">
@@ -44,6 +45,8 @@
             <a href="/incidents" class="{{ 'active' if active=='incidents' }}">
                 <svg class="icon" width="17" height="17"><use href="#i-alert"/></svg><span>Incidents</span>
                 <span class="nav-badge" id="navIncidentBadge" hidden>0</span></a>
+            <a href="/filtering" class="{{ 'active' if active=='filtering' }}">
+                <svg class="icon" width="17" height="17"><use href="#i-filter"/></svg><span>Filtering</span></a>
         </nav>
         <div class="sidebar-foot">
             <button class="pipeline-status" id="pipelineStatus" title="Pipeline health">

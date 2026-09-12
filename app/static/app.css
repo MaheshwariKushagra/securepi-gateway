@@ -513,6 +513,19 @@ a.link:hover { text-decoration: underline; }
 
 .btn.icon-label { display: inline-flex; align-items: center; gap: 7px; }
 
+/* ------------------------------------------------------------- filtering */
+
+.filter-row {
+    display: flex; align-items: center; gap: 10px;
+    padding: 9px 16px; border-bottom: 1px solid rgba(34,43,60,.45); font-size: 12.5px;
+}
+.filter-row:last-child { border-bottom: none; }
+.filter-row:hover { background: var(--surface-2); }
+.filter-row .name { font-weight: 600; }
+.filter-row .url { color: var(--text-3); flex: 1; min-width: 0; }
+.filter-row .btn { padding: 3px 10px; font-size: 11.5px; }
+.filter-row .btn.danger:hover { background: var(--high-bg); color: var(--high); border-color: transparent; }
+
 /* ------------------------------------------------------- responsive shell */
 
 @media (max-width: 860px) {

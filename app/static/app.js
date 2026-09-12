@@ -734,12 +734,227 @@ function initDeviceActivity() {
     load(SP.range);
 }
 
+function initDeviceFiltering() {
+    const wrap = $("#deviceFiltering");
+    if (!wrap) return;
+    const deviceId = wrap.dataset.deviceId;
+    const btn = $("#deviceFilterToggle");
+
+    async function load() {
+        try {
+            const res = await fetch(`/api/devices/${deviceId}/filtering`);
+            if (!res.ok) throw new Error("request failed");
+            const data = await res.json();
+            btn.textContent = data.filtering_enabled ? "On" : "Off";
+            btn.classList.toggle("on", data.filtering_enabled);
+            btn.dataset.enabled = data.filtering_enabled ? "1" : "0";
+        } catch (err) {
+            btn.textContent = "Unavailable";
+        }
+    }
+
+    btn.addEventListener("click", async () => {
+        const enabled = btn.dataset.enabled !== "1";
+        try {
+            const res = await fetch(`/api/devices/${deviceId}/filtering`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ enabled }),
+            });
+            if (!res.ok) throw new Error("request failed");
+            toast("Filtering updated", enabled ? "Enabled for this device" : "Disabled for this device", "ok");
+            load();
+        } catch (err) {
+            toast("Update failed", "Could not reach AdGuard Home.", "high");
+        }
+    });
+
+    load();
+}
+
+/* ---------------------------------------------------------------- filtering */
+
+function initFiltering() {
+    const listsEl = $("#filterLists");
+    if (!listsEl) return;
+    const rulesEl = $("#filterRules");
+    const masterBtn = $("#filteringMasterToggle");
+
+    function renderLists(filters) {
+        $("#filterListCount").textContent = filters.length + " list" + (filters.length === 1 ? "" : "s");
+        if (!filters.length) { listsEl.innerHTML = `<div class="empty">No blocklists configured</div>`; return; }
+        listsEl.innerHTML = filters.map(f => `
+            <div class="filter-row">
+                <button class="btn ${f.enabled ? "on" : ""}" data-list-toggle="${esc(f.url)}" data-enabled="${f.enabled ? 1 : 0}">${f.enabled ? "On" : "Off"}</button>
+                <span class="name">${esc(f.name)}</span>
+                <span class="url truncate" title="${esc(f.url)}">${esc(f.url)}</span>
+                <span class="dim">${f.rules_count.toLocaleString()} rules</span>
+                <button class="btn danger" data-list-remove="${esc(f.url)}">Remove</button>
+            </div>`).join("");
+    }
+
+    function renderRules(rules) {
+        if (!rules.length) { rulesEl.innerHTML = `<div class="empty">No custom rules yet</div>`; return; }
+        rulesEl.innerHTML = rules.map(r => `
+            <div class="filter-row">
+                <span class="chip ${r.action === "block" ? "high" : "ok"}">${r.action}</span>
+                <span class="url truncate" title="${esc(r.rule)}">${esc(r.domain || r.rule)}</span>
+                <button class="btn danger" data-rule-remove="${esc(r.rule)}">Remove</button>
+            </div>`).join("");
+    }
+
+    async function loadStatus() {
+        try {
+            const res = await fetch("/api/filtering/status");
+            if (!res.ok) throw new Error("request failed");
+            const data = await res.json();
+            renderLists(data.filters);
+            renderRules(data.rules);
+            masterBtn.textContent = data.enabled ? "Filtering: on" : "Filtering: off";
+            masterBtn.classList.toggle("on", data.enabled);
+            masterBtn.dataset.enabled = data.enabled ? "1" : "0";
+        } catch (err) {
+            listsEl.innerHTML = `<div class="empty">Could not reach AdGuard Home. Is it running?</div>`;
+            rulesEl.innerHTML = "";
+            masterBtn.textContent = "Unavailable";
+        }
+    }
+
+    listsEl.addEventListener("click", async (e) => {
+        const t = e.target.closest("[data-list-toggle]");
+        if (t) {
+            try {
+                const res = await fetch("/api/filtering/lists/toggle", {
+                    method: "POST", headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ url: t.dataset.listToggle, enabled: t.dataset.enabled !== "1" }),
+                });
+                if (!res.ok) throw new Error("request failed");
+                toast("Blocklist updated", "", "ok");
+                loadStatus();
+            } catch (err) { toast("Update failed", "Could not reach AdGuard Home.", "high"); }
+            return;
+        }
+        const rm = e.target.closest("[data-list-remove]");
+        if (rm) {
+            try {
+                const res = await fetch("/api/filtering/lists/remove", {
+                    method: "POST", headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ url: rm.dataset.listRemove }),
+                });
+                if (!res.ok) throw new Error("request failed");
+                toast("Blocklist removed", "", "ok");
+                loadStatus();
+            } catch (err) { toast("Remove failed", "Could not reach AdGuard Home.", "high"); }
+        }
+    });
+
+    rulesEl.addEventListener("click", async (e) => {
+        const rm = e.target.closest("[data-rule-remove]");
+        if (!rm) return;
+        try {
+            const res = await fetch("/api/filtering/rules/remove", {
+                method: "POST", headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ rule: rm.dataset.ruleRemove }),
+            });
+            if (!res.ok) throw new Error("request failed");
+            toast("Rule removed", "", "ok");
+            loadStatus();
+        } catch (err) { toast("Remove failed", "Could not reach AdGuard Home.", "high"); }
+    });
+
+    masterBtn.addEventListener("click", async () => {
+        const enabled = masterBtn.dataset.enabled !== "1";
+        try {
+            const res = await fetch("/api/filtering/enabled", {
+                method: "POST", headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ enabled }),
+            });
+            if (!res.ok) throw new Error("request failed");
+            toast("Filtering " + (enabled ? "enabled" : "disabled"), "", "ok");
+            loadStatus();
+        } catch (err) { toast("Update failed", "Could not reach AdGuard Home.", "high"); }
+    });
+
+    $("#filterListAddForm").addEventListener("submit", async (e) => {
+        e.preventDefault();
+        const nameEl = $("#filterListName"), urlEl = $("#filterListUrl");
+        const name = nameEl.value.trim(), url = urlEl.value.trim();
+        if (!name || !url) return;
+        try {
+            const res = await fetch("/api/filtering/lists", {
+                method: "POST", headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ name, url }),
+            });
+            if (!res.ok) throw new Error("request failed");
+            nameEl.value = ""; urlEl.value = "";
+            toast("Blocklist added", name, "ok");
+            loadStatus();
+        } catch (err) { toast("Add failed", "Could not reach AdGuard Home.", "high"); }
+    });
+
+    async function addRule(action) {
+        const domainEl = $("#filterRuleDomain");
+        const domain = domainEl.value.trim();
+        if (!domain) return;
+        try {
+            const res = await fetch("/api/filtering/rules", {
+                method: "POST", headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ domain, action }),
+            });
+            if (!res.ok) throw new Error("request failed");
+            domainEl.value = "";
+            toast("Rule added", `${action} ${domain}`, "ok");
+            loadStatus();
+        } catch (err) { toast("Add failed", "Could not reach AdGuard Home.", "high"); }
+    }
+    $("#filterRuleBlockBtn").addEventListener("click", () => addRule("block"));
+    $("#filterRuleAllowBtn").addEventListener("click", () => addRule("allow"));
+    $("#filterRuleDomain").addEventListener("keydown", (e) => { if (e.key === "Enter") addRule("block"); });
+
+    const devSel = $("#qlDevice");
+    fetch("/api/devices").then(r => r.json()).then(d => {
+        devSel.insertAdjacentHTML("beforeend",
+            d.devices.map(dv => `<option value="${dv.id}">${esc(dv.name)}</option>`).join(""));
+    }).catch(() => {});
+
+    async function runQuerylogSearch() {
+        const qs = new URLSearchParams({
+            domain: $("#qlDomain").value.trim(),
+            device_id: $("#qlDevice").value,
+            blocked: $("#qlBlocked").value,
+            limit: 100,
+        });
+        const results = $("#qlResults");
+        results.innerHTML = `<div class="empty">Searching…</div>`;
+        try {
+            const res = await fetch("/api/filtering/querylog?" + qs.toString());
+            if (!res.ok) throw new Error("request failed");
+            const data = await res.json();
+            if (!data.results.length) { results.innerHTML = `<div class="empty">No matching queries</div>`; return; }
+            results.innerHTML = data.results.map(r => `
+                <div class="feed-row">
+                    <span class="mono dim">${r.time}</span>
+                    <span class="type-tag ${r.type}">dns</span>
+                    <span class="truncate mono" title="${esc(r.detail)}">${esc(r.detail)}</span>
+                    <span class="dim" style="font-size:11px">${r.blocked ? '<span class="chip high">blocked</span>' : esc(r.device || "")}</span>
+                </div>`).join("");
+        } catch (err) {
+            results.innerHTML = `<div class="empty">Search failed</div>`;
+        }
+    }
+    $("#qlSearch").addEventListener("click", runQuerylogSearch);
+    $("#qlDomain").addEventListener("keydown", (e) => { if (e.key === "Enter") runQuerylogSearch(); });
+
+    loadStatus();
+}
+
 /* ------------------------------------------------------- command palette */
 
 const CMDK_PAGES = [
     { label: "Dashboard", href: "/", icon: "i-grid" },
     { label: "Devices", href: "/devices", icon: "i-monitor" },
     { label: "Incidents", href: "/incidents", icon: "i-alert" },
+    { label: "Filtering", href: "/filtering", icon: "i-filter" },
 ];
 
 let cmdkItems = [];
@@ -837,6 +1052,8 @@ document.addEventListener("DOMContentLoaded", () => {
     initSidebar();
     initDeviceRename();
     initDeviceActivity();
+    initDeviceFiltering();
+    initFiltering();
 
     // Global row-action delegate: works across incidents list + detail page.
     // Registered on the capture phase because row markup calls

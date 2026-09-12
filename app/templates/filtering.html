@@ -1,0 +1,49 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="page-head">
+    <h1>Filtering</h1>
+    <span class="subtle">DNS filtering, blocklists and per-device policy</span>
+    <div class="spacer"></div>
+    <button class="btn" id="filteringMasterToggle">Loading…</button>
+</div>
+
+<div class="grid c2">
+    <div class="card">
+        <div class="card-head"><h2>Blocklist Sources</h2>
+            <span class="spacer"></span><span class="subtle" id="filterListCount">—</span></div>
+        <div class="card-body tight" id="filterLists"><div class="empty">Loading…</div></div>
+        <form class="card-body" id="filterListAddForm" style="display:flex; gap:8px; border-top:1px solid var(--border)">
+            <input class="input" id="filterListName" placeholder="Name" style="flex:1">
+            <input class="input" id="filterListUrl" placeholder="https://…" style="flex:2">
+            <button class="btn" type="submit">Add list</button>
+        </form>
+    </div>
+
+    <div class="card">
+        <div class="card-head"><h2>Custom Rules</h2>
+            <span class="spacer"></span><span class="subtle">per-domain allow / block</span></div>
+        <div class="card-body tight" id="filterRules"><div class="empty">Loading…</div></div>
+        <div class="card-body" id="filterRuleAddRow" style="display:flex; gap:8px; border-top:1px solid var(--border)">
+            <input class="input" id="filterRuleDomain" placeholder="example.com" style="flex:1">
+            <button class="btn" type="button" id="filterRuleBlockBtn">Block</button>
+            <button class="btn" type="button" id="filterRuleAllowBtn">Allow</button>
+        </div>
+    </div>
+</div>
+
+<div class="card">
+    <div class="card-head"><h2>Query Log Search</h2>
+        <span class="spacer"></span><span class="subtle">searches events already collected by this console</span></div>
+    <div class="card-body" style="display:flex; gap:8px; flex-wrap:wrap">
+        <input class="input" id="qlDomain" placeholder="Search domain…" style="flex:2; min-width:180px">
+        <select class="input" id="qlDevice" style="flex:1; min-width:160px"><option value="">All devices</option></select>
+        <select class="input" id="qlBlocked" style="flex:1; min-width:140px">
+            <option value="">Allowed + blocked</option>
+            <option value="blocked">Blocked only</option>
+            <option value="allowed">Allowed only</option>
+        </select>
+        <button class="btn" id="qlSearch">Search</button>
+    </div>
+    <div class="card-body tight feed" id="qlResults"><div class="empty">Search above to see matching DNS queries.</div></div>
+</div>
+{% endblock %}

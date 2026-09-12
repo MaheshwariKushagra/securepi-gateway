@@ -15,11 +15,13 @@ Routes:
   /devices/{id}      per-device detail
   /incidents         incident queue
   /incidents/{id}    incident detail with evidence chain
+  /filtering         DNS filtering: blocklists, custom rules, query log
 
   /api/overview      everything the dashboard needs, one round trip
   /api/devices       device inventory
   /api/incidents     incident queue, filterable
   /api/events        recent event stream
+  /api/filtering/*   AdGuard Home blocklists, rules and per-device policy
 """
 
 import sqlite3
@@ -31,6 +33,8 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel
 from starlette.requests import Request
+
+import adguard
 
 DB_PATH = "/opt/securepi/securepi.db"
 
@@ -71,6 +75,37 @@ class IncidentUpdate(BaseModel):
 
 class DeviceUpdate(BaseModel):
     friendly_name: str
+
+
+class DeviceFilterUpdate(BaseModel):
+    enabled: bool
+
+
+class FilteringToggle(BaseModel):
+    enabled: bool
+
+
+class BlocklistAdd(BaseModel):
+    name: str
+    url: str
+
+
+class BlocklistUrl(BaseModel):
+    url: str
+
+
+class BlocklistToggle(BaseModel):
+    url: str
+    enabled: bool
+
+
+class RuleAdd(BaseModel):
+    domain: str
+    action: str
+
+
+class RuleRemove(BaseModel):
+    rule: str
 
 
 def db():
@@ -530,6 +565,153 @@ def api_rename_device(device_id: int, body: DeviceUpdate):
     return {"id": device_id, "friendly_name": name}
 
 
+# ------------------------------------------------------------- filtering --
+#
+# DNS filtering itself lives entirely in AdGuard Home; this app only gives
+# it a console. Every write here calls straight through to AdGuard's own
+# control API (see adguard.py) rather than caching or shadowing its state,
+# so the console can never drift out of sync with what the resolver is
+# actually doing.
+
+@app.get("/api/filtering/status")
+def api_filtering_status():
+    try:
+        status = adguard.filtering_status()
+    except adguard.AdGuardError as e:
+        raise HTTPException(502, str(e))
+    filters = [{
+        "name": f["name"], "url": f["url"], "enabled": f["enabled"],
+        "rules_count": f.get("rules_count", 0),
+    } for f in status.get("filters", [])]
+    rules = [adguard.describe_rule(r) for r in status.get("user_rules", [])]
+    return {"enabled": bool(status.get("enabled")), "filters": filters, "rules": rules}
+
+
+@app.post("/api/filtering/enabled")
+def api_filtering_set_enabled(body: FilteringToggle):
+    try:
+        adguard.set_filtering_enabled(body.enabled)
+    except adguard.AdGuardError as e:
+        raise HTTPException(502, str(e))
+    return {"enabled": body.enabled}
+
+
+@app.post("/api/filtering/lists")
+def api_filtering_add_list(body: BlocklistAdd):
+    name, url = body.name.strip(), body.url.strip()
+    if not name or not url:
+        raise HTTPException(400, "name and url are both required")
+    try:
+        adguard.add_blocklist(name, url)
+    except adguard.AdGuardError as e:
+        raise HTTPException(502, str(e))
+    return {"ok": True}
+
+
+@app.post("/api/filtering/lists/toggle")
+def api_filtering_toggle_list(body: BlocklistToggle):
+    try:
+        adguard.set_blocklist_enabled(body.url, body.enabled)
+    except adguard.AdGuardError as e:
+        raise HTTPException(502, str(e))
+    return {"url": body.url, "enabled": body.enabled}
+
+
+@app.post("/api/filtering/lists/remove")
+def api_filtering_remove_list(body: BlocklistUrl):
+    try:
+        adguard.remove_blocklist(body.url)
+    except adguard.AdGuardError as e:
+        raise HTTPException(502, str(e))
+    return {"ok": True}
+
+
+@app.post("/api/filtering/rules")
+def api_filtering_add_rule(body: RuleAdd):
+    domain = body.domain.strip().lower()
+    if not domain:
+        raise HTTPException(400, "domain is required")
+    if body.action not in ("block", "allow"):
+        raise HTTPException(400, "action must be 'block' or 'allow'")
+    try:
+        adguard.add_user_rule(domain, body.action)
+    except adguard.AdGuardError as e:
+        raise HTTPException(502, str(e))
+    return {"ok": True}
+
+
+@app.post("/api/filtering/rules/remove")
+def api_filtering_remove_rule(body: RuleRemove):
+    try:
+        adguard.remove_user_rule(body.rule)
+    except adguard.AdGuardError as e:
+        raise HTTPException(502, str(e))
+    return {"ok": True}
+
+
+@app.get("/api/filtering/querylog")
+def api_filtering_querylog(domain: str = Query(""), device_id: str = Query(""),
+                            blocked: str = Query(""), limit: int = Query(50)):
+    """Query log search, served from our own ingested events rather than
+    AdGuard's own log - we already store every DNS lookup with the device
+    it resolved for, so this needs no second source of truth."""
+    c = db()
+    sql = ("SELECT e.*, d.hostname, d.friendly_name FROM events e"
+           " LEFT JOIN devices d ON d.id = e.device_id"
+           " WHERE e.event_type IN ('dns_query', 'dns')")
+    params = []
+    if domain:
+        sql += " AND e.dns_rrname LIKE ?"
+        params.append("%%%s%%" % domain)
+    if device_id:
+        sql += " AND e.device_id = ?"
+        params.append(int(device_id))
+    if blocked == "blocked":
+        sql += " AND e.blocked = 1"
+    elif blocked == "allowed":
+        sql += " AND (e.blocked IS NULL OR e.blocked = 0)"
+    sql += " ORDER BY e.id DESC LIMIT ?"
+    params.append(min(limit, 200))
+    return {"results": [_event_row(r) for r in c.execute(sql, params)]}
+
+
+@app.get("/api/devices/{device_id}/filtering")
+def api_device_filtering_status(device_id: int):
+    c = db()
+    d = c.execute("SELECT 1 FROM devices WHERE id=?", (device_id,)).fetchone()
+    if d is None:
+        raise HTTPException(404, "device not found")
+    ip_row = c.execute(
+        "SELECT ip FROM device_ips WHERE device_id=? ORDER BY last_seen DESC LIMIT 1",
+        (device_id,)).fetchone()
+    if ip_row is None:
+        return {"managed": False, "filtering_enabled": True, "ip": None}
+    try:
+        status = adguard.client_filtering_status(ip_row["ip"])
+    except adguard.AdGuardError as e:
+        raise HTTPException(502, str(e))
+    status["ip"] = ip_row["ip"]
+    return status
+
+
+@app.post("/api/devices/{device_id}/filtering")
+def api_device_filtering_set(device_id: int, body: DeviceFilterUpdate):
+    c = db()
+    d = c.execute("SELECT * FROM devices WHERE id=?", (device_id,)).fetchone()
+    if d is None:
+        raise HTTPException(404, "device not found")
+    ip_row = c.execute(
+        "SELECT ip FROM device_ips WHERE device_id=? ORDER BY last_seen DESC LIMIT 1",
+        (device_id,)).fetchone()
+    if ip_row is None:
+        raise HTTPException(400, "device has no known IP address to apply a policy to")
+    try:
+        adguard.set_client_filtering(ip_row["ip"], device_label(d), body.enabled)
+    except adguard.AdGuardError as e:
+        raise HTTPException(502, str(e))
+    return {"id": device_id, "filtering_enabled": body.enabled}
+
+
 # ---------------------------------------------------------------- pages --
 
 @app.get("/", response_class=HTMLResponse)
@@ -548,6 +730,12 @@ def page_devices(request: Request):
 def page_incidents(request: Request):
     return templates.TemplateResponse("incidents.html", {
         "request": request, "active": "incidents", "title": "Incidents"})
+
+
+@app.get("/filtering", response_class=HTMLResponse)
+def page_filtering(request: Request):
+    return templates.TemplateResponse("filtering.html", {
+        "request": request, "active": "filtering", "title": "Filtering"})
 
 
 @app.get("/devices/{device_id}", response_class=HTMLResponse)

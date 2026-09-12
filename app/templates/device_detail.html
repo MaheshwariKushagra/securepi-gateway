@@ -75,6 +75,10 @@
                 DHCP hostname instead, so it stays the same device across rotations.
             </div>
             {% endif %}
+            <div style="margin-top:14px; display:flex; align-items:center; gap:10px" id="deviceFiltering" data-device-id="{{ device.id }}">
+                <div class="subtle" style="flex:1">DNS filtering for this device</div>
+                <button class="btn" id="deviceFilterToggle">Loading…</button>
+            </div>
         </div>
     </div>
 

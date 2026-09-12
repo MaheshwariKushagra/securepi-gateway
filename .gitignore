@@ -1,0 +1,23 @@
+# Never commit credentials or key material.
+*.pem
+*.key
+*.p12
+*.crt
+*.cer
+.env
+secrets/
+*-password*
+*.token
+
+# mitmproxy CA material, in case anything is ever copied locally
+ca/
+mitmproxy-*
+
+# Captured traffic and debug dumps - may contain personal data
+*.pcap
+*.flow
+*-sample.json
+querylog*
+
+# OS noise
+.DS_Store

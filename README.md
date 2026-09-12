@@ -7,7 +7,7 @@ The gateway sits between the network and its uplink, providing DNS-based content
 filtering for every device, selective HTTPS inspection for enrolled devices, and
 a security operations centre built on network telemetry — routing, filtering,
 sensing, detection, and a live console are all working; a handful of console-side
-controls (blocklist management, quarantine, risk scoring, auth) are still open.
+controls (quarantine, risk scoring, auth) are still open.
 
 ## Status
 
@@ -20,7 +20,7 @@ controls (blocklist management, quarantine, risk scoring, auth) are still open.
 | Device registry and identity resolution | Working |
 | Correlation engine — 4 signals, verified against live traffic | Working |
 | SOC console — overview, devices, incidents (live, interactive) | Working |
-| Filtering page — blocklist management, per-device policy via AdGuard API | Not started |
+| Filtering page — blocklist management, per-device policy via AdGuard API | Working — verified against live AdGuard on the gateway |
 | Quarantine action + undo | nftables `quarantine` set exists; no console control yet |
 | Risk scoring | Not started |
 | Basic auth on the console | Not started |

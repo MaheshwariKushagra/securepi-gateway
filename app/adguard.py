@@ -45,9 +45,18 @@ def _request(method, path, body=None):
     try:
         with urllib.request.urlopen(req, timeout=5) as resp:
             raw = resp.read()
-            return json.loads(raw) if raw else None
+            if not raw:
+                return None
+            try:
+                return json.loads(raw)
+            except json.JSONDecodeError:
+                # Several AdGuard endpoints (add_url, remove_url, ...) reply
+                # with a plain-text "OK ..." body on success, not JSON.
+                return raw.decode(errors="replace")
     except urllib.error.HTTPError as e:
-        raise AdGuardError("AdGuard Home rejected %s %s (HTTP %d)" % (method, path, e.code))
+        detail = e.read().decode(errors="replace").strip()
+        reason = (": %s" % detail) if detail else ""
+        raise AdGuardError("AdGuard Home rejected %s %s (HTTP %d)%s" % (method, path, e.code, reason))
     except (urllib.error.URLError, OSError) as e:
         raise AdGuardError("Could not reach AdGuard Home at %s: %s" % (BASE_URL, e))
 
@@ -115,7 +124,7 @@ def describe_rule(rule):
 
 def _find_client(ip):
     clients = _request("GET", "/control/clients") or {}
-    for cl in clients.get("clients", []):
+    for cl in clients.get("clients") or []:
         if ip in (cl.get("ids") or []):
             return cl
     return None

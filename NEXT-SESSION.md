@@ -59,10 +59,10 @@ DNS filtering (655,974 rules) is always on for every device and needs no action.
 | Device registry and identity resolution | Done |
 | Correlation engine and incidents (4 signals) | Done — verified against live traffic, the academic core |
 | SOC console: overview, devices, incidents | Done — live, interactive (command palette, notifications, heatmap, health panel) |
-| Filtering page (blocklist mgmt, per-device policy) | **Next** — plan day 12 |
-| Quarantine action + undo | Not started — nftables `quarantine` set exists, no console control |
-| Risk scoring | Not started |
-| Basic auth on the console | Not started |
+| Filtering page (blocklist mgmt, per-device policy) | Done — plan day 12, deployed and verified against live AdGuard |
+| Quarantine action + undo | **Next** — plan day 13. nftables `quarantine` set exists, no console control |
+| Risk scoring | Not started — plan day 13 |
+| Basic auth on the console | Not started — plan day 13 |
 | Evaluation (detection rate, ad-block ratio, resource usage) | Not started — plan day 14 |
 | Report + demo rehearsal | Not started — plan day 15 |
 

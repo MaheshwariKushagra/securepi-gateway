@@ -1,15 +1,26 @@
 #!/bin/bash
 # securepi - status and control for the SecurePi Gateway.
 #
-#   securepi status              show everything at a glance
+#   securepi status              full health check - every always-on
+#                                 service, network state, and anything that
+#                                 needs manual attention after a reboot
 #   securepi devices             list devices on the project network
 #   securepi enroll [ip|all]     turn ON HTTPS inspection (default: all leases)
 #   securepi unenroll [ip|all]   turn it OFF
 #
-# HTTPS inspection is deliberately OFF after every reboot. It decrypts traffic,
-# so it should be switched on consciously rather than persisting silently.
+# The service list checked by `status` lives in /opt/securepi/services.list,
+# not hardcoded here - add a new always-on service there and it is checked
+# everywhere without editing this script.
+#
+# HTTPS inspection (Tier 2 ad blocking) is deliberately OFF after every
+# reboot - it decrypts traffic, so it should be switched on consciously
+# rather than persisting silently. `status` calls this out explicitly rather
+# than burying it in a general services list, because forgetting to
+# re-enroll after a reboot looks exactly like "the ad blocker broke" from the
+# outside, when nothing did.
 
 LEASES=/opt/AdGuardHome/data/leases.json
+SERVICES_LIST=/opt/securepi/services.list
 
 leased_ips() {
     python3 -c "
@@ -27,6 +38,16 @@ enrolled_ips() {
         | grep -oP 'elements = \{ \K[^}]*' | tr -d ' ' | tr ',' '\n' | grep -v '^$'
 }
 
+service_list() {
+    if [ -f "$SERVICES_LIST" ]; then
+        grep -vE '^\s*(#|$)' "$SERVICES_LIST"
+    else
+        # Fallback if the list file is ever missing - better a stale hardcoded
+        # set than a status check that silently checks nothing.
+        echo "hostapd securepi-ap0 AdGuardHome nftables securepi-dpi securepi-ca-server" | tr ' ' '\n'
+    fi
+}
+
 case "${1:-status}" in
 
   status)
@@ -34,9 +55,18 @@ case "${1:-status}" in
     echo "uptime: $(uptime -p)"
     echo
     echo "services:"
-    for s in securepi-ap0 hostapd AdGuardHome nftables securepi-dpi securepi-ca-server; do
-        printf "   %-22s %s\n" "$s" "$(systemctl is-active $s)"
-    done
+    all_ok=1
+    while read -r s; do
+        [ -z "$s" ] && continue
+        state="$(systemctl is-active "$s" 2>/dev/null)"
+        printf "   %-22s %s\n" "$s" "$state"
+        [ "$state" != "active" ] && all_ok=0
+    done < <(service_list)
+    if [ "$all_ok" = "1" ]; then
+        echo "   -> all services active"
+    else
+        echo "   -> ** ONE OR MORE SERVICES ARE NOT ACTIVE - see above **"
+    fi
     echo
     echo "network:"
     printf "   WAN   %-18s %s %s\n" "$(ip -br -4 addr show wlp2s0 | awk '{print $3}')" \
@@ -47,10 +77,18 @@ case "${1:-status}" in
     printf "   internet: %s\n" "$(ping -c1 -W3 1.1.1.1 >/dev/null 2>&1 && echo ok || echo FAIL)"
     echo
     echo "filtering:"
-    printf "   ad domain blocked: %s\n" "$(dig +short +time=2 doubleclick.net @10.10.0.1 | head -1)"
+    printf "   Tier 1 (DNS filtering):     %s\n" "$(dig +short +time=2 doubleclick.net @10.10.0.1 2>/dev/null | grep -q 0.0.0.0 && echo "active" || echo "** NOT BLOCKING - check AdGuardHome **")"
     e=$(enrolled_ips | tr '\n' ' ')
-    printf "   HTTPS inspection:  %s\n" "${e:-off}"
-    printf "   CA download:       http://10.10.0.1:8081/securepi-ca.crt\n"
+    if [ -n "$e" ]; then
+        printf "   Tier 2 (HTTPS inspection):  ON  (%s)\n" "$e"
+    else
+        printf "   Tier 2 (HTTPS inspection):  OFF -- this is EXPECTED after a reboot.\n"
+        echo "      If you want YouTube ad removal active this session, run:"
+        echo "         sudo securepi enroll all"
+    fi
+    echo
+    echo "test harness (for signal testing, day 14 evaluation):"
+    printf "   %s\n" "$(ip link show br-test >/dev/null 2>&1 && echo "present" || echo "** MISSING - check securepi-test-harness.service **")"
     echo
     printf "power: %s, battery %s%%\n" \
         "$([ "$(cat /sys/class/power_supply/AC/online)" = 1 ] && echo 'plugged in' || echo 'ON BATTERY')" \

@@ -54,11 +54,17 @@ DNS filtering (655,974 rules) is always on for every device and needs no action.
 | Gateway: routing, NAT, DHCP, Wi-Fi AP | Done, survives reboot |
 | DNS filtering + bypass prevention | Done |
 | Selective HTTPS inspection, YouTube ad removal | Done |
-| Suricata sensor | **Next** |
-| Event pipeline and unified schema | Not started |
-| Device registry and identity resolution | Not started |
-| Correlation engine and incidents | Not started — the academic core |
-| SOC console | Not started |
+| Suricata sensor | Done |
+| Event pipeline and unified schema | Done |
+| Device registry and identity resolution | Done |
+| Correlation engine and incidents (4 signals) | Done — verified against live traffic, the academic core |
+| SOC console: overview, devices, incidents | Done — live, interactive (command palette, notifications, heatmap, health panel) |
+| Filtering page (blocklist mgmt, per-device policy) | **Next** — plan day 12 |
+| Quarantine action + undo | Not started — nftables `quarantine` set exists, no console control |
+| Risk scoring | Not started |
+| Basic auth on the console | Not started |
+| Evaluation (detection rate, ad-block ratio, resource usage) | Not started — plan day 14 |
+| Report + demo rehearsal | Not started — plan day 15 |
 
 ## Two things still outstanding
 

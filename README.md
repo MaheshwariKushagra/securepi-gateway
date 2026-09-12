@@ -5,7 +5,9 @@ network of roughly 15 devices. Final-year engineering project.
 
 The gateway sits between the network and its uplink, providing DNS-based content
 filtering for every device, selective HTTPS inspection for enrolled devices, and
-(in progress) a lightweight security operations centre built on network telemetry.
+a security operations centre built on network telemetry — routing, filtering,
+sensing, detection, and a live console are all working; a handful of console-side
+controls (blocklist management, quarantine, risk scoring, auth) are still open.
 
 ## Status
 
@@ -14,10 +16,14 @@ filtering for every device, selective HTTPS inspection for enrolled devices, and
 | Routed gateway — DHCP, DNS, NAT, Wi-Fi access point | Working |
 | DNS filtering — 655,974 rules, bypass prevention | Working |
 | Selective HTTPS inspection — first-party ad removal | Working |
-| Suricata sensor and event pipeline | Not started |
-| Device registry and identity resolution | Not started |
-| Correlation engine and incident model | Not started |
-| SOC console | Not started |
+| Suricata sensor and event pipeline | Working |
+| Device registry and identity resolution | Working |
+| Correlation engine — 4 signals, verified against live traffic | Working |
+| SOC console — overview, devices, incidents (live, interactive) | Working |
+| Filtering page — blocklist management, per-device policy via AdGuard API | Not started |
+| Quarantine action + undo | nftables `quarantine` set exists; no console control yet |
+| Risk scoring | Not started |
+| Basic auth on the console | Not started |
 
 ## Documents
 
@@ -29,6 +35,7 @@ filtering for every device, selective HTTPS inspection for enrolled devices, and
 | `REPORT-adblocking.md` | Report material for the ad-blocking subsystem |
 | `FIRST-PARTY-ADS-ANALYSIS.md` | Analysis of what network-level filtering can and cannot block |
 | `dpi/` | Selective HTTPS inspection addon and deployment script |
+| `app/` | Ingest pipeline, correlation engine, and the SOC console (FastAPI + Jinja2 + vanilla JS) |
 
 ## Architecture
 

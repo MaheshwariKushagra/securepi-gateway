@@ -339,11 +339,24 @@ def malicious_domain_signal(conn):
 # to know about immediately, independent of anything it does afterwards.
 # --------------------------------------------------------------------------
 NEW_DEVICE_GRACE_SECONDS = 30  # let the registry finish resolving identity first
+NEW_DEVICE_LOOKBACK_SECONDS = 3600  # trailing window; raise_incident's own
+# dedup (same device/signal within DEDUP_WINDOW_SECONDS) is what stops a
+# still-recent device from getting re-raised every cycle - see below for why
+# this can't be a persisted watermark instead.
 
 
 def new_device_signal(conn):
-    since = get_window_start(conn, "new_device", 86400)
+    # A trailing window every cycle, like the other three signals - NOT a
+    # persisted "since we last ran" watermark. An earlier version used one,
+    # and it silently broke detection for every device: the watermark
+    # advanced to the CURRENT cycle's time regardless of whether the grace
+    # period had elapsed, so a device still too new to qualify on cycle 1 had
+    # already been watermarked past by cycle 2, and could never match again.
+    # Confirmed by direct testing - a device created and then left running
+    # past the grace period never fired, on any later cycle, under the old
+    # code.
     now = time.time()
+    since = now - NEW_DEVICE_LOOKBACK_SECONDS
 
     rows = conn.execute(
         """SELECT id, hostname, friendly_name, first_seen FROM devices

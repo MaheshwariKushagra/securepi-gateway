@@ -6,8 +6,9 @@ network of roughly 15 devices. Final-year engineering project.
 The gateway sits between the network and its uplink, providing DNS-based content
 filtering for every device, selective HTTPS inspection for enrolled devices, and
 a security operations centre built on network telemetry — routing, filtering,
-sensing, detection, and a live console are all working, feature-complete
-through day 13 of the build plan.
+sensing, detection, and a live console are all working, feature-complete and
+evaluated through day 14 of the build plan. See `EVALUATION-RESULTS.md` for
+measured detection rates, false positives, and resource/throughput numbers.
 
 ## Status
 
@@ -34,8 +35,10 @@ through day 13 of the build plan.
 | `STEP-1-INSTALL-UBUNTU.md` | Operating system installation |
 | `REPORT-adblocking.md` | Report material for the ad-blocking subsystem |
 | `FIRST-PARTY-ADS-ANALYSIS.md` | Analysis of what network-level filtering can and cannot block |
+| `EVALUATION-RESULTS.md` | Day 14 evaluation: detection rate, reduction ratio, false positives, resource/throughput |
 | `dpi/` | Selective HTTPS inspection addon and deployment script |
 | `app/` | Ingest pipeline, correlation engine, and the SOC console (FastAPI + Jinja2 + vanilla JS) |
+| `gateway/evaluate.py` | Scripted evaluation battery — reproduces every number in `EVALUATION-RESULTS.md` |
 
 ## Architecture
 

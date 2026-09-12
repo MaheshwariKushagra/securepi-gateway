@@ -63,8 +63,8 @@ DNS filtering (655,974 rules) is always on for every device and needs no action.
 | Quarantine action + undo | Done — plan day 13, console control over the nftables `quarantine` set, verified live |
 | Risk scoring | Done — plan day 13, weighted/decaying/explainable, shown on device pages |
 | Basic auth on the console | Done — plan day 13, HTTP Basic Auth in front of every route |
-| Evaluation (detection rate, ad-block ratio, resource usage) | **Next** — plan day 14 |
-| Report + demo rehearsal | Not started — plan day 15 |
+| Evaluation (detection rate, ad-block ratio, resource usage) | Done — plan day 14, see `EVALUATION-RESULTS.md`. Found and fixed a real bug: new-device detection did not work before today |
+| Report + demo rehearsal | **Next** — plan day 15 |
 
 ## Two things still outstanding
 

@@ -27,6 +27,8 @@ import sqlite3
 import sys
 import time
 
+import registry
+
 DB_PATH = "/opt/securepi/securepi.db"
 SCHEMA_PATH = "/opt/securepi/schema.sql"
 EVE_PATH = "/var/log/suricata/eve.json"
@@ -232,13 +234,30 @@ def main():
     conn = open_db()
     print("ingest started, polling every %ds" % POLL_SECONDS, flush=True)
     total = 0
+    cycle = 0
     while True:
         try:
+            # Refresh the device registry before reading events, so a device
+            # that just got a lease is already known when its events arrive.
+            # Leases change slowly, so this runs every fifth pass rather than
+            # re-reading the same file every two seconds.
+            if cycle % 5 == 0:
+                registry.update_devices(conn)
+            cycle += 1
+
             read, saved, errors = read_eve(conn)
             total += saved
+
+            # Attach events to devices. Done after insertion rather than
+            # during it, because an event may arrive fractionally before the
+            # lease that explains it - this way it gets picked up next pass
+            # instead of being permanently unattributed.
+            attributed = registry.attribute_events(conn)
+
             if saved:
-                print("stored %d events (total %d)%s" % (
-                    saved, total, ", %d parse errors" % errors if errors else ""
+                print("stored %d events (total %d), attributed %d%s" % (
+                    saved, total, attributed,
+                    ", %d parse errors" % errors if errors else ""
                 ), flush=True)
         except Exception as exc:
             # Never let one bad pass kill the service; report and carry on.

@@ -13,22 +13,54 @@ PRAGMA journal_mode = WAL;      -- readers do not block the writer
 PRAGMA synchronous = NORMAL;    -- durable enough here, much faster
 
 -- ---------------------------------------------------------------- devices --
--- One row per physical device seen on the project network. Events point here,
--- so an incident can say "Divye's phone" rather than an address that changes
--- whenever a DHCP lease rotates.
+-- Identity is deliberately NOT keyed on MAC address.
+--
+-- Both phones observed on this network use randomized MACs (the locally
+-- administered bit is set: ca:25:... and a2:c8:...). Modern Android and iOS
+-- generate a fresh MAC per network and rotate it periodically, so keying on
+-- MAC would make one physical phone appear as a stream of new devices - and
+-- every device-scoped detection would reset with it.
+--
+-- A device therefore has its own identity, with MACs and IP addresses
+-- recorded beneath it as time intervals. The hostname is the anchor that
+-- survives MAC rotation, with manual naming as the fallback when it does not.
 CREATE TABLE IF NOT EXISTS devices (
     id             INTEGER PRIMARY KEY,
-    mac            TEXT UNIQUE NOT NULL,
-    ip             TEXT,               -- current address; may change
-    hostname       TEXT,               -- as announced over DHCP
-    friendly_name  TEXT,               -- set by hand in the console
+    hostname       TEXT,               -- as announced over DHCP; survives MAC rotation
+    friendly_name  TEXT,               -- set by hand in the console; wins over hostname
     first_seen     REAL NOT NULL,
     last_seen      REAL NOT NULL,
     is_active      INTEGER NOT NULL DEFAULT 1
 );
 
-CREATE INDEX IF NOT EXISTS idx_devices_ip  ON devices(ip);
-CREATE INDEX IF NOT EXISTS idx_devices_mac ON devices(mac);
+CREATE INDEX IF NOT EXISTS idx_devices_hostname ON devices(hostname);
+
+-- Every MAC a device has used. A new randomized MAC with a familiar hostname
+-- adds a row here rather than creating a second device.
+CREATE TABLE IF NOT EXISTS device_macs (
+    id            INTEGER PRIMARY KEY,
+    device_id     INTEGER NOT NULL REFERENCES devices(id),
+    mac           TEXT NOT NULL UNIQUE,
+    is_randomized INTEGER NOT NULL DEFAULT 0,
+    first_seen    REAL NOT NULL,
+    last_seen     REAL NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_device_macs_mac ON device_macs(mac);
+
+-- Which device held which address, and when. Attribution has to be historical:
+-- an event from three hours ago belongs to whoever held that address then, not
+-- to whoever holds it now. Without these intervals, a single DHCP rotation
+-- would silently reassign past events to the wrong device.
+CREATE TABLE IF NOT EXISTS device_ips (
+    id         INTEGER PRIMARY KEY,
+    device_id  INTEGER NOT NULL REFERENCES devices(id),
+    ip         TEXT NOT NULL,
+    first_seen REAL NOT NULL,
+    last_seen  REAL NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_device_ips_lookup ON device_ips(ip, first_seen, last_seen);
 
 -- ----------------------------------------------------------------- events --
 CREATE TABLE IF NOT EXISTS events (

@@ -1,14 +1,31 @@
 #!/bin/bash
 # securepi - status and control for the SecurePi Gateway.
 #
-#   securepi status     show everything at a glance
-#   securepi enroll     turn ON HTTPS inspection for the test phone
-#   securepi unenroll   turn it OFF
+#   securepi status              show everything at a glance
+#   securepi devices             list devices on the project network
+#   securepi enroll [ip|all]     turn ON HTTPS inspection (default: all leases)
+#   securepi unenroll [ip|all]   turn it OFF
 #
 # HTTPS inspection is deliberately OFF after every reboot. It decrypts traffic,
 # so it should be switched on consciously rather than persisting silently.
 
-PHONE=10.10.0.50
+LEASES=/opt/AdGuardHome/data/leases.json
+
+leased_ips() {
+    python3 -c "
+import json
+try:
+    for l in json.load(open('$LEASES'))['leases']:
+        print(l['ip'])
+except Exception:
+    pass
+"
+}
+
+enrolled_ips() {
+    nft list set ip nat enrolled 2>/dev/null \
+        | grep -oP 'elements = \{ \K[^}]*' | tr -d ' ' | tr ',' '\n' | grep -v '^$'
+}
 
 case "${1:-status}" in
 
@@ -22,33 +39,60 @@ case "${1:-status}" in
     done
     echo
     echo "network:"
-    printf "   WAN   %-18s %s %s\n" "$(ip -br -4 addr show wlp2s0 | awk "{print \$3}")" \
-        "$(iw dev wlp2s0 link | grep -oP "SSID: \K.*")" "$(iw dev wlp2s0 link | grep -oP "signal: \K.*")"
+    printf "   WAN   %-18s %s %s\n" "$(ip -br -4 addr show wlp2s0 | awk '{print $3}')" \
+        "$(iw dev wlp2s0 link | grep -oP 'SSID: \K.*')" "$(iw dev wlp2s0 link | grep -oP 'signal: \K.*')"
     printf "   AP    %-18s SecurePi-Test, %s client(s)\n" \
-        "$(ip -br -4 addr show ap0 | awk "{print \$3}")" "$(iw dev ap0 station dump | grep -c ^Station)"
-    printf "   MGMT  %-18s\n" "$(ip -br -4 addr show enp1s0 | awk "{print \$3}")"
+        "$(ip -br -4 addr show ap0 | awk '{print $3}')" "$(iw dev ap0 station dump | grep -c ^Station)"
+    printf "   MGMT  %-18s\n" "$(ip -br -4 addr show enp1s0 | awk '{print $3}')"
     printf "   internet: %s\n" "$(ping -c1 -W3 1.1.1.1 >/dev/null 2>&1 && echo ok || echo FAIL)"
     echo
     echo "filtering:"
     printf "   ad domain blocked: %s\n" "$(dig +short +time=2 doubleclick.net @10.10.0.1 | head -1)"
-    printf "   HTTPS inspection:  %s\n" "$(nft list set ip nat enrolled 2>/dev/null | grep -q elements && echo "ON  ($(nft list set ip nat enrolled | grep -oP "elements = \K.*"))" || echo "off")"
+    e=$(enrolled_ips | tr '\n' ' ')
+    printf "   HTTPS inspection:  %s\n" "${e:-off}"
+    printf "   CA download:       http://10.10.0.1:8081/securepi-ca.crt\n"
     echo
     printf "power: %s, battery %s%%\n" \
-        "$([ "$(cat /sys/class/power_supply/AC/online)" = 1 ] && echo "plugged in" || echo "ON BATTERY")" \
+        "$([ "$(cat /sys/class/power_supply/AC/online)" = 1 ] && echo 'plugged in' || echo 'ON BATTERY')" \
         "$(cat /sys/class/power_supply/BAT0/capacity)"
     ;;
 
-  enroll)
-    nft add element ip nat enrolled "{ $PHONE }" && \
-        echo "HTTPS inspection ON for $PHONE (YouTube ad removal active)"
+  devices)
+    echo "Devices on the project network:"
+    enrolled=$(enrolled_ips | tr '\n' ' ')
+    python3 -c "
+import json
+try:
+    leases = json.load(open('$LEASES'))['leases']
+except Exception:
+    leases = []
+if not leases:
+    print('   none yet - connect a device to SecurePi-Test')
+for l in leases:
+    tag = 'INSPECTED' if l['ip'] in '''$enrolled'''.split() else ''
+    print('   %-13s %-18s %-22s %s' % (l['ip'], l['mac'], l['hostname'], tag))
+"
     ;;
 
-  unenroll)
-    nft delete element ip nat enrolled "{ $PHONE }" 2>/dev/null && \
-        echo "HTTPS inspection OFF - no traffic is decrypted" || echo "was not enrolled"
+  enroll|unenroll)
+    target="${2:-all}"
+    if [ "$target" = "all" ]; then
+        ips=$(leased_ips)
+        [ -z "$ips" ] && { echo "No devices have a lease yet - connect them first."; exit 1; }
+    else
+        ips="$target"
+    fi
+    for ip in $ips; do
+        if [ "$1" = "enroll" ]; then
+            nft add element ip nat enrolled "{ $ip }" 2>/dev/null && echo "   inspection ON  $ip"
+        else
+            nft delete element ip nat enrolled "{ $ip }" 2>/dev/null && echo "   inspection OFF $ip" \
+                || echo "   (not enrolled)  $ip"
+        fi
+    done
     ;;
 
   *)
-    echo "usage: securepi [status|enroll|unenroll]"
+    echo "usage: securepi [status|devices|enroll [ip|all]|unenroll [ip|all]]"
     ;;
 esac

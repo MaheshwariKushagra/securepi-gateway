@@ -27,3 +27,37 @@ Verified with an actual reboot (not just a dry-run of the units): all
 eleven gateway services came back active with no manual steps, both
 Suricata capture threads (`ap0` and `veth-atk`) started without error, and
 the harness's bridge and both network namespaces were present immediately.
+
+
+---
+
+## Timezone: the gateway must be set to a real local zone, not UTC
+
+Ubuntu Server defaults to `Etc/UTC` on install. The web console displays
+times with Python's `time.localtime(ts)`, which renders whatever timezone
+the *system* is set to - so on a fresh install, every timestamp in the
+console silently comes out 5.5 hours behind real IST time, with no error or
+warning, just a wrong-looking clock.
+
+This is a display-layer issue only. Every stored event timestamp comes from
+Suricata's own EVE JSON, which carries an explicit UTC offset
+(`+0000`) - the ingest pipeline converts these to timezone-agnostic epoch
+seconds correctly regardless of the system's local timezone setting. Nothing
+about the data itself was ever wrong; only the human-readable rendering was.
+
+Fixed with:
+
+```
+sudo timedatectl set-timezone Asia/Kolkata
+sudo systemctl restart securepi-web securepi-ingest securepi-engine
+```
+
+The service restart matters: each is a long-running Python process, and
+while `time.localtime()` re-reads `/etc/localtime` on most systems rather
+than caching it for the process lifetime, restarting removes any doubt
+rather than relying on that behaviour.
+
+**If the gateway is ever reinstalled, set the timezone before relying on any
+displayed timestamp** - the reboot-safety systemd units in this directory
+don't cover this, since it's a one-time OS setting rather than a service
+dependency.

@@ -60,10 +60,10 @@ DNS filtering (655,974 rules) is always on for every device and needs no action.
 | Correlation engine and incidents (4 signals) | Done — verified against live traffic, the academic core |
 | SOC console: overview, devices, incidents | Done — live, interactive (command palette, notifications, heatmap, health panel) |
 | Filtering page (blocklist mgmt, per-device policy) | Done — plan day 12, deployed and verified against live AdGuard |
-| Quarantine action + undo | **Next** — plan day 13. nftables `quarantine` set exists, no console control |
-| Risk scoring | Not started — plan day 13 |
-| Basic auth on the console | Not started — plan day 13 |
-| Evaluation (detection rate, ad-block ratio, resource usage) | Not started — plan day 14 |
+| Quarantine action + undo | Done — plan day 13, console control over the nftables `quarantine` set, verified live |
+| Risk scoring | Done — plan day 13, weighted/decaying/explainable, shown on device pages |
+| Basic auth on the console | Done — plan day 13, HTTP Basic Auth in front of every route |
+| Evaluation (detection rate, ad-block ratio, resource usage) | **Next** — plan day 14 |
 | Report + demo rehearsal | Not started — plan day 15 |
 
 ## Two things still outstanding
@@ -84,4 +84,5 @@ Nothing sensitive is in this repository. On the gateway:
 |---|---|
 | CA private key | `/opt/securepi-dpi/ca/mitmproxy-ca.pem`, root-only |
 | DNS admin password | `/root/.securepi-dns-password` |
+| Console login password (user `securepi`) | `/root/.securepi-console-password` |
 | Wi-Fi AP passphrase | `/etc/hostapd/hostapd.conf` (redacted in the committed copy) |

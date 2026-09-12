@@ -22,21 +22,28 @@ Routes:
   /api/incidents     incident queue, filterable
   /api/events        recent event stream
   /api/filtering/*   AdGuard Home blocklists, rules and per-device policy
+  /api/devices/{id}/quarantine   quarantine a device via nftables, or undo it
 """
 
+import base64
+import secrets
 import sqlite3
 import time
 
 from fastapi import FastAPI, HTTPException, Query
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, PlainTextResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel
 from starlette.requests import Request
 
 import adguard
+import quarantine
+import risk
 
 DB_PATH = "/opt/securepi/securepi.db"
+CONSOLE_USERNAME = "securepi"
+CONSOLE_PASSWORD_FILE = "/root/.securepi-console-password"
 
 # Static assets are versioned by service start time. Without this, a browser
 # holding a cached stylesheet shows the old console after a deploy, which is
@@ -47,6 +54,37 @@ app = FastAPI(title="SecurePi Gateway")
 app.mount("/static", StaticFiles(directory="/opt/securepi/static"), name="static")
 templates = Jinja2Templates(directory="/opt/securepi/templates")
 templates.env.globals["asset_v"] = ASSET_V
+
+
+def _console_password():
+    with open(CONSOLE_PASSWORD_FILE) as f:
+        return f.read().strip()
+
+
+# Plain HTTP Basic Auth as ASGI middleware rather than a FastAPI dependency:
+# it runs ahead of routing, so it also covers the /static mount, and it keeps
+# auth as one linear function instead of a dependency wired onto every route
+# (see SECUREPI-15-DAY-PLAN.md 4.5 - no dependency-injection patterns).
+# Fails closed: if the password file is missing, every request is rejected
+# rather than the console silently running open.
+@app.middleware("http")
+async def basic_auth(request: Request, call_next):
+    scheme, _, creds = request.headers.get("authorization", "").partition(" ")
+    if scheme.lower() == "basic":
+        try:
+            username, password = base64.b64decode(creds).decode().split(":", 1)
+        except Exception:
+            username, password = "", ""
+        try:
+            correct_password = _console_password()
+        except FileNotFoundError:
+            correct_password = None
+        if (correct_password is not None
+                and secrets.compare_digest(username, CONSOLE_USERNAME)
+                and secrets.compare_digest(password, correct_password)):
+            return await call_next(request)
+    return PlainTextResponse("Authentication required", status_code=401,
+                              headers={"WWW-Authenticate": 'Basic realm="SecurePi Gateway"'})
 
 # Time ranges offered by the dashboard's selector. Bucket widths are chosen so
 # every range produces a similar number of points (~24-30): enough shape to
@@ -79,6 +117,10 @@ class DeviceUpdate(BaseModel):
 
 class DeviceFilterUpdate(BaseModel):
     enabled: bool
+
+
+class QuarantineUpdate(BaseModel):
+    quarantined: bool
 
 
 class FilteringToggle(BaseModel):
@@ -402,6 +444,7 @@ def api_devices():
         inc = c.execute(
             "SELECT count(*) n, COALESCE(sum(severity='high'),0) high"
             "  FROM incidents WHERE device_id=? AND status='new'", (d["id"],)).fetchone()
+        r = risk.device_risk(c, d["id"], now)
         out.append({
             "id": d["id"], "name": device_label(d),
             "hostname": d["hostname"], "ip": ip["ip"] if ip else None,
@@ -411,6 +454,7 @@ def api_devices():
             "dns": agg["dns"], "blocked": agg["blocked"], "tls": agg["tls"],
             "alerts": agg["alerts"], "events": agg["events"],
             "incidents": inc["n"], "incidents_high": inc["high"],
+            "risk_score": r["score"], "risk_band": r["band"],
             "last_seen": time.strftime("%H:%M:%S", time.localtime(d["last_seen"])),
             "age": _age(now - d["last_seen"]),
             "online": (now - d["last_seen"]) < 600,
@@ -712,6 +756,49 @@ def api_device_filtering_set(device_id: int, body: DeviceFilterUpdate):
     return {"id": device_id, "filtering_enabled": body.enabled}
 
 
+# --------------------------------------------------------------- quarantine --
+#
+# Enforcement lives entirely in the `inet filter quarantine` nftables set;
+# this app never caches whether a device is quarantined, for the same reason
+# filtering doesn't cache AdGuard's state (see above).
+
+@app.get("/api/devices/{device_id}/quarantine")
+def api_device_quarantine_status(device_id: int):
+    c = db()
+    if c.execute("SELECT 1 FROM devices WHERE id=?", (device_id,)).fetchone() is None:
+        raise HTTPException(404, "device not found")
+    ip_row = c.execute(
+        "SELECT ip FROM device_ips WHERE device_id=? ORDER BY last_seen DESC LIMIT 1",
+        (device_id,)).fetchone()
+    if ip_row is None:
+        return {"quarantined": False, "ip": None}
+    try:
+        quarantined = quarantine.is_quarantined(ip_row["ip"])
+    except quarantine.QuarantineError as e:
+        raise HTTPException(502, str(e))
+    return {"quarantined": quarantined, "ip": ip_row["ip"]}
+
+
+@app.post("/api/devices/{device_id}/quarantine")
+def api_device_quarantine_set(device_id: int, body: QuarantineUpdate):
+    c = db()
+    if c.execute("SELECT 1 FROM devices WHERE id=?", (device_id,)).fetchone() is None:
+        raise HTTPException(404, "device not found")
+    ip_row = c.execute(
+        "SELECT ip FROM device_ips WHERE device_id=? ORDER BY last_seen DESC LIMIT 1",
+        (device_id,)).fetchone()
+    if ip_row is None:
+        raise HTTPException(400, "device has no known IP address to enforce against")
+    try:
+        if body.quarantined:
+            quarantine.quarantine(ip_row["ip"])
+        else:
+            quarantine.release(ip_row["ip"])
+    except quarantine.QuarantineError as e:
+        raise HTTPException(502, str(e))
+    return {"id": device_id, "quarantined": body.quarantined, "ip": ip_row["ip"]}
+
+
 # ---------------------------------------------------------------- pages --
 
 @app.get("/", response_class=HTMLResponse)
@@ -790,6 +877,8 @@ def page_device_detail(request: Request, device_id: int):
         " LEFT JOIN devices d ON d.id=e.device_id"
         " WHERE e.device_id=? ORDER BY e.id DESC LIMIT 60", (device_id,))]
 
+    dev_risk = risk.device_risk(c, device_id, now)
+
     return templates.TemplateResponse("device_detail.html", {
         "request": request, "active": "devices", "title": device_label(d),
         "device": {
@@ -803,7 +892,7 @@ def page_device_detail(request: Request, device_id: int):
             "tls": agg["tls"], "events": agg["events"],
         },
         "macs": macs, "ips": ips, "top_sni": top_sni, "top_blocked": top_blocked,
-        "incidents": incidents, "timeline": timeline,
+        "incidents": incidents, "timeline": timeline, "risk": dev_risk,
     })
 
 
@@ -819,7 +908,10 @@ def page_incident_detail(request: Request, incident_id: int):
     if i["device_id"]:
         d = c.execute("SELECT * FROM devices WHERE id=?", (i["device_id"],)).fetchone()
         if d:
-            dev = {"id": d["id"], "name": device_label(d)}
+            ip_row = c.execute(
+                "SELECT ip FROM device_ips WHERE device_id=? ORDER BY last_seen DESC LIMIT 1",
+                (d["id"],)).fetchone()
+            dev = {"id": d["id"], "name": device_label(d), "has_ip": ip_row is not None}
 
     evidence = [_event_row(r) for r in c.execute(
         "SELECT e.*, NULL hostname, NULL friendly_name FROM incident_events ie"

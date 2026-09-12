@@ -6,6 +6,11 @@
     <span class="chip {{ incident.severity }} dot">{{ incident.severity }}</span>
     <span class="status-pill {{ incident.status }}">{{ incident.status.replace('_', ' ') }}</span>
     <div class="spacer"></div>
+    {% if device and device.has_ip %}
+    <div id="deviceQuarantine" data-device-id="{{ device.id }}">
+        <button class="btn" id="deviceQuarantineToggle">Loading…</button>
+    </div>
+    {% endif %}
     <div id="incidentActions" data-incident-id="{{ incident.id }}" style="display:flex; gap:8px">
         {% if incident.status != 'investigating' %}
         <button class="btn" data-set-status="investigating" data-incident-id="{{ incident.id }}">Investigate</button>

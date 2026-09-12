@@ -6,8 +6,8 @@ network of roughly 15 devices. Final-year engineering project.
 The gateway sits between the network and its uplink, providing DNS-based content
 filtering for every device, selective HTTPS inspection for enrolled devices, and
 a security operations centre built on network telemetry — routing, filtering,
-sensing, detection, and a live console are all working; a handful of console-side
-controls (quarantine, risk scoring, auth) are still open.
+sensing, detection, and a live console are all working, feature-complete
+through day 13 of the build plan.
 
 ## Status
 
@@ -21,9 +21,9 @@ controls (quarantine, risk scoring, auth) are still open.
 | Correlation engine — 4 signals, verified against live traffic | Working |
 | SOC console — overview, devices, incidents (live, interactive) | Working |
 | Filtering page — blocklist management, per-device policy via AdGuard API | Working — verified against live AdGuard on the gateway |
-| Quarantine action + undo | nftables `quarantine` set exists; no console control yet |
-| Risk scoring | Not started |
-| Basic auth on the console | Not started |
+| Quarantine action + undo | Working — console control over the nftables `quarantine` set |
+| Risk scoring | Working — weighted, decaying, explainable per-incident breakdown |
+| Basic auth on the console | Working — HTTP Basic Auth in front of every route, including static assets |
 
 ## Documents
 
@@ -53,6 +53,16 @@ Internet -> Home Router -- Wi-Fi --> SecurePi Gateway -- Wi-Fi AP --> test devic
 No keys, certificates or passwords belong in this repository. The certificate authority
 used for HTTPS inspection is generated on the gateway and never leaves it. See
 `.gitignore`.
+
+## Logging into the console
+
+The console requires HTTP Basic Auth (username `securepi`). The password lives
+only on the gateway, at `/root/.securepi-console-password` — root-only, never
+in this repository. Ask whoever last set it, or generate a new one:
+
+```
+ssh maheshwari@192.168.2.5 'echo "NEW_PASSWORD" | sudo tee /root/.securepi-console-password > /dev/null && sudo chmod 600 /root/.securepi-console-password'
+```
 
 ## Browsing the console from the Mac
 

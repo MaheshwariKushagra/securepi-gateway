@@ -772,6 +772,47 @@ function initDeviceFiltering() {
     load();
 }
 
+function initDeviceQuarantine() {
+    const wrap = $("#deviceQuarantine");
+    if (!wrap) return;
+    const deviceId = wrap.dataset.deviceId;
+    const btn = $("#deviceQuarantineToggle");
+
+    async function load() {
+        try {
+            const res = await fetch(`/api/devices/${deviceId}/quarantine`);
+            if (!res.ok) throw new Error("request failed");
+            const data = await res.json();
+            btn.textContent = data.quarantined ? "Quarantined — click to release" : "Quarantine this device";
+            btn.classList.toggle("danger", data.quarantined);
+            btn.dataset.quarantined = data.quarantined ? "1" : "0";
+        } catch (err) {
+            btn.textContent = "Unavailable";
+        }
+    }
+
+    btn.addEventListener("click", async () => {
+        const quarantined = btn.dataset.quarantined !== "1";
+        try {
+            const res = await fetch(`/api/devices/${deviceId}/quarantine`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ quarantined }),
+            });
+            if (!res.ok) throw new Error("request failed");
+            toast(quarantined ? "Device quarantined" : "Quarantine released",
+                  quarantined ? "All network traffic from this device is now blocked at the gateway."
+                              : "Network access has been restored.",
+                  quarantined ? "high" : "ok");
+            load();
+        } catch (err) {
+            toast("Update failed", "Could not reach the firewall.", "high");
+        }
+    });
+
+    load();
+}
+
 /* ---------------------------------------------------------------- filtering */
 
 function initFiltering() {
@@ -1053,6 +1094,7 @@ document.addEventListener("DOMContentLoaded", () => {
     initDeviceRename();
     initDeviceActivity();
     initDeviceFiltering();
+    initDeviceQuarantine();
     initFiltering();
 
     // Global row-action delegate: works across incidents list + detail page.

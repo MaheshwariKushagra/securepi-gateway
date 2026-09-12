@@ -255,6 +255,7 @@ main { padding: 22px 24px 56px; max-width: 1560px; margin: 0 auto; width: 100%; 
 }
 .btn:hover { background: var(--surface-3); color: var(--text); border-color: var(--border-strong); }
 .btn.on { background: var(--accent-dim); color: var(--accent); border-color: rgba(79,156,249,.4); }
+.btn.danger { background: var(--high-bg); color: var(--high); border-color: rgba(242,84,91,.4); }
 
 .input {
     background: var(--surface-2); border: 1px solid var(--border);

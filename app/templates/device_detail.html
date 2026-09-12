@@ -11,6 +11,9 @@
         </span>
     </h1>
     <span class="chip {{ 'ok' if device.online else 'neutral' }} dot">{{ 'online' if device.online else 'last seen ' + device.age + ' ago' }}</span>
+    {% if risk.score > 0 %}
+    <span class="chip {{ risk.band }}" title="Risk score: {{ risk.score }} / 100">risk: {{ risk.score }}</span>
+    {% endif %}
 </div>
 
 <div class="kpis">
@@ -79,23 +82,52 @@
                 <div class="subtle" style="flex:1">DNS filtering for this device</div>
                 <button class="btn" id="deviceFilterToggle">Loading…</button>
             </div>
+            <div style="margin-top:10px; display:flex; align-items:center; gap:10px" id="deviceQuarantine" data-device-id="{{ device.id }}">
+                <div class="subtle" style="flex:1">Network access (quarantine)</div>
+                <button class="btn" id="deviceQuarantineToggle">Loading…</button>
+            </div>
         </div>
     </div>
 
-    <div class="card">
-        <div class="card-head"><h2>Incidents</h2></div>
-        <div class="card-body tight">
-            {% if incidents %}
-            <table><tbody>
-                {% for i in incidents %}
-                <tr class="clickable" onclick="location.href='/incidents/{{ i.id }}'">
-                    <td style="width:1%"><span class="chip {{ i.severity }} dot">{{ i.severity }}</span></td>
-                    <td>{{ i.title }}<div class="dim" style="font-size:11px">{{ i.evidence_count }} events</div></td>
-                    <td class="num dim">{{ i.age }} ago</td>
-                </tr>
-                {% endfor %}
-            </tbody></table>
-            {% else %}<div class="empty"><span class="empty-icon">✓</span>No incidents for this device</div>{% endif %}
+    <div style="display:flex; flex-direction:column; gap:14px">
+        <div class="card">
+            <div class="card-head"><h2>Incidents</h2></div>
+            <div class="card-body tight">
+                {% if incidents %}
+                <table><tbody>
+                    {% for i in incidents %}
+                    <tr class="clickable" onclick="location.href='/incidents/{{ i.id }}'">
+                        <td style="width:1%"><span class="chip {{ i.severity }} dot">{{ i.severity }}</span></td>
+                        <td>{{ i.title }}<div class="dim" style="font-size:11px">{{ i.evidence_count }} events</div></td>
+                        <td class="num dim">{{ i.age }} ago</td>
+                    </tr>
+                    {% endfor %}
+                </tbody></table>
+                {% else %}<div class="empty"><span class="empty-icon">✓</span>No incidents for this device</div>{% endif %}
+            </div>
+        </div>
+
+        <div class="card">
+            <div class="card-head"><h2>Risk score</h2><span class="spacer"></span>
+                <span class="chip {{ risk.band }}">{{ risk.score }} / 100</span></div>
+            <div class="card-body tight">
+                {% if risk.breakdown %}
+                <table><tbody>
+                    {% for b in risk.breakdown %}
+                    <tr class="clickable" onclick="location.href='/incidents/{{ b.incident_id }}'">
+                        <td style="width:1%"><span class="chip {{ b.severity }} dot">{{ b.severity }}</span></td>
+                        <td class="truncate">{{ b.title }}</td>
+                        <td class="num dim" title="base weight {{ b.weight }} x decay {{ b.decay }}">+{{ b.contribution }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody></table>
+                <div class="dim" style="font-size:11px; margin-top:8px; line-height:1.5">
+                    Each open incident contributes its severity weight, decayed on a
+                    24-hour half-life since it was last active. Resolved and false-positive
+                    incidents contribute nothing.
+                </div>
+                {% else %}<div class="empty"><span class="empty-icon">✓</span>No open incidents contributing to risk</div>{% endif %}
+            </div>
         </div>
     </div>
 </div>

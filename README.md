@@ -46,3 +46,16 @@ Internet -> Home Router -- Wi-Fi --> SecurePi Gateway -- Wi-Fi AP --> test devic
 No keys, certificates or passwords belong in this repository. The certificate authority
 used for HTTPS inspection is generated on the gateway and never leaves it. See
 `.gitignore`.
+
+## Browsing the console from the Mac
+
+The console is only reachable from the project LAN by default. To view it
+from the Mac without joining `SecurePi-Test`:
+
+```
+./mac-tunnel.sh start      # then open http://localhost:8000
+./mac-tunnel.sh stop
+```
+
+Requires the management link (Internet Sharing over the Cat7/USB-C adapter)
+to be up.

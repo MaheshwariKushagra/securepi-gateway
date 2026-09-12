@@ -1,0 +1,60 @@
+#!/bin/bash
+# SecurePi Gateway - browse the console from the Mac, on any network.
+#
+# The console (http://10.10.0.1:8000) is bound to the gateway's project-LAN
+# address, only reachable from a device on SecurePi-Test. This tunnels it
+# through the existing management link (the Cat7 cable + USB-C adapter,
+# 192.168.2.0/24) instead, so the Mac can stay on its home Wi-Fi and still
+# reach the console at a plain localhost address.
+#
+# Usage:
+#   ./mac-tunnel.sh start     start the tunnel in the background
+#   ./mac-tunnel.sh stop      stop it
+#   ./mac-tunnel.sh status    check whether it's running
+#
+# Once started, open http://localhost:8000 in any browser on the Mac.
+
+PIDFILE="/tmp/securepi-tunnel.pid"
+GATEWAY="maheshwari@192.168.2.5"
+
+case "${1:-start}" in
+  start)
+    if [ -f "$PIDFILE" ] && kill -0 "$(cat "$PIDFILE")" 2>/dev/null; then
+        echo "already running (pid $(cat "$PIDFILE"))"
+        exit 0
+    fi
+    ssh -f -N -o ExitOnForwardFailure=yes \
+        -L 8000:10.10.0.1:8000 \
+        "$GATEWAY"
+    # -f backgrounds the ssh process itself after connecting, so find its pid
+    # by matching the exact forward spec rather than assuming $! (which would
+    # be the shell's own subshell pid, not ssh's, once -f has forked).
+    pgrep -f "8000:10.10.0.1:8000" | head -1 > "$PIDFILE"
+    sleep 1
+    if kill -0 "$(cat "$PIDFILE")" 2>/dev/null; then
+        echo "tunnel up - open http://localhost:8000"
+    else
+        echo "failed to start - is the management link (Internet Sharing / Cat7) up?"
+        rm -f "$PIDFILE"
+        exit 1
+    fi
+    ;;
+  stop)
+    if [ -f "$PIDFILE" ]; then
+        kill "$(cat "$PIDFILE")" 2>/dev/null && echo "tunnel stopped"
+        rm -f "$PIDFILE"
+    else
+        echo "not running"
+    fi
+    ;;
+  status)
+    if [ -f "$PIDFILE" ] && kill -0 "$(cat "$PIDFILE")" 2>/dev/null; then
+        echo "running (pid $(cat "$PIDFILE")) - http://localhost:8000"
+    else
+        echo "not running"
+    fi
+    ;;
+  *)
+    echo "usage: $0 [start|stop|status]"
+    ;;
+esac

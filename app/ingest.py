@@ -32,6 +32,7 @@ import registry
 DB_PATH = "/opt/securepi/securepi.db"
 SCHEMA_PATH = "/opt/securepi/schema.sql"
 EVE_PATH = "/var/log/suricata/eve.json"
+AGH_QUERYLOG_PATH = "/opt/AdGuardHome/data/querylog.json"
 
 # How long to wait between passes over the log files. Two seconds keeps the
 # console feeling live without spinning the CPU on an idle network.
@@ -230,6 +231,93 @@ def read_eve(conn):
     return read, saved, errors
 
 
+
+def to_epoch_agh(timestamp):
+    """AdGuard timestamps look like '2026-09-12T00:37:50.376866267Z' - RFC3339
+    with nanosecond precision, which Python's fromisoformat cannot parse
+    directly (it wants microseconds, and a real +00:00 offset, not 'Z')."""
+    from datetime import datetime
+    try:
+        # Truncate sub-second digits to 6 (microseconds) and normalise 'Z'.
+        head, _, frac_and_zone = timestamp.partition(".")
+        frac = frac_and_zone.rstrip("Z")[:6].ljust(6, "0")
+        return datetime.fromisoformat(head + "." + frac + "+00:00").timestamp()
+    except Exception:
+        return time.time()
+
+
+def flatten_agh(entry):
+    """
+    Turn one AdGuard Home querylog line into a flat event row.
+
+    This is a genuinely different signal from Suricata's own 'dns' event type:
+    Suricata sees that a query was made; AdGuard reports whether its own
+    filtering decision blocked it. Keeping event_type='dns_query' (source=
+    'adguard') separate from Suricata's 'dns' (source='suricata') avoids
+    conflating "a query happened" with "a query was blocked".
+    """
+    result = entry.get("Result") or {}
+    row = {
+        "ts": to_epoch_agh(entry.get("T", "")),
+        "ts_iso": entry.get("T"),
+        "source": "adguard",
+        "event_type": "dns_query",
+        "src_ip": entry.get("IP"),
+        "proto": "udp",
+        "dns_type": "query",
+        "dns_rrname": entry.get("QH"),
+        "dns_rrtype": entry.get("QT"),
+        "blocked": 1 if result.get("IsFiltered") else 0,
+    }
+    rules = result.get("Rules") or []
+    if rules:
+        row["block_reason"] = rules[0].get("Text")
+    return row
+
+
+def read_agh_querylog(conn):
+    """Read whatever is new in AdGuard's querylog.json. Same watermark and
+    rotation-by-inode approach as read_eve - see its docstring."""
+    if not os.path.exists(AGH_QUERYLOG_PATH):
+        return 0, 0, 0
+
+    stat = os.stat(AGH_QUERYLOG_PATH)
+    saved_inode, offset = get_state(conn, "adguard", AGH_QUERYLOG_PATH)
+
+    if saved_inode is not None and saved_inode != stat.st_ino:
+        print("querylog.json rotated - restarting from the beginning", flush=True)
+        offset = 0
+    elif offset > stat.st_size:
+        offset = 0
+
+    read = errors = 0
+    rows = []
+    with open(AGH_QUERYLOG_PATH, "r") as fh:
+        fh.seek(offset)
+        for line in fh:
+            if not line.endswith("\n"):
+                break
+            read += 1
+            try:
+                entry = json.loads(line)
+            except Exception:
+                errors += 1
+                continue
+            rows.append(flatten_agh(entry))
+        offset = fh.tell()
+
+    saved = insert_events(conn, rows)
+    save_state(conn, "adguard", AGH_QUERYLOG_PATH, stat.st_ino, offset)
+    conn.execute(
+        "UPDATE ingest_stats SET events_read = events_read + ?,"
+        " events_saved = events_saved + ?, parse_errors = parse_errors + ?,"
+        " last_run = ? WHERE id = 1",
+        (read, saved, errors, time.time()),
+    )
+    conn.commit()
+    return read, saved, errors
+
+
 def main():
     conn = open_db()
     print("ingest started, polling every %ds" % POLL_SECONDS, flush=True)
@@ -246,6 +334,9 @@ def main():
             cycle += 1
 
             read, saved, errors = read_eve(conn)
+            a_read, a_saved, a_errors = read_agh_querylog(conn)
+            saved += a_saved
+            errors += a_errors
             total += saved
 
             # Attach events to devices. Done after insertion rather than

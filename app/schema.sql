@@ -154,4 +154,48 @@ CREATE TABLE IF NOT EXISTS ingest_stats (
     last_run     REAL
 );
 
+
+-- --------------------------------------------------------------- incidents --
+-- The correlation engine's output. A signal firing does not itself create an
+-- incident - incidents group one or more related signal firings by device
+-- and time, so a burst of the same signal produces one incident, not one per
+-- firing. This is the alert-to-incident reduction the correlation layer
+-- exists to provide.
+CREATE TABLE IF NOT EXISTS incidents (
+    id             INTEGER PRIMARY KEY,
+    device_id      INTEGER REFERENCES devices(id),
+    signal_type    TEXT NOT NULL,       -- 'port_scan', 'brute_force', 'malicious_domain', 'new_device'
+    severity       TEXT NOT NULL,       -- 'low', 'medium', 'high'
+    title          TEXT NOT NULL,       -- plain-language summary for the console
+    description    TEXT,                -- one paragraph of detail
+    status         TEXT NOT NULL DEFAULT 'new',  -- new, investigating, resolved, false_positive
+    first_seen     REAL NOT NULL,       -- start of the activity that caused this
+    last_seen       REAL NOT NULL,       -- most recent contributing event
+    created_at     REAL NOT NULL,       -- when the engine raised it
+    updated_at     REAL NOT NULL,
+    evidence_count INTEGER NOT NULL DEFAULT 0
+);
+
+CREATE INDEX IF NOT EXISTS idx_incidents_device   ON incidents(device_id);
+CREATE INDEX IF NOT EXISTS idx_incidents_status    ON incidents(status);
+CREATE INDEX IF NOT EXISTS idx_incidents_created   ON incidents(created_at);
+CREATE INDEX IF NOT EXISTS idx_incidents_signal_dev_lastseen ON incidents(signal_type, device_id, last_seen);
+
+-- The evidence chain: which specific events justify each incident. This is
+-- what lets the console answer "why was this raised?" rather than presenting
+-- an unexplained verdict.
+CREATE TABLE IF NOT EXISTS incident_events (
+    incident_id INTEGER NOT NULL REFERENCES incidents(id),
+    event_id    INTEGER NOT NULL REFERENCES events(id),
+    PRIMARY KEY (incident_id, event_id)
+);
+
+-- Bookkeeping for the engine itself: the timestamp each signal last examined,
+-- so re-running the engine does not re-scan the entire event history every
+-- cycle, and does not re-raise the same incident twice for the same window.
+CREATE TABLE IF NOT EXISTS signal_state (
+    signal_type TEXT PRIMARY KEY,
+    last_run_ts REAL NOT NULL
+);
+
 INSERT OR IGNORE INTO ingest_stats (id) VALUES (1);

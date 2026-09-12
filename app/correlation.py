@@ -97,19 +97,18 @@ def raise_incident(conn, device_id, signal_type, severity, title, description,
     if existing:
         incident_id = existing["id"]
         conn.execute(
-            """UPDATE incidents SET last_seen = ?, updated_at = ?,
-                   evidence_count = evidence_count + ?, description = ?
+            """UPDATE incidents SET last_seen = ?, updated_at = ?, description = ?
                WHERE id = ?""",
-            (last_seen, now, len(event_ids), description, incident_id),
+            (last_seen, now, description, incident_id),
         )
     else:
         cur = conn.execute(
             """INSERT INTO incidents
                    (device_id, signal_type, severity, title, description, status,
                     first_seen, last_seen, created_at, updated_at, evidence_count)
-               VALUES (?, ?, ?, ?, ?, 'new', ?, ?, ?, ?, ?)""",
+               VALUES (?, ?, ?, ?, ?, 'new', ?, ?, ?, ?, 0)""",
             (device_id, signal_type, severity, title, description,
-             first_seen, last_seen, now, now, len(event_ids)),
+             first_seen, last_seen, now, now),
         )
         incident_id = cur.lastrowid
 
@@ -117,6 +116,20 @@ def raise_incident(conn, device_id, signal_type, severity, title, description,
         "INSERT OR IGNORE INTO incident_events (incident_id, event_id) VALUES (?, ?)",
         [(incident_id, eid) for eid in event_ids],
     )
+    # evidence_count is the ACTUAL number of distinct linked events, read back
+    # after the insert - not a running sum. A signal that keeps re-detecting
+    # the same underlying data every cycle (entirely normal: a pattern stays
+    # inside its trailing window for as long as the window is wide) must not
+    # make the count climb just because it was checked again. An earlier
+    # version incremented by len(event_ids) on every merge, so a signal
+    # re-confirming the same 8 events across 7 engine cycles reported 56
+    # "pieces of evidence" for what was actually 8 - a real bug, since this
+    # figure is meant to tell a security operator how much data supports the
+    # incident, not how many times the engine happened to look.
+    n = conn.execute(
+        "SELECT count(*) FROM incident_events WHERE incident_id = ?", (incident_id,)
+    ).fetchone()[0]
+    conn.execute("UPDATE incidents SET evidence_count = ? WHERE id = ?", (n, incident_id))
     return incident_id
 
 

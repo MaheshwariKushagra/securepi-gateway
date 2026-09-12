@@ -1,34 +1,76 @@
 #!/usr/bin/env python3
 """
-SecurePi Gateway - the web console.
+SecurePi Gateway - web console.
 
-Server-rendered (Jinja2) rather than a JS single-page app, per the project's
-timeline constraints: this gets a live, navigable console in a fraction of
-the time a React build would take, at the cost of a full-page refresh rather
-than push updates. The auto-refresh meta tag in base.html (15s) covers the
-"feels live" requirement without needing a WebSocket layer.
+Architecture: FastAPI serves a thin HTML shell plus JSON APIs; the browser
+polls those APIs and updates the DOM in place. This replaced an earlier
+meta-refresh design, which reloaded the whole page every 15 seconds - it
+worked, but a console that visibly blinks and loses your scroll position
+every few seconds is not something anyone would want to watch during an
+incident.
 
-Three views, matching what the plan calls for:
-  /            overview  - recent activity across the whole network
-  /devices     device inventory and per-device drill-down
-  /incidents   the correlation engine's output: queue, severity, evidence
+Routes:
+  /                  dashboard shell
+  /devices           device inventory
+  /devices/{id}      per-device detail
+  /incidents         incident queue
+  /incidents/{id}    incident detail with evidence chain
+
+  /api/overview      everything the dashboard needs, one round trip
+  /api/devices       device inventory
+  /api/incidents     incident queue, filterable
+  /api/events        recent event stream
 """
 
-import json
 import sqlite3
 import time
 
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException, Query
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
+from pydantic import BaseModel
 from starlette.requests import Request
 
 DB_PATH = "/opt/securepi/securepi.db"
 
+# Static assets are versioned by service start time. Without this, a browser
+# holding a cached stylesheet shows the old console after a deploy, which is
+# indistinguishable from "the change did not work".
+ASSET_V = str(int(time.time()))
+
 app = FastAPI(title="SecurePi Gateway")
 app.mount("/static", StaticFiles(directory="/opt/securepi/static"), name="static")
 templates = Jinja2Templates(directory="/opt/securepi/templates")
+templates.env.globals["asset_v"] = ASSET_V
+
+# Time ranges offered by the dashboard's selector. Bucket widths are chosen so
+# every range produces a similar number of points (~24-30): enough shape to
+# read a trend, few enough that the chart stays legible.
+RANGES = {
+    "1h":  {"seconds": 3600,    "bucket": 300,   "label": "1 hour"},
+    "6h":  {"seconds": 21600,   "bucket": 900,   "label": "6 hours"},
+    "24h": {"seconds": 86400,   "bucket": 3600,  "label": "24 hours"},
+    "7d":  {"seconds": 604800,  "bucket": 21600, "label": "7 days"},
+}
+
+# The correlation engine's signals, and how stale a signal's last run has to
+# be before the console calls it unhealthy rather than just "hasn't found
+# anything lately". Engine cycles every 15s (see engine.py); 4 missed cycles
+# is a real problem, not noise.
+SIGNALS = ["port_scan", "brute_force", "malicious_domain", "new_device"]
+SIGNAL_STALE_AFTER = 60
+INGEST_STALE_AFTER = 30  # ingest.py polls every 2s
+
+INCIDENT_STATUSES = ("new", "investigating", "resolved", "false_positive")
+
+
+class IncidentUpdate(BaseModel):
+    status: str
+
+
+class DeviceUpdate(BaseModel):
+    friendly_name: str
 
 
 def db():
@@ -37,279 +79,574 @@ def db():
     return conn
 
 
-def fmt_time(ts):
-    if ts is None:
-        return "-"
-    return time.strftime("%H:%M:%S", time.localtime(ts))
-
-
-def device_name(row):
-    """A device's display name: the friendly name if one has been set,
-    otherwise the DHCP hostname, otherwise a plain fallback."""
+def device_label(row):
+    """Display name: explicit friendly name, else DHCP hostname, else a
+    fallback. Never show a bare row id to the operator."""
     return row["friendly_name"] or row["hostname"] or ("device %d" % row["id"])
 
 
+def humanize_bytes(n):
+    n = n or 0
+    for unit in ("B", "KB", "MB", "GB"):
+        if n < 1024:
+            return "%.0f %s" % (n, unit) if unit == "B" else "%.1f %s" % (n, unit)
+        n /= 1024.0
+    return "%.1f TB" % n
 
-def time_buckets(c, hours=6, bucket_minutes=15):
+
+def bucket_series(c, start, end, bucket_s, device_id=None):
     """
-    Build the data for the throughput and blocked-query charts: fixed-width
-    time buckets covering the trailing window, each with total bytes
-    transferred and blocked-query count in that slice.
+    Time-bucketed series for the dashboard charts.
 
-    Buckets are pre-seeded at zero for the WHOLE window before events are
-    added in, so a quiet period shows as a real zero on the chart rather than
-    silently vanishing (a gap in the x-axis reads as missing data, not "no
-    activity", which is the wrong story to tell about a quiet network).
+    Buckets are pre-seeded across the entire window before events are added,
+    so quiet periods render as real zeros. A gap in a time series reads as
+    "data missing"; on a security dashboard that is a materially different
+    claim from "nothing happened", and the wrong one to make by accident.
+
+    Pass device_id to scope every series to one device, for its detail page.
     """
-    now = time.time()
-    bucket_s = bucket_minutes * 60
-    n_buckets = int((hours * 3600) / bucket_s)
-    start = now - n_buckets * bucket_s
+    n = max(1, int((end - start) / bucket_s))
+    labels, down, up, blocked, allowed, events = [], [0]*n, [0]*n, [0]*n, [0]*n, [0]*n
 
-    labels = []
-    bytes_per_bucket = [0] * n_buckets
-    blocked_per_bucket = [0] * n_buckets
-    for i in range(n_buckets):
-        bucket_t = start + i * bucket_s
-        labels.append(time.strftime("%H:%M", time.localtime(bucket_t)))
+    fmt = "%H:%M" if (end - start) <= 86400 else "%d %b %H:%M"
+    for i in range(n):
+        labels.append(time.strftime(fmt, time.localtime(start + i * bucket_s)))
+
+    dev_clause = " AND device_id=?" if device_id is not None else ""
+    dev_arg = (device_id,) if device_id is not None else ()
 
     for r in c.execute(
-        """SELECT ts, bytes_toclient, bytes_toserver FROM events
-            WHERE event_type = 'flow' AND ts > ?""",
-        (start,),
-    ):
-        idx = int((r["ts"] - start) / bucket_s)
-        if 0 <= idx < n_buckets:
-            bytes_per_bucket[idx] += (r["bytes_toclient"] or 0) + (r["bytes_toserver"] or 0)
+        "SELECT ts, bytes_toclient, bytes_toserver FROM events"
+        " WHERE event_type='flow' AND ts >= ? AND ts < ?" + dev_clause,
+        (start, end) + dev_arg):
+        i = int((r["ts"] - start) / bucket_s)
+        if 0 <= i < n:
+            down[i] += r["bytes_toclient"] or 0
+            up[i] += r["bytes_toserver"] or 0
 
     for r in c.execute(
-        """SELECT ts FROM events
-            WHERE event_type = 'dns_query' AND blocked = 1 AND ts > ?""",
-        (start,),
-    ):
-        idx = int((r["ts"] - start) / bucket_s)
-        if 0 <= idx < n_buckets:
-            blocked_per_bucket[idx] += 1
+        "SELECT ts, blocked FROM events"
+        " WHERE event_type='dns_query' AND ts >= ? AND ts < ?" + dev_clause,
+        (start, end) + dev_arg):
+        i = int((r["ts"] - start) / bucket_s)
+        if 0 <= i < n:
+            if r["blocked"]:
+                blocked[i] += 1
+            else:
+                allowed[i] += 1
 
-    # Bytes/sec, not raw bytes, so the chart reads sensibly regardless of the
-    # bucket width chosen above.
-    throughput_kbps = [round(b / bucket_s / 1024, 2) for b in bytes_per_bucket]
+    for r in c.execute(
+        "SELECT ts FROM events WHERE ts >= ? AND ts < ?" + dev_clause,
+        (start, end) + dev_arg):
+        i = int((r["ts"] - start) / bucket_s)
+        if 0 <= i < n:
+            events[i] += 1
 
     return {
         "labels": labels,
-        "throughput_kbps": throughput_kbps,
-        "blocked_per_bucket": blocked_per_bucket,
+        # Kbps rather than raw bytes, so the y-axis means the same thing
+        # whichever bucket width the selected range happens to use.
+        "down_kbps": [round(b / bucket_s / 1024, 2) for b in down],
+        "up_kbps": [round(b / bucket_s / 1024, 2) for b in up],
+        "blocked": blocked,
+        "allowed": allowed,
+        "events": events,
     }
 
 
-@app.get("/", response_class=HTMLResponse)
-def overview(request: Request):
+@app.get("/api/overview")
+def api_overview(range: str = Query("6h")):
+    spec = RANGES.get(range, RANGES["6h"])
     c = db()
-    device_count = c.execute("SELECT count(*) FROM devices").fetchone()[0]
-    event_count = c.execute("SELECT count(*) FROM events").fetchone()[0]
-    open_incidents = c.execute(
-        "SELECT count(*) FROM incidents WHERE status = 'new'"
-    ).fetchone()[0]
-    since = time.time() - 86400
-    blocked_count = c.execute(
-        "SELECT count(*) FROM events WHERE blocked = 1 AND ts > ?", (since,)
-    ).fetchone()[0]
+    now = time.time()
+    start = now - spec["seconds"]
 
-    recent_dns = []
+    series = bucket_series(c, start, now, spec["bucket"])
+
+    # --- KPI tiles -------------------------------------------------------
+    devices_total = c.execute("SELECT count(*) FROM devices").fetchone()[0]
+    devices_active = c.execute(
+        "SELECT count(*) FROM devices WHERE last_seen > ?", (now - 600,)).fetchone()[0]
+    events_total = c.execute("SELECT count(*) FROM events").fetchone()[0]
+    events_window = c.execute(
+        "SELECT count(*) FROM events WHERE ts >= ?", (start,)).fetchone()[0]
+    events_per_min = round(events_window / max(1, spec["seconds"] / 60.0), 1)
+
+    incidents_open = c.execute(
+        "SELECT count(*) FROM incidents WHERE status='new'").fetchone()[0]
+    incidents_high = c.execute(
+        "SELECT count(*) FROM incidents WHERE status='new' AND severity='high'").fetchone()[0]
+
+    dns_total = c.execute(
+        "SELECT count(*) FROM events WHERE event_type='dns_query' AND ts >= ?",
+        (start,)).fetchone()[0]
+    dns_blocked = c.execute(
+        "SELECT count(*) FROM events WHERE event_type='dns_query' AND blocked=1 AND ts >= ?",
+        (start,)).fetchone()[0]
+    block_rate = round(100.0 * dns_blocked / dns_total, 1) if dns_total else 0.0
+
+    bytes_window = c.execute(
+        "SELECT COALESCE(sum(bytes_toclient),0)+COALESCE(sum(bytes_toserver),0)"
+        " FROM events WHERE event_type='flow' AND ts >= ?", (start,)).fetchone()[0]
+
+    # --- breakdowns ------------------------------------------------------
+    severity = {"high": 0, "medium": 0, "low": 0}
     for r in c.execute(
-        """SELECT e.ts, e.dns_rrname, e.blocked, e.src_ip, d.hostname, d.friendly_name
-             FROM events e LEFT JOIN devices d ON d.id = e.device_id
-            WHERE e.event_type = 'dns_query'
-            ORDER BY e.id DESC LIMIT 15"""
-    ):
-        recent_dns.append({
-            "time": fmt_time(r["ts"]), "dns_rrname": r["dns_rrname"],
-            "blocked": r["blocked"], "src_ip": r["src_ip"],
-            "device": r["friendly_name"] or r["hostname"],
+        "SELECT severity, count(*) n FROM incidents WHERE status='new' GROUP BY severity"):
+        if r["severity"] in severity:
+            severity[r["severity"]] = r["n"]
+
+    signal_mix = [
+        {"signal": r["signal_type"], "count": r["n"]}
+        for r in c.execute(
+            "SELECT signal_type, count(*) n FROM incidents GROUP BY signal_type ORDER BY n DESC")
+    ]
+
+    top_blocked = [
+        {"domain": r["dns_rrname"], "count": r["n"]}
+        for r in c.execute(
+            "SELECT dns_rrname, count(*) n FROM events"
+            " WHERE event_type='dns_query' AND blocked=1 AND ts >= ? AND dns_rrname IS NOT NULL"
+            " GROUP BY dns_rrname ORDER BY n DESC LIMIT 8", (start,))
+    ]
+
+    top_destinations = [
+        {"sni": r["tls_sni"], "count": r["n"]}
+        for r in c.execute(
+            "SELECT tls_sni, count(*) n FROM events"
+            " WHERE tls_sni IS NOT NULL AND ts >= ?"
+            " GROUP BY tls_sni ORDER BY n DESC LIMIT 8", (start,))
+    ]
+
+    top_talkers = []
+    for r in c.execute(
+        "SELECT d.id, d.hostname, d.friendly_name,"
+        "       COALESCE(sum(e.bytes_toclient),0)+COALESCE(sum(e.bytes_toserver),0) total"
+        "  FROM devices d JOIN events e ON e.device_id = d.id"
+        " WHERE e.event_type='flow' AND e.ts >= ?"
+        " GROUP BY d.id ORDER BY total DESC LIMIT 6", (start,)):
+        top_talkers.append({
+            "id": r["id"], "name": device_label(r),
+            "bytes": r["total"], "bytes_h": humanize_bytes(r["total"]),
         })
 
-    recent_flows = []
+    protocols = [
+        {"name": r["proto"] or "unknown", "count": r["n"]}
+        for r in c.execute(
+            "SELECT proto, count(*) n FROM events WHERE ts >= ? AND proto IS NOT NULL"
+            " GROUP BY proto ORDER BY n DESC LIMIT 6", (start,))
+    ]
+
+    event_types = [
+        {"name": r["event_type"], "count": r["n"]}
+        for r in c.execute(
+            "SELECT event_type, count(*) n FROM events WHERE ts >= ?"
+            " GROUP BY event_type ORDER BY n DESC LIMIT 8", (start,))
+    ]
+
+    # --- live feeds ------------------------------------------------------
+    recent_events = []
     for r in c.execute(
-        """SELECT e.ts, e.dest_ip, e.dest_port, e.proto, e.src_ip, d.hostname, d.friendly_name
-             FROM events e LEFT JOIN devices d ON d.id = e.device_id
-            WHERE e.event_type = 'flow'
-            ORDER BY e.id DESC LIMIT 15"""
-    ):
-        recent_flows.append({
-            "time": fmt_time(r["ts"]), "dest_ip": r["dest_ip"], "dest_port": r["dest_port"],
-            "proto": r["proto"], "src_ip": r["src_ip"],
-            "device": r["friendly_name"] or r["hostname"],
+        "SELECT e.*, d.hostname, d.friendly_name FROM events e"
+        " LEFT JOIN devices d ON d.id = e.device_id"
+        " ORDER BY e.id DESC LIMIT 25"):
+        recent_events.append(_event_row(r))
+
+    active_incidents = []
+    for r in c.execute(
+        "SELECT i.*, d.hostname, d.friendly_name FROM incidents i"
+        " LEFT JOIN devices d ON d.id = i.device_id"
+        " WHERE i.status='new'"
+        " ORDER BY CASE i.severity WHEN 'high' THEN 0 WHEN 'medium' THEN 1 ELSE 2 END,"
+        "          i.last_seen DESC LIMIT 8"):
+        active_incidents.append({
+            "id": r["id"], "title": r["title"], "severity": r["severity"],
+            "signal_type": r["signal_type"], "evidence_count": r["evidence_count"],
+            "device": device_label(r) if r["device_id"] else None,
+            "device_id": r["device_id"],
+            "last_seen": time.strftime("%H:%M:%S", time.localtime(r["last_seen"])),
+            "age": _age(now - r["last_seen"]),
         })
 
-    severity_counts = dict(c.execute(
-        "SELECT severity, count(*) FROM incidents GROUP BY severity"
-    ).fetchall())
-    chart_data = time_buckets(c, hours=6, bucket_minutes=15)
-
-    return templates.TemplateResponse("overview.html", {"request": request,
-        "active": "overview", "title": "Overview",
-        "device_count": device_count, "event_count": event_count,
-        "open_incidents": open_incidents, "blocked_count": blocked_count,
-        "recent_dns": recent_dns, "recent_flows": recent_flows,
-        "severity_counts": {
-            "high": severity_counts.get("high", 0),
-            "medium": severity_counts.get("medium", 0),
-            "low": severity_counts.get("low", 0),
+    return {
+        "generated_at": time.strftime("%H:%M:%S", time.localtime(now)),
+        "range": range,
+        "range_label": spec["label"],
+        "kpis": {
+            "devices_total": devices_total,
+            "devices_active": devices_active,
+            "events_total": events_total,
+            "events_per_min": events_per_min,
+            "incidents_open": incidents_open,
+            "incidents_high": incidents_high,
+            "blocked": dns_blocked,
+            "block_rate": block_rate,
+            "traffic": humanize_bytes(bytes_window),
+            "dns_total": dns_total,
         },
-        "chart_data": chart_data,
-    })
+        "series": series,
+        "severity": severity,
+        "signal_mix": signal_mix,
+        "top_blocked": top_blocked,
+        "top_destinations": top_destinations,
+        "top_talkers": top_talkers,
+        "protocols": protocols,
+        "event_types": event_types,
+        "recent_events": recent_events,
+        "active_incidents": active_incidents,
+    }
+
+
+def _age(seconds):
+    """Compact relative age: '4s', '12m', '3h', '2d'."""
+    seconds = max(0, int(seconds))
+    if seconds < 60:
+        return "%ds" % seconds
+    if seconds < 3600:
+        return "%dm" % (seconds // 60)
+    if seconds < 86400:
+        return "%dh" % (seconds // 3600)
+    return "%dd" % (seconds // 86400)
+
+
+def _event_row(r):
+    """One event flattened for display, with a type-appropriate summary."""
+    etype = r["event_type"]
+    if etype == "flow":
+        detail = "%s:%s" % (r["dest_ip"], r["dest_port"])
+        extra = "%s down / %s up" % (
+            humanize_bytes(r["bytes_toclient"]), humanize_bytes(r["bytes_toserver"]))
+    elif etype == "dns_query":
+        detail = r["dns_rrname"] or "-"
+        extra = "blocked" if r["blocked"] else "allowed"
+    elif etype == "dns":
+        detail = r["dns_rrname"] or "-"
+        extra = r["dns_rrtype"] or ""
+    elif etype == "tls":
+        detail = r["tls_sni"] or r["dest_ip"] or "-"
+        extra = r["tls_version"] or ""
+    elif etype == "alert":
+        detail = r["alert_signature"] or "-"
+        extra = r["alert_category"] or ""
+    else:
+        detail = "%s -> %s" % (r["src_ip"], r["dest_ip"])
+        extra = r["proto"] or ""
+    return {
+        "time": time.strftime("%H:%M:%S", time.localtime(r["ts"])),
+        "type": etype,
+        "device": (r["friendly_name"] or r["hostname"]) if "hostname" in r.keys() else None,
+        "src": r["src_ip"],
+        "detail": detail,
+        "extra": extra,
+        "blocked": bool(r["blocked"]),
+        "severity": r["alert_severity"],
+    }
+
+
+@app.get("/api/devices")
+def api_devices():
+    c = db()
+    now = time.time()
+    out = []
+    for d in c.execute("SELECT * FROM devices ORDER BY last_seen DESC"):
+        ip = c.execute(
+            "SELECT ip FROM device_ips WHERE device_id=? ORDER BY last_seen DESC LIMIT 1",
+            (d["id"],)).fetchone()
+        macs = c.execute(
+            "SELECT count(*) n, sum(is_randomized) r FROM device_macs WHERE device_id=?",
+            (d["id"],)).fetchone()
+        agg = c.execute(
+            "SELECT COALESCE(sum(CASE WHEN event_type='flow' THEN bytes_toclient END),0) down,"
+            "       COALESCE(sum(CASE WHEN event_type='flow' THEN bytes_toserver END),0) up,"
+            "       COALESCE(sum(event_type='dns_query'),0) dns,"
+            "       COALESCE(sum(blocked=1),0) blocked,"
+            "       COALESCE(sum(event_type='tls'),0) tls,"
+            "       COALESCE(sum(alert_signature IS NOT NULL),0) alerts,"
+            "       count(*) events"
+            "  FROM events WHERE device_id=?", (d["id"],)).fetchone()
+        inc = c.execute(
+            "SELECT count(*) n, COALESCE(sum(severity='high'),0) high"
+            "  FROM incidents WHERE device_id=? AND status='new'", (d["id"],)).fetchone()
+        out.append({
+            "id": d["id"], "name": device_label(d),
+            "hostname": d["hostname"], "ip": ip["ip"] if ip else None,
+            "mac_count": macs["n"] or 0, "randomized": bool(macs["r"]),
+            "down": agg["down"], "down_h": humanize_bytes(agg["down"]),
+            "up": agg["up"], "up_h": humanize_bytes(agg["up"]),
+            "dns": agg["dns"], "blocked": agg["blocked"], "tls": agg["tls"],
+            "alerts": agg["alerts"], "events": agg["events"],
+            "incidents": inc["n"], "incidents_high": inc["high"],
+            "last_seen": time.strftime("%H:%M:%S", time.localtime(d["last_seen"])),
+            "age": _age(now - d["last_seen"]),
+            "online": (now - d["last_seen"]) < 600,
+            "is_test": bool(d["friendly_name"] and "TEST HARNESS" in d["friendly_name"]),
+        })
+    return {"devices": out}
+
+
+@app.get("/api/incidents")
+def api_incidents(severity: str = Query(""), status: str = Query(""),
+                  signal: str = Query("")):
+    c = db()
+    now = time.time()
+    sql = ("SELECT i.*, d.hostname, d.friendly_name FROM incidents i"
+           " LEFT JOIN devices d ON d.id = i.device_id WHERE 1=1")
+    params = []
+    if severity:
+        sql += " AND i.severity = ?"
+        params.append(severity)
+    if status:
+        sql += " AND i.status = ?"
+        params.append(status)
+    if signal:
+        sql += " AND i.signal_type = ?"
+        params.append(signal)
+    sql += (" ORDER BY CASE i.severity WHEN 'high' THEN 0 WHEN 'medium' THEN 1"
+            " ELSE 2 END, i.last_seen DESC")
+
+    out = []
+    for r in c.execute(sql, params):
+        out.append({
+            "id": r["id"], "title": r["title"], "description": r["description"],
+            "severity": r["severity"], "status": r["status"],
+            "signal_type": r["signal_type"], "evidence_count": r["evidence_count"],
+            "device": device_label(r) if r["device_id"] else None,
+            "device_id": r["device_id"],
+            "first_seen": time.strftime("%H:%M:%S", time.localtime(r["first_seen"])),
+            "last_seen": time.strftime("%H:%M:%S", time.localtime(r["last_seen"])),
+            "age": _age(now - r["last_seen"]),
+        })
+    counts = {"high": 0, "medium": 0, "low": 0, "total": 0}
+    for r in c.execute("SELECT severity, count(*) n FROM incidents GROUP BY severity"):
+        if r["severity"] in counts:
+            counts[r["severity"]] = r["n"]
+        counts["total"] += r["n"]
+    return {"incidents": out, "counts": counts}
+
+
+@app.get("/api/events")
+def api_events(limit: int = Query(60), type: str = Query("")):
+    c = db()
+    sql = ("SELECT e.*, d.hostname, d.friendly_name FROM events e"
+           " LEFT JOIN devices d ON d.id = e.device_id")
+    params = []
+    if type:
+        sql += " WHERE e.event_type = ?"
+        params.append(type)
+    sql += " ORDER BY e.id DESC LIMIT ?"
+    params.append(min(limit, 300))
+    return {"events": [_event_row(r) for r in c.execute(sql, params)]}
+
+
+@app.get("/api/devices/{device_id}/series")
+def api_device_series(device_id: int, range: str = Query("24h")):
+    spec = RANGES.get(range, RANGES["24h"])
+    c = db()
+    now = time.time()
+    series = bucket_series(c, now - spec["seconds"], now, spec["bucket"], device_id=device_id)
+    return {
+        "labels": series["labels"],
+        "down_kbps": series["down_kbps"],
+        "up_kbps": series["up_kbps"],
+        "range_label": spec["label"],
+    }
+
+
+@app.get("/api/system")
+def api_system():
+    """Pipeline health: is ingest keeping up, and is each detection signal
+    still running. This is the console's own instrumentation, not network
+    data - it answers "can I trust what this dashboard is telling me"."""
+    c = db()
+    now = time.time()
+
+    stats = c.execute("SELECT * FROM ingest_stats WHERE id=1").fetchone()
+    ingest_last_run = stats["last_run"] if stats else None
+    ingest = {
+        "events_read": stats["events_read"] if stats else 0,
+        "events_saved": stats["events_saved"] if stats else 0,
+        "parse_errors": stats["parse_errors"] if stats else 0,
+        "last_run": time.strftime("%H:%M:%S", time.localtime(ingest_last_run)) if ingest_last_run else None,
+        "age": _age(now - ingest_last_run) if ingest_last_run else None,
+        "healthy": bool(ingest_last_run and (now - ingest_last_run) < INGEST_STALE_AFTER),
+    }
+
+    signals = []
+    for sig in SIGNALS:
+        row = c.execute(
+            "SELECT last_run_ts FROM signal_state WHERE signal_type=?", (sig,)).fetchone()
+        last_run = row["last_run_ts"] if row else None
+        signals.append({
+            "signal": sig,
+            "age": _age(now - last_run) if last_run else None,
+            "healthy": bool(last_run and (now - last_run) < SIGNAL_STALE_AFTER),
+        })
+
+    return {
+        "ingest": ingest,
+        "signals": signals,
+        "healthy": ingest["healthy"] and all(s["healthy"] for s in signals),
+    }
+
+
+@app.get("/api/heatmap")
+def api_heatmap():
+    """Event volume by day-of-week / hour-of-day over the last 7 days, for
+    the weekly activity grid. tm_wday: 0=Monday .. 6=Sunday."""
+    c = db()
+    now = time.time()
+    start = now - 7 * 86400
+    grid = [[0] * 24 for _ in range(7)]
+    for r in c.execute("SELECT ts FROM events WHERE ts >= ?", (start,)):
+        lt = time.localtime(r["ts"])
+        grid[lt.tm_wday][lt.tm_hour] += 1
+    return {"grid": grid, "days": ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]}
+
+
+@app.patch("/api/incidents/{incident_id}")
+def api_update_incident(incident_id: int, body: IncidentUpdate):
+    if body.status not in INCIDENT_STATUSES:
+        raise HTTPException(400, "status must be one of %s" % (INCIDENT_STATUSES,))
+    c = db()
+    if c.execute("SELECT 1 FROM incidents WHERE id=?", (incident_id,)).fetchone() is None:
+        raise HTTPException(404, "incident not found")
+    now = time.time()
+    c.execute("UPDATE incidents SET status=?, updated_at=? WHERE id=?",
+              (body.status, now, incident_id))
+    c.commit()
+    return {"id": incident_id, "status": body.status}
+
+
+@app.patch("/api/devices/{device_id}")
+def api_rename_device(device_id: int, body: DeviceUpdate):
+    name = body.friendly_name.strip()
+    if not name:
+        raise HTTPException(400, "friendly_name must not be empty")
+    c = db()
+    if c.execute("SELECT 1 FROM devices WHERE id=?", (device_id,)).fetchone() is None:
+        raise HTTPException(404, "device not found")
+    c.execute("UPDATE devices SET friendly_name=? WHERE id=?", (name, device_id))
+    c.commit()
+    return {"id": device_id, "friendly_name": name}
+
+
+# ---------------------------------------------------------------- pages --
+
+@app.get("/", response_class=HTMLResponse)
+def page_dashboard(request: Request):
+    return templates.TemplateResponse("dashboard.html", {
+        "request": request, "active": "dashboard", "title": "Dashboard"})
 
 
 @app.get("/devices", response_class=HTMLResponse)
-def devices_page(request: Request):
-    c = db()
-    devices = []
-    for d in c.execute("SELECT * FROM devices ORDER BY last_seen DESC"):
-        ip = c.execute(
-            "SELECT ip FROM device_ips WHERE device_id = ? ORDER BY last_seen DESC LIMIT 1",
-            (d["id"],),
-        ).fetchone()
-        agg = c.execute(
-            """SELECT
-                   sum(CASE WHEN event_type='flow' THEN bytes_toclient ELSE 0 END) down,
-                   sum(CASE WHEN event_type='flow' THEN bytes_toserver ELSE 0 END) up,
-                   sum(event_type='dns_query') dns,
-                   sum(event_type='tls') tls,
-                   sum(alert_signature IS NOT NULL) alerts
-               FROM events WHERE device_id = ?""",
-            (d["id"],),
-        ).fetchone()
-        devices.append({
-            "id": d["id"], "name": device_name(d),
-            "ip": ip["ip"] if ip else None,
-            "down_mb": round((agg["down"] or 0) / 1048576, 2),
-            "up_kb": round((agg["up"] or 0) / 1024, 1),
-            "dns_count": agg["dns"] or 0, "tls_count": agg["tls"] or 0,
-            "alert_count": agg["alerts"] or 0,
-            "last_seen": fmt_time(d["last_seen"]),
-        })
-    return templates.TemplateResponse("devices.html", {"request": request,         "active": "devices", "title": "Devices", "devices": devices,})
-
-
-@app.get("/devices/{device_id}", response_class=HTMLResponse)
-def device_detail(request: Request, device_id: int):
-    c = db()
-    d = c.execute("SELECT * FROM devices WHERE id = ?", (device_id,)).fetchone()
-    if d is None:
-        return HTMLResponse("Device not found", status_code=404)
-
-    macs = ", ".join(
-        r["mac"] for r in c.execute(
-            "SELECT mac FROM device_macs WHERE device_id = ? ORDER BY last_seen DESC",
-            (device_id,),
-        )
-    ) or "-"
-    ips = ", ".join(
-        r["ip"] for r in c.execute(
-            "SELECT DISTINCT ip FROM device_ips WHERE device_id = ? ORDER BY last_seen DESC",
-            (device_id,),
-        )
-    ) or "-"
-    agg = c.execute(
-        """SELECT
-               sum(CASE WHEN event_type='flow' THEN bytes_toclient ELSE 0 END) down,
-               sum(CASE WHEN event_type='flow' THEN bytes_toserver ELSE 0 END) up,
-               sum(event_type='dns_query') dns,
-               sum(blocked=1) blocked
-           FROM events WHERE device_id = ?""",
-        (device_id,),
-    ).fetchone()
-
-    device = {
-        "id": d["id"], "name": device_name(d), "macs": macs, "ips": ips,
-        "first_seen": fmt_time(d["first_seen"]), "last_seen": fmt_time(d["last_seen"]),
-        "down_mb": round((agg["down"] or 0) / 1048576, 2),
-        "up_kb": round((agg["up"] or 0) / 1024, 1),
-        "dns_count": agg["dns"] or 0, "blocked_count": agg["blocked"] or 0,
-    }
-
-    top_destinations = [
-        {"tls_sni": r["tls_sni"], "n": r["n"]}
-        for r in c.execute(
-            """SELECT tls_sni, count(*) n FROM events
-                WHERE device_id = ? AND tls_sni IS NOT NULL
-                GROUP BY tls_sni ORDER BY n DESC LIMIT 10""",
-            (device_id,),
-        )
-    ]
-
-    timeline = []
-    for r in c.execute(
-        "SELECT * FROM events WHERE device_id = ? ORDER BY id DESC LIMIT 40",
-        (device_id,),
-    ):
-        if r["event_type"] == "flow":
-            detail = "%s:%s (%s)" % (r["dest_ip"], r["dest_port"], r["proto"])
-        elif r["event_type"] == "dns_query":
-            detail = "%s%s" % (r["dns_rrname"], " [blocked]" if r["blocked"] else "")
-        elif r["event_type"] == "tls":
-            detail = r["tls_sni"] or "-"
-        elif r["event_type"] == "alert":
-            detail = r["alert_signature"] or "-"
-        else:
-            detail = "%s -> %s" % (r["src_ip"], r["dest_ip"])
-        timeline.append({"time": fmt_time(r["ts"]), "event_type": r["event_type"], "detail": detail})
-
-    return templates.TemplateResponse("device_detail.html", {"request": request,         "active": "devices", "title": device["name"],
-        "device": device, "top_destinations": top_destinations, "timeline": timeline,})
+def page_devices(request: Request):
+    return templates.TemplateResponse("devices.html", {
+        "request": request, "active": "devices", "title": "Devices"})
 
 
 @app.get("/incidents", response_class=HTMLResponse)
-def incidents_page(request: Request):
+def page_incidents(request: Request):
+    return templates.TemplateResponse("incidents.html", {
+        "request": request, "active": "incidents", "title": "Incidents"})
+
+
+@app.get("/devices/{device_id}", response_class=HTMLResponse)
+def page_device_detail(request: Request, device_id: int):
     c = db()
+    d = c.execute("SELECT * FROM devices WHERE id=?", (device_id,)).fetchone()
+    if d is None:
+        return HTMLResponse("Device not found", status_code=404)
+    now = time.time()
+
+    macs = [dict(r) for r in c.execute(
+        "SELECT mac, is_randomized, first_seen, last_seen FROM device_macs"
+        " WHERE device_id=? ORDER BY last_seen DESC", (device_id,))]
+    for m in macs:
+        m["first_seen_h"] = time.strftime("%d %b %H:%M", time.localtime(m["first_seen"]))
+        m["last_seen_h"] = time.strftime("%d %b %H:%M", time.localtime(m["last_seen"]))
+
+    ips = [dict(r) for r in c.execute(
+        "SELECT ip, first_seen, last_seen FROM device_ips"
+        " WHERE device_id=? ORDER BY last_seen DESC", (device_id,))]
+    for i in ips:
+        i["first_seen_h"] = time.strftime("%d %b %H:%M", time.localtime(i["first_seen"]))
+        i["last_seen_h"] = time.strftime("%d %b %H:%M", time.localtime(i["last_seen"]))
+
+    agg = c.execute(
+        "SELECT COALESCE(sum(CASE WHEN event_type='flow' THEN bytes_toclient END),0) down,"
+        "       COALESCE(sum(CASE WHEN event_type='flow' THEN bytes_toserver END),0) up,"
+        "       COALESCE(sum(event_type='dns_query'),0) dns,"
+        "       COALESCE(sum(blocked=1),0) blocked,"
+        "       COALESCE(sum(event_type='tls'),0) tls,"
+        "       count(*) events FROM events WHERE device_id=?", (device_id,)).fetchone()
+
+    top_sni = [dict(r) for r in c.execute(
+        "SELECT tls_sni, count(*) n FROM events WHERE device_id=? AND tls_sni IS NOT NULL"
+        " GROUP BY tls_sni ORDER BY n DESC LIMIT 10", (device_id,))]
+    top_blocked = [dict(r) for r in c.execute(
+        "SELECT dns_rrname, count(*) n FROM events"
+        " WHERE device_id=? AND blocked=1 AND dns_rrname IS NOT NULL"
+        " GROUP BY dns_rrname ORDER BY n DESC LIMIT 10", (device_id,))]
+
     incidents = []
-    for i in c.execute(
-        """SELECT inc.*, d.hostname, d.friendly_name
-             FROM incidents inc LEFT JOIN devices d ON d.id = inc.device_id
-            ORDER BY
-                CASE inc.severity WHEN 'high' THEN 0 WHEN 'medium' THEN 1 ELSE 2 END,
-                inc.last_seen DESC"""
-    ):
+    for r in c.execute(
+        "SELECT * FROM incidents WHERE device_id=? ORDER BY last_seen DESC", (device_id,)):
         incidents.append({
-            "id": i["id"], "severity": i["severity"], "title": i["title"],
-            "status": i["status"], "evidence_count": i["evidence_count"],
-            "last_seen": fmt_time(i["last_seen"]),
-            "device_name": i["friendly_name"] or i["hostname"],
+            "id": r["id"], "title": r["title"], "severity": r["severity"],
+            "status": r["status"], "evidence_count": r["evidence_count"],
+            "age": _age(now - r["last_seen"]),
         })
-    return templates.TemplateResponse("incidents.html", {"request": request,         "active": "incidents", "title": "Incidents", "incidents": incidents,})
+
+    timeline = [_event_row(r) for r in c.execute(
+        "SELECT e.*, d.hostname, d.friendly_name FROM events e"
+        " LEFT JOIN devices d ON d.id=e.device_id"
+        " WHERE e.device_id=? ORDER BY e.id DESC LIMIT 60", (device_id,))]
+
+    return templates.TemplateResponse("device_detail.html", {
+        "request": request, "active": "devices", "title": device_label(d),
+        "device": {
+            "id": d["id"], "name": device_label(d), "hostname": d["hostname"],
+            "first_seen": time.strftime("%d %b %Y %H:%M", time.localtime(d["first_seen"])),
+            "last_seen": time.strftime("%d %b %Y %H:%M", time.localtime(d["last_seen"])),
+            "online": (now - d["last_seen"]) < 600,
+            "age": _age(now - d["last_seen"]),
+            "down_h": humanize_bytes(agg["down"]), "up_h": humanize_bytes(agg["up"]),
+            "dns": agg["dns"], "blocked": agg["blocked"],
+            "tls": agg["tls"], "events": agg["events"],
+        },
+        "macs": macs, "ips": ips, "top_sni": top_sni, "top_blocked": top_blocked,
+        "incidents": incidents, "timeline": timeline,
+    })
 
 
 @app.get("/incidents/{incident_id}", response_class=HTMLResponse)
-def incident_detail(request: Request, incident_id: int):
+def page_incident_detail(request: Request, incident_id: int):
     c = db()
-    i = c.execute("SELECT * FROM incidents WHERE id = ?", (incident_id,)).fetchone()
+    i = c.execute("SELECT * FROM incidents WHERE id=?", (incident_id,)).fetchone()
     if i is None:
         return HTMLResponse("Incident not found", status_code=404)
+    now = time.time()
 
-    device_name_val = None
+    dev = None
     if i["device_id"]:
-        d = c.execute("SELECT * FROM devices WHERE id = ?", (i["device_id"],)).fetchone()
+        d = c.execute("SELECT * FROM devices WHERE id=?", (i["device_id"],)).fetchone()
         if d:
-            device_name_val = device_name(d)
+            dev = {"id": d["id"], "name": device_label(d)}
 
-    incident = dict(i)
-    incident["first_seen"] = fmt_time(i["first_seen"])
-    incident["last_seen"] = fmt_time(i["last_seen"])
-    incident["device_name"] = device_name_val
+    evidence = [_event_row(r) for r in c.execute(
+        "SELECT e.*, NULL hostname, NULL friendly_name FROM incident_events ie"
+        " JOIN events e ON e.id = ie.event_id WHERE ie.incident_id=?"
+        " ORDER BY e.ts", (incident_id,))]
 
-    evidence = []
-    for r in c.execute(
-        """SELECT e.* FROM incident_events ie JOIN events e ON e.id = ie.event_id
-            WHERE ie.incident_id = ? ORDER BY e.ts""",
-        (incident_id,),
-    ):
-        if r["event_type"] == "flow":
-            detail = "%s:%s -> %s:%s (%s)" % (r["src_ip"], r["src_port"], r["dest_ip"], r["dest_port"], r["proto"])
-        elif r["event_type"] == "dns_query":
-            detail = "%s%s" % (r["dns_rrname"], " [blocked: %s]" % r["block_reason"] if r["blocked"] else "")
-        else:
-            detail = "%s -> %s" % (r["src_ip"], r["dest_ip"])
-        evidence.append({"time": fmt_time(r["ts"]), "event_type": r["event_type"], "detail": detail})
-
-    return templates.TemplateResponse("incident_detail.html", {"request": request,         "active": "incidents", "title": incident["title"],
-        "incident": incident, "evidence": evidence,})
+    return templates.TemplateResponse("incident_detail.html", {
+        "request": request, "active": "incidents", "title": i["title"],
+        "incident": {
+            "id": i["id"], "title": i["title"], "description": i["description"],
+            "severity": i["severity"], "status": i["status"],
+            "signal_type": i["signal_type"], "evidence_count": i["evidence_count"],
+            "first_seen": time.strftime("%d %b %H:%M:%S", time.localtime(i["first_seen"])),
+            "last_seen": time.strftime("%d %b %H:%M:%S", time.localtime(i["last_seen"])),
+            "age": _age(now - i["last_seen"]),
+        },
+        "device": dev, "evidence": evidence,
+    })

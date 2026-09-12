@@ -1,21 +1,32 @@
 {% extends "base.html" %}
 {% block content %}
-<h1>Devices</h1>
-{% if devices %}
-<table>
-    <tr><th>Device</th><th>Current IP</th><th>Down</th><th>Up</th><th>DNS</th><th>TLS</th><th>Alerts</th><th>Last seen</th></tr>
-    {% for d in devices %}
-    <tr>
-        <td><a class="rowlink" href="/devices/{{ d.id }}">{{ d.name }}</a></td>
-        <td class="mono">{{ d.ip or '-' }}</td>
-        <td>{{ d.down_mb }} MB</td>
-        <td>{{ d.up_kb }} KB</td>
-        <td>{{ d.dns_count }}</td>
-        <td>{{ d.tls_count }}</td>
-        <td>{% if d.alert_count %}<span class="sev-high">{{ d.alert_count }}</span>{% else %}0{% endif %}</td>
-        <td class="mono">{{ d.last_seen }}</td>
-    </tr>
-    {% endfor %}
-</table>
-{% else %}<div class="empty">No devices seen yet.</div>{% endif %}
+<div class="page-head">
+    <h1>Devices</h1>
+    <span class="subtle" id="deviceCount">—</span>
+    <div class="spacer"></div>
+    <button class="btn" id="hideTest">Hide test devices</button>
+    <input class="input" id="deviceSearch" placeholder="Search name, IP, hostname…">
+    <button class="btn icon-label" id="devicesExport" title="Export visible devices as CSV">
+        <svg class="icon" width="14" height="14"><use href="#i-download"/></svg> Export
+    </button>
+</div>
+
+<div class="card">
+    <table>
+        <thead><tr>
+            <th class="sortable" data-key="name">Device <span class="arrow"></span></th>
+            <th>Address</th>
+            <th>Identity</th>
+            <th class="sortable num" data-key="down">Down <span class="arrow">▼</span></th>
+            <th class="sortable num" data-key="up">Up <span class="arrow"></span></th>
+            <th class="sortable num" data-key="dns">DNS <span class="arrow"></span></th>
+            <th class="sortable num" data-key="blocked">Blocked <span class="arrow"></span></th>
+            <th class="sortable num" data-key="incidents">Incidents <span class="arrow"></span></th>
+            <th class="num">Seen</th>
+        </tr></thead>
+        <tbody id="deviceRows">
+            <tr><td colspan="9"><div class="empty">Loading…</div></td></tr>
+        </tbody>
+    </table>
+</div>
 {% endblock %}

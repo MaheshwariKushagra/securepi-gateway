@@ -1,27 +1,81 @@
 {% extends "base.html" %}
 {% block content %}
-<h1>{{ incident.title }}</h1>
-<div class="card">
-    <span class="sev-{{ incident.severity }}">{{ incident.severity|upper }}</span>
-    &nbsp; <span class="badge badge-{{ incident.status }}">{{ incident.status }}</span>
-    &nbsp; signal: <span class="mono">{{ incident.signal_type }}</span>
-    <p class="desc">{{ incident.description }}</p>
-    <table>
-        <tr><th>Device</th><td>{% if incident.device_id %}<a class="rowlink" href="/devices/{{ incident.device_id }}">{{ incident.device_name }}</a>{% else %}-{% endif %}</td></tr>
-        <tr><th>First seen</th><td class="mono">{{ incident.first_seen }}</td></tr>
-        <tr><th>Last seen</th><td class="mono">{{ incident.last_seen }}</td></tr>
-        <tr><th>Evidence count</th><td>{{ incident.evidence_count }}</td></tr>
-    </table>
+<div class="page-head">
+    <a class="link subtle" href="/incidents"><svg class="icon" width="13" height="13"><use href="#i-arrow-left"/></svg> Incidents</a>
+    <h1 style="margin-left:8px">{{ incident.title }}</h1>
+    <span class="chip {{ incident.severity }} dot">{{ incident.severity }}</span>
+    <span class="status-pill {{ incident.status }}">{{ incident.status.replace('_', ' ') }}</span>
+    <div class="spacer"></div>
+    <div id="incidentActions" data-incident-id="{{ incident.id }}" style="display:flex; gap:8px">
+        {% if incident.status != 'investigating' %}
+        <button class="btn" data-set-status="investigating" data-incident-id="{{ incident.id }}">Investigate</button>
+        {% endif %}
+        {% if incident.status != 'resolved' %}
+        <button class="btn" data-set-status="resolved" data-incident-id="{{ incident.id }}">Resolve</button>
+        {% endif %}
+        {% if incident.status != 'false_positive' %}
+        <button class="btn" data-set-status="false_positive" data-incident-id="{{ incident.id }}">False positive</button>
+        {% endif %}
+        {% if incident.status != 'new' %}
+        <button class="btn" data-set-status="new" data-incident-id="{{ incident.id }}">Reopen</button>
+        {% endif %}
+    </div>
+</div>
+
+<div class="grid c2">
+    <div class="card">
+        <div class="card-head"><h2>What was detected</h2></div>
+        <div class="card-body">
+            <div class="callout {{ 'high' if incident.severity == 'high' else '' }}">
+                {{ incident.description }}
+            </div>
+            <dl class="meta-grid" style="margin-top:16px">
+                <dt>Signal</dt><dd class="mono">{{ incident.signal_type.replace('_',' ') }}</dd>
+                <dt>Device</dt>
+                <dd>{% if device %}<a class="link" href="/devices/{{ device.id }}">{{ device.name }}</a>{% else %}—{% endif %}</dd>
+                <dt>First seen</dt><dd>{{ incident.first_seen }}</dd>
+                <dt>Last seen</dt><dd>{{ incident.last_seen }} <span class="dim">({{ incident.age }} ago)</span></dd>
+                <dt>Evidence</dt><dd>{{ incident.evidence_count }} linked events</dd>
+            </dl>
+        </div>
+    </div>
+    <div class="card">
+        <div class="card-head"><h2>Why this was raised</h2></div>
+        <div class="card-body">
+            <p class="subtle" style="line-height:1.6">
+            This incident was produced by the <strong>{{ incident.signal_type.replace('_',' ') }}</strong>
+            signal, which examines a trailing window of stored events rather than
+            individual packets. Every event listed below contributed to the detection —
+            the incident is not a verdict on its own, it is a claim backed by the
+            evidence chain.
+            </p>
+            <p class="subtle" style="line-height:1.6; margin-top:10px">
+            Repeated detections of the same ongoing pattern extend this incident rather
+            than creating new ones, which is why one scan produces a single entry
+            instead of one per engine cycle.
+            </p>
+        </div>
+    </div>
 </div>
 
 <div class="card">
-    <h1 style="font-size:15px;">Evidence chain</h1>
-    {% if evidence %}
-    <ul class="evidence-list">
+    <div class="card-head"><h2>Evidence Chain</h2>
+        <span class="spacer"></span>
+        <span class="subtle">{{ evidence | length }} contributing events, in order</span></div>
+    <div class="card-body tight feed" style="max-height:560px">
         {% for e in evidence %}
-        <li class="mono">{{ e.time }} &nbsp; {{ e.event_type }} &nbsp; {{ e.detail }}</li>
+        <div class="feed-row">
+            <span class="mono dim">{{ e.time }}</span>
+            <span class="type-tag {{ e.type }}">{{ e.type.replace('dns_query','dns') }}</span>
+            <span class="truncate mono" title="{{ e.detail }}">{{ e.detail }}</span>
+            <span class="dim" style="font-size:11px">{% if e.blocked %}<span class="chip high">blocked</span>{% else %}{{ e.extra }}{% endif %}</span>
+        </div>
+        {% else %}
+        <div class="empty">
+            This signal does not link individual events — new-device detections are
+            raised from the registry itself rather than from event evidence.
+        </div>
         {% endfor %}
-    </ul>
-    {% else %}<div class="empty">This incident type does not carry linked events (e.g. new-device detections).</div>{% endif %}
+    </div>
 </div>
 {% endblock %}

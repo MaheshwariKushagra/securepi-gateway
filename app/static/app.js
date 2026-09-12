@@ -1,0 +1,967 @@
+/* SecurePi Gateway - console front end.
+   Polls the JSON APIs and updates the DOM in place. No framework: the whole
+   console is a handful of tables and charts, and a build step would cost more
+   than it returns at this size. */
+
+const SP = {
+    range: localStorage.getItem("sp.range") || "6h",
+    live: localStorage.getItem("sp.live") !== "0",
+    intervalMs: 5000,
+    timer: null,
+    charts: {},
+    notifSeen: null,
+};
+
+const STATUS_META = {
+    new:            { label: "New",            cls: "" },
+    investigating:  { label: "Investigating",  cls: "investigating" },
+    resolved:       { label: "Resolved",       cls: "resolved" },
+    false_positive: { label: "False positive", cls: "false_positive" },
+};
+const STATUS_ORDER = ["new", "investigating", "resolved", "false_positive"];
+
+/* ------------------------------------------------------------- helpers */
+
+const $ = (sel, root) => (root || document).querySelector(sel);
+const $$ = (sel, root) => Array.from((root || document).querySelectorAll(sel));
+
+function esc(s) {
+    if (s === null || s === undefined) return "";
+    return String(s).replace(/[&<>"']/g, c => (
+        { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]
+    ));
+}
+
+/* Count up to a new value rather than snapping. Small touch, but it makes a
+   live dashboard feel continuous instead of twitchy. */
+function animateNumber(el, to) {
+    if (!el) return;
+    const from = parseFloat(el.dataset.v || "0");
+    if (from === to) { el.textContent = fmtNum(to); return; }
+    el.dataset.v = to;
+    const dur = 420, t0 = performance.now();
+    const step = (t) => {
+        const p = Math.min(1, (t - t0) / dur);
+        const eased = 1 - Math.pow(1 - p, 3);
+        el.textContent = fmtNum(from + (to - from) * eased);
+        if (p < 1) requestAnimationFrame(step);
+    };
+    requestAnimationFrame(step);
+}
+
+function fmtNum(n) {
+    if (Number.isInteger(n)) return n.toLocaleString();
+    return (Math.round(n * 10) / 10).toLocaleString(undefined, { minimumFractionDigits: 1 });
+}
+
+function setLive(on) {
+    SP.live = on;
+    localStorage.setItem("sp.live", on ? "1" : "0");
+    const el = $("#liveIndicator");
+    if (el) {
+        el.classList.toggle("paused", !on);
+        $("#liveLabel").textContent = on ? "Live" : "Paused";
+    }
+    const btn = $("#liveToggle");
+    if (btn) { btn.textContent = on ? "Pause" : "Resume"; btn.classList.toggle("on", !on); }
+    schedule();
+}
+
+function schedule() {
+    clearInterval(SP.timer);
+    if (SP.live) SP.timer = setInterval(tick, SP.intervalMs);
+}
+
+function tick() {
+    refresh();
+    refreshSystem();
+    refreshNotifications();
+}
+
+/* --------------------------------------------------------------- toasts */
+
+function toast(title, message, tone) {
+    const stack = $("#toastStack");
+    if (!stack) return;
+    const el = document.createElement("div");
+    el.className = "toast" + (tone ? ` ${tone}` : "");
+    el.innerHTML = `<div class="title"></div><div class="msg"></div>`;
+    el.querySelector(".title").textContent = title;
+    el.querySelector(".msg").textContent = message || "";
+    stack.appendChild(el);
+    setTimeout(() => {
+        el.classList.add("fade");
+        setTimeout(() => el.remove(), 220);
+    }, 4800);
+}
+
+/* ------------------------------------------------------------- sidebar */
+
+function initSidebar() {
+    const shell = $("#shell");
+    if (!shell) return;
+    const collapsed = localStorage.getItem("sp.sidebarCollapsed") === "1";
+    shell.classList.toggle("collapsed", collapsed);
+
+    const setCollapsed = (v) => {
+        shell.classList.toggle("collapsed", v);
+        localStorage.setItem("sp.sidebarCollapsed", v ? "1" : "0");
+    };
+    const collapseBtn = $("#sidebarCollapse");
+    const expandBtn = $("#sidebarExpand");
+    if (collapseBtn) collapseBtn.addEventListener("click", () => setCollapsed(true));
+    if (expandBtn) expandBtn.addEventListener("click", () => setCollapsed(false));
+}
+
+/* -------------------------------------------------------- notifications */
+
+async function refreshNotifications() {
+    try {
+        const res = await fetch("/api/incidents?status=new");
+        const d = await res.json();
+        const items = d.incidents.slice(0, 8);
+        const openCount = d.incidents.length;
+
+        const badge = $("#notifBadge");
+        if (badge) { badge.textContent = openCount; badge.hidden = openCount === 0; }
+        const navBadge = $("#navIncidentBadge");
+        if (navBadge) { navBadge.textContent = openCount; navBadge.hidden = openCount === 0; }
+
+        renderNotifPanel(items);
+
+        let seen = SP.notifSeen;
+        if (!seen) {
+            try { seen = new Set(JSON.parse(sessionStorage.getItem("sp.notifSeen") || "[]")); }
+            catch (e) { seen = new Set(); }
+            SP.notifSeen = seen;
+        }
+        const primed = sessionStorage.getItem("sp.notifPrimed") === "1";
+        if (primed) {
+            d.incidents.forEach(i => {
+                if (!seen.has(i.id)) {
+                    toast(i.severity === "high" ? "New high-severity incident" : "New incident",
+                          i.title, i.severity === "high" ? "high" : "");
+                }
+            });
+        }
+        d.incidents.forEach(i => seen.add(i.id));
+        sessionStorage.setItem("sp.notifSeen", JSON.stringify(Array.from(seen)));
+        sessionStorage.setItem("sp.notifPrimed", "1");
+    } catch (err) { console.error("notifications refresh failed", err); }
+}
+
+function renderNotifPanel(items) {
+    const el = $("#notifPanelBody");
+    if (!el) return;
+    if (!items.length) {
+        el.innerHTML = `<div class="empty" style="padding:22px 14px">No open incidents. The network is quiet.</div>`;
+        return;
+    }
+    el.innerHTML = items.map(i => `
+        <a class="notif-row" href="/incidents/${i.id}">
+            <span class="chip ${esc(i.severity)} dot" style="margin-top:3px"></span>
+            <span>
+                <div class="title">${esc(i.title)}</div>
+                <div class="meta">${esc(i.device || "network-wide")} · ${esc(i.age)} ago</div>
+            </span>
+        </a>`).join("");
+}
+
+/* ----------------------------------------------------------- pipeline health */
+
+async function refreshSystem() {
+    try {
+        const res = await fetch("/api/system");
+        const d = await res.json();
+
+        const dot = $("#pipelineDot");
+        const label = $("#pipelineLabel");
+        const sub = $("#pipelineSub");
+        const statusBtn = $("#pipelineStatus");
+        if (dot) dot.classList.toggle("bad", !d.healthy);
+        if (label) label.textContent = d.healthy ? "Pipeline healthy" : "Pipeline issue";
+        if (sub) sub.textContent = d.ingest.age ? `ingest ${d.ingest.age} ago` : "ingest idle";
+        if (statusBtn) {
+            statusBtn.title = "Ingest: " + (d.ingest.healthy ? "ok" : "stale") +
+                (d.ingest.age ? ` (${d.ingest.age} ago)` : "") + "\n" +
+                d.signals.map(s => `${s.signal.replace(/_/g, " ")}: ${s.healthy ? "ok" : "stale"}`).join("\n");
+        }
+
+        const hc = $("#healthGrid");
+        if (hc) {
+            const items = [
+                { label: "Ingest pipeline", healthy: d.ingest.healthy,
+                  value: d.ingest.age ? `last write ${d.ingest.age} ago` : "never run" },
+            ].concat(d.signals.map(s => ({
+                label: s.signal.replace(/_/g, " "), healthy: s.healthy,
+                value: s.age ? `checked ${s.age} ago` : "never run",
+            })));
+            hc.innerHTML = items.map(i => `
+                <div class="health-item">
+                    <span class="label"><span class="dot ${i.healthy ? "" : "bad"}"></span>${esc(i.label)}</span>
+                    <span class="value">${esc(i.value)}</span>
+                </div>`).join("");
+        }
+    } catch (err) { console.error("system refresh failed", err); }
+}
+
+/* --------------------------------------------------------------- charts */
+
+const CHART_GRID = "rgba(34,43,60,.7)";
+const CHART_TEXT = "#5a6679";
+
+function baseChartOpts(extra) {
+    return Object.assign({
+        responsive: true,
+        maintainAspectRatio: false,
+        animation: { duration: 400 },
+        interaction: { mode: "index", intersect: false },
+        plugins: {
+            legend: { display: false },
+            tooltip: {
+                backgroundColor: "#161d2b",
+                borderColor: "#2e3a50",
+                borderWidth: 1,
+                titleColor: "#e6ecf5",
+                bodyColor: "#8d99ad",
+                padding: 10,
+                cornerRadius: 6,
+                displayColors: true,
+                boxWidth: 8, boxHeight: 8, usePointStyle: true,
+            },
+        },
+        scales: {
+            x: {
+                grid: { display: false },
+                ticks: { color: CHART_TEXT, maxTicksLimit: 7, font: { size: 10 } },
+                border: { color: CHART_GRID },
+            },
+            y: {
+                beginAtZero: true,
+                grid: { color: CHART_GRID, drawTicks: false },
+                ticks: { color: CHART_TEXT, maxTicksLimit: 5, font: { size: 10 }, padding: 6 },
+                border: { display: false },
+            },
+        },
+    }, extra || {});
+}
+
+function gradient(ctx, hex) {
+    const g = ctx.createLinearGradient(0, 0, 0, 190);
+    g.addColorStop(0, hex + "45");
+    g.addColorStop(1, hex + "00");
+    return g;
+}
+
+function upsertChart(key, canvasId, config) {
+    const el = document.getElementById(canvasId);
+    if (!el) return;
+    if (SP.charts[key]) {
+        const ch = SP.charts[key];
+        ch.data.labels = config.data.labels;
+        ch.data.datasets.forEach((ds, i) => {
+            if (config.data.datasets[i]) ds.data = config.data.datasets[i].data;
+        });
+        ch.update("none");
+    } else {
+        SP.charts[key] = new Chart(el, config);
+    }
+}
+
+function renderSparkline(key, canvasId, data, color) {
+    const el = document.getElementById(canvasId);
+    if (!el) return;
+    upsertChart(key, canvasId, {
+        type: "line",
+        data: {
+            labels: data.map((_, i) => i),
+            datasets: [{ data, borderColor: color, borderWidth: 1.6, pointRadius: 0, tension: .35, fill: false }],
+        },
+        options: {
+            responsive: true, maintainAspectRatio: false, animation: false,
+            plugins: { legend: { display: false }, tooltip: { enabled: false } },
+            scales: { x: { display: false }, y: { display: false } },
+        },
+    });
+}
+
+/* ------------------------------------------------------------ dashboard */
+
+async function refreshDashboard() {
+    const [ovRes, heatRes] = await Promise.all([
+        fetch(`/api/overview?range=${SP.range}`),
+        fetch(`/api/heatmap`),
+    ]);
+    const d = await ovRes.json();
+    const heat = await heatRes.json();
+
+    // KPI tiles
+    animateNumber($("#kpiDevices"), d.kpis.devices_active);
+    $("#kpiDevicesSub").textContent = `${d.kpis.devices_total} known`;
+    animateNumber($("#kpiEvents"), d.kpis.events_per_min);
+    $("#kpiEventsSub").textContent = `${d.kpis.events_total.toLocaleString()} stored`;
+    animateNumber($("#kpiIncidents"), d.kpis.incidents_open);
+    $("#kpiIncidentsSub").textContent = d.kpis.incidents_high
+        ? `${d.kpis.incidents_high} high severity` : "none high severity";
+    $("#kpiIncidentsTile").classList.toggle("alert", d.kpis.incidents_high > 0);
+    animateNumber($("#kpiBlocked"), d.kpis.blocked);
+    $("#kpiBlockedSub").textContent = `${d.kpis.block_rate}% of ${d.kpis.dns_total.toLocaleString()} queries`;
+    $("#kpiTraffic").textContent = d.kpis.traffic;
+    $("#kpiTrafficSub").textContent = `over ${d.range_label}`;
+
+    $("#lastUpdated").textContent = d.generated_at;
+
+    renderSparkline("sparkEvents", "sparkEvents", d.series.events, "#4f9cf9");
+    renderSparkline("sparkBlocked", "sparkBlocked", d.series.blocked, "#f2545b");
+    const traffic = d.series.down_kbps.map((v, i) => v + (d.series.up_kbps[i] || 0));
+    renderSparkline("sparkTraffic", "sparkTraffic", traffic, "#7b5cf0");
+
+    // Throughput
+    const tctx = document.getElementById("throughputChart").getContext("2d");
+    upsertChart("throughput", "throughputChart", {
+        type: "line",
+        data: {
+            labels: d.series.labels,
+            datasets: [
+                { label: "Download", data: d.series.down_kbps, borderColor: "#4f9cf9",
+                  backgroundColor: gradient(tctx, "#4f9cf9"), fill: true, tension: .35,
+                  pointRadius: 0, borderWidth: 2 },
+                { label: "Upload", data: d.series.up_kbps, borderColor: "#7b5cf0",
+                  backgroundColor: gradient(tctx, "#7b5cf0"), fill: true, tension: .35,
+                  pointRadius: 0, borderWidth: 2 },
+            ],
+        },
+        options: baseChartOpts({
+            plugins: {
+                legend: { display: true, position: "top", align: "end",
+                    labels: { color: CHART_TEXT, boxWidth: 8, boxHeight: 8,
+                              usePointStyle: true, font: { size: 11 } } },
+                tooltip: baseChartOpts().plugins.tooltip,
+            },
+            scales: Object.assign(baseChartOpts().scales, {
+                y: Object.assign(baseChartOpts().scales.y, {
+                    ticks: { color: CHART_TEXT, maxTicksLimit: 5, font: { size: 10 },
+                             padding: 6, callback: v => v + " KB/s" },
+                }),
+            }),
+        }),
+    });
+
+    // DNS: allowed vs blocked, stacked
+    upsertChart("dns", "dnsChart", {
+        type: "bar",
+        data: {
+            labels: d.series.labels,
+            datasets: [
+                { label: "Allowed", data: d.series.allowed, backgroundColor: "#2e3a50",
+                  borderRadius: 2, stack: "dns" },
+                { label: "Blocked", data: d.series.blocked, backgroundColor: "#f2545b",
+                  borderRadius: 2, stack: "dns" },
+            ],
+        },
+        options: baseChartOpts({
+            plugins: {
+                legend: { display: true, position: "top", align: "end",
+                    labels: { color: CHART_TEXT, boxWidth: 8, boxHeight: 8,
+                              usePointStyle: true, font: { size: 11 } } },
+                tooltip: baseChartOpts().plugins.tooltip,
+            },
+            scales: {
+                x: Object.assign({}, baseChartOpts().scales.x, { stacked: true }),
+                y: Object.assign({}, baseChartOpts().scales.y, { stacked: true }),
+            },
+        }),
+    });
+
+    // Severity donut
+    upsertChart("severity", "severityChart", {
+        type: "doughnut",
+        data: {
+            labels: ["High", "Medium", "Low"],
+            datasets: [{
+                data: [d.severity.high, d.severity.medium, d.severity.low],
+                backgroundColor: ["#f2545b", "#f5a524", "#4f9cf9"],
+                borderColor: "#111722", borderWidth: 3, hoverOffset: 6,
+            }],
+        },
+        options: {
+            responsive: true, maintainAspectRatio: false, cutout: "66%",
+            animation: { duration: 400 },
+            plugins: {
+                legend: { position: "bottom",
+                    labels: { color: CHART_TEXT, boxWidth: 8, boxHeight: 8,
+                              usePointStyle: true, padding: 14, font: { size: 11 } } },
+                tooltip: baseChartOpts().plugins.tooltip,
+            },
+        },
+    });
+
+    renderBarList("#topTalkers", d.top_talkers.map(t => ({
+        label: t.name, value: t.bytes_h, weight: t.bytes,
+        href: `/devices/${t.id}`,
+    })), "Traffic by device");
+
+    renderBarList("#topBlocked", d.top_blocked.map(b => ({
+        label: b.domain, value: b.count, weight: b.count, tone: "high",
+    })), "No blocked domains in this window");
+
+    renderBarList("#topDest", d.top_destinations.map(s => ({
+        label: s.sni, value: s.count, weight: s.count,
+    })), "No TLS destinations in this window");
+
+    renderBarList("#signalMix", d.signal_mix.map(s => ({
+        label: s.signal.replace(/_/g, " "), value: s.count, weight: s.count,
+        tone: s.signal === "port_scan" || s.signal === "brute_force" ? "high" : "",
+    })), "No detections yet");
+
+    renderBarList("#protocolMix", d.protocols.map(p => ({
+        label: (p.name || "unknown").toUpperCase(), value: p.count, weight: p.count,
+    })), "No protocol data in this window");
+
+    renderBarList("#eventTypes", d.event_types.map(e => ({
+        label: e.name.replace(/_/g, " "), value: e.count, weight: e.count,
+    })), "No events yet");
+
+    renderFeed(d.recent_events);
+    renderActiveIncidents(d.active_incidents);
+    renderHeatmap(heat.grid, heat.days);
+}
+
+function renderHeatmap(grid, days) {
+    const rowsEl = $("#heatmapRows");
+    const daysEl = $("#heatmapDays");
+    if (!rowsEl) return;
+    const max = Math.max(1, ...grid.map(row => Math.max(...row)));
+    rowsEl.innerHTML = grid.map(row => `<div class="heatmap-row">` + row.map(v => {
+        const pct = v / max;
+        const style = pct > 0
+            ? `style="background:rgba(79,156,249,${(0.14 + pct * 0.75).toFixed(2)})"`
+            : "";
+        return `<div class="heatmap-cell" ${style} title="${v.toLocaleString()} events"></div>`;
+    }).join("") + `</div>`).join("");
+    if (daysEl) daysEl.innerHTML = days.map(d => `<span>${esc(d)}</span>`).join("");
+}
+
+function renderBarList(sel, items, emptyMsg) {
+    const el = $(sel);
+    if (!el) return;
+    if (!items.length) { el.innerHTML = `<div class="empty">${esc(emptyMsg)}</div>`; return; }
+    const max = Math.max(...items.map(i => i.weight)) || 1;
+    el.innerHTML = `<div class="barlist">` + items.map(i => {
+        const pct = Math.max(2, (i.weight / max) * 100);
+        const label = i.href
+            ? `<a class="link barlabel" href="${i.href}">${esc(i.label)}</a>`
+            : `<span class="barlabel" title="${esc(i.label)}">${esc(i.label)}</span>`;
+        return `<div class="barrow">
+            ${label}
+            <span class="num dim">${esc(i.value)}</span>
+            <span class="bartrack"><span class="barfill ${i.tone || ""}" style="width:${pct}%"></span></span>
+        </div>`;
+    }).join("") + `</div>`;
+}
+
+function renderFeed(events) {
+    const el = $("#eventFeed");
+    if (!el) return;
+    if (!events.length) { el.innerHTML = `<div class="empty">No events yet</div>`; return; }
+    el.innerHTML = events.map(e => `
+        <div class="feed-row">
+            <span class="mono dim">${esc(e.time)}</span>
+            <span class="type-tag ${esc(e.type)}">${esc(e.type.replace("dns_query", "dns"))}</span>
+            <span class="truncate mono" title="${esc(e.detail)}">${esc(e.detail)}</span>
+            <span class="dim" style="font-size:11px">${e.blocked ? '<span class="chip high">blocked</span>' : esc(e.device || e.src || "")}</span>
+        </div>`).join("");
+}
+
+function renderActiveIncidents(items) {
+    const el = $("#activeIncidents");
+    if (!el) return;
+    if (!items.length) {
+        el.innerHTML = `<div class="empty"><span class="empty-icon">✓</span>No open incidents. The network is quiet.</div>`;
+        return;
+    }
+    el.innerHTML = `<table><tbody>` + items.map(i => `
+        <tr class="clickable" onclick="location.href='/incidents/${i.id}'">
+            <td style="width:1%"><span class="chip ${esc(i.severity)} dot">${esc(i.severity)}</span></td>
+            <td><div>${esc(i.title)}</div>
+                <div class="dim" style="font-size:11px">${esc(i.device || "—")} · ${esc(i.evidence_count)} events</div></td>
+            <td class="num dim" style="width:1%; white-space:nowrap">${esc(i.age)} ago</td>
+        </tr>`).join("") + `</tbody></table>`;
+}
+
+/* -------------------------------------------------------------- devices */
+
+let deviceSort = { key: "down", dir: -1 };
+
+async function refreshDevices() {
+    const res = await fetch("/api/devices");
+    const d = await res.json();
+    window.__devices = d.devices;
+    renderDevices();
+    $("#lastUpdated").textContent = new Date().toLocaleTimeString();
+}
+
+function renderDevices() {
+    const tbody = $("#deviceRows");
+    if (!tbody) return;
+    const q = ($("#deviceSearch") && $("#deviceSearch").value || "").toLowerCase();
+    const hideTest = $("#hideTest") && $("#hideTest").classList.contains("on");
+
+    let rows = (window.__devices || []).filter(d => {
+        if (hideTest && d.is_test) return false;
+        if (!q) return true;
+        return (d.name + " " + (d.ip || "") + " " + (d.hostname || "")).toLowerCase().includes(q);
+    });
+
+    rows.sort((a, b) => {
+        const k = deviceSort.key;
+        const av = a[k], bv = b[k];
+        if (typeof av === "string") return av.localeCompare(bv) * deviceSort.dir;
+        return ((av || 0) - (bv || 0)) * deviceSort.dir;
+    });
+
+    $("#deviceCount").textContent = `${rows.length} device${rows.length === 1 ? "" : "s"}`;
+
+    if (!rows.length) {
+        tbody.innerHTML = `<tr><td colspan="9"><div class="empty">No devices match</div></td></tr>`;
+        return;
+    }
+    tbody.innerHTML = rows.map(d => `
+        <tr class="clickable" onclick="location.href='/devices/${d.id}'">
+            <td><span class="status-dot ${d.online ? "online" : "offline"}"></span>${esc(d.name)}
+                ${d.is_test ? '<span class="chip neutral" style="margin-left:6px">test</span>' : ""}</td>
+            <td class="mono dim">${esc(d.ip || "—")}</td>
+            <td>${d.randomized ? '<span class="chip neutral" title="Uses a randomized MAC">randomized</span>' : '<span class="dim">hardware</span>'}${d.mac_count > 1 ? `<span class="dim"> ·${d.mac_count} MACs</span>` : ""}</td>
+            <td class="num">${esc(d.down_h)}</td>
+            <td class="num">${esc(d.up_h)}</td>
+            <td class="num">${d.dns.toLocaleString()}</td>
+            <td class="num">${d.blocked ? `<span style="color:var(--high)">${d.blocked.toLocaleString()}</span>` : '<span class="dim">0</span>'}</td>
+            <td class="num">${d.incidents ? `<span class="chip ${d.incidents_high ? "high" : "low"}">${d.incidents}</span>` : '<span class="dim">0</span>'}</td>
+            <td class="num dim" style="white-space:nowrap">${esc(d.age)}</td>
+        </tr>`).join("");
+}
+
+/* ------------------------------------------------------------ incidents */
+
+let incidentFilter = { severity: "", status: "" };
+
+function statusMenuHtml(current, id) {
+    return STATUS_ORDER.filter(s => s !== current).map(s =>
+        `<button data-set-status="${s}" data-incident-id="${id}">Mark ${esc(STATUS_META[s].label.toLowerCase())}</button>`
+    ).join("");
+}
+
+async function refreshIncidents() {
+    const p = new URLSearchParams();
+    if (incidentFilter.severity) p.set("severity", incidentFilter.severity);
+    if (incidentFilter.status) p.set("status", incidentFilter.status);
+    const res = await fetch("/api/incidents?" + p.toString());
+    const d = await res.json();
+    window.__incidents = d.incidents;
+
+    $("#cntAll") && ($("#cntAll").textContent = d.counts.total);
+    $("#cntHigh") && ($("#cntHigh").textContent = d.counts.high);
+    $("#cntMedium") && ($("#cntMedium").textContent = d.counts.medium);
+    $("#cntLow") && ($("#cntLow").textContent = d.counts.low);
+
+    renderIncidents();
+    $("#lastUpdated").textContent = new Date().toLocaleTimeString();
+}
+
+function renderIncidents() {
+    const tbody = $("#incidentRows");
+    if (!tbody) return;
+    const q = ($("#incidentSearch") && $("#incidentSearch").value || "").toLowerCase();
+    const rows = (window.__incidents || []).filter(i =>
+        !q || (i.title + " " + (i.device || "") + " " + i.signal_type).toLowerCase().includes(q));
+
+    $("#incidentCount").textContent = `${rows.length} incident${rows.length === 1 ? "" : "s"}`;
+
+    if (!rows.length) {
+        tbody.innerHTML = `<tr><td colspan="8"><div class="empty"><span class="empty-icon">✓</span>No incidents match these filters</div></td></tr>`;
+        return;
+    }
+    tbody.innerHTML = rows.map(i => {
+        const meta = STATUS_META[i.status] || STATUS_META.new;
+        return `
+        <tr class="clickable" onclick="location.href='/incidents/${i.id}'">
+            <td><span class="chip ${esc(i.severity)} dot">${esc(i.severity)}</span></td>
+            <td><div>${esc(i.title)}</div>
+                <div class="dim truncate" style="font-size:11px; max-width:460px">${esc(i.description || "")}</div></td>
+            <td class="mono dim">${esc(i.signal_type.replace(/_/g, " "))}</td>
+            <td>${i.device ? `<a class="link" href="/devices/${i.device_id}" onclick="event.stopPropagation()">${esc(i.device)}</a>` : '<span class="dim">—</span>'}</td>
+            <td><span class="status-pill ${meta.cls}">${esc(meta.label)}</span></td>
+            <td class="num">${i.evidence_count}</td>
+            <td class="num dim" style="white-space:nowrap">${esc(i.age)} ago</td>
+            <td style="width:1%" onclick="event.stopPropagation()">
+                <div class="row-menu">
+                    <button class="icon-btn row-menu-btn" data-toggle-menu aria-label="Actions">
+                        <svg class="icon" width="16" height="16"><use href="#i-more"/></svg>
+                    </button>
+                    <div class="row-menu-list">${statusMenuHtml(i.status, i.id)}</div>
+                </div>
+            </td>
+        </tr>`;
+    }).join("");
+}
+
+async function updateIncidentStatus(id, status) {
+    try {
+        const res = await fetch(`/api/incidents/${id}`, {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ status }),
+        });
+        if (!res.ok) throw new Error("request failed");
+        toast("Incident updated", (STATUS_META[status] || {}).label || status, "ok");
+        if ($("#incidentActions")) {
+            setTimeout(() => location.reload(), 500);
+        } else if ($("#incidentRows")) {
+            refreshIncidents();
+        }
+        refreshNotifications();
+    } catch (err) {
+        toast("Update failed", "Could not change the incident status.", "high");
+    }
+}
+
+/* --------------------------------------------------------------- exports */
+
+function csvCell(v) {
+    const s = v === null || v === undefined ? "" : String(v);
+    return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+}
+
+function exportCsv(filename, rows, columns) {
+    const lines = [columns.map(c => c.label).join(",")];
+    rows.forEach(r => lines.push(columns.map(c => csvCell(r[c.key])).join(",")));
+    const blob = new Blob([lines.join("\r\n")], { type: "text/csv" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url; a.download = filename;
+    document.body.appendChild(a); a.click(); a.remove();
+    URL.revokeObjectURL(url);
+}
+
+/* --------------------------------------------------------- device detail */
+
+function initDeviceRename() {
+    const wrap = $("#deviceIdentity");
+    if (!wrap) return;
+    const deviceId = wrap.dataset.deviceId;
+    const display = $("#deviceNameDisplay");
+    const trigger = $("#deviceNameEdit");
+    if (!trigger) return;
+
+    trigger.addEventListener("click", () => {
+        const current = display.textContent;
+        const input = document.createElement("input");
+        input.value = current;
+        display.replaceWith(input);
+        input.focus();
+        input.select();
+
+        const commit = async () => {
+            const val = input.value.trim();
+            if (!val || val === current) { input.replaceWith(display); return; }
+            try {
+                const res = await fetch(`/api/devices/${deviceId}`, {
+                    method: "PATCH",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ friendly_name: val }),
+                });
+                if (!res.ok) throw new Error("request failed");
+                display.textContent = val;
+                document.title = val + " · SecurePi Gateway";
+                const topbarTitle = $(".topbar-title");
+                if (topbarTitle) topbarTitle.textContent = val;
+                toast("Device renamed", `Now labeled "${val}"`, "ok");
+            } catch (err) {
+                toast("Rename failed", "Could not update the device name.", "high");
+            }
+            input.replaceWith(display);
+        };
+        input.addEventListener("blur", commit);
+        input.addEventListener("keydown", (e) => {
+            if (e.key === "Enter") input.blur();
+            if (e.key === "Escape") { input.value = current; input.blur(); }
+        });
+    });
+}
+
+function initDeviceActivity() {
+    const el = $("#deviceActivityChart");
+    if (!el) return;
+    const deviceId = el.dataset.deviceId;
+
+    async function load(range) {
+        const res = await fetch(`/api/devices/${deviceId}/series?range=${range}`);
+        const d = await res.json();
+        const ctx = el.getContext("2d");
+        upsertChart("deviceActivity", "deviceActivityChart", {
+            type: "line",
+            data: {
+                labels: d.labels,
+                datasets: [
+                    { label: "Download", data: d.down_kbps, borderColor: "#4f9cf9",
+                      backgroundColor: gradient(ctx, "#4f9cf9"), fill: true, tension: .35,
+                      pointRadius: 0, borderWidth: 2 },
+                    { label: "Upload", data: d.up_kbps, borderColor: "#7b5cf0",
+                      backgroundColor: gradient(ctx, "#7b5cf0"), fill: true, tension: .35,
+                      pointRadius: 0, borderWidth: 2 },
+                ],
+            },
+            options: baseChartOpts({
+                plugins: {
+                    legend: { display: true, position: "top", align: "end",
+                        labels: { color: CHART_TEXT, boxWidth: 8, boxHeight: 8,
+                                  usePointStyle: true, font: { size: 11 } } },
+                    tooltip: baseChartOpts().plugins.tooltip,
+                },
+            }),
+        });
+    }
+
+    $$("#deviceRangeSel button").forEach(b => {
+        b.classList.toggle("active", b.dataset.range === SP.range);
+        b.addEventListener("click", () => {
+            SP.range = b.dataset.range;
+            localStorage.setItem("sp.range", SP.range);
+            $$("#deviceRangeSel button").forEach(x => x.classList.toggle("active", x === b));
+            load(SP.range);
+        });
+    });
+    load(SP.range);
+}
+
+/* ------------------------------------------------------- command palette */
+
+const CMDK_PAGES = [
+    { label: "Dashboard", href: "/", icon: "i-grid" },
+    { label: "Devices", href: "/devices", icon: "i-monitor" },
+    { label: "Incidents", href: "/incidents", icon: "i-alert" },
+];
+
+let cmdkItems = [];
+let cmdkActive = 0;
+
+function cmdkOpen() {
+    const overlay = $("#cmdkOverlay");
+    if (!overlay) return;
+    overlay.hidden = false;
+    const input = $("#cmdkInput");
+    input.value = "";
+    cmdkFilter("");
+    setTimeout(() => input.focus(), 0);
+    cmdkEnsureData();
+}
+
+function cmdkClose() {
+    const overlay = $("#cmdkOverlay");
+    if (overlay) overlay.hidden = true;
+}
+
+async function cmdkEnsureData() {
+    if (!window.__devices) {
+        try { const r = await fetch("/api/devices"); window.__devices = (await r.json()).devices; }
+        catch (e) { /* command palette degrades to pages-only */ }
+    }
+    if (!window.__incidents) {
+        try { const r = await fetch("/api/incidents"); window.__incidents = (await r.json()).incidents; }
+        catch (e) { /* command palette degrades to pages-only */ }
+    }
+    cmdkFilter($("#cmdkInput").value);
+}
+
+function cmdkFilter(q) {
+    q = (q || "").toLowerCase().trim();
+    const groups = [];
+
+    const pages = CMDK_PAGES.filter(p => !q || p.label.toLowerCase().includes(q));
+    if (pages.length) groups.push({ label: "Pages", items: pages });
+
+    const devices = (window.__devices || [])
+        .filter(d => !q || (d.name + " " + (d.ip || "")).toLowerCase().includes(q)).slice(0, 6);
+    if (devices.length) groups.push({
+        label: "Devices",
+        items: devices.map(d => ({ label: d.name, hint: d.ip, icon: "i-monitor", href: `/devices/${d.id}` })),
+    });
+
+    const incidents = (window.__incidents || [])
+        .filter(i => !q || (i.title + " " + i.signal_type).toLowerCase().includes(q)).slice(0, 6);
+    if (incidents.length) groups.push({
+        label: "Incidents",
+        items: incidents.map(i => ({ label: i.title, hint: i.severity, icon: "i-alert", href: `/incidents/${i.id}` })),
+    });
+
+    cmdkItems = groups.flatMap(g => g.items);
+    cmdkActive = 0;
+
+    const el = $("#cmdkResults");
+    if (!cmdkItems.length) { el.innerHTML = `<div class="cmdk-empty">No matches</div>`; return; }
+
+    let idx = 0;
+    el.innerHTML = groups.map(g => `
+        <div class="cmdk-group-label">${esc(g.label)}</div>
+        ${g.items.map(item => {
+            const i = idx++;
+            return `<div class="cmdk-item${i === 0 ? " active" : ""}" data-idx="${i}" data-href="${item.href}">
+                <svg class="icon" width="15" height="15"><use href="#${item.icon || "i-search"}"/></svg>
+                <span class="label">${esc(item.label)}</span>
+                ${item.hint ? `<span class="hint">${esc(item.hint)}</span>` : ""}
+            </div>`;
+        }).join("")}
+    `).join("");
+}
+
+function cmdkHighlight() {
+    $$(".cmdk-item").forEach(el => el.classList.toggle("active", Number(el.dataset.idx) === cmdkActive));
+    const active = $(`.cmdk-item[data-idx="${cmdkActive}"]`);
+    if (active) active.scrollIntoView({ block: "nearest" });
+}
+
+function cmdkGo(idx) {
+    const el = $(`.cmdk-item[data-idx="${idx}"]`);
+    if (el) location.href = el.dataset.href;
+}
+
+/* ----------------------------------------------------------------- boot */
+
+function refresh() {
+    const page = document.body.dataset.page;
+    const fn = { dashboard: refreshDashboard, devices: refreshDevices, incidents: refreshIncidents }[page];
+    if (fn) fn().catch(err => console.error("refresh failed", err));
+}
+
+document.addEventListener("DOMContentLoaded", () => {
+    initSidebar();
+    initDeviceRename();
+    initDeviceActivity();
+
+    // Global row-action delegate: works across incidents list + detail page.
+    // Registered on the capture phase because row markup calls
+    // event.stopPropagation() in the bubble phase (to stop a row's own
+    // onclick from navigating when its action menu is clicked) - a bubble
+    // listener on document would never see these clicks at all.
+    document.addEventListener("click", (e) => {
+        const toggle = e.target.closest("[data-toggle-menu]");
+        if (toggle) {
+            e.stopPropagation();
+            const menu = toggle.closest(".row-menu");
+            $$(".row-menu.open").forEach(m => { if (m !== menu) m.classList.remove("open"); });
+            if (menu) menu.classList.toggle("open");
+            return;
+        }
+        const setBtn = e.target.closest("[data-set-status]");
+        if (setBtn) {
+            e.stopPropagation();
+            const menu = setBtn.closest(".row-menu");
+            if (menu) menu.classList.remove("open");
+            updateIncidentStatus(setBtn.dataset.incidentId, setBtn.dataset.setStatus);
+            return;
+        }
+        $$(".row-menu.open").forEach(m => m.classList.remove("open"));
+    }, true);
+
+    // Notification bell
+    const notifBtn = $("#notifBtn");
+    const notifPanel = $("#notifPanel");
+    if (notifBtn && notifPanel) {
+        notifBtn.addEventListener("click", (e) => {
+            e.stopPropagation();
+            notifPanel.hidden = !notifPanel.hidden;
+        });
+        document.addEventListener("click", (e) => {
+            if (!notifPanel.hidden && !notifPanel.contains(e.target) && e.target !== notifBtn) {
+                notifPanel.hidden = true;
+            }
+        });
+    }
+
+    // Command palette
+    const cmdkTrigger = $("#cmdkTrigger");
+    const cmdkOverlay = $("#cmdkOverlay");
+    const cmdkInput = $("#cmdkInput");
+    const cmdkResults = $("#cmdkResults");
+    if (cmdkTrigger) cmdkTrigger.addEventListener("click", cmdkOpen);
+    if (cmdkOverlay) cmdkOverlay.addEventListener("click", (e) => { if (e.target === cmdkOverlay) cmdkClose(); });
+    if (cmdkInput) {
+        cmdkInput.addEventListener("input", () => cmdkFilter(cmdkInput.value));
+        cmdkInput.addEventListener("keydown", (e) => {
+            if (e.key === "ArrowDown") { e.preventDefault(); cmdkActive = Math.min(cmdkActive + 1, cmdkItems.length - 1); cmdkHighlight(); }
+            else if (e.key === "ArrowUp") { e.preventDefault(); cmdkActive = Math.max(cmdkActive - 1, 0); cmdkHighlight(); }
+            else if (e.key === "Enter") { e.preventDefault(); cmdkGo(cmdkActive); }
+        });
+    }
+    if (cmdkResults) cmdkResults.addEventListener("click", (e) => {
+        const item = e.target.closest(".cmdk-item");
+        if (item) location.href = item.dataset.href;
+    });
+    document.addEventListener("keydown", (e) => {
+        if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
+            e.preventDefault();
+            cmdkOpen();
+        } else if (e.key === "Escape") {
+            cmdkClose();
+        }
+    });
+
+    // Range selector (dashboard)
+    $$("#rangeSel button").forEach(b => {
+        b.classList.toggle("active", b.dataset.range === SP.range);
+        b.addEventListener("click", () => {
+            SP.range = b.dataset.range;
+            localStorage.setItem("sp.range", SP.range);
+            $$("#rangeSel button").forEach(x => x.classList.toggle("active", x === b));
+            refresh();
+        });
+    });
+
+    const lt = $("#liveToggle");
+    if (lt) lt.addEventListener("click", () => setLive(!SP.live));
+
+    const ds = $("#deviceSearch");
+    if (ds) ds.addEventListener("input", renderDevices);
+    const ht = $("#hideTest");
+    if (ht) ht.addEventListener("click", () => { ht.classList.toggle("on"); renderDevices(); });
+
+    $$("th.sortable").forEach(th => th.addEventListener("click", () => {
+        const k = th.dataset.key;
+        deviceSort.dir = deviceSort.key === k ? -deviceSort.dir : -1;
+        deviceSort.key = k;
+        $$("th.sortable .arrow").forEach(a => a.textContent = "");
+        const arrow = $(".arrow", th);
+        if (arrow) arrow.textContent = deviceSort.dir === -1 ? "▼" : "▲";
+        renderDevices();
+    }));
+
+    const devExport = $("#devicesExport");
+    if (devExport) devExport.addEventListener("click", () => exportCsv("devices.csv", window.__devices || [], [
+        { key: "name", label: "Device" }, { key: "ip", label: "IP" }, { key: "hostname", label: "Hostname" },
+        { key: "down_h", label: "Down" }, { key: "up_h", label: "Up" }, { key: "dns", label: "DNS Queries" },
+        { key: "blocked", label: "Blocked" }, { key: "incidents", label: "Incidents" }, { key: "age", label: "Last Seen" },
+    ]));
+
+    const is = $("#incidentSearch");
+    if (is) is.addEventListener("input", renderIncidents);
+    $$("#sevFilter button").forEach(b => b.addEventListener("click", () => {
+        $$("#sevFilter button").forEach(x => x.classList.toggle("active", x === b));
+        incidentFilter.severity = b.dataset.sev || "";
+        refreshIncidents();
+    }));
+    $$("#statusFilter button").forEach(b => b.addEventListener("click", () => {
+        $$("#statusFilter button").forEach(x => x.classList.toggle("active", x === b));
+        incidentFilter.status = b.dataset.status || "";
+        refreshIncidents();
+    }));
+
+    const incExport = $("#incidentsExport");
+    if (incExport) incExport.addEventListener("click", () => exportCsv("incidents.csv", window.__incidents || [], [
+        { key: "severity", label: "Severity" }, { key: "title", label: "Title" }, { key: "signal_type", label: "Signal" },
+        { key: "device", label: "Device" }, { key: "status", label: "Status" },
+        { key: "evidence_count", label: "Evidence" }, { key: "age", label: "Last Seen" },
+    ]));
+
+    setLive(SP.live);
+    tick();
+});

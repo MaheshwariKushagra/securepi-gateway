@@ -1,48 +1,141 @@
 {% extends "base.html" %}
 {% block content %}
-<h1>{{ device.name }}</h1>
-<div class="stat-row">
-    <div class="stat"><div class="n">{{ device.down_mb }} MB</div><div class="label">Downloaded</div></div>
-    <div class="stat"><div class="n">{{ device.up_kb }} KB</div><div class="label">Uploaded</div></div>
-    <div class="stat"><div class="n">{{ device.dns_count }}</div><div class="label">DNS queries</div></div>
-    <div class="stat"><div class="n">{{ device.blocked_count }}</div><div class="label">Blocked</div></div>
+<div class="page-head">
+    <a class="link subtle" href="/devices"><svg class="icon" width="13" height="13"><use href="#i-arrow-left"/></svg> Devices</a>
+    <h1 style="margin-left:8px">
+        <span class="editable-name" id="deviceIdentity" data-device-id="{{ device.id }}">
+            <span id="deviceNameDisplay">{{ device.name }}</span>
+            <span class="edit-trigger" id="deviceNameEdit" title="Rename this device">
+                <svg class="icon" width="14" height="14"><use href="#i-pencil"/></svg>
+            </span>
+        </span>
+    </h1>
+    <span class="chip {{ 'ok' if device.online else 'neutral' }} dot">{{ 'online' if device.online else 'last seen ' + device.age + ' ago' }}</span>
+</div>
+
+<div class="kpis">
+    <div class="kpi"><span class="kpi-accent"></span>
+        <div class="kpi-label">Downloaded</div><div class="kpi-value">{{ device.down_h }}</div></div>
+    <div class="kpi"><span class="kpi-accent"></span>
+        <div class="kpi-label">Uploaded</div><div class="kpi-value">{{ device.up_h }}</div></div>
+    <div class="kpi"><span class="kpi-accent"></span>
+        <div class="kpi-label">DNS Queries</div><div class="kpi-value">{{ "{:,}".format(device.dns) }}</div></div>
+    <div class="kpi {{ 'alert' if device.blocked else '' }}"><span class="kpi-accent"></span>
+        <div class="kpi-label">Blocked</div><div class="kpi-value">{{ "{:,}".format(device.blocked) }}</div></div>
+    <div class="kpi"><span class="kpi-accent"></span>
+        <div class="kpi-label">Total Events</div><div class="kpi-value">{{ "{:,}".format(device.events) }}</div></div>
+</div>
+
+<div class="card" style="margin-bottom:14px">
+    <div class="card-head"><h2>Activity</h2>
+        <span class="spacer"></span>
+        <div class="seg" id="deviceRangeSel">
+            <button data-range="1h">1H</button>
+            <button data-range="6h">6H</button>
+            <button data-range="24h">24H</button>
+            <button data-range="7d">7D</button>
+        </div>
+    </div>
+    <div class="card-body chart" style="height:220px"><canvas id="deviceActivityChart" data-device-id="{{ device.id }}"></canvas></div>
+</div>
+
+<div class="grid c2">
+    <div class="card">
+        <div class="card-head"><h2>Identity</h2>
+            <span class="spacer"></span>
+            <span class="subtle">MAC and address history</span></div>
+        <div class="card-body">
+            <dl class="meta-grid">
+                <dt>Hostname</dt><dd class="mono">{{ device.hostname or '—' }}</dd>
+                <dt>First seen</dt><dd>{{ device.first_seen }}</dd>
+                <dt>Last seen</dt><dd>{{ device.last_seen }}</dd>
+            </dl>
+            <div style="margin-top:14px">
+                <div class="subtle" style="margin-bottom:6px">MAC addresses</div>
+                <table>
+                    {% for m in macs %}
+                    <tr><td class="mono">{{ m.mac }}</td>
+                        <td>{% if m.is_randomized %}<span class="chip neutral">randomized</span>{% else %}<span class="dim">hardware</span>{% endif %}</td>
+                        <td class="dim num">{{ m.last_seen_h }}</td></tr>
+                    {% endfor %}
+                </table>
+            </div>
+            <div style="margin-top:14px">
+                <div class="subtle" style="margin-bottom:6px">IP addresses held</div>
+                <table>
+                    {% for i in ips %}
+                    <tr><td class="mono">{{ i.ip }}</td>
+                        <td class="dim num">{{ i.first_seen_h }} → {{ i.last_seen_h }}</td></tr>
+                    {% endfor %}
+                </table>
+            </div>
+            {% if macs | selectattr('is_randomized') | list %}
+            <div class="callout" style="margin-top:14px">
+                This device uses a randomized MAC address. Identity is anchored to its
+                DHCP hostname instead, so it stays the same device across rotations.
+            </div>
+            {% endif %}
+        </div>
+    </div>
+
+    <div class="card">
+        <div class="card-head"><h2>Incidents</h2></div>
+        <div class="card-body tight">
+            {% if incidents %}
+            <table><tbody>
+                {% for i in incidents %}
+                <tr class="clickable" onclick="location.href='/incidents/{{ i.id }}'">
+                    <td style="width:1%"><span class="chip {{ i.severity }} dot">{{ i.severity }}</span></td>
+                    <td>{{ i.title }}<div class="dim" style="font-size:11px">{{ i.evidence_count }} events</div></td>
+                    <td class="num dim">{{ i.age }} ago</td>
+                </tr>
+                {% endfor %}
+            </tbody></table>
+            {% else %}<div class="empty"><span class="empty-icon">✓</span>No incidents for this device</div>{% endif %}
+        </div>
+    </div>
+</div>
+
+<div class="grid c2e">
+    <div class="card">
+        <div class="card-head"><h2>Top Destinations</h2><span class="spacer"></span><span class="subtle">TLS SNI</span></div>
+        <div class="card-body tight">
+            {% if top_sni %}
+            <table><tbody>
+                {% for s in top_sni %}
+                <tr><td class="mono truncate">{{ s.tls_sni }}</td><td class="num dim">{{ s.n }}</td></tr>
+                {% endfor %}
+            </tbody></table>
+            {% else %}<div class="empty">No TLS activity recorded</div>{% endif %}
+        </div>
+    </div>
+    <div class="card">
+        <div class="card-head"><h2>Most Blocked Domains</h2></div>
+        <div class="card-body tight">
+            {% if top_blocked %}
+            <table><tbody>
+                {% for b in top_blocked %}
+                <tr><td class="mono truncate">{{ b.dns_rrname }}</td><td class="num" style="color:var(--high)">{{ b.n }}</td></tr>
+                {% endfor %}
+            </tbody></table>
+            {% else %}<div class="empty">Nothing blocked for this device</div>{% endif %}
+        </div>
+    </div>
 </div>
 
 <div class="card">
-    <h1 style="font-size:15px;">Identity</h1>
-    <table>
-        <tr><th>MAC addresses used</th><td class="mono">{{ device.macs }}</td></tr>
-        <tr><th>IP addresses used</th><td class="mono">{{ device.ips }}</td></tr>
-        <tr><th>First seen</th><td class="mono">{{ device.first_seen }}</td></tr>
-        <tr><th>Last seen</th><td class="mono">{{ device.last_seen }}</td></tr>
-    </table>
-</div>
-
-<div class="card">
-    <h1 style="font-size:15px;">Top destinations (TLS SNI)</h1>
-    {% if top_destinations %}
-    <table>
-        <tr><th>Destination</th><th>Connections</th></tr>
-        {% for r in top_destinations %}
-        <tr><td class="mono">{{ r.tls_sni }}</td><td>{{ r.n }}</td></tr>
+    <div class="card-head"><h2>Activity Timeline</h2><span class="spacer"></span><span class="subtle">most recent 60 events</span></div>
+    <div class="card-body tight feed">
+        {% for e in timeline %}
+        <div class="feed-row">
+            <span class="mono dim">{{ e.time }}</span>
+            <span class="type-tag {{ e.type }}">{{ e.type.replace('dns_query','dns') }}</span>
+            <span class="truncate mono" title="{{ e.detail }}">{{ e.detail }}</span>
+            <span class="dim" style="font-size:11px">{% if e.blocked %}<span class="chip high">blocked</span>{% else %}{{ e.extra }}{% endif %}</span>
+        </div>
+        {% else %}
+        <div class="empty">No events recorded</div>
         {% endfor %}
-    </table>
-    {% else %}<div class="empty">No TLS activity recorded.</div>{% endif %}
-</div>
-
-<div class="card">
-    <h1 style="font-size:15px;">Timeline (most recent 40 events)</h1>
-    {% if timeline %}
-    <table>
-        <tr><th>Time</th><th>Type</th><th>Detail</th></tr>
-        {% for r in timeline %}
-        <tr>
-            <td class="mono">{{ r.time }}</td>
-            <td>{{ r.event_type }}</td>
-            <td class="mono">{{ r.detail }}</td>
-        </tr>
-        {% endfor %}
-    </table>
-    {% else %}<div class="empty">No events recorded.</div>{% endif %}
+    </div>
 </div>
 {% endblock %}

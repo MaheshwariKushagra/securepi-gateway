@@ -1,19 +1,43 @@
 {% extends "base.html" %}
 {% block content %}
-<h1>Incidents</h1>
-{% if incidents %}
-<table>
-    <tr><th>Severity</th><th>Title</th><th>Device</th><th>Status</th><th>Evidence</th><th>Last seen</th></tr>
-    {% for i in incidents %}
-    <tr>
-        <td><span class="sev-{{ i.severity }}">{{ i.severity }}</span></td>
-        <td><a class="rowlink" href="/incidents/{{ i.id }}">{{ i.title }}</a></td>
-        <td>{{ i.device_name or '-' }}</td>
-        <td><span class="badge badge-{{ i.status }}">{{ i.status }}</span></td>
-        <td>{{ i.evidence_count }}</td>
-        <td class="mono">{{ i.last_seen }}</td>
-    </tr>
-    {% endfor %}
-</table>
-{% else %}<div class="empty">No incidents raised. The network is quiet.</div>{% endif %}
+<div class="page-head">
+    <h1>Incidents</h1>
+    <span class="subtle" id="incidentCount">—</span>
+    <div class="spacer"></div>
+    <div class="seg" id="sevFilter">
+        <button data-sev="" class="active">All <span class="dim" id="cntAll">0</span></button>
+        <button data-sev="high">High <span class="dim" id="cntHigh">0</span></button>
+        <button data-sev="medium">Medium <span class="dim" id="cntMedium">0</span></button>
+        <button data-sev="low">Low <span class="dim" id="cntLow">0</span></button>
+    </div>
+    <div class="seg" id="statusFilter">
+        <button data-status="" class="active">All statuses</button>
+        <button data-status="new">New</button>
+        <button data-status="investigating">Investigating</button>
+        <button data-status="resolved">Resolved</button>
+        <button data-status="false_positive">False positive</button>
+    </div>
+    <input class="input" id="incidentSearch" placeholder="Search incidents…">
+    <button class="btn icon-label" id="incidentsExport" title="Export visible incidents as CSV">
+        <svg class="icon" width="14" height="14"><use href="#i-download"/></svg> Export
+    </button>
+</div>
+
+<div class="card">
+    <table>
+        <thead><tr>
+            <th style="width:1%">Severity</th>
+            <th>Incident</th>
+            <th>Signal</th>
+            <th>Device</th>
+            <th>Status</th>
+            <th class="num">Evidence</th>
+            <th class="num">Last seen</th>
+            <th style="width:1%"></th>
+        </tr></thead>
+        <tbody id="incidentRows">
+            <tr><td colspan="8"><div class="empty">Loading…</div></td></tr>
+        </tbody>
+    </table>
+</div>
 {% endblock %}

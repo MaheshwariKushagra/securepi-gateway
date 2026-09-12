@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>Devices</h1>
+{% if devices %}
+<table>
+    <tr><th>Device</th><th>Current IP</th><th>Down</th><th>Up</th><th>DNS</th><th>TLS</th><th>Alerts</th><th>Last seen</th></tr>
+    {% for d in devices %}
+    <tr>
+        <td><a class="rowlink" href="/devices/{{ d.id }}">{{ d.name }}</a></td>
+        <td class="mono">{{ d.ip or '-' }}</td>
+        <td>{{ d.down_mb }} MB</td>
+        <td>{{ d.up_kb }} KB</td>
+        <td>{{ d.dns_count }}</td>
+        <td>{{ d.tls_count }}</td>
+        <td>{% if d.alert_count %}<span class="sev-high">{{ d.alert_count }}</span>{% else %}0{% endif %}</td>
+        <td class="mono">{{ d.last_seen }}</td>
+    </tr>
+    {% endfor %}
+</table>
+{% else %}<div class="empty">No devices seen yet.</div>{% endif %}
+{% endblock %}

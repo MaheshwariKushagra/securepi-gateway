@@ -1,0 +1,27 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>{{ incident.title }}</h1>
+<div class="card">
+    <span class="sev-{{ incident.severity }}">{{ incident.severity|upper }}</span>
+    &nbsp; <span class="badge badge-{{ incident.status }}">{{ incident.status }}</span>
+    &nbsp; signal: <span class="mono">{{ incident.signal_type }}</span>
+    <p class="desc">{{ incident.description }}</p>
+    <table>
+        <tr><th>Device</th><td>{% if incident.device_id %}<a class="rowlink" href="/devices/{{ incident.device_id }}">{{ incident.device_name }}</a>{% else %}-{% endif %}</td></tr>
+        <tr><th>First seen</th><td class="mono">{{ incident.first_seen }}</td></tr>
+        <tr><th>Last seen</th><td class="mono">{{ incident.last_seen }}</td></tr>
+        <tr><th>Evidence count</th><td>{{ incident.evidence_count }}</td></tr>
+    </table>
+</div>
+
+<div class="card">
+    <h1 style="font-size:15px;">Evidence chain</h1>
+    {% if evidence %}
+    <ul class="evidence-list">
+        {% for e in evidence %}
+        <li class="mono">{{ e.time }} &nbsp; {{ e.event_type }} &nbsp; {{ e.detail }}</li>
+        {% endfor %}
+    </ul>
+    {% else %}<div class="empty">This incident type does not carry linked events (e.g. new-device detections).</div>{% endif %}
+</div>
+{% endblock %}

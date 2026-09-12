@@ -1,0 +1,48 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>{{ device.name }}</h1>
+<div class="stat-row">
+    <div class="stat"><div class="n">{{ device.down_mb }} MB</div><div class="label">Downloaded</div></div>
+    <div class="stat"><div class="n">{{ device.up_kb }} KB</div><div class="label">Uploaded</div></div>
+    <div class="stat"><div class="n">{{ device.dns_count }}</div><div class="label">DNS queries</div></div>
+    <div class="stat"><div class="n">{{ device.blocked_count }}</div><div class="label">Blocked</div></div>
+</div>
+
+<div class="card">
+    <h1 style="font-size:15px;">Identity</h1>
+    <table>
+        <tr><th>MAC addresses used</th><td class="mono">{{ device.macs }}</td></tr>
+        <tr><th>IP addresses used</th><td class="mono">{{ device.ips }}</td></tr>
+        <tr><th>First seen</th><td class="mono">{{ device.first_seen }}</td></tr>
+        <tr><th>Last seen</th><td class="mono">{{ device.last_seen }}</td></tr>
+    </table>
+</div>
+
+<div class="card">
+    <h1 style="font-size:15px;">Top destinations (TLS SNI)</h1>
+    {% if top_destinations %}
+    <table>
+        <tr><th>Destination</th><th>Connections</th></tr>
+        {% for r in top_destinations %}
+        <tr><td class="mono">{{ r.tls_sni }}</td><td>{{ r.n }}</td></tr>
+        {% endfor %}
+    </table>
+    {% else %}<div class="empty">No TLS activity recorded.</div>{% endif %}
+</div>
+
+<div class="card">
+    <h1 style="font-size:15px;">Timeline (most recent 40 events)</h1>
+    {% if timeline %}
+    <table>
+        <tr><th>Time</th><th>Type</th><th>Detail</th></tr>
+        {% for r in timeline %}
+        <tr>
+            <td class="mono">{{ r.time }}</td>
+            <td>{{ r.event_type }}</td>
+            <td class="mono">{{ r.detail }}</td>
+        </tr>
+        {% endfor %}
+    </table>
+    {% else %}<div class="empty">No events recorded.</div>{% endif %}
+</div>
+{% endblock %}

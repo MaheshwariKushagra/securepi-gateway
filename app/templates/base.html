@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>SecurePi Gateway{% if title %} - {{ title }}{% endif %}</title>
+    <meta http-equiv="refresh" content="15">
+    <style>
+        /* Plain CSS, no framework - matches the "plain, obvious constructs"
+           style used throughout this codebase, and keeps the whole page
+           readable without a build step. */
+        * { box-sizing: border-box; }
+        body {
+            font-family: -apple-system, "Segoe UI", Roboto, sans-serif;
+            margin: 0; background: #0f1115; color: #e2e5e9;
+        }
+        header {
+            background: #171a21; padding: 14px 24px; border-bottom: 1px solid #262b35;
+            display: flex; align-items: center; gap: 24px;
+        }
+        header .brand { font-weight: 600; font-size: 16px; color: #fff; }
+        nav a {
+            color: #9aa4b2; text-decoration: none; padding: 6px 12px;
+            border-radius: 6px; font-size: 14px;
+        }
+        nav a.active, nav a:hover { background: #262b35; color: #fff; }
+        main { padding: 24px; max-width: 1100px; margin: 0 auto; }
+        h1 { font-size: 20px; margin: 0 0 16px; color: #fff; }
+        table { width: 100%; border-collapse: collapse; font-size: 13px; }
+        th { text-align: left; color: #7d8695; font-weight: 600; padding: 8px 10px;
+             border-bottom: 1px solid #262b35; }
+        td { padding: 8px 10px; border-bottom: 1px solid #1c2028; }
+        tr:hover td { background: #171a21; }
+        a.rowlink { color: #7cb3ff; text-decoration: none; }
+        a.rowlink:hover { text-decoration: underline; }
+        .sev-high { color: #ff6868; font-weight: 600; }
+        .sev-medium { color: #ffb648; font-weight: 600; }
+        .sev-low { color: #7d8695; }
+        .badge {
+            display: inline-block; padding: 2px 8px; border-radius: 10px;
+            font-size: 11px; font-weight: 600;
+        }
+        .badge-new { background: #3a2020; color: #ff9a9a; }
+        .badge-investigating { background: #3a3120; color: #ffcf7a; }
+        .badge-resolved { background: #1e3a25; color: #8fe0a0; }
+        .badge-false_positive { background: #262b35; color: #7d8695; }
+        .card {
+            background: #171a21; border: 1px solid #262b35; border-radius: 10px;
+            padding: 18px; margin-bottom: 16px;
+        }
+        .stat-row { display: flex; gap: 16px; margin-bottom: 20px; flex-wrap: wrap; }
+        .stat { background: #171a21; border: 1px solid #262b35; border-radius: 10px;
+                padding: 14px 20px; min-width: 120px; }
+        .stat .n { font-size: 24px; font-weight: 700; color: #fff; }
+        .stat .label { font-size: 12px; color: #7d8695; margin-top: 2px; }
+        .empty { color: #7d8695; padding: 24px; text-align: center; }
+        .mono { font-family: ui-monospace, monospace; font-size: 12px; }
+        .evidence-list { list-style: none; padding: 0; margin: 0; }
+        .evidence-list li { padding: 6px 0; border-bottom: 1px solid #1c2028; font-size: 12px; }
+        .desc { color: #b8c0cc; font-size: 13px; margin-top: 4px; }
+    </style>
+</head>
+<body>
+<header>
+    <span class="brand">SecurePi Gateway</span>
+    <nav>
+        <a href="/" class="{{ 'active' if active=='overview' else '' }}">Overview</a>
+        <a href="/devices" class="{{ 'active' if active=='devices' else '' }}">Devices</a>
+        <a href="/incidents" class="{{ 'active' if active=='incidents' else '' }}">Incidents</a>
+    </nav>
+</header>
+<main>
+{% block content %}{% endblock %}
+</main>
+</body>
+</html>

@@ -1,0 +1,19 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>Incidents</h1>
+{% if incidents %}
+<table>
+    <tr><th>Severity</th><th>Title</th><th>Device</th><th>Status</th><th>Evidence</th><th>Last seen</th></tr>
+    {% for i in incidents %}
+    <tr>
+        <td><span class="sev-{{ i.severity }}">{{ i.severity }}</span></td>
+        <td><a class="rowlink" href="/incidents/{{ i.id }}">{{ i.title }}</a></td>
+        <td>{{ i.device_name or '-' }}</td>
+        <td><span class="badge badge-{{ i.status }}">{{ i.status }}</span></td>
+        <td>{{ i.evidence_count }}</td>
+        <td class="mono">{{ i.last_seen }}</td>
+    </tr>
+    {% endfor %}
+</table>
+{% else %}<div class="empty">No incidents raised. The network is quiet.</div>{% endif %}
+{% endblock %}

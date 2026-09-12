@@ -14,17 +14,20 @@ Three views, matching what the plan calls for:
   /incidents   the correlation engine's output: queue, severity, evidence
 """
 
+import json
 import sqlite3
 import time
 
 from fastapi import FastAPI
 from fastapi.responses import HTMLResponse
+from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from starlette.requests import Request
 
 DB_PATH = "/opt/securepi/securepi.db"
 
 app = FastAPI(title="SecurePi Gateway")
+app.mount("/static", StaticFiles(directory="/opt/securepi/static"), name="static")
 templates = Jinja2Templates(directory="/opt/securepi/templates")
 
 
@@ -44,6 +47,59 @@ def device_name(row):
     """A device's display name: the friendly name if one has been set,
     otherwise the DHCP hostname, otherwise a plain fallback."""
     return row["friendly_name"] or row["hostname"] or ("device %d" % row["id"])
+
+
+
+def time_buckets(c, hours=6, bucket_minutes=15):
+    """
+    Build the data for the throughput and blocked-query charts: fixed-width
+    time buckets covering the trailing window, each with total bytes
+    transferred and blocked-query count in that slice.
+
+    Buckets are pre-seeded at zero for the WHOLE window before events are
+    added in, so a quiet period shows as a real zero on the chart rather than
+    silently vanishing (a gap in the x-axis reads as missing data, not "no
+    activity", which is the wrong story to tell about a quiet network).
+    """
+    now = time.time()
+    bucket_s = bucket_minutes * 60
+    n_buckets = int((hours * 3600) / bucket_s)
+    start = now - n_buckets * bucket_s
+
+    labels = []
+    bytes_per_bucket = [0] * n_buckets
+    blocked_per_bucket = [0] * n_buckets
+    for i in range(n_buckets):
+        bucket_t = start + i * bucket_s
+        labels.append(time.strftime("%H:%M", time.localtime(bucket_t)))
+
+    for r in c.execute(
+        """SELECT ts, bytes_toclient, bytes_toserver FROM events
+            WHERE event_type = 'flow' AND ts > ?""",
+        (start,),
+    ):
+        idx = int((r["ts"] - start) / bucket_s)
+        if 0 <= idx < n_buckets:
+            bytes_per_bucket[idx] += (r["bytes_toclient"] or 0) + (r["bytes_toserver"] or 0)
+
+    for r in c.execute(
+        """SELECT ts FROM events
+            WHERE event_type = 'dns_query' AND blocked = 1 AND ts > ?""",
+        (start,),
+    ):
+        idx = int((r["ts"] - start) / bucket_s)
+        if 0 <= idx < n_buckets:
+            blocked_per_bucket[idx] += 1
+
+    # Bytes/sec, not raw bytes, so the chart reads sensibly regardless of the
+    # bucket width chosen above.
+    throughput_kbps = [round(b / bucket_s / 1024, 2) for b in bytes_per_bucket]
+
+    return {
+        "labels": labels,
+        "throughput_kbps": throughput_kbps,
+        "blocked_per_bucket": blocked_per_bucket,
+    }
 
 
 @app.get("/", response_class=HTMLResponse)
@@ -85,10 +141,23 @@ def overview(request: Request):
             "device": r["friendly_name"] or r["hostname"],
         })
 
-    return templates.TemplateResponse("overview.html", {"request": request,         "active": "overview", "title": "Overview",
+    severity_counts = dict(c.execute(
+        "SELECT severity, count(*) FROM incidents GROUP BY severity"
+    ).fetchall())
+    chart_data = time_buckets(c, hours=6, bucket_minutes=15)
+
+    return templates.TemplateResponse("overview.html", {"request": request,
+        "active": "overview", "title": "Overview",
         "device_count": device_count, "event_count": event_count,
         "open_incidents": open_incidents, "blocked_count": blocked_count,
-        "recent_dns": recent_dns, "recent_flows": recent_flows,})
+        "recent_dns": recent_dns, "recent_flows": recent_flows,
+        "severity_counts": {
+            "high": severity_counts.get("high", 0),
+            "medium": severity_counts.get("medium", 0),
+            "low": severity_counts.get("low", 0),
+        },
+        "chart_data": chart_data,
+    })
 
 
 @app.get("/devices", response_class=HTMLResponse)

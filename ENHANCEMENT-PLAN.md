@@ -425,7 +425,7 @@ Never cut Stage 2, steps 5.2, 5.3, 5.7, or evaluation items 7.2–7.5.
 | 2 | 2.1 · 2.2 · 2.3 · 2.4 · 2.5 · 2.6 · 2.7 · 2.8 | Not started |
 | 3 | 3.1 · 3.2 · 3.3 · 3.4 · 3.5 · 3.6 | Not started |
 | 4 | 4.1 · 4.2 · 4.3 · 4.4 · 4.5 | Not started |
-| 5 | **5.1 done, 5.2 done, 5.3 done, 5.4 done** (out of order) · 5.5 · 5.6 · 5.7 · 5.8 · 5.9 · 5.10 · (5.11) | 5.1–5.4 done, rest not started |
+| 5 | **5.1 done, 5.2 done, 5.3 done, 5.4 done, 5.5 done** (out of order) · 5.6 · 5.7 · 5.8 · 5.9 · 5.10 · (5.11) | 5.1–5.5 done, rest not started |
 | 6 | 6.1 · 6.2 · 6.3 · 6.4 · 6.5 · 6.6 · 6.7 | Not started |
 | 7 | 7.0 – 7.9 | Not started |
 | 8 | 8.1 · 8.2 · 8.3 · 8.4 | Not started |
@@ -601,3 +601,65 @@ Confirmed live: a `doubleclick.net` block logged after the deploy carries
 again after a few real days of traffic, specifically whether HaGeZi/OISD/
 Peter Lowe/AdAway ever earn a non-zero share once given the chance -
 list 1 alone may simply be catching most common ad domains first.
+
+**Note on step 5.5 (tracker coverage and resolver quality), implemented
+locally, not yet deployed.** Scoped down from the plan's original three
+parts based on what a live investigation actually found possible or safe
+to do in one pass, each documented rather than silently dropped:
+
+- **(a) CNAME-cloaking.** `describe_check()` now returns AdGuard's `cname`
+  field when a block happened via a CNAME match - confirmed to be a real
+  field on the live check_host API during the 5.2 deploy already, so this
+  is a small, safe addition, surfaced in both "why blocked?" tools (the
+  Filtering page's and the device page's). What the plan also asked for -
+  tagging *historical* blocked events in the analytics pages as
+  CNAME-cloaked or not - turned out not to be available the way assumed:
+  a live inspection of the gateway's real `querylog.json` (grepped for
+  every key across a large sample) found no CNAME field on stored query
+  log entries at all, only a base64-encoded raw DNS answer packet that
+  would need a hand-written wire-format parser to read. Deferred rather
+  than faked; adding the AdGuard "CNAME-trackers" blocklist itself needs
+  no code at all, since it's just another URL through the existing
+  blocklist-add flow - left for whoever runs the deploy to add through
+  the console rather than silently pre-added by this session.
+- **(b) Native telemetry profiles.** New `app/native_trackers.py` (small,
+  explicitly-cautious per-vendor domain lists - apple/samsung/xiaomi/
+  windows/tiktok, 2-3 domains each, picked for being consistently
+  described as telemetry-only across multiple independent public
+  sources) plus the machinery to apply one to a device: `adguard.py`'s
+  `add_client_rule` gained an optional `tag` (alongside the existing
+  `expires_at`, and confirmed via a smoke test that a rule carrying both
+  at once still parses correctly - the old expiry parser used a plain
+  substring split that would have broken on that combination, so it was
+  rewritten with a regex while this was being touched anyway) and a new
+  `remove_client_rule_group()` to remove a whole profile's rules at once.
+  New endpoints and a device-page selector. Deliberately NOT
+  claiming these lists are safe to trust yet: the plan's own exit
+  criterion for this step is a profile "checked" against a real device
+  without breaking updates, and that checking has to happen against an
+  actual Apple/Samsung/Xiaomi/Windows device over time - nothing this
+  session did substitutes for that. Live verification (below) applies a
+  profile only to the test-harness device, never a real phone.
+- **(c) Resolver quality.** `adguard.py` gained `dns_config()` (confirmed
+  against the live gateway to be `GET /control/dns_info`, not guessed)
+  and `set_dns_tuning()`. A new read-only `/api/filtering/resolver`
+  shows the current config plus DNS latency actually measured from this
+  network's own `dns_elapsed_ms` telemetry (p50/p95, cache hits
+  excluded) - not a synthetic benchmark. A separate
+  `/api/filtering/resolver/apply` can apply the recommended tuning
+  (optimistic caching, DNSSEC, two independent DoT upstreams in
+  parallel with fallback), but only with an explicit `confirm=true` and,
+  in the console, a native `confirm()` dialog naming exactly what it's
+  about to do - changing DNS resolution for every device on the network
+  at once is a shared-infrastructure action this project's own operating
+  rules say to confirm before doing, not just before deploying the code
+  that could do it. **This apply endpoint has not been called against the
+  live gateway** - only the read-only side has, see below.
+
+Smoke-tested locally (mocked `adguard._request`/`adguard.dns_config`,
+an in-memory DB): rule tagging and the tag+expiry combination case,
+profile apply/list/remove including the unknown-vendor 400 case, latency
+percentiles including the empty-sample and cached-answer-excluded cases,
+and the resolver endpoints including the confirm-required 400 case and
+that the applied config carries exactly the intended fields. Not yet
+deployed.

@@ -1420,4 +1420,52 @@ in absence and refusing to overwrite an explicit empty list;
 `validate_rules` accepting a file with neither optional key and
 rejecting a non-bool `cosmetic_injection_enabled` or a non-string-list
 `cosmetic_selectors`; and the console's None-preserves-existing-value
-merge behaviour end to end. Not yet deployed.
+merge behaviour end to end.
+
+**Deployed to the live gateway and verified the same day**, including
+the graceful-upgrade path this step's design specifically exists for.
+`.bak-5.11-*` copies were taken first; `adfilter_rules.py` reinstalled
+to both `/opt/securepi/` and `/opt/securepi-dpi/`; **all 35 `make test`
+cases re-run on the gateway itself against the real deployed files and
+the real mitmproxy package** (same technique 5.9's deploy used) - all
+35 passed with no changes needed.
+
+- **The graceful-upgrade path was proven, not just asserted:** the live
+  gateway's real `adfilter-rules.json` predates this step (written
+  during 5.9's own deploy testing, no `cosmetic_*` keys at all). After
+  restarting `securepi-dpi`, the journal read `rules reloaded from
+  /opt/securepi-dpi/adfilter-rules.json (version 3)` with no error -
+  `apply_defaults()` backfilled both new keys silently and correctly.
+  `GET /api/filtering/dpi/rules` immediately confirmed it:
+  `cosmetic_injection_enabled: False`, `cosmetic_selectors` populated
+  with the full default list - exactly the "off by default, nothing
+  breaks for an existing deployment" contract this step's design
+  promised, now proven against production rather than only a fixture.
+- **Both new pure functions verified against the real deployed addon
+  file**, imported fresh in-process via the DPI venv's `bin/python3`
+  (same technique 5.7/5.8/5.9 used): `inject_cosmetic_css()` correctly
+  placed a `<style>` block before `</head>` in a realistic fragment
+  containing a real `<ytd-display-ad-renderer>` element and real
+  content, both preserved; `loosen_csp_for_inline_style()` correctly
+  added `'unsafe-inline'` to `style-src` on a three-directive CSP header
+  while leaving `script-src 'self' 'nonce-abc'` provably byte-for-byte
+  untouched.
+- **The real console endpoint was exercised end to end against
+  production**, not a temp path: current rules were captured first, a
+  real `POST` enabled cosmetic injection with the full default selector
+  list, confirmed via `GET` (`cosmetic_injection_enabled: True`) and in
+  the journal's audit line, then immediately reverted to `False` with a
+  second real request - **left disabled**, deliberately, since the "no
+  functional breakage in a 10-video check" exit criterion still hasn't
+  been met and shouldn't be implied by leaving the feature live. A
+  follow-up `GET` confirmed the revert.
+- The new toggle + selectors textarea confirmed present in the served
+  Filtering page HTML; journal clean across both services throughout.
+
+This closes Stage 5 (steps 5.1 through 5.11, with 5.11 scoped to Path 1
+as recorded above) - every step implemented, locally tested, deployed
+to the live gateway, and verified against real production data or the
+real deployed code, with every deliberate scope reduction (5.6's
+IP-vs-MAC keying, 5.7's substitute canary, 5.9's dropped dead constant,
+5.11's Path 2 deferral) recorded with its reasoning rather than left
+implicit.

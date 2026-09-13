@@ -46,11 +46,19 @@ sudo systemctl enable --now securepi-dpi
 sleep 6
 sudo systemctl is-active securepi-dpi || { echo "FAILED - check: journalctl -u securepi-dpi -n 40"; exit 1; }
 
-echo "==> 4/5  firewall: redirect enrolled devices' HTTPS to the proxy"
-# The 'enrolled' set starts EMPTY. No device is inspected until you add it.
-sudo nft add set inet filter enrolled '{ type ipv4_addr ; }' 2>/dev/null || true
-sudo nft add rule ip nat prerouting iifname "ap0" ip saddr @enrolled tcp dport 443 counter redirect to :8080 2>/dev/null || true
-sudo nft list set inet filter enrolled
+echo "==> 4/5  firewall: confirm the redirect rule is in place"
+# The redirect rule and the 'enrolled' set it reads both live in `ip nat` -
+# see nftables.conf. They are not created here: nftables sets are per-table,
+# so a set created in a different table (an earlier version of this script
+# created one in `inet filter`, which the redirect rule never reads) looks
+# like it worked but silently enrolls nothing. If nftables.conf hasn't been
+# loaded yet, load it now rather than improvising a rule here.
+if ! sudo nft list set ip nat enrolled >/dev/null 2>&1; then
+    echo "   ** 'ip nat enrolled' set not found - load gateway/nftables.conf first: **"
+    echo "      sudo nft -f gateway/nftables.conf"
+    exit 1
+fi
+sudo nft list set ip nat enrolled
 
 echo "==> 5/5  publishing the CA certificate for device install"
 sudo cp $DPI/ca/mitmproxy-ca-cert.pem /var/www-ca/securepi-ca.crt 2>/dev/null || {
@@ -69,15 +77,31 @@ UNIT
 sudo systemctl daemon-reload && sudo systemctl enable --now securepi-ca-server
 sleep 2
 
+echo "==> 5.5/5  making sure the DPI telemetry log directory exists"
+# The addon writes one structured line per decrypt/passthrough decision here
+# for ingest.py to pick up - see ENHANCEMENT-PLAN.md step 5.1. Created here,
+# not by the addon on first write, so a permissions mistake is caught at
+# deploy time rather than as a silently-empty telemetry feed.
+sudo mkdir -p /var/log/securepi
+sudo chown maheshwari:maheshwari /var/log/securepi 2>/dev/null || true
+
 echo
 echo "================================================================"
 echo " DONE. Inspection is ACTIVE but NO DEVICE IS ENROLLED yet."
 echo
-echo " To enrol your test phone (10.10.0.50):"
-echo "   sudo nft add element inet filter enrolled { 10.10.0.50 }"
+echo " Prefer the console's per-device 'HTTPS ad removal' toggle over the"
+echo " commands below where it's available (step 5.6) - it enrols one"
+echo " device you choose, never all of them, and shows the CA install page."
+echo
+echo " To enrol your test phone (10.10.0.50) directly instead:"
+echo "   sudo securepi enroll 10.10.0.50"
 echo
 echo " To un-enrol it:"
-echo "   sudo nft delete element inet filter enrolled { 10.10.0.50 }"
+echo "   sudo securepi unenroll 10.10.0.50"
+echo
+echo " (securepi enroll now requires an explicit IP or the word 'all' -"
+echo "  see ENHANCEMENT-PLAN.md finding A2 for why a bare 'enroll' used to"
+echo "  silently enrol every device on the network.)"
 echo
 echo " On the phone, install the CA:"
 echo "   browse to  http://10.10.0.1:8081/securepi-ca.crt"

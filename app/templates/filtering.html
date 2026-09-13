@@ -7,6 +7,17 @@
     <button class="btn" id="filteringMasterToggle">Loading…</button>
 </div>
 
+<div class="card" style="margin-bottom:14px">
+    <div class="card-head"><h2>Why is this blocked?</h2>
+        <span class="spacer"></span><span class="subtle">test a domain, network-wide or for one device</span></div>
+    <div class="card-body" style="display:flex; gap:8px; flex-wrap:wrap">
+        <input class="input" id="checkDomain" placeholder="example.com" style="flex:2; min-width:180px">
+        <select class="input" id="checkDevice" style="flex:1; min-width:160px"><option value="">Network-wide</option></select>
+        <button class="btn" id="checkBtn">Check</button>
+    </div>
+    <div class="card-body tight" id="checkResult"></div>
+</div>
+
 <div class="grid c2">
     <div class="card">
         <div class="card-head"><h2>Blocklist Sources</h2>

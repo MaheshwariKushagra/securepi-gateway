@@ -33,6 +33,24 @@ DB_PATH = "/opt/securepi/securepi.db"
 SCHEMA_PATH = "/opt/securepi/schema.sql"
 EVE_PATH = "/var/log/suricata/eve.json"
 AGH_QUERYLOG_PATH = "/opt/AdGuardHome/data/querylog.json"
+DPI_EVENTS_PATH = "/var/log/securepi/dpi-events.jsonl"
+
+# Columns added to the events table after the Day 14 database was already
+# created on the gateway. schema.sql already lists these for a FRESH
+# install (open_db() below runs it in full when the events table doesn't
+# exist yet), but the live gateway's existing database needs each one added
+# by hand - SQLite has no "ADD COLUMN IF NOT EXISTS", so every statement is
+# wrapped in try/except and only the "duplicate column" error (meaning it
+# was already applied, on a later run of this same code) is swallowed; any
+# other error still surfaces. See ENHANCEMENT-PLAN.md step 5.1.
+SCHEMA_MIGRATIONS = [
+    "ALTER TABLE events ADD COLUMN dns_filter_list_id INTEGER",
+    "ALTER TABLE events ADD COLUMN dns_cached INTEGER",
+    "ALTER TABLE events ADD COLUMN dns_upstream TEXT",
+    "ALTER TABLE events ADD COLUMN dns_elapsed_ms REAL",
+    "ALTER TABLE events ADD COLUMN dpi_action TEXT",
+    "ALTER TABLE events ADD COLUMN dpi_ads_removed INTEGER",
+]
 
 # How long to wait between passes over the log files. Two seconds keeps the
 # console feeling live without spinning the CPU on an idle network.
@@ -57,7 +75,22 @@ def open_db():
             conn.executescript(fh.read())
         conn.commit()
         print("created database at %s" % DB_PATH, flush=True)
+    apply_migrations(conn)
     return conn
+
+
+def apply_migrations(conn):
+    """Bring an existing database up to date with columns schema.sql has
+    grown since it was created. Safe to call every startup: an already-
+    applied statement fails with 'duplicate column name', which is the one
+    error this deliberately ignores."""
+    for stmt in SCHEMA_MIGRATIONS:
+        try:
+            conn.execute(stmt)
+        except sqlite3.OperationalError as e:
+            if "duplicate column" not in str(e):
+                raise
+    conn.commit()
 
 
 def to_epoch(timestamp):
@@ -151,6 +184,8 @@ def insert_events(conn, rows):
         "tls_sni", "tls_version", "tls_ja3",
         "alert_signature", "alert_category", "alert_severity", "alert_signature_id",
         "blocked", "block_reason",
+        "dns_filter_list_id", "dns_cached", "dns_upstream", "dns_elapsed_ms",
+        "dpi_action", "dpi_ads_removed",
     ]
     placeholders = ",".join("?" for _ in columns)
     sql = "INSERT INTO events (%s) VALUES (%s)" % (",".join(columns), placeholders)
@@ -268,10 +303,20 @@ def flatten_agh(entry):
         "dns_rrname": entry.get("QH"),
         "dns_rrtype": entry.get("QT"),
         "blocked": 1 if result.get("IsFiltered") else 0,
+        # Telemetry for the ad-blocking analytics and list-health pages
+        # (ENHANCEMENT-PLAN.md 5.3, 5.4): which list matched, whether the
+        # answer came from AdGuard's cache, which upstream resolver
+        # answered (only meaningful when not cached), and how long that
+        # took. "Elapsed" arrives in nanoseconds; we store milliseconds,
+        # which is the unit every other latency figure in this project uses.
+        "dns_cached": 1 if entry.get("Cached") else 0,
+        "dns_upstream": entry.get("Upstream") or None,
+        "dns_elapsed_ms": (entry.get("Elapsed") or 0) / 1_000_000.0 or None,
     }
     rules = result.get("Rules") or []
     if rules:
         row["block_reason"] = rules[0].get("Text")
+        row["dns_filter_list_id"] = rules[0].get("FilterListID")
     return row
 
 
@@ -318,6 +363,71 @@ def read_agh_querylog(conn):
     return read, saved, errors
 
 
+def flatten_dpi(entry):
+    """Turn one structured line from the DPI addon's telemetry log (see
+    dpi/securepi_adfilter.py's _log_event) into an events row. Reuses the
+    generic events shape - source='dpi', event_type='dpi_decision' - rather
+    than a bespoke table, the same reasoning schema.sql's header gives for
+    keeping Suricata and AdGuard on one table."""
+    return {
+        "ts": entry.get("ts") or time.time(),
+        "ts_iso": entry.get("ts_iso"),
+        "source": "dpi",
+        "event_type": "dpi_decision",
+        "src_ip": entry.get("src_ip"),
+        "tls_sni": entry.get("sni"),
+        "dpi_action": entry.get("decision"),
+        "dpi_ads_removed": entry.get("ads_removed"),
+        "block_reason": entry.get("blocked_path"),
+    }
+
+
+def read_dpi_events(conn):
+    """Read whatever is new in the DPI addon's telemetry log. Same
+    watermark and rotation-by-inode approach as read_eve and
+    read_agh_querylog - see read_eve's docstring. The file may not exist at
+    all when Tier 2 (selective HTTPS inspection) has never been deployed on
+    this gateway, which is the normal, expected case for most of this
+    project's life - that's a quiet no-op here, not an error."""
+    if not os.path.exists(DPI_EVENTS_PATH):
+        return 0, 0, 0
+
+    stat = os.stat(DPI_EVENTS_PATH)
+    saved_inode, offset = get_state(conn, "dpi", DPI_EVENTS_PATH)
+
+    if saved_inode is not None and saved_inode != stat.st_ino:
+        offset = 0
+    elif offset > stat.st_size:
+        offset = 0
+
+    read = errors = 0
+    rows = []
+    with open(DPI_EVENTS_PATH, "r") as fh:
+        fh.seek(offset)
+        for line in fh:
+            if not line.endswith("\n"):
+                break
+            read += 1
+            try:
+                entry = json.loads(line)
+            except Exception:
+                errors += 1
+                continue
+            rows.append(flatten_dpi(entry))
+        offset = fh.tell()
+
+    saved = insert_events(conn, rows)
+    save_state(conn, "dpi", DPI_EVENTS_PATH, stat.st_ino, offset)
+    conn.execute(
+        "UPDATE ingest_stats SET events_read = events_read + ?,"
+        " events_saved = events_saved + ?, parse_errors = parse_errors + ?,"
+        " last_run = ? WHERE id = 1",
+        (read, saved, errors, time.time()),
+    )
+    conn.commit()
+    return read, saved, errors
+
+
 def main():
     conn = open_db()
     print("ingest started, polling every %ds" % POLL_SECONDS, flush=True)
@@ -335,8 +445,9 @@ def main():
 
             read, saved, errors = read_eve(conn)
             a_read, a_saved, a_errors = read_agh_querylog(conn)
-            saved += a_saved
-            errors += a_errors
+            d_read, d_saved, d_errors = read_dpi_events(conn)
+            saved += a_saved + d_saved
+            errors += a_errors + d_errors
             total += saved
 
             # Attach events to devices. Done after insertion rather than

@@ -28,10 +28,20 @@ listed below are decrypted).
 
 import json
 import logging
+import os
+import time
 
 from mitmproxy import http
 
 logger = logging.getLogger(__name__)
+
+# One JSON line per decrypt/passthrough decision and per removal, for
+# ingest.py's read_dpi_events() to pick up (see ENHANCEMENT-PLAN.md step
+# 5.1). This is separate from the human-readable logger.info() calls
+# throughout this file, which still go to the systemd journal as before -
+# this file is the machine-readable feed the console's ad-blocking
+# analytics and the privacy-scope check (step 5.7) read from instead.
+DPI_EVENTS_PATH = "/var/log/securepi/dpi-events.jsonl"
 
 
 # Only these hostnames are ever decrypted. Everything else passes through
@@ -140,6 +150,32 @@ class SecurePiAdFilter:
         self.cleaned = 0         # player responses stripped of ads
         self.blocked_urls = 0    # ad/telemetry endpoints refused by path
         self._last_report = 0
+        self._events_fh = None   # opened lazily - see _log_event
+
+    def _log_event(self, src_ip, decision, sni=None, ads_removed=None, blocked_path=None):
+        """Append one telemetry line. Failures here (disk full, permissions)
+        must never take down ad-blocking itself, so they are swallowed after
+        one journal warning - this is a nice-to-have analytics feed, not the
+        enforcement path."""
+        try:
+            if self._events_fh is None:
+                os.makedirs(os.path.dirname(DPI_EVENTS_PATH), exist_ok=True)
+                self._events_fh = open(DPI_EVENTS_PATH, "a")
+            now = time.time()
+            line = json.dumps({
+                "ts": now,
+                "ts_iso": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(now)),
+                "src_ip": src_ip,
+                "decision": decision,
+                "sni": sni,
+                "ads_removed": ads_removed,
+                "blocked_path": blocked_path,
+            })
+            self._events_fh.write(line + "\n")
+            self._events_fh.flush()
+        except Exception as exc:
+            logger.warning("securepi: could not write DPI telemetry: %s", exc)
+            self._events_fh = None
 
     def tls_clienthello(self, data):
         """
@@ -159,6 +195,12 @@ class SecurePiAdFilter:
                 wanted = True
                 break
 
+        src_ip = None
+        try:
+            src_ip = data.context.client.peername[0]
+        except Exception:
+            pass  # telemetry is best-effort; never let this break the decision below
+
         if not wanted:
             # NOTE: the attribute is ignore_connection in mitmproxy 12.
             # Setting the wrong name silently does nothing - Python creates a
@@ -166,8 +208,10 @@ class SecurePiAdFilter:
             # gets decrypted. Verify against mitmproxy behaviour, not our log.
             data.ignore_connection = True
             self.passed_through += 1
+            self._log_event(src_ip, "passthrough", sni=sni)
         else:
             self.decrypted += 1
+            self._log_event(src_ip, "decrypt", sni=sni)
 
     def request(self, flow):
         """
@@ -191,7 +235,13 @@ class SecurePiAdFilter:
             if path in flow.request.path:
                 flow.response = http.Response.make(204)  # empty, no content
                 self.blocked_urls += 1
-                logger.info("securepi: blocked ad endpoint %s", flow.request.path.split("?")[0])
+                blocked_path = flow.request.path.split("?")[0]
+                logger.info("securepi: blocked ad endpoint %s", blocked_path)
+                try:
+                    src_ip = flow.client_conn.address[0]
+                except Exception:
+                    src_ip = None
+                self._log_event(src_ip, "path_blocked", blocked_path=blocked_path)
                 return
 
     def response(self, flow):
@@ -226,6 +276,12 @@ class SecurePiAdFilter:
                 logger.info(
                     "securepi: stripped %d ad object(s) from %s", removed, path
                 )
+                try:
+                    src_ip = flow.client_conn.address[0]
+                except Exception:
+                    src_ip = None
+                self._log_event(src_ip, "ads_stripped",
+                                 sni=flow.request.host, ads_removed=removed)
             return
 
         # HTML pages embed the same structures as text. We cannot parse those

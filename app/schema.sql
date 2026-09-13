@@ -115,7 +115,29 @@ CREATE TABLE IF NOT EXISTS events (
 
     -- Filtering decisions, which come from the DNS resolver rather than Suricata
     blocked        INTEGER,            -- 1 if the query was refused
-    block_reason   TEXT
+    block_reason   TEXT,
+
+    -- Tier 1 (DNS) filtering telemetry - which blocklist matched, whether
+    -- the answer was served from cache, and which upstream resolver
+    -- answered, if not cached. These feed the ad-blocking analytics and
+    -- blocklist-health pages (ENHANCEMENT-PLAN.md steps 5.3, 5.4) - without
+    -- them, "which list is actually earning its place" is unanswerable.
+    dns_filter_list_id INTEGER,
+    dns_cached         INTEGER,
+    dns_upstream       TEXT,
+    dns_elapsed_ms     REAL,
+
+    -- Tier 2 (selective HTTPS inspection) telemetry, written by
+    -- dpi/securepi_adfilter.py as source='dpi', event_type='dpi_decision'
+    -- rows and read by ingest.py's read_dpi_events(). Reusing this same
+    -- events table rather than a bespoke one keeps the "one unified event
+    -- shape" design (see the file header above) - tls_sni above already
+    -- holds the hostname decided on, and block_reason above doubles as the
+    -- blocked-path text for a 'path_blocked' decision.
+    --   dpi_action:      'decrypt' | 'passthrough' | 'ads_stripped' | 'path_blocked'
+    --   dpi_ads_removed: count of ad objects removed, for 'ads_stripped' rows
+    dpi_action      TEXT,
+    dpi_ads_removed INTEGER
 );
 
 -- Indexes chosen for the queries the correlation engine will actually run:

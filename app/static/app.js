@@ -813,6 +813,85 @@ function initDeviceQuarantine() {
     load();
 }
 
+function initDeviceBlocked() {
+    const wrap = $("#deviceBlocked");
+    if (!wrap) return;
+    const deviceId = wrap.dataset.deviceId;
+
+    async function askAndAllow(domain, temporary) {
+        const reason = prompt(
+            temporary
+                ? `Why allow "${domain}" for this device for the next hour?`
+                : `Why allow "${domain}" for this device from now on?`
+        );
+        if (reason === null || !reason.trim()) return;  // cancelled, or empty
+        try {
+            const res = await fetch(`/api/devices/${deviceId}/filtering/allow`, {
+                method: "POST", headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ domain, reason: reason.trim(), temporary, hours: 1 }),
+            });
+            if (!res.ok) throw new Error("request failed");
+            toast("Allowed for this device", temporary ? `${domain} — for 1 hour` : domain, "ok");
+            load();
+        } catch (err) {
+            toast("Could not allow domain", "AdGuard Home did not accept the change.", "high");
+        }
+    }
+
+    async function load() {
+        try {
+            const res = await fetch(`/api/devices/${deviceId}/blocked`);
+            if (!res.ok) throw new Error("request failed");
+            const data = await res.json();
+            if (!data.results.length) {
+                wrap.innerHTML = `<div class="empty"><span class="empty-icon">✓</span>Nothing blocked for this device recently</div>`;
+                return;
+            }
+            wrap.innerHTML = data.results.map(r => `
+                <div class="filter-row">
+                    <span class="mono truncate" title="${esc(r.reason || '')}">${esc(r.domain)}</span>
+                    <span class="dim" style="font-size:11px">${r.count}x · ${esc(r.age)} ago</span>
+                    <button class="btn" data-allow-1h="${esc(r.domain)}" title="Allow for this device for 1 hour">Allow 1h</button>
+                    <button class="btn" data-allow="${esc(r.domain)}" title="Allow for this device from now on">Allow</button>
+                </div>`).join("");
+        } catch (err) {
+            wrap.innerHTML = `<div class="empty">Could not reach AdGuard Home</div>`;
+        }
+    }
+
+    wrap.addEventListener("click", (e) => {
+        const oneHour = e.target.closest("[data-allow-1h]");
+        if (oneHour) { askAndAllow(oneHour.dataset.allow1h, true); return; }
+        const always = e.target.closest("[data-allow]");
+        if (always) { askAndAllow(always.dataset.allow, false); }
+    });
+
+    const checkBtn = $("#deviceCheckBtn");
+    const checkInput = $("#deviceCheckDomain");
+    if (checkBtn) {
+        async function runCheck() {
+            const domain = checkInput.value.trim();
+            if (!domain) return;
+            try {
+                const res = await fetch(`/api/filtering/check?domain=${encodeURIComponent(domain)}&device_id=${deviceId}`);
+                if (!res.ok) throw new Error("request failed");
+                const r = await res.json();
+                if (r.blocked) {
+                    toast("Blocked", r.reason, "high");
+                } else {
+                    toast("Allowed", r.reason, "ok");
+                }
+            } catch (err) {
+                toast("Check failed", "Could not reach AdGuard Home.", "high");
+            }
+        }
+        checkBtn.addEventListener("click", runCheck);
+        checkInput.addEventListener("keydown", (e) => { if (e.key === "Enter") runCheck(); });
+    }
+
+    load();
+}
+
 /* ---------------------------------------------------------------- filtering */
 
 function initFiltering() {
@@ -953,10 +1032,44 @@ function initFiltering() {
     $("#filterRuleDomain").addEventListener("keydown", (e) => { if (e.key === "Enter") addRule("block"); });
 
     const devSel = $("#qlDevice");
+    const checkDevSel = $("#checkDevice");
     fetch("/api/devices").then(r => r.json()).then(d => {
-        devSel.insertAdjacentHTML("beforeend",
-            d.devices.map(dv => `<option value="${dv.id}">${esc(dv.name)}</option>`).join(""));
+        const options = d.devices.map(dv => `<option value="${dv.id}">${esc(dv.name)}</option>`).join("");
+        devSel.insertAdjacentHTML("beforeend", options);
+        if (checkDevSel) checkDevSel.insertAdjacentHTML("beforeend", options);
     }).catch(() => {});
+
+    async function runCheck() {
+        const domain = $("#checkDomain").value.trim();
+        const resultEl = $("#checkResult");
+        if (!domain) return;
+        resultEl.innerHTML = `<div class="empty">Checking…</div>`;
+        const qs = new URLSearchParams({ domain });
+        const deviceId = checkDevSel ? checkDevSel.value : "";
+        if (deviceId) qs.set("device_id", deviceId);
+        try {
+            const res = await fetch("/api/filtering/check?" + qs.toString());
+            if (!res.ok) throw new Error("request failed");
+            const r = await res.json();
+            const scope = deviceId ? checkDevSel.options[checkDevSel.selectedIndex].text : "the whole network";
+            resultEl.innerHTML = `
+                <div class="filter-row">
+                    <span class="chip ${r.blocked ? "high" : "ok"}">${r.blocked ? "Blocked" : "Allowed"}</span>
+                    <span class="mono truncate">${esc(r.domain || domain)}</span>
+                    <span class="dim">for ${esc(scope)}</span>
+                </div>
+                <div class="dim" style="font-size:12px; margin-top:6px; padding-left:2px">
+                    ${esc(r.reason)}${r.rule ? ` — <span class="mono">${esc(r.rule)}</span>` : ""}
+                </div>`;
+        } catch (err) {
+            resultEl.innerHTML = `<div class="empty">Could not reach AdGuard Home</div>`;
+        }
+    }
+    const checkBtn = $("#checkBtn");
+    if (checkBtn) {
+        checkBtn.addEventListener("click", runCheck);
+        $("#checkDomain").addEventListener("keydown", (e) => { if (e.key === "Enter") runCheck(); });
+    }
 
     async function runQuerylogSearch() {
         const qs = new URLSearchParams({
@@ -1095,6 +1208,7 @@ document.addEventListener("DOMContentLoaded", () => {
     initDeviceActivity();
     initDeviceFiltering();
     initDeviceQuarantine();
+    initDeviceBlocked();
     initFiltering();
 
     // Global row-action delegate: works across incidents list + detail page.

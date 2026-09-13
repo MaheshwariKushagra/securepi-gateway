@@ -22,6 +22,11 @@ Routes:
   /api/incidents     incident queue, filterable
   /api/events        recent event stream
   /api/filtering/*   AdGuard Home blocklists, rules and per-device policy
+  /api/filtering/check              "why is this blocked?" - test a domain
+  /api/devices/{id}/blocked         recently blocked domains for one device
+  /api/devices/{id}/filtering/rules allow/block rules scoped to one device
+  /api/devices/{id}/filtering/allow one-click unbreak, optionally temporary
+  /api/devices/{id}/filtering/block block one domain for one device only
   /api/devices/{id}/quarantine   quarantine a device via nftables, or undo it
 """
 
@@ -119,6 +124,18 @@ class DeviceFilterUpdate(BaseModel):
     enabled: bool
 
 
+class DeviceRuleRequest(BaseModel):
+    domain: str
+    reason: str
+    temporary: bool = False
+    hours: int = 1
+
+
+class DeviceBlockRequest(BaseModel):
+    domain: str
+    reason: str
+
+
 class QuarantineUpdate(BaseModel):
     quarantined: bool
 
@@ -160,6 +177,27 @@ def device_label(row):
     """Display name: explicit friendly name, else DHCP hostname, else a
     fallback. Never show a bare row id to the operator."""
     return row["friendly_name"] or row["hostname"] or ("device %d" % row["id"])
+
+
+def device_identifiers(c, device_id):
+    """Every identifier AdGuard could use to recognise this device: every MAC
+    it has ever used, plus its current IP. Passed to adguard.py's per-device
+    functions so a device's filtering setting survives a DHCP renewal or a
+    MAC rotation instead of being silently orphaned on the old address (see
+    ENHANCEMENT-PLAN.md finding A3). Also returns the current IP on its own,
+    since check_host() and the DPI enrollment set still need a plain
+    address rather than a list.
+    """
+    macs = [r["mac"] for r in c.execute(
+        "SELECT mac FROM device_macs WHERE device_id=?", (device_id,))]
+    ip_row = c.execute(
+        "SELECT ip FROM device_ips WHERE device_id=? ORDER BY last_seen DESC LIMIT 1",
+        (device_id,)).fetchone()
+    current_ip = ip_row["ip"] if ip_row else None
+    identifiers = list(macs)
+    if current_ip:
+        identifiers.append(current_ip)
+    return identifiers, current_ip
 
 
 def humanize_bytes(n):
@@ -725,16 +763,14 @@ def api_device_filtering_status(device_id: int):
     d = c.execute("SELECT 1 FROM devices WHERE id=?", (device_id,)).fetchone()
     if d is None:
         raise HTTPException(404, "device not found")
-    ip_row = c.execute(
-        "SELECT ip FROM device_ips WHERE device_id=? ORDER BY last_seen DESC LIMIT 1",
-        (device_id,)).fetchone()
-    if ip_row is None:
+    identifiers, current_ip = device_identifiers(c, device_id)
+    if not identifiers:
         return {"managed": False, "filtering_enabled": True, "ip": None}
     try:
-        status = adguard.client_filtering_status(ip_row["ip"])
+        status = adguard.client_filtering_status(identifiers)
     except adguard.AdGuardError as e:
         raise HTTPException(502, str(e))
-    status["ip"] = ip_row["ip"]
+    status["ip"] = current_ip
     return status
 
 
@@ -744,16 +780,129 @@ def api_device_filtering_set(device_id: int, body: DeviceFilterUpdate):
     d = c.execute("SELECT * FROM devices WHERE id=?", (device_id,)).fetchone()
     if d is None:
         raise HTTPException(404, "device not found")
-    ip_row = c.execute(
-        "SELECT ip FROM device_ips WHERE device_id=? ORDER BY last_seen DESC LIMIT 1",
-        (device_id,)).fetchone()
-    if ip_row is None:
-        raise HTTPException(400, "device has no known IP address to apply a policy to")
+    identifiers, current_ip = device_identifiers(c, device_id)
+    if not identifiers:
+        raise HTTPException(400, "device has no known address to apply a policy to")
     try:
-        adguard.set_client_filtering(ip_row["ip"], device_label(d), body.enabled)
+        adguard.set_client_filtering(identifiers, device_label(d), body.enabled)
     except adguard.AdGuardError as e:
         raise HTTPException(502, str(e))
     return {"id": device_id, "filtering_enabled": body.enabled}
+
+
+@app.get("/api/filtering/check")
+def api_filtering_check(domain: str = Query(...), device_id: int = Query(None)):
+    """The console's "why is this blocked?" tool: ask AdGuard how it would
+    resolve `domain` right now, exactly as if the query came from the given
+    device (or network-wide, if no device is given)."""
+    domain = domain.strip().lstrip("*.").lower()
+    if not domain:
+        raise HTTPException(400, "domain is required")
+    client_ip = None
+    if device_id is not None:
+        c = db()
+        if c.execute("SELECT 1 FROM devices WHERE id=?", (device_id,)).fetchone() is None:
+            raise HTTPException(404, "device not found")
+        _, client_ip = device_identifiers(c, device_id)
+    try:
+        result = adguard.check_host(domain, client_ip)
+    except adguard.AdGuardError as e:
+        raise HTTPException(502, str(e))
+    return adguard.describe_check(result, domain)
+
+
+@app.get("/api/devices/{device_id}/blocked")
+def api_device_blocked(device_id: int, limit: int = Query(25)):
+    """Recently blocked domains for one device, folded so a tracker that
+    fires dozens of times a minute shows up as one row with a count rather
+    than as noise - this is the "recently blocked" panel on the device page."""
+    c = db()
+    if c.execute("SELECT 1 FROM devices WHERE id=?", (device_id,)).fetchone() is None:
+        raise HTTPException(404, "device not found")
+    rows = c.execute(
+        "SELECT dns_rrname, block_reason, ts FROM events"
+        " WHERE device_id=? AND event_type='dns_query' AND blocked=1"
+        " ORDER BY id DESC LIMIT 500", (device_id,)
+    ).fetchall()
+    folded = {}
+    now = time.time()
+    for r in rows:
+        domain = r["dns_rrname"]
+        if domain not in folded:
+            folded[domain] = {
+                "domain": domain, "reason": r["block_reason"],
+                "count": 0, "last_seen": r["ts"], "age": _age(now - r["ts"]),
+            }
+        folded[domain]["count"] += 1
+    results = sorted(folded.values(), key=lambda x: -x["last_seen"])[:min(limit, 100)]
+    return {"results": results}
+
+
+@app.get("/api/devices/{device_id}/filtering/rules")
+def api_device_filtering_rules(device_id: int):
+    """Allow/block rules scoped to just this device - see adguard.py's
+    add_client_rule and device_scoped_rules."""
+    c = db()
+    d = c.execute("SELECT * FROM devices WHERE id=?", (device_id,)).fetchone()
+    if d is None:
+        raise HTTPException(404, "device not found")
+    try:
+        adguard.sweep_expired_client_rules()
+        rules = adguard.device_scoped_rules(device_label(d))
+    except adguard.AdGuardError as e:
+        raise HTTPException(502, str(e))
+    return {"rules": rules}
+
+
+@app.post("/api/devices/{device_id}/filtering/allow")
+def api_device_allow_domain(device_id: int, body: DeviceRuleRequest):
+    """One-click 'unbreak this site for this device' - a per-device allow
+    rule, optionally temporary, always with a reason recorded. See
+    ENHANCEMENT-PLAN.md step 5.2."""
+    c = db()
+    d = c.execute("SELECT * FROM devices WHERE id=?", (device_id,)).fetchone()
+    if d is None:
+        raise HTTPException(404, "device not found")
+    domain = body.domain.strip().lstrip("*.").lower()
+    if not domain:
+        raise HTTPException(400, "domain is required")
+    if not body.reason.strip():
+        raise HTTPException(400, "a reason is required")
+    expires_at = (time.time() + body.hours * 3600) if body.temporary else None
+    try:
+        adguard.sweep_expired_client_rules()
+        rule = adguard.add_client_rule(device_label(d), domain, "allow", expires_at)
+    except adguard.AdGuardError as e:
+        raise HTTPException(502, str(e))
+    # A real audit_log table lands in ENHANCEMENT-PLAN.md step 1.5; until
+    # then, printing to stdout still puts this in the systemd journal,
+    # which is more than the console action would otherwise leave behind.
+    print("filtering: allowed %s for device %d (%s) - %s%s" % (
+        domain, device_id, device_label(d), body.reason,
+        " [temporary, %dh]" % body.hours if body.temporary else ""), flush=True)
+    return {"ok": True, "rule": rule, "domain": domain, "expires_at": expires_at}
+
+
+@app.post("/api/devices/{device_id}/filtering/block")
+def api_device_block_domain(device_id: int, body: DeviceBlockRequest):
+    """The reverse of allow above: block one domain for one device only,
+    without touching the network-wide blocklists."""
+    c = db()
+    d = c.execute("SELECT * FROM devices WHERE id=?", (device_id,)).fetchone()
+    if d is None:
+        raise HTTPException(404, "device not found")
+    domain = body.domain.strip().lstrip("*.").lower()
+    if not domain:
+        raise HTTPException(400, "domain is required")
+    if not body.reason.strip():
+        raise HTTPException(400, "a reason is required")
+    try:
+        rule = adguard.add_client_rule(device_label(d), domain, "block")
+    except adguard.AdGuardError as e:
+        raise HTTPException(502, str(e))
+    print("filtering: blocked %s for device %d (%s) - %s" % (
+        domain, device_id, device_label(d), body.reason), flush=True)
+    return {"ok": True, "rule": rule, "domain": domain}
 
 
 # --------------------------------------------------------------- quarantine --

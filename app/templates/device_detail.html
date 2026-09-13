@@ -132,6 +132,18 @@
     </div>
 </div>
 
+<div class="card" style="margin-bottom:14px">
+    <div class="card-head"><h2>Recently Blocked</h2>
+        <span class="spacer"></span><span class="subtle">DNS filtering for this device — test and allow below</span></div>
+    <div class="card-body" style="display:flex; gap:8px; flex-wrap:wrap; border-bottom:1px solid var(--border)">
+        <input class="input" id="deviceCheckDomain" placeholder="Test a domain, e.g. example.com" style="flex:2; min-width:180px">
+        <button class="btn" id="deviceCheckBtn">Check</button>
+    </div>
+    <div class="card-body tight" id="deviceBlocked" data-device-id="{{ device.id }}">
+        <div class="empty">Loading…</div>
+    </div>
+</div>
+
 <div class="grid c2e">
     <div class="card">
         <div class="card-head"><h2>Top Destinations</h2><span class="spacer"></span><span class="subtle">TLS SNI</span></div>

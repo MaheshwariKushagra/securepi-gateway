@@ -5,8 +5,9 @@
 #                                 service, network state, and anything that
 #                                 needs manual attention after a reboot
 #   securepi devices             list devices on the project network
-#   securepi enroll [ip|all]     turn ON HTTPS inspection (default: all leases)
-#   securepi unenroll [ip|all]   turn it OFF
+#   securepi enroll <ip|all>     turn ON HTTPS inspection - an IP or the word
+#                                 'all', always required, never a silent default
+#   securepi unenroll <ip|all>   turn it OFF
 #
 # The service list checked by `status` lives in /opt/securepi/services.list,
 # not hardcoded here - add a new always-on service there and it is checked
@@ -113,7 +114,17 @@ for l in leases:
     ;;
 
   enroll|unenroll)
-    target="${2:-all}"
+    # No default target. An earlier version silently fell back to "all"
+    # devices, which meant any phone whose CA wasn't installed yet lost
+    # YouTube over HTTPS the moment someone ran a bare `securepi enroll` -
+    # see ENHANCEMENT-PLAN.md finding A2. Enrolling everyone still works,
+    # but only if you type "all" on purpose.
+    if [ -z "${2:-}" ]; then
+        echo "usage: securepi $1 <ip|all>"
+        echo "   an explicit target is required - there is no default."
+        exit 1
+    fi
+    target="$2"
     if [ "$target" = "all" ]; then
         ips=$(leased_ips)
         [ -z "$ips" ] && { echo "No devices have a lease yet - connect them first."; exit 1; }

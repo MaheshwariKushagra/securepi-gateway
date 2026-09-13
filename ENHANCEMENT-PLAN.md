@@ -425,7 +425,7 @@ Never cut Stage 2, steps 5.2, 5.3, 5.7, or evaluation items 7.2–7.5.
 | 2 | 2.1 · 2.2 · 2.3 · 2.4 · 2.5 · 2.6 · 2.7 · 2.8 | Not started |
 | 3 | 3.1 · 3.2 · 3.3 · 3.4 · 3.5 · 3.6 | Not started |
 | 4 | 4.1 · 4.2 · 4.3 · 4.4 · 4.5 | Not started |
-| 5 | **5.1 done, 5.2 done, 5.3 done, 5.4 done, 5.5 done, 5.6 done** (out of order) · 5.7 · 5.8 · 5.9 · 5.10 · (5.11) | 5.1–5.6 done, rest not started |
+| 5 | **5.1 done, 5.2 done, 5.3 done, 5.4 done, 5.5 done, 5.6 done, 5.7 done** (out of order) · 5.8 · 5.9 · 5.10 · (5.11) | 5.1–5.7 done, rest not started |
 | 6 | 6.1 · 6.2 · 6.3 · 6.4 · 6.5 · 6.6 · 6.7 | Not started |
 | 7 | 7.0 – 7.9 | Not started |
 | 8 | 8.1 · 8.2 · 8.3 · 8.4 | Not started |
@@ -832,3 +832,89 @@ enroll a device without installing the CA first and confirm a `tls_failed`
 row appears and the badge on `/api/filtering/dpi/enrolled` turns
 "check_ca" - on the test-harness device or a spare device, never a real
 phone as the first check.
+
+**Note on step 5.7 (automatic privacy-scope verification), implemented
+locally, not yet deployed - and substantially rescoped after a live
+investigation showed the plan's exact design isn't safely buildable in
+one pass.** The plan calls for "a canary client in a test namespace...
+through the real redirect", i.e. exercising the actual nftables
+PREROUTING rule with a live TLS handshake against mitmproxy. Investigated
+before writing any code:
+
+- `ip netns exec ns_victim ...` was the obvious first choice - it's the
+  exact mechanism `gateway/evaluate.py` already uses for safe synthetic
+  traffic. But `evaluate.py`'s own comments already establish that
+  `ns_victim` sits on `br-test`, which "has no path to AdGuard" - it is
+  NOT bridged onto `ap0`, the interface the dpi-redirect rule matches on.
+  Traffic from `ns_victim` never reaches that rule at all.
+- Tried connecting directly to `127.0.0.1:8080` (mitmproxy's redirect
+  target) instead, with `openssl s_client -servername <host>`, for both
+  an allowlisted and a non-allowlisted hostname. **Live result: identical
+  immediate handshake failure for both** - mitmproxy's transparent mode
+  needs the kernel's original-destination info that only a genuine
+  nftables REDIRECT carries, so a direct connection can't even reach the
+  point where it would distinguish the two cases.
+- Wiring a synthetic client onto the real `ap0` ingress path (the only
+  way to genuinely exercise the redirect rule) means network-topology
+  changes to the interface the live AP and two real phones depend on -
+  judged not safe to improvise mid-session. Using one of the two real
+  enrolled devices as an unwitting scheduled canary target was also
+  rejected: it would mean inspecting real traffic on a timer the device's
+  owner never chose, against this project's own opt-in stance.
+
+**What was built instead, and why it's a substitute rather than a
+downgrade:** `dpi/privacy_canary.py` imports the addon file straight off
+disk - the exact same file mitmproxy loads, re-imported fresh every
+15-minute cycle so a fix or a regression is picked up immediately - and
+calls its real `tls_clienthello()` method directly with a synthetic
+ClientHello for a non-allowlisted host (`example.com`, must stay
+passed-through) and an allowlisted one (`youtube.com`, must be
+decrypted), reading the `ignore_connection` attribute the method itself
+sets. This is precisely the code path, and precisely the attribute, the
+report's own `ignore_conn` typo broke - **proven by a smoke test that
+reintroduces that exact typo into a throwaway copy of the addon and
+confirms the canary correctly flags it as a failure** (both hosts read
+as "will decrypt" once the real attribute is never set, exactly as the
+live bug once did). What this substitute genuinely can NOT catch: a bug
+in the nftables redirect rule itself, or in how mitmproxy's transparent
+mode reads the original destination - both sit entirely outside it. That
+gap is real and stays open, not resolved by this substitute; closing it
+needs the `ap0`-topology work called out above. Until then, the redirect
+rule and traffic path should get a deliberate, manual check against a
+real enrolled device from time to time, rather than being treated as
+fully covered by this automated canary.
+
+On failure: every enrolled device is unenrolled at once
+(`dpi_enroll.flush()`, confirmed to be a real, valid nftables operation)
+and a high-severity platform incident (`device_id=NULL`,
+`signal_type='privacy_scope_failure'`) is raised - or, since
+`correlation.raise_incident`'s own 600s dedup window is shorter than this
+canary's 15-minute cycle, a NEW helper (`_raise_or_touch_incident`)
+touches any still-open incident of that signal type regardless of how
+long ago it was last seen, so a sustained failure reads as one ongoing
+incident rather than a fresh one every cycle forever. "Notify" (the
+plan's own word) is, honestly, a clear `print()` into the journal -
+Stage 6's real notification system (R3) doesn't exist yet, matching the
+same stopgap `webapp.py`'s filtering endpoints already use for an audit
+trail.
+
+The console's "Privacy scope verified N min ago" badge reads
+`signal_state` (reusing the exact table/row shape the correlation engine
+already uses for its own signals - no new table) and whether an open
+`privacy_scope_failure` incident exists, via a new
+`/api/filtering/dpi/privacy-scope` endpoint, shown on the Tier 2 card.
+
+Smoke-tested locally: the real addon file's actual decrypt/passthrough
+decisions for `example.com`/`youtube.com`/`m.youtube.com`; the
+reintroduced-typo failure case described above; the incident
+touch-not-duplicate behaviour across a 40-minute gap; `run_check()`'s
+full pass and fail paths including that `dpi_enroll.flush()` is actually
+called on failure; and all four states of the console's status endpoint
+(never run, healthy, stale, failing). mitmproxy itself had to be stubbed
+out for this local test (it's only installed in the gateway's bundled
+venv) - this stub is test-only, not part of what gets deployed. Not yet
+deployed; deploying this needs `dpi/deploy-privacy-canary.sh` run after
+`deploy-dpi.sh`, and - given it can silently unenroll every device on a
+false positive - should be watched via `journalctl -u
+securepi-privacy-canary -f` through at least one real 15-minute cycle
+before being trusted unattended.

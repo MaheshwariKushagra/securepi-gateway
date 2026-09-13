@@ -520,7 +520,7 @@ Never cut Stage 2, steps 5.2, 5.3, 5.7, or evaluation items 7.2–7.5.
 | Stage | Steps | Status |
 |---|---|---|
 | 0 | 0.1 · 0.2 · 0.3 | Not started |
-| 1 | **1.1 done, 1.2 done, 1.3 done** · 1.4 · 1.5 · 1.6 · 1.7 · **1.8 done** (1.8 out of order - see note below) | 1.1, 1.2, 1.3, 1.8 done, rest not started |
+| 1 | **1.1 done, 1.2 done, 1.3 done, 1.4 done** · 1.5 · 1.6 · 1.7 · **1.8 done** (1.8 out of order - see note below) | 1.1–1.4, 1.8 done, rest not started |
 | 2 | 2.1 · 2.2 · 2.3 · 2.4 · 2.5 · 2.6 · 2.7 · 2.8 | Not started |
 | 3 | 3.1 · 3.2 · 3.3 · 3.4 · 3.5 · 3.6 | Not started |
 | 4 | 4.1 · 4.2 · 4.3 · 4.4 · 4.5 | Not started |
@@ -2394,3 +2394,122 @@ the following cycles, and the `signal_state` row's timestamp matched.
 `GET /api/system` showed the ingest pipeline and all six signals still
 healthy after the restart. Journal clean across all three services
 throughout.
+
+**Note on step 1.4 (AdGuard API ingest), implemented locally and
+deployed live.** Investigated the real live shape of
+`/control/querylog` before writing any parsing code - fetched it
+directly against the gateway's real AdGuard instance (`adguard._request`
+run over SSH) rather than assuming it matches the on-disk file's own
+format. It doesn't: `client`/`question.name`/`question.type` instead of
+`IP`/`QH`/`QT`, a top-level `rule` string plus a `rules` array instead
+of nested `Result.Rules`, `elapsedMs` as a MILLISECOND STRING
+(`"0.748032"`) instead of `Elapsed` nanoseconds, `reason` (e.g.
+`FilteredBlackList`, `NotFilteredNotFound`) instead of
+`Result.IsFiltered`, and `cached`/`upstream` at the top level instead
+of nested. `flatten_agh_api()` is built from two real fetched entries
+(one blocked, one allowed), not guessed.
+
+- **Transport**: polls the API on the same 2-second cycle the file
+  reader used to run on, tracked by a real epoch-seconds watermark
+  (`ingest_state.watermark_ts`, a new `REAL` column - `byte_offset`'s
+  `INTEGER` would have silently truncated AdGuard's nanosecond-precision
+  timestamps) plus a same-page duplicate guard, since the API exposes no
+  stable per-entry id to key on. No cursor-based pagination beyond one
+  page per poll - at this project's real measured volume (well under
+  1 DNS query/minute network-wide on average) that comfortably covers
+  what accumulates between 2-second polls; a genuine traffic spike or
+  extended outage skipping the overflow is a real, stated limitation,
+  not a silent one, and the file-reader fallback below would still
+  eventually pick up what a gap in the API path missed.
+- **Fallback**: `read_agh()` tries the API first and falls back to
+  `read_agh_querylog()` (unchanged) if `adguard._request` raises
+  `AdGuardError` - satisfying the step's own "file reader kept as
+  fallback" exactly, for exactly the case it names (AdGuard itself
+  unreachable, e.g. mid-restart).
+- **Blocked-vs-allowed** comes from `reason.startswith("Filtered")` -
+  AdGuard's own documented naming convention, confirmed against the two
+  real reason strings this gateway actually produces
+  (`FilteredBlackList`, `NotFilteredNotFound`). The fuller reason enum
+  (safe browsing, parental control, safe search, custom rule, rewrite)
+  was not each individually exercised live, since none of those
+  features are enabled here - followed as a stated interpretation of a
+  documented convention, not verified exhaustively against every
+  possible value.
+
+**A real, currently-live bug was found during this step's own live
+investigation, not invented as a hypothetical:** `to_epoch_agh`
+hardcoded `+00:00` regardless of a timestamp's actual offset. Checked
+live, the real on-disk `querylog.json` (not just the API) is full of
+`+05:30`-offset timestamps, not the `'Z'`-suffixed example the old
+docstring assumed - meaning every AdGuard-sourced event this project
+had ever ingested via the file path carried a timestamp roughly 5.5
+hours ahead of its true value, deterministically and regardless of
+system configuration (the code explicitly forced UTC). Suricata's own
+`to_epoch` had a related issue: its real eve.json timestamps are also
+`+0530`, not the `+0000` its docstring claimed, and `fromisoformat`
+rejects the colon-less offset on any Python version - meaning every
+Suricata event was silently falling through to a fallback that
+discarded the offset and used naive local time. That fallback happened
+to produce the right answer only because this gateway's own system
+timezone is also Asia/Kolkata (confirmed live via `timedatectl`) - a
+coincidence, not a correctness guarantee, that a future redeploy in a
+different timezone would have silently broken. Both now share one
+robust `parse_rfc3339()` (handling `Z`, colon offsets, and colon-less
+offsets, at any fractional-second precision up to nanoseconds),
+verified against every real timestamp format actually observed live on
+this gateway, and proven to catch a regression by temporarily reverting
+`to_epoch_agh` to its exact old body and confirming the test fails with
+the real 19,800-second (5.5-hour) gap before reverting back to a
+byte-identical file.
+
+**Historical data was deliberately NOT retroactively corrected.** Every
+AdGuard-sourced event already in the database before this deploy still
+carries its old, skewed timestamp; only newly-ingested events are
+correct from this point forward. A mass `UPDATE` against live
+production timestamps was considered and rejected as needlessly risky
+(interaction with already-computed dedup windows and incident
+first_seen/last_seen values, for a real gain that's small given this
+gateway's entire history is only ~2 days old and step 1.3's own 30-day
+DNS retention will naturally age every affected row out well before it
+would matter) - the same "fix going forward, don't reach into
+production data to rewrite history" call step 1.3 already made for a
+different reason. Recorded here explicitly rather than silently
+decided.
+
+Smoke-tested locally: 22 new tests (`FlattenAghApiTests`,
+`AghWatermarkTests`, `ReadAghApiTests`, plus `ParseRfc3339Tests` for the
+timestamp fix) covering the real API entry shape, the watermark's
+first-run seed and round-trip, that only entries newer than the
+watermark get ingested, that the watermark advances to the newest
+ingested entry, that a duplicated entry within one page doesn't
+double-insert, and that `read_agh()` genuinely falls back to the file
+reader when the API is unreachable. `make test` (101 tests, up from 90)
+and the full scratchpad regression (31 files) both re-run clean.
+
+**Deployed to the live gateway and verified the same day**, with an
+online SQLite backup taken first (this session's seventh schema
+migration against production - the new `ingest_state.watermark_ts`
+column) and `.bak-1.4-*` copies of `ingest.py` and `schema.sql`. Only
+`securepi-ingest` needed restarting (nothing else imports `ingest.py`).
+
+**Verified against real production data, including the exit criterion's
+own latency number, not just "it doesn't crash":** a real DNS query for
+a genuinely blocked domain (`doubleclick.net`) was issued directly
+against the live gateway's real AdGuard listener (`10.10.0.1:53`, found
+live via `ss -tulnp` after the loopback address failed) and the exact
+wall-clock query time recorded. The resulting event appeared in the
+database **11.1 seconds later** - well inside the ≤30s exit criterion,
+and a dramatic improvement over the "7+ hours" the file-tailing path
+was documented to exhibit under real load. The new row's own timestamp
+matched the real query time with no skew (confirming the parser fix
+live, not just in a fixture), `blocked=1` and `dns_filter_list_id=1`
+were populated correctly from the real block decision, and a repeat
+check across two more poll cycles confirmed exactly one row for that
+query - no duplicate insertion. As an unplanned but welcome side
+confirmation of the historical bug's real magnitude: the two
+previously-ingested `doubleclick.net` rows already in the database
+showed an apparent "latency" of 5.6-5.85 hours against their true,
+much-older wall-clock ingest time - exactly the skew direction and
+rough size the bug analysis predicted, visible in the live data itself
+rather than only in a calculation. Journal clean across all three
+services throughout.

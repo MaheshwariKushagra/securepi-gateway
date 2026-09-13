@@ -3,6 +3,7 @@
 import time
 import correlation
 import rollup
+import retention
 
 INTERVAL_SECONDS = 15  # frequent enough to feel live in a demo; cheap at this event volume
 
@@ -17,6 +18,9 @@ if __name__ == "__main__":
         # correlation signals so a freshly-closed hour is visible to
         # behavioral_baseline_signal on the very cycle it closes.
         rollup.rollup_closed_hours(conn)
+        # step 1.3's retention rides this same loop too - a cheap no-op on
+        # every cycle except the ~1-in-5760 that's actually due each day.
+        retention.run_retention_if_due(conn)
         results = correlation.run_all(conn)
         fired = sum(v for v in results.values() if v)
         if fired:

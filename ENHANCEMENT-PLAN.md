@@ -520,7 +520,7 @@ Never cut Stage 2, steps 5.2, 5.3, 5.7, or evaluation items 7.2–7.5.
 | Stage | Steps | Status |
 |---|---|---|
 | 0 | 0.1 · 0.2 · 0.3 | Not started |
-| 1 | **1.1 done** · 1.2 · 1.3 · 1.4 · 1.5 · 1.6 · 1.7 · **1.8 done** (1.8 out of order - see note below) | 1.1, 1.8 done, rest not started |
+| 1 | **1.1 done, 1.2 done** · 1.3 · 1.4 · 1.5 · 1.6 · 1.7 · **1.8 done** (1.8 out of order - see note below) | 1.1, 1.2, 1.8 done, rest not started |
 | 2 | 2.1 · 2.2 · 2.3 · 2.4 · 2.5 · 2.6 · 2.7 · 2.8 | Not started |
 | 3 | 3.1 · 3.2 · 3.3 · 3.4 · 3.5 · 3.6 | Not started |
 | 4 | 4.1 · 4.2 · 4.3 · 4.4 · 4.5 | Not started |
@@ -2255,3 +2255,70 @@ Mac-side developer tooling, never installed on the gateway, matching
 the plan's own §7 verification approach ("On the Mac: `make test`
 covers signals..."). Full session regression re-run clean: `make test`
 (68 tests) and all 30 scratchpad smoke test files from Stage 5/6.
+
+**Note on step 1.2 (central config: window durations), implemented
+locally and deployed live.** Step 6.3 already wired up the four count/
+z-score thresholds; this step's remaining scope was the "windows" half
+of the plan's own "thresholds, windows, retention, channels" list -
+retention and channels stay deferred since there's no feature yet to
+configure (that's 1.3 and 4.5's job respectively; a settings knob for a
+feature that doesn't exist would be fake, not minimal).
+
+- Five window durations added to `settings.py`'s `SETTINGS_SCHEMA`:
+  `port_scan_window_seconds`, `brute_force_window_seconds`,
+  `malicious_domain_window_seconds`, `new_device_lookback_seconds`, and
+  `dedup_window_seconds` - the last one is `raise_incident`'s own merge
+  window, shared across every signal rather than being one signal's own
+  constant, and arguably the single highest-leverage knob of the five
+  since it directly controls the alert-to-incident reduction ratio the
+  whole correlation layer exists to produce.
+- **Deliberately NOT included**, with the boundary stated explicitly in
+  `settings.py`'s own module docstring: `behavioral_baseline_signal`'s
+  `BASELINE_MIN_SAMPLES`/`BASELINE_MIN_BYTES_FLOOR` and
+  `adblock_effectiveness_signal`'s two constants. These gate WHETHER a
+  signal is eligible to judge a device at all (a learning period, a
+  noise floor, "enough real activity to judge by") rather than HOW
+  SENSITIVE its judgment is once eligible - a genuinely different kind
+  of knob from a detection window, and mixing the two into one settings
+  list would make the Settings page harder to reason about, not easier.
+- Every signal function now calls `settings.get(conn, "...")` for its
+  window instead of reading a hardcoded module constant, same pattern
+  as the existing thresholds; the module-level constants themselves
+  were removed (not left as unused dead code) where fully replaced,
+  kept where still needed for a value settings.py deliberately doesn't
+  cover (`NEW_DEVICE_GRACE_SECONDS`, `BASELINE_MIN_SAMPLES`, etc).
+- New tests were added to the PERMANENT suite (not just scratchpad),
+  continuing step 1.1's discipline: `WindowSettingsTests` proves the
+  wiring is genuinely live, not merely present in the schema - shrinking
+  `port_scan_window_seconds` to 60s makes a signal that fires under the
+  default 300s window correctly stop firing (the older ports fall
+  outside the shorter window), and shortening `dedup_window_seconds` to
+  60s makes two firings 500s apart correctly create two incidents
+  instead of merging into one.
+- The existing `smoke_63b.py` scratchpad test's exact-key-set assertion
+  on `GET /api/settings` was updated to include the five new keys - a
+  small, expected, non-silent breakage from a real, spec-compliant
+  interface change, fixed immediately rather than the assertion being
+  loosened to stop checking exact-ness.
+
+Smoke-tested locally: `make test` (71 tests, up from 68) and the full
+scratchpad regression (31 files, including this step's own
+`smoke_12_windows.py`) re-run clean.
+
+**Deployed to the live gateway and verified the same day.** No schema
+migration (the `settings` table already existed from step 6.3), so this
+deploy skipped the online database backup the migration-carrying steps
+needed. `.bak-1.2-*` copies of `correlation.py` and `settings.py` were
+taken; `securepi-engine` was restarted first (it imports both files and
+calls every signal every 15s) and confirmed to survive several real
+cycles with a clean journal before `securepi-web` was restarted for the
+`/api/settings` endpoint's new entries.
+
+**Verified against real production data:** `GET /api/settings` showed
+all nine settings (four thresholds plus five windows) with their real
+correct defaults; a real `malicious_domain_window_seconds` change
+(600 -> 300, with a reason) and reset were performed against the live
+gateway, confirmed via `GET /api/audit` as two genuine audited rows with
+accurate before/after detail; the `/settings` page's threshold section
+markup was confirmed present in the served HTML. Journal clean across
+all three services throughout.

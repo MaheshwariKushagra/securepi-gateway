@@ -6,17 +6,25 @@ needs, built the same way 6.1 built device_hourly and 6.2 built
 dhcp_params: the smallest real prerequisite, not the full stage).
 
 SETTINGS_SCHEMA below is the complete, honest list of what this project
-actually lets an operator tune without a redeploy - four of
+actually lets an operator tune without a redeploy: four of
 correlation.py's detection thresholds (finding C5: "every threshold is
-hard-coded... no Settings page yet"). It is deliberately NOT every
-constant this codebase has: window-duration constants
-(PORT_SCAN_WINDOW_SECONDS and friends) and every DPI-addon-side constant
-(PIN_FAILURE_THRESHOLD, PIN_BYPASS_HOURS, EFFECTIVENESS_*) stay
-hardcoded for now. The addon ones specifically would need the SAME kind
-of cross-process, hot-reloadable mechanism step 5.9 built for
-adfilter-rules.json - a real, separate piece of work, not something to
-silently half-do here. See ENHANCEMENT-PLAN.md's note on this step for
-the full reasoning.
+hard-coded... no Settings page yet", wired up in step 6.3) plus, as of
+step 1.2, five of its window durations (how far back each signal looks,
+and how long a dedup window merges repeated firings into one incident).
+
+Deliberately NOT included: every DPI-addon-side constant
+(PIN_FAILURE_THRESHOLD, PIN_BYPASS_HOURS, EFFECTIVENESS_*) - those would
+need the SAME kind of cross-process, hot-reloadable mechanism step 5.9
+built for adfilter-rules.json, a real, separate piece of work, not
+something to silently half-do here. Also not included:
+BASELINE_MIN_SAMPLES and BASELINE_MIN_BYTES_FLOOR (behavioral_baseline_signal's
+learning-period and noise-floor constants) and the two product-effectiveness
+constants in adblock_effectiveness_signal - these shape WHEN a signal is
+even eligible to judge a device, not how sensitive its judgment is once
+eligible, and conflating "detection windows" with "learning/eligibility
+gates" in one settings list would make the Settings page harder to
+reason about, not easier. See ENHANCEMENT-PLAN.md's note on this step
+for the full reasoning behind both boundaries.
 
 Values are read fresh from the database on every get() call, not
 cached - correlation.py's signals already re-run their own SQL query
@@ -52,6 +60,33 @@ SETTINGS_SCHEMA = {
         "default": 3.0, "type": float, "min": 1.0, "max": 10.0,
         "label": "Volume-anomaly z-score threshold",
         "help": "How many standard deviations above a device's own hour-of-day average counts as unusual.",
+    },
+    "port_scan_window_seconds": {
+        "default": 300, "type": int, "min": 30, "max": 3600,
+        "label": "Port scan window",
+        "help": "How far back (seconds) the port-scan signal looks when counting distinct ports touched.",
+    },
+    "brute_force_window_seconds": {
+        "default": 120, "type": int, "min": 30, "max": 3600,
+        "label": "Brute-force window",
+        "help": "How far back (seconds) the brute-force signal looks when counting connection attempts.",
+    },
+    "malicious_domain_window_seconds": {
+        "default": 600, "type": int, "min": 30, "max": 3600,
+        "label": "Malicious-domain window",
+        "help": "How far back (seconds) the malicious-domain signal looks when counting blocked lookups.",
+    },
+    "new_device_lookback_seconds": {
+        "default": 3600, "type": int, "min": 300, "max": 86400,
+        "label": "New-device lookback",
+        "help": "How far back (seconds) a device's first_seen can be and still count as \"new\".",
+    },
+    "dedup_window_seconds": {
+        "default": 600, "type": int, "min": 60, "max": 86400,
+        "label": "Incident dedup window",
+        "help": "How long a repeated signal firing for the same device extends an existing incident, "
+                "instead of raising a new one. Shared by every signal - this is what turns a flurry of "
+                "detections into one incident.",
     },
 }
 

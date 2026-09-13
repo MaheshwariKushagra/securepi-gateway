@@ -44,7 +44,8 @@ DB_PATH = "/opt/securepi/securepi.db"
 # while still counting as "the same incident continuing" rather than a new
 # one. Chosen to merge a sustained scan or a flurry of blocked lookups into
 # one incident, without merging genuinely separate events hours apart.
-DEDUP_WINDOW_SECONDS = 600
+# Lives in app/settings.py (step 1.2) - queried fresh on every call below,
+# same as every other window/threshold this file reads from there.
 
 # Ports commonly targeted by credential brute-forcing. Not exhaustive by
 # design - see brute_force_signal for why a short, defensible list beats a
@@ -87,12 +88,13 @@ def raise_incident(conn, device_id, signal_type, severity, title, description,
     without it, a signal that fires once per cycle while a scan is in progress
     would produce one incident per cycle instead of one incident per scan.
     """
+    dedup_window = settings.get(conn, "dedup_window_seconds")
     existing = conn.execute(
         """SELECT id, evidence_count FROM incidents
             WHERE device_id = ? AND signal_type = ? AND status = 'new'
               AND last_seen >= ?
             ORDER BY last_seen DESC LIMIT 1""",
-        (device_id, signal_type, last_seen - DEDUP_WINDOW_SECONDS),
+        (device_id, signal_type, last_seen - dedup_window),
     ).fetchone()
 
     now = time.time()
@@ -147,13 +149,9 @@ def raise_incident(conn, device_id, signal_type, severity, title, description,
 # is meant to catch the slow scan that a per-packet IDS signature misses, not
 # just to duplicate what Suricata's own scan rules already flag.
 # --------------------------------------------------------------------------
-PORT_SCAN_WINDOW_SECONDS = 300
-# The threshold itself lives in app/settings.py (step 6.3) - queried
-# fresh every cycle below, the same "no cached state" design this
-# signal's own trailing-window re-evaluation already follows. The window
-# duration stays a plain constant here; see settings.py's own module
-# docstring for why only the four count/z-score thresholds were wired
-# up to be console-tunable, not every constant in this file.
+# Window and threshold both live in app/settings.py (steps 1.2 and 6.3) -
+# queried fresh every cycle below, the same "no cached state" design this
+# signal's own trailing-window re-evaluation already follows.
 
 
 def port_scan_signal(conn):
@@ -165,7 +163,8 @@ def port_scan_signal(conn):
     # Incident-level dedup (in raise_incident) is what prevents the repeated
     # overlapping scans from creating duplicate incidents.
     now = time.time()
-    since = now - PORT_SCAN_WINDOW_SECONDS
+    window = settings.get(conn, "port_scan_window_seconds")
+    since = now - window
     threshold = settings.get(conn, "port_scan_threshold")
 
     rows = conn.execute(
@@ -198,8 +197,7 @@ def port_scan_signal(conn):
             title="Port scan detected against %s" % r["dest_ip"],
             description=(
                 "%d distinct ports contacted on %s within %d seconds "
-                "(ports: %s)." % (r["n_ports"], r["dest_ip"],
-                                   PORT_SCAN_WINDOW_SECONDS, r["ports"])
+                "(ports: %s)." % (r["n_ports"], r["dest_ip"], window, r["ports"])
             ),
             first_seen=r["first_seen"], last_seen=r["last_seen"],
             event_ids=event_ids,
@@ -218,15 +216,15 @@ def port_scan_signal(conn):
 # single legitimate SSH session: a real login is one flow; a brute-force
 # attempt is dozens of separate, quick ones.
 # --------------------------------------------------------------------------
-BRUTE_FORCE_WINDOW_SECONDS = 120
-# Threshold lives in app/settings.py - see port_scan_signal's own note above.
+# Window and threshold both live in app/settings.py - see port_scan_signal's
+# own note above.
 
 
 def brute_force_signal(conn):
     # Trailing window every cycle - see port_scan_signal for why this must
     # not be gated by "since the engine last ran".
     now = time.time()
-    since = now - BRUTE_FORCE_WINDOW_SECONDS
+    since = now - settings.get(conn, "brute_force_window_seconds")
     threshold = settings.get(conn, "brute_force_threshold")
 
     placeholders = ",".join("?" for _ in AUTH_PORTS)
@@ -280,14 +278,15 @@ def brute_force_signal(conn):
 # domains, especially many DISTINCT ones, is the more interesting signal
 # (an app or process persistently trying to reach something disallowed).
 # --------------------------------------------------------------------------
-MALICIOUS_DOMAIN_WINDOW_SECONDS = 600
-# Threshold lives in app/settings.py - see port_scan_signal's own note above.
+# Window and threshold both live in app/settings.py - see port_scan_signal's
+# own note above.
 
 
 def malicious_domain_signal(conn):
     # Trailing window every cycle - same reasoning as port_scan_signal.
     now = time.time()
-    since = now - MALICIOUS_DOMAIN_WINDOW_SECONDS
+    window = settings.get(conn, "malicious_domain_window_seconds")
+    since = now - window
     threshold = settings.get(conn, "malicious_domain_threshold")
 
     rows = conn.execute(
@@ -325,7 +324,7 @@ def malicious_domain_signal(conn):
         raise_incident(
             conn, r["device_id"], "malicious_domain", "medium",
             title="Repeated blocked-domain lookups (%d in %ds)"
-                  % (r["n_blocked"], MALICIOUS_DOMAIN_WINDOW_SECONDS),
+                  % (r["n_blocked"], window),
             description=(
                 "%d blocked DNS queries across %d distinct domains. Top domains: %s."
                 % (r["n_blocked"], r["n_distinct"],
@@ -349,10 +348,11 @@ def malicious_domain_signal(conn):
 # to know about immediately, independent of anything it does afterwards.
 # --------------------------------------------------------------------------
 NEW_DEVICE_GRACE_SECONDS = 30  # let the registry finish resolving identity first
-NEW_DEVICE_LOOKBACK_SECONDS = 3600  # trailing window; raise_incident's own
-# dedup (same device/signal within DEDUP_WINDOW_SECONDS) is what stops a
-# still-recent device from getting re-raised every cycle - see below for why
-# this can't be a persisted watermark instead.
+# The lookback window lives in app/settings.py (step 1.2) - see
+# port_scan_signal's own note above. raise_incident's own dedup (same
+# device/signal within the dedup window) is what stops a still-recent
+# device from getting re-raised every cycle - see below for why this
+# can't be a persisted watermark instead.
 
 
 def new_device_signal(conn):
@@ -366,7 +366,7 @@ def new_device_signal(conn):
     # past the grace period never fired, on any later cycle, under the old
     # code.
     now = time.time()
-    since = now - NEW_DEVICE_LOOKBACK_SECONDS
+    since = now - settings.get(conn, "new_device_lookback_seconds")
 
     rows = conn.execute(
         """SELECT id, hostname, friendly_name, first_seen FROM devices

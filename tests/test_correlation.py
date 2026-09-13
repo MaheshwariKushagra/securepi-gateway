@@ -35,6 +35,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import fixtures  # noqa: E402
 
 import correlation  # noqa: E402
+import settings  # noqa: E402
 
 
 class PortScanSignalTests(unittest.TestCase):
@@ -321,6 +322,46 @@ class RaiseIncidentDedupAndEvidenceTests(unittest.TestCase):
                                         now - 50, now - 50 + cycle, eids)
         row = conn.execute("SELECT * FROM incidents WHERE device_id=1").fetchone()
         self.assertEqual(row["evidence_count"], 8, "must be the real distinct count, not 8 x 7 = 56")
+
+
+class WindowSettingsTests(unittest.TestCase):
+    """Step 1.2: window durations are console-tunable the same way step
+    6.3's thresholds already are. These prove the wiring is real - a
+    changed setting genuinely changes what a signal sees - not just that
+    the schema entry exists (settings.py's own tests cover that)."""
+
+    def test_all_five_window_settings_have_the_real_hardcoded_defaults(self):
+        conn = fixtures.temp_db()
+        self.assertEqual(settings.get(conn, "port_scan_window_seconds"), 300)
+        self.assertEqual(settings.get(conn, "brute_force_window_seconds"), 120)
+        self.assertEqual(settings.get(conn, "malicious_domain_window_seconds"), 600)
+        self.assertEqual(settings.get(conn, "new_device_lookback_seconds"), 3600)
+        self.assertEqual(settings.get(conn, "dedup_window_seconds"), 600)
+
+    def test_shrinking_the_port_scan_window_excludes_older_events(self):
+        conn = fixtures.temp_db()
+        fixtures.insert_device(conn, 1)
+        now = time.time()
+        for port in range(1, 9):  # 8 ports, spread from 250s ago to ~10s ago
+            fixtures.insert_flow(conn, 1, "203.0.113.10", port, now - 250 + port * 5)
+        settings.set_value(conn, "port_scan_window_seconds", 60)
+        self.assertEqual(correlation.port_scan_signal(conn), 0,
+                          "a 60s window must not see ports touched 200+ seconds ago")
+
+    def test_shortening_the_dedup_window_stops_merging_a_later_firing(self):
+        conn = fixtures.temp_db()
+        fixtures.insert_device(conn, 1)
+        now = time.time()
+        t0 = now - 10000
+        eids = []
+        for i in range(3):
+            fixtures.insert_flow(conn, 1, "203.0.113.30", 443, t0)
+            eids.append(conn.execute("SELECT max(id) FROM events").fetchone()[0])
+        settings.set_value(conn, "dedup_window_seconds", 60)
+        correlation.raise_incident(conn, 1, "port_scan", "high", "t1", "d1", t0, t0, eids)
+        correlation.raise_incident(conn, 1, "port_scan", "high", "t2", "d2", t0 + 500, t0 + 500, eids)
+        rows = conn.execute("SELECT * FROM incidents WHERE device_id=1").fetchall()
+        self.assertEqual(len(rows), 2, "500s apart must not merge under a shortened 60s dedup window")
 
 
 if __name__ == "__main__":

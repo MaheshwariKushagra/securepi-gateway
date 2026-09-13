@@ -1148,4 +1148,43 @@ were re-run after this change with no regressions - the new
 `import adfilter_rules` in `webapp.py` meant every earlier smoke script
 needed `dpi/` added to its own `sys.path`, which surfaced as an honest
 `ModuleNotFoundError` (not a hidden failure) and was fixed before moving
-on, not worked around. Not yet deployed.
+on, not worked around.
+
+**Deployed to the live gateway and verified the same day**, including
+one verification step stronger than anything possible locally: `.bak-
+5.9-*` copies were taken first; `adfilter_rules.py` was installed to
+*both* `/opt/securepi-dpi/` and `/opt/securepi/` as designed; both
+services compiled cleanly (webapp side with system `python3`, addon
+side with the DPI venv's `bin/python3`) before either was restarted.
+
+- **`make test`'s 17 cases were run a second time on the gateway
+  itself, against the real, just-deployed addon file and the REAL
+  installed mitmproxy package** - not the local stub. All 17 passed
+  with no changes needed, the strongest confirmation yet that the
+  local-stub testing technique this session has leaned on (5.7, 5.8,
+  and this test file itself) hasn't been hiding a real divergence from
+  actual mitmproxy behaviour.
+- **Hot-reload was verified end-to-end against the real deployed addon
+  file**, in-process via the DPI venv's `bin/python3` (the same
+  technique 5.7/5.8 used): loaded with one rule set, the rules file was
+  edited and re-checked - the new rule appeared without recreating the
+  object; the file was then replaced with deliberately invalid JSON and
+  re-checked again - the addon kept the last known-good rules rather
+  than crashing or reverting to built-in defaults.
+- **The real `POST /api/filtering/dpi/rules` endpoint was exercised
+  against production**, not a temp path: the actual current rules were
+  read first, one harmless test field (`zzzTestField`) was added via a
+  real request with a `reason`, confirmed to land in
+  `/opt/securepi-dpi/adfilter-rules.json` and in the journal's audit
+  line (`filtering: DPI rules updated to version 2 - ...`), then
+  reverted with a second real request back to exactly the shipped
+  default field list. Restarting `securepi-dpi` was NOT needed for any
+  of this - by design, and the point of the whole step.
+- The `confirm_privacy_scope_change` gate was deliberately NOT
+  re-exercised against production (it's already covered exhaustively in
+  the local smoke test) - changing what this gateway can decrypt, even
+  as a reverted test, was judged not worth the risk for a case the
+  local test already proves thoroughly, the same caution 5.5's resolver
+  tuning apply endpoint got.
+- The new "Tier 2 Rule Set" card's markup confirmed present in the
+  served HTML; journal clean across both services throughout.

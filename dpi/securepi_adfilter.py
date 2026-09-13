@@ -33,6 +33,8 @@ import time
 
 from mitmproxy import http
 
+from adfilter_rules import DEFAULT_RULES, load_rules
+
 logger = logging.getLogger(__name__)
 
 # One JSON line per decrypt/passthrough decision and per removal, for
@@ -42,17 +44,6 @@ logger = logging.getLogger(__name__)
 # this file is the machine-readable feed the console's ad-blocking
 # analytics and the privacy-scope check (step 5.7) read from instead.
 DPI_EVENTS_PATH = "/var/log/securepi/dpi-events.jsonl"
-
-
-# Only these hostnames are ever decrypted. Everything else passes through
-# untouched. Keep this list as short as possible - each entry is a domain
-# whose traffic the gateway becomes able to read.
-DECRYPT_SUFFIXES = (
-    "youtube.com",
-    "youtubei.googleapis.com",
-    "googlevideo.com",
-    "ytimg.com",
-)
 
 # Pinning-aware auto-passthrough (ENHANCEMENT-PLAN.md step 5.8). Some apps
 # pin the server certificate they expect and will never trust ours, no
@@ -68,57 +59,23 @@ DECRYPT_SUFFIXES = (
 PIN_FAILURE_THRESHOLD = 3
 PIN_BYPASS_HOURS = 24
 
-# Fields inside the YouTube player JSON that schedule advertisements.
-# Removing them leaves a valid response describing a video with no ads.
-#
-# These field names come from uBlock Origin's own YouTube rules, e.g.
-#   ||www.youtube.com/youtubei/v1/player?$xhr,1p,replace=/"adPlacements"/"no_ads"/
-# uBO renames the field; we delete it. Same effect, and deleting is tidier.
-AD_FIELDS = (
-    "adPlacements",
-    "playerAds",
-    "adSlots",
-    "adBreakHeartbeatParams",
-)
+# ENHANCEMENT-PLAN.md step 5.9: DECRYPT_SUFFIXES, AD_FIELDS, AD_RENDERERS
+# and BLOCKED_PATHS used to be hardcoded tuples right here. They now live
+# in adfilter-rules.json (loaded by _ensure_rules_fresh below), editable
+# from the console and hot-reloaded without a restart - see
+# adfilter_rules.py for the shared default/validation logic, why that
+# lives in its own mitmproxy-free module, and why a fifth constant that
+# used to live here (HTML_PLAYER_PAGES) was dropped rather than migrated.
+RULES_PATH = "/opt/securepi-dpi/adfilter-rules.json"
 
-# Ad-telemetry and midroll endpoints. These sit on hostnames we must allow
-# (blocking youtube.com would break the site), so DNS filtering cannot touch
-# them - only a proxy that sees the URL path can. Taken from uBO's filter list.
-BLOCKED_PATHS = (
-    "/get_midroll_",
-    "/api/stats/ads",
-    "/pagead/",
-    "/ptracking",
-    "/youtubei/v1/log_event",
-)
-
-# Pages that embed the player JSON inside their HTML rather than returning it
-# from the API. uBO rewrites these too; we do the same by text substitution,
-# because parsing the whole HTML document would be slower and more fragile.
-HTML_PLAYER_PAGES = ("/watch", "/playlist")
+# Where the addon writes per-rule hit counts (step 5.9) for the console's
+# "dead rules" view. A plain JSON snapshot, not the database - like
+# DPI_EVENTS_PATH's telemetry, this is a nice-to-have the console reads,
+# not part of the enforcement path.
+RULE_STATS_PATH = "/var/log/securepi/dpi-rule-stats.json"
 
 
-# Renderer names YouTube uses to place advertisements inside feeds and
-# watch pages. Observed live on this network in /youtubei/v1/browse responses.
-AD_RENDERERS = (
-    "adSlotRenderer",
-    "inFeedAdLayoutRenderer",
-    "aboutThisAdRenderer",
-    "promotedSparklesWebRenderer",
-    "promotedSparklesTextSearchRenderer",
-    "promotedVideoRenderer",
-    "compactPromotedVideoRenderer",
-    "compactPromotedItemRenderer",
-    "displayAdRenderer",
-    "adsEngagementPanelRenderer",
-    "bannerPromoRenderer",
-    "statementBannerRenderer",
-    "brandVideoShelfRenderer",
-    "brandVideoSingletonRenderer",
-)
-
-
-def strip_ads(node):
+def strip_ads(node, ad_fields, ad_renderers, hits=None):
     """
     Walk a decoded JSON tree and remove advertising in place.
 
@@ -130,29 +87,49 @@ def strip_ads(node):
          items, each a dict with one key naming its type; dropping the entries
          whose type is an ad renderer removes the ad and leaves the feed valid.
 
-    Returns the number of removals, so we can log whether anything happened.
+    `ad_fields` and `ad_renderers` are passed in explicitly - rather than
+    read from a module-level constant - so this function has no hidden
+    dependency on the currently-loaded rules and stays trivially unit
+    testable with plain lists (see tests/test_adfilter.py). `hits`, if
+    given, is a {"ad_fields": {...}, "ad_renderers": {...}} dict of
+    counters this function increments in place, one entry per rule name
+    that actually matched something - the data behind step 5.9's "dead
+    rules" view.
+
+    Returns the number of removals, so callers can log whether anything
+    happened.
     """
     removed = 0
 
     if isinstance(node, dict):
-        for field in AD_FIELDS:
+        for field in ad_fields:
             if field in node:
                 del node[field]
                 removed += 1
+                if hits is not None:
+                    hits["ad_fields"][field] = hits["ad_fields"].get(field, 0) + 1
         for value in node.values():
-            removed += strip_ads(value)
+            removed += strip_ads(value, ad_fields, ad_renderers, hits)
 
     elif isinstance(node, list):
         keep = []
         for item in node:
-            if isinstance(item, dict) and any(r in item for r in AD_RENDERERS):
+            matched = None
+            if isinstance(item, dict):
+                for r in ad_renderers:
+                    if r in item:
+                        matched = r
+                        break
+            if matched:
                 removed += 1
+                if hits is not None:
+                    hits["ad_renderers"][matched] = hits["ad_renderers"].get(matched, 0) + 1
                 continue          # drop this entry entirely
             keep.append(item)
         if len(keep) != len(node):
             node[:] = keep
         for item in node:
-            removed += strip_ads(item)
+            removed += strip_ads(item, ad_fields, ad_renderers, hits)
 
     return removed
 
@@ -177,6 +154,64 @@ class SecurePiAdFilter:
         # started under a previous run.
         self._pin_fail_count = {}    # (src_ip, sni) -> consecutive TLS failures
         self._pin_bypass_until = {}  # (src_ip, sni) -> epoch time the bypass ends
+
+        # Rule set state (step 5.9). Starts on the built-in defaults so the
+        # addon works even before adfilter-rules.json has ever been read
+        # successfully; _ensure_rules_fresh(force=True) below then tries to
+        # load the real file immediately.
+        self._rules = dict(DEFAULT_RULES)
+        self._rules_mtime = None
+        self._rule_hits = {"ad_fields": {}, "ad_renderers": {}, "blocked_paths": {}}
+        self._ensure_rules_fresh(force=True)
+
+    def _ensure_rules_fresh(self, force=False):
+        """Reload RULES_PATH if it changed since last checked - this is
+        what makes a rule edit from the console take effect without
+        restarting the proxy (step 5.9's own exit criterion). Called at
+        the top of every hook that consumes rules; an os.stat() is cheap
+        enough to do unconditionally rather than on a timer.
+
+        A missing or invalid file is never fatal: this logs a warning and
+        keeps whatever rules were already loaded (the built-in defaults,
+        on a fresh start) rather than breaking ad-blocking over a bad
+        edit or a file that hasn't been deployed yet."""
+        try:
+            mtime = os.stat(RULES_PATH).st_mtime
+        except OSError:
+            if force:
+                logger.warning("securepi: %s not found, using built-in default rules", RULES_PATH)
+            return
+        if not force and mtime == self._rules_mtime:
+            return
+        try:
+            self._rules = load_rules(RULES_PATH)
+            self._rules_mtime = mtime
+            logger.info("securepi: rules reloaded from %s (version %s)",
+                        RULES_PATH, self._rules.get("version"))
+        except Exception as exc:
+            logger.warning("securepi: could not load %s (%s) - keeping the rules already in use",
+                            RULES_PATH, exc)
+
+    def _write_rule_stats(self):
+        """Snapshot current per-rule hit counts to RULE_STATS_PATH for the
+        console's "dead rules" view (step 5.9). Written via a temp file
+        plus an atomic rename, so the console never reads a half-written
+        file mid-write. Called only when a hit count actually changes -
+        ad-stripping and path-blocking are both naturally infrequent
+        enough events that this adds no meaningful I/O load."""
+        try:
+            payload = {
+                "written_at": time.time(),
+                "rules_version": self._rules.get("version"),
+                "hits": self._rule_hits,
+            }
+            tmp_path = RULE_STATS_PATH + ".tmp"
+            os.makedirs(os.path.dirname(RULE_STATS_PATH), exist_ok=True)
+            with open(tmp_path, "w") as f:
+                json.dump(payload, f)
+            os.replace(tmp_path, RULE_STATS_PATH)
+        except Exception as exc:
+            logger.warning("securepi: could not write rule stats: %s", exc)
 
     def _log_event(self, src_ip, decision, sni=None, ads_removed=None, blocked_path=None):
         """Append one telemetry line. Failures here (disk full, permissions)
@@ -219,10 +254,11 @@ class SecurePiAdFilter:
         plain TCP relay for this connection: it never decrypts, and never
         presents a certificate.
         """
+        self._ensure_rules_fresh()
         sni = data.client_hello.sni or ""
 
         wanted = False
-        for suffix in DECRYPT_SUFFIXES:
+        for suffix in self._rules["decrypt_suffixes"]:
             if sni == suffix or sni.endswith("." + suffix):
                 wanted = True
                 break
@@ -308,6 +344,8 @@ class SecurePiAdFilter:
         Some ad and tracking endpoints live on hostnames we have to allow, so
         the only place to stop them is here, by looking at the path.
         """
+        self._ensure_rules_fresh()
+
         # Every 100 connections, report the decrypt/passthrough ratio. This is
         # the number that demonstrates the privacy scope is actually holding.
         total = self.decrypted + self.passed_through
@@ -319,7 +357,7 @@ class SecurePiAdFilter:
                 100.0 * self.passed_through / total,
             )
 
-        for path in BLOCKED_PATHS:
+        for path in self._rules["blocked_paths"]:
             if path in flow.request.path:
                 flow.response = http.Response.make(204)  # empty, no content
                 self.blocked_urls += 1
@@ -330,6 +368,8 @@ class SecurePiAdFilter:
                 except Exception:
                     src_ip = None
                 self._log_event(src_ip, "path_blocked", blocked_path=blocked_path)
+                self._rule_hits["blocked_paths"][path] = self._rule_hits["blocked_paths"].get(path, 0) + 1
+                self._write_rule_stats()
                 return
 
     def response(self, flow):
@@ -341,6 +381,7 @@ class SecurePiAdFilter:
         API, the watch page, and the feed - so a general sweep is both simpler
         and harder to evade than a list of special cases.
         """
+        self._ensure_rules_fresh()
         content_type = flow.response.headers.get("content-type", "")
         path = flow.request.path.split("?")[0]
 
@@ -357,7 +398,8 @@ class SecurePiAdFilter:
                 body = json.loads(text)
             except Exception:
                 return
-            removed = strip_ads(body)
+            removed = strip_ads(body, self._rules["ad_fields"], self._rules["ad_renderers"],
+                                 self._rule_hits)
             if removed:
                 flow.response.set_text(json.dumps(body))
                 self.cleaned += removed
@@ -370,21 +412,24 @@ class SecurePiAdFilter:
                     src_ip = None
                 self._log_event(src_ip, "ads_stripped",
                                  sni=flow.request.host, ads_removed=removed)
+                self._write_rule_stats()
             return
 
         # HTML pages embed the same structures as text. We cannot parse those
         # safely, so we neutralise the field names the way uBlock Origin does.
         if "html" in content_type:
             changed = False
-            for field in AD_FIELDS:
+            for field in self._rules["ad_fields"]:
                 marker = '"%s"' % field
                 if marker in text:
                     text = text.replace(marker, '"no_ads"')
                     changed = True
+                    self._rule_hits["ad_fields"][field] = self._rule_hits["ad_fields"].get(field, 0) + 1
             if changed:
                 flow.response.set_text(text)
                 self.cleaned += 1
                 logger.info("securepi: neutralised ad fields in %s", path)
+                self._write_rule_stats()
 
 
 addons = [SecurePiAdFilter()]

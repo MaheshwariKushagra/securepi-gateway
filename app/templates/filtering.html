@@ -75,6 +75,35 @@
 </div>
 
 <div class="card" style="margin-bottom:14px">
+    <div class="card-head"><h2>Tier 2 Rule Set</h2>
+        <span class="spacer"></span>
+        <span class="dim" id="dpiRulesVersion">—</span></div>
+    <div class="card-body" style="display:flex; flex-direction:column; gap:12px" id="dpiRulesForm">
+        <div>
+            <div class="subtle" style="margin-bottom:4px">Decrypt suffixes - hostnames Tier 2 is allowed to decrypt at all</div>
+            <textarea class="input" id="dpiRuleDecryptSuffixes" style="width:100%; min-height:60px; font-family:monospace; font-size:12px"></textarea>
+        </div>
+        <div>
+            <div class="subtle" style="margin-bottom:4px">Ad fields - JSON keys removed wherever they appear <span id="dpiRuleAdFieldsHits" class="dim"></span></div>
+            <textarea class="input" id="dpiRuleAdFields" style="width:100%; min-height:60px; font-family:monospace; font-size:12px"></textarea>
+        </div>
+        <div>
+            <div class="subtle" style="margin-bottom:4px">Ad renderers - feed item types dropped entirely <span id="dpiRuleAdRenderersHits" class="dim"></span></div>
+            <textarea class="input" id="dpiRuleAdRenderers" style="width:100%; min-height:80px; font-family:monospace; font-size:12px"></textarea>
+        </div>
+        <div>
+            <div class="subtle" style="margin-bottom:4px">Blocked paths - endpoints refused with an empty response <span id="dpiRuleBlockedPathsHits" class="dim"></span></div>
+            <textarea class="input" id="dpiRuleBlockedPaths" style="width:100%; min-height:60px; font-family:monospace; font-size:12px"></textarea>
+        </div>
+        <div class="dim" style="font-size:11px">One rule per line. Hit counts are since the DPI service last restarted - a rule with zero hits for a while may be dead.</div>
+        <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap">
+            <input class="input" id="dpiRuleReason" placeholder="Reason for this change (required)" style="flex:1; min-width:220px">
+            <button class="btn" id="dpiRulesSave">Save rules</button>
+        </div>
+    </div>
+</div>
+
+<div class="card" style="margin-bottom:14px">
     <div class="card-head"><h2>Tracker Companies</h2>
         <span class="spacer"></span><span class="subtle" id="analyticsTrackerCount">—</span></div>
     <div class="card-body tight" id="analyticsTrackers"><div class="empty">Loading…</div></div>

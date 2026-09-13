@@ -33,6 +33,7 @@ Routes:
   /api/filtering/dpi/enrolled       every enrolled device, expiry, and a CA-trust check
   /api/filtering/dpi/privacy-scope  privacy-scope canary status for the console badge
   /api/filtering/dpi/pinned         devices currently auto-bypassed for a pinned app (step 5.8)
+  /api/filtering/dpi/rules          view/edit the Tier 2 rule set, with per-rule hit counts (step 5.9)
   /api/devices/{id}/dpi             enroll/unenroll one device for Tier 2 (replaces the CLI)
   /api/devices/{id}/blocked         recently blocked domains for one device
   /api/devices/{id}/filtering/rules allow/block rules scoped to one device
@@ -44,6 +45,8 @@ Routes:
 
 import base64
 import datetime
+import json
+import os
 import secrets
 import sqlite3
 import subprocess
@@ -56,6 +59,7 @@ from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel
 from starlette.requests import Request
 
+import adfilter_rules
 import adguard
 import dpi_enroll
 import native_trackers
@@ -153,6 +157,12 @@ LIST_LOW_CONTRIBUTION_SHARE = 0.01
 DPI_CA_PATH = "/opt/securepi-dpi/ca/mitmproxy-ca-cert.pem"
 DPI_CA_DOWNLOAD_URL = "http://10.10.0.1:8081/securepi-ca.crt"
 
+# Step 5.9: the versioned, console-editable Tier 2 rule set, and the
+# per-rule hit-count snapshot dpi/securepi_adfilter.py writes. Both plain
+# files, like the CA - no database table for either.
+DPI_RULES_PATH = "/opt/securepi-dpi/adfilter-rules.json"
+DPI_RULE_STATS_PATH = "/var/log/securepi/dpi-rule-stats.json"
+
 # dpi/privacy_canary.py (step 5.7) checks every 15 minutes; twice that
 # before the console calls the check itself stale, the same slack
 # SIGNAL_STALE_AFTER/INGEST_STALE_AFTER give the correlation engine and
@@ -195,6 +205,15 @@ class ResolverTuningRequest(BaseModel):
 class DpiEnrollRequest(BaseModel):
     enrolled: bool
     hours: int = dpi_enroll.DEFAULT_TIMEOUT_HOURS
+
+
+class DpiRulesUpdate(BaseModel):
+    decrypt_suffixes: list[str]
+    ad_fields: list[str]
+    ad_renderers: list[str]
+    blocked_paths: list[str]
+    reason: str
+    confirm_privacy_scope_change: bool = False
 
 
 class QuarantineUpdate(BaseModel):
@@ -1407,6 +1426,101 @@ def api_filtering_dpi_pinned():
             "expires_in_s": int(r["expires_at"] - now),
         })
     return {"pinned": out}
+
+
+def _read_dpi_rules():
+    """Current Tier 2 rule set, falling back to the built-in defaults if
+    the file is missing or invalid - the same graceful-degradation
+    contract the addon's own loader has, using the same shared
+    adfilter_rules module. See that module's docstring for why one
+    source file in git is deployed to two locations (this console
+    process and the DPI venv) rather than imported across a boundary
+    that would drag mitmproxy into the console."""
+    try:
+        return adfilter_rules.load_rules(DPI_RULES_PATH)
+    except (OSError, ValueError, json.JSONDecodeError):
+        return dict(adfilter_rules.DEFAULT_RULES)
+
+
+def _read_dpi_rule_stats():
+    try:
+        with open(DPI_RULE_STATS_PATH) as f:
+            return json.load(f)
+    except (OSError, json.JSONDecodeError):
+        return {}
+
+
+@app.get("/api/filtering/dpi/rules")
+def api_dpi_rules_get():
+    """The Tier 2 rule set plus per-rule hit counts, for the console's
+    rule editor and "dead rules" view (step 5.9). Hit counts are since
+    the last securepi-dpi restart, not lifetime - the addon keeps them in
+    process memory, not the database (see its _write_rule_stats
+    docstring), the same trade-off step 5.8's pinning state makes."""
+    rules = _read_dpi_rules()
+    stats = _read_dpi_rule_stats()
+    hits = stats.get("hits") or {"ad_fields": {}, "ad_renderers": {}, "blocked_paths": {}}
+
+    def annotate(category):
+        return [
+            {"rule": r, "hits": hits.get(category, {}).get(r, 0)}
+            for r in rules.get(category, [])
+        ]
+
+    return {
+        "version": rules.get("version"),
+        "updated_at": rules.get("updated_at"),
+        "decrypt_suffixes": rules.get("decrypt_suffixes", []),
+        "ad_fields": annotate("ad_fields"),
+        "ad_renderers": annotate("ad_renderers"),
+        "blocked_paths": annotate("blocked_paths"),
+        "stats_age": _age(time.time() - stats["written_at"]) if stats.get("written_at") else None,
+    }
+
+
+@app.post("/api/filtering/dpi/rules")
+def api_dpi_rules_set(body: DpiRulesUpdate):
+    """Edit the Tier 2 rule set from the console (step 5.9). Validated
+    with the exact same logic the addon's own loader uses (shared via
+    adfilter_rules.py) before anything is written to disk. A change to
+    decrypt_suffixes - which changes what this gateway is even able to
+    decrypt - needs an explicit confirm_privacy_scope_change=true, the
+    same pattern step 5.5's resolver tuning uses for an equally
+    consequential change. "Audit" is a print() into the journal, same
+    stopgap every other filtering endpoint in this file already uses
+    until Stage 1's real audit_log table exists (step 1.5) - `reason` is
+    required for the same reason it's required on the allow/block
+    endpoints."""
+    if not body.reason.strip():
+        raise HTTPException(400, "a reason is required")
+    new_rules = {
+        "decrypt_suffixes": body.decrypt_suffixes,
+        "ad_fields": body.ad_fields,
+        "ad_renderers": body.ad_renderers,
+        "blocked_paths": body.blocked_paths,
+    }
+    try:
+        adfilter_rules.validate_rules(new_rules)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+
+    current = _read_dpi_rules()
+    if set(new_rules["decrypt_suffixes"]) != set(current.get("decrypt_suffixes", [])):
+        if not body.confirm_privacy_scope_change:
+            raise HTTPException(400,
+                "changing decrypt_suffixes changes what this gateway is able to decrypt - "
+                "resend with confirm_privacy_scope_change=true to proceed")
+
+    new_rules["version"] = (current.get("version") or 0) + 1
+    new_rules["updated_at"] = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+
+    tmp_path = DPI_RULES_PATH + ".tmp"
+    with open(tmp_path, "w") as f:
+        json.dump(new_rules, f, indent=2)
+    os.replace(tmp_path, DPI_RULES_PATH)  # atomic - the addon must never read a half-written file
+
+    print("filtering: DPI rules updated to version %d - %s" % (new_rules["version"], body.reason), flush=True)
+    return {"ok": True, "version": new_rules["version"]}
 
 
 @app.get("/api/devices/{device_id}/dpi")

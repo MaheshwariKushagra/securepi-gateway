@@ -1197,6 +1197,79 @@ function initDpiOnboarding() {
     loadPrivacyScope();
 }
 
+function linesToList(text) {
+    return text.split("\n").map(s => s.trim()).filter(Boolean);
+}
+
+function initDpiRules() {
+    const form = $("#dpiRulesForm");
+    if (!form) return;
+    let baselineDecryptSuffixes = [];
+
+    function summariseHits(items, elId) {
+        const el = $(elId);
+        if (!el) return;
+        const dead = items.filter(i => i.hits === 0).length;
+        el.textContent = dead ? `(${items.length} rules, ${dead} with zero hits)` : `(${items.length} rules)`;
+    }
+
+    async function load() {
+        try {
+            const res = await fetch("/api/filtering/dpi/rules");
+            if (!res.ok) throw new Error("request failed");
+            const d = await res.json();
+            baselineDecryptSuffixes = d.decrypt_suffixes.slice();
+            $("#dpiRuleDecryptSuffixes").value = d.decrypt_suffixes.join("\n");
+            $("#dpiRuleAdFields").value = d.ad_fields.map(x => x.rule).join("\n");
+            $("#dpiRuleAdRenderers").value = d.ad_renderers.map(x => x.rule).join("\n");
+            $("#dpiRuleBlockedPaths").value = d.blocked_paths.map(x => x.rule).join("\n");
+            summariseHits(d.ad_fields, "#dpiRuleAdFieldsHits");
+            summariseHits(d.ad_renderers, "#dpiRuleAdRenderersHits");
+            summariseHits(d.blocked_paths, "#dpiRuleBlockedPathsHits");
+            $("#dpiRulesVersion").textContent = `version ${d.version}` +
+                (d.stats_age ? `, hit counts as of ${d.stats_age} ago` : ", no hit data yet");
+        } catch (err) {
+            $("#dpiRulesVersion").textContent = "could not load";
+        }
+    }
+
+    $("#dpiRulesSave").addEventListener("click", async () => {
+        const decrypt_suffixes = linesToList($("#dpiRuleDecryptSuffixes").value);
+        const ad_fields = linesToList($("#dpiRuleAdFields").value);
+        const ad_renderers = linesToList($("#dpiRuleAdRenderers").value);
+        const blocked_paths = linesToList($("#dpiRuleBlockedPaths").value);
+        const reason = $("#dpiRuleReason").value.trim();
+        if (!reason) { toast("Reason required", "Say why you're changing the rules.", "high"); return; }
+
+        const scopeChanged = decrypt_suffixes.length !== baselineDecryptSuffixes.length ||
+            decrypt_suffixes.some(s => !baselineDecryptSuffixes.includes(s));
+        let confirm_privacy_scope_change = false;
+        if (scopeChanged) {
+            if (!confirm("Changing the decrypt suffixes changes what this gateway is able to decrypt. Continue?")) return;
+            confirm_privacy_scope_change = true;
+        }
+
+        try {
+            const res = await fetch("/api/filtering/dpi/rules", {
+                method: "POST", headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ decrypt_suffixes, ad_fields, ad_renderers, blocked_paths,
+                                        reason, confirm_privacy_scope_change }),
+            });
+            if (!res.ok) {
+                const err = await res.json().catch(() => ({}));
+                throw new Error(err.detail || "request failed");
+            }
+            $("#dpiRuleReason").value = "";
+            toast("Rules updated", "", "ok");
+            load();
+        } catch (err) {
+            toast("Could not save rules", String(err.message || err), "high");
+        }
+    });
+
+    load();
+}
+
 function initResolverQuality() {
     const wrap = $("#resolverQuality");
     if (!wrap) return;
@@ -1699,6 +1772,7 @@ document.addEventListener("DOMContentLoaded", () => {
     initFilteringAnalytics();
     initResolverQuality();
     initDpiOnboarding();
+    initDpiRules();
 
     // Global row-action delegate: works across incidents list + detail page.
     // Registered on the capture phase because row markup calls

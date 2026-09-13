@@ -1,0 +1,39 @@
+{
+  "version": 1,
+  "updated_at": "2026-09-13T00:00:00Z",
+  "decrypt_suffixes": [
+    "youtube.com",
+    "youtubei.googleapis.com",
+    "googlevideo.com",
+    "ytimg.com"
+  ],
+  "ad_fields": [
+    "adPlacements",
+    "playerAds",
+    "adSlots",
+    "adBreakHeartbeatParams"
+  ],
+  "ad_renderers": [
+    "adSlotRenderer",
+    "inFeedAdLayoutRenderer",
+    "aboutThisAdRenderer",
+    "promotedSparklesWebRenderer",
+    "promotedSparklesTextSearchRenderer",
+    "promotedVideoRenderer",
+    "compactPromotedVideoRenderer",
+    "compactPromotedItemRenderer",
+    "displayAdRenderer",
+    "adsEngagementPanelRenderer",
+    "bannerPromoRenderer",
+    "statementBannerRenderer",
+    "brandVideoShelfRenderer",
+    "brandVideoSingletonRenderer"
+  ],
+  "blocked_paths": [
+    "/get_midroll_",
+    "/api/stats/ads",
+    "/pagead/",
+    "/ptracking",
+    "/youtubei/v1/log_event"
+  ]
+}

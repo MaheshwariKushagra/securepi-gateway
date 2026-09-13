@@ -17,6 +17,7 @@ Routes:
   /incidents/{id}    incident detail with evidence chain
   /filtering         DNS filtering: blocklists, custom rules, query log
   /settings          thresholds, audit log, password, OSS attributions (step 6.3)
+  /hunt              flow/DNS/TLS search with pivots, top talkers, saved searches (step 6.5)
 
   /api/overview      everything the dashboard needs, one round trip
   /api/devices       device inventory
@@ -53,6 +54,10 @@ Routes:
   /api/attributions              third-party components this project uses, with real versions/licences
   /api/incidents/{id}            PATCH: change status, now audited with a real timeline entry
   /api/incidents/{id}/notes      POST: add an analyst note (step 6.4)
+  /hunt                          flow/DNS/TLS search page with pivots (step 6.5)
+  /api/hunt                      search + top talkers/destinations/protocol breakdown
+  /api/hunt/saved                list/create saved searches
+  /api/hunt/saved/{id}/remove    delete a saved search
 """
 
 import base64
@@ -265,6 +270,16 @@ class SettingUpdate(BaseModel):
 class PasswordChange(BaseModel):
     current_password: str
     new_password: str
+
+
+class SavedSearchCreate(BaseModel):
+    name: str
+    device_id: Optional[int] = None
+    ip: Optional[str] = None
+    domain: Optional[str] = None
+    port: Optional[int] = None
+    event_type: Optional[str] = None
+    range: Optional[str] = None
 
 
 class QuarantineUpdate(BaseModel):
@@ -849,6 +864,143 @@ def api_events(limit: int = Query(60), type: str = Query("")):
     sql += " ORDER BY e.id DESC LIMIT ?"
     params.append(min(limit, 300))
     return {"events": [_event_row(r) for r in c.execute(sql, params)]}
+
+
+def _hunt_where(device_id, ip, domain, port, event_type, start):
+    """Shared WHERE-clause builder for /api/hunt's display query and its
+    aggregate query, so both operate over exactly the same filtered set
+    of events - "top talkers for this search" must mean top talkers OF
+    the filtered traffic, not of the whole time range. Every filter is
+    optional and they combine with AND; ip/domain use the events table's
+    existing dest_ip/dns_rrname/tls_sni indexes rather than a full-text
+    search engine, which is enough at this project's real data volume."""
+    where = ["e.ts >= ?"]
+    params = [start]
+    if device_id:
+        where.append("e.device_id = ?")
+        params.append(device_id)
+    if ip:
+        where.append("(e.src_ip = ? OR e.dest_ip = ?)")
+        params.extend([ip, ip])
+    if domain:
+        where.append("(e.dns_rrname LIKE ? OR e.tls_sni LIKE ?)")
+        like = "%%%s%%" % domain
+        params.extend([like, like])
+    if port:
+        where.append("(e.src_port = ? OR e.dest_port = ?)")
+        params.extend([port, port])
+    if event_type:
+        where.append("e.event_type = ?")
+        params.append(event_type)
+    return " AND ".join(where), params
+
+
+def _hunt_aggregates(conn, where_sql, params):
+    """Top talkers (by bytes, device-attributed traffic only), top
+    destinations (domain if known, else the raw IP) and a protocol
+    breakdown, all computed over the filtered rows the caller already
+    matched - not a second, differently-scoped query."""
+    talkers = collections.Counter()
+    destinations = collections.Counter()
+    protocols = collections.Counter()
+    for r in conn.execute("SELECT * FROM events e WHERE %s" % where_sql, params):
+        if r["device_id"]:
+            talkers[r["device_id"]] += (r["bytes_toclient"] or 0) + (r["bytes_toserver"] or 0)
+        dest = r["dns_rrname"] or r["tls_sni"] or r["dest_ip"]
+        if dest:
+            destinations[dest] += 1
+        protocols[r["event_type"]] += 1
+
+    top_talkers = []
+    for device_id, total_bytes in talkers.most_common(10):
+        if total_bytes <= 0:
+            continue
+        d = conn.execute("SELECT * FROM devices WHERE id=?", (device_id,)).fetchone()
+        top_talkers.append({
+            "device_id": device_id,
+            "device": device_label(d) if d else "device %d" % device_id,
+            "bytes": total_bytes, "bytes_label": humanize_bytes(total_bytes),
+        })
+    return {
+        "top_talkers": top_talkers,
+        "top_destinations": [{"name": n, "count": c} for n, c in destinations.most_common(10)],
+        "protocol_breakdown": [{"type": t, "count": c} for t, c in protocols.most_common()],
+    }
+
+
+@app.get("/api/hunt")
+def api_hunt(device_id: int = Query(0), ip: str = Query(""), domain: str = Query(""),
+              port: int = Query(0), event_type: str = Query(""), range: str = Query("1h"),
+              limit: int = Query(200)):
+    """Flow/DNS/TLS search with pivots, top talkers, top destinations and
+    a protocol breakdown (ENHANCEMENT-PLAN.md step 6.5). Not the full
+    Hunt catalogue entry's every idea - this is search + aggregates over
+    the existing events table, which is what its own exit criterion
+    ("everything device X talked to in the last hour, in two clicks")
+    actually asks for."""
+    spec = RANGES.get(range, RANGES["1h"])
+    c = db()
+    start = time.time() - spec["seconds"]
+    where_sql, params = _hunt_where(device_id, ip, domain, port, event_type, start)
+
+    rows = c.execute(
+        ("SELECT e.*, d.hostname, d.friendly_name FROM events e"
+         " LEFT JOIN devices d ON d.id = e.device_id WHERE %s"
+         " ORDER BY e.id DESC LIMIT ?") % where_sql,
+        params + [min(limit, 1000)],
+    ).fetchall()
+
+    result = {"events": [_event_row(r) for r in rows], "range_label": spec["label"]}
+    result.update(_hunt_aggregates(c, where_sql, params))
+    return result
+
+
+@app.get("/api/hunt/saved")
+def api_hunt_saved_list():
+    c = db()
+    return {"searches": [{
+        "id": r["id"], "name": r["name"], "filters": json.loads(r["filters"]),
+        "created_at": time.strftime("%d %b %H:%M", time.localtime(r["created_at"])),
+    } for r in c.execute("SELECT * FROM saved_searches ORDER BY id DESC")]}
+
+
+@app.post("/api/hunt/saved")
+def api_hunt_saved_create(body: SavedSearchCreate):
+    name = body.name.strip()
+    if not name:
+        raise HTTPException(400, "name is required")
+    filters = {
+        "device_id": body.device_id, "ip": body.ip, "domain": body.domain,
+        "port": body.port, "event_type": body.event_type, "range": body.range,
+    }
+    c = db()
+    c.execute("INSERT INTO saved_searches (name, filters, created_at) VALUES (?, ?, ?)",
+              (name, json.dumps(filters), time.time()))
+    c.commit()
+    audit.log(c, CONSOLE_USERNAME, "hunt.save_search", target=name, detail=json.dumps(filters))
+    return {"ok": True}
+
+
+@app.post("/api/hunt/saved/{search_id}/remove")
+def api_hunt_saved_remove(search_id: int):
+    c = db()
+    row = c.execute("SELECT name FROM saved_searches WHERE id=?", (search_id,)).fetchone()
+    if row is None:
+        raise HTTPException(404, "saved search not found")
+    c.execute("DELETE FROM saved_searches WHERE id=?", (search_id,))
+    c.commit()
+    audit.log(c, CONSOLE_USERNAME, "hunt.remove_search", target=row["name"])
+    return {"ok": True}
+
+
+@app.get("/hunt", response_class=HTMLResponse)
+def page_hunt(request: Request):
+    c = db()
+    devices = [{"id": d["id"], "name": device_label(d)}
+               for d in c.execute("SELECT * FROM devices ORDER BY last_seen DESC")]
+    return templates.TemplateResponse("hunt.html", {
+        "request": request, "active": "hunt", "title": "Hunt", "devices": devices,
+    })
 
 
 @app.get("/api/devices/{device_id}/series")

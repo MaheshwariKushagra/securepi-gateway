@@ -1366,6 +1366,157 @@ function linesToList(text) {
     return text.split("\n").map(s => s.trim()).filter(Boolean);
 }
 
+function initHunt() {
+    const wrap = $("#huntResults");
+    if (!wrap) return;
+
+    function currentFilters() {
+        return {
+            device_id: $("#huntDevice").value || "",
+            ip: $("#huntIp").value.trim(),
+            domain: $("#huntDomain").value.trim(),
+            port: $("#huntPort").value.trim(),
+            event_type: $("#huntEventType").value || "",
+            range: $("#huntRange").value || "1h",
+        };
+    }
+
+    function applyFilters(f) {
+        $("#huntDevice").value = f.device_id || "";
+        $("#huntIp").value = f.ip || "";
+        $("#huntDomain").value = f.domain || "";
+        $("#huntPort").value = f.port || "";
+        $("#huntEventType").value = f.event_type || "";
+        $("#huntRange").value = f.range || "1h";
+    }
+
+    async function search() {
+        const f = currentFilters();
+        const params = new URLSearchParams();
+        if (f.device_id) params.set("device_id", f.device_id);
+        if (f.ip) params.set("ip", f.ip);
+        if (f.domain) params.set("domain", f.domain);
+        if (f.port) params.set("port", f.port);
+        if (f.event_type) params.set("event_type", f.event_type);
+        params.set("range", f.range);
+
+        try {
+            const res = await fetch(`/api/hunt?${params}`);
+            if (!res.ok) throw new Error("request failed");
+            const d = await res.json();
+
+            $("#huntResultsSummary").textContent =
+                `${d.events.length} shown - ${d.range_label}`;
+
+            wrap.innerHTML = d.events.length ? d.events.map(e => `
+                <div class="feed-row">
+                    <span class="mono dim">${esc(e.time)}</span>
+                    <span class="type-tag ${esc(e.type)}">${esc(e.type.replace('dns_query', 'dns'))}</span>
+                    ${e.device ? `<span class="dim" style="font-size:11px">${esc(e.device)}</span>` : ""}
+                    <span class="truncate mono" data-pivot-domain="${esc(e.detail)}" title="click to pivot">${esc(e.detail)}</span>
+                    <span class="dim" style="font-size:11px">${e.blocked ? `<span class="chip high">blocked</span>` : esc(e.extra || "")}</span>
+                </div>`).join("") : `<div class="empty">No events matched this search.</div>`;
+
+            $("#huntTalkers").innerHTML = d.top_talkers.length ? d.top_talkers.map(t => `
+                <div class="feed-row"><span class="truncate">${esc(t.device)}</span><span class="dim">${esc(t.bytes_label)}</span></div>
+            `).join("") : `<div class="empty">No device-attributed traffic in this search.</div>`;
+
+            $("#huntDestinations").innerHTML = d.top_destinations.length ? d.top_destinations.map(x => `
+                <div class="feed-row"><span class="truncate mono" data-pivot-domain="${esc(x.name)}" title="click to pivot">${esc(x.name)}</span><span class="dim">${x.count}x</span></div>
+            `).join("") : `<div class="empty">No destinations in this search.</div>`;
+
+            $("#huntProtocols").innerHTML = d.protocol_breakdown.length ? d.protocol_breakdown.map(p => `
+                <div class="feed-row"><span class="truncate">${esc(p.type)}</span><span class="dim">${p.count}x</span></div>
+            `).join("") : `<div class="empty">No events in this search.</div>`;
+        } catch (err) {
+            wrap.innerHTML = `<div class="empty">Search failed.</div>`;
+        }
+    }
+
+    async function loadSaved() {
+        const box = $("#huntSaved");
+        if (!box) return;
+        try {
+            const res = await fetch("/api/hunt/saved");
+            if (!res.ok) throw new Error("request failed");
+            const d = await res.json();
+            box.innerHTML = d.searches.length ? d.searches.map(s => `
+                <div class="feed-row" data-search-id="${s.id}">
+                    <span class="truncate">${esc(s.name)}</span>
+                    <span class="dim" style="font-size:11px">${esc(s.created_at)}</span>
+                    <button class="btn" data-load-search>Load</button>
+                    <button class="btn danger" data-delete-search>Delete</button>
+                </div>`).join("") : `<div class="empty">No saved searches yet.</div>`;
+            box.dataset.searches = JSON.stringify(d.searches);
+        } catch (err) {
+            box.innerHTML = `<div class="empty">Could not load saved searches.</div>`;
+        }
+    }
+
+    $("#huntSearch").addEventListener("click", search);
+    ["huntIp", "huntDomain", "huntPort"].forEach(id => {
+        $(`#${id}`).addEventListener("keydown", (e) => { if (e.key === "Enter") search(); });
+    });
+
+    $("#huntSaveSearch").addEventListener("click", async () => {
+        const name = prompt("Name this search:");
+        if (!name || !name.trim()) return;
+        const f = currentFilters();
+        try {
+            const res = await fetch("/api/hunt/saved", {
+                method: "POST", headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    name: name.trim(),
+                    device_id: f.device_id ? parseInt(f.device_id, 10) : null,
+                    ip: f.ip || null, domain: f.domain || null,
+                    port: f.port ? parseInt(f.port, 10) : null,
+                    event_type: f.event_type || null, range: f.range,
+                }),
+            });
+            if (!res.ok) throw new Error("request failed");
+            toast("Search saved", name, "ok");
+            loadSaved();
+        } catch (err) {
+            toast("Could not save search", "", "high");
+        }
+    });
+
+    // Pivoting: clicking a domain/IP anywhere in the results or aggregate
+    // cards re-runs the search filtered to that value - "everything device
+    // X talked to" is two clicks (open the device, then Hunt) or, from
+    // here, one click on any destination already shown.
+    document.addEventListener("click", (e) => {
+        const pivot = e.target.closest("[data-pivot-domain]");
+        if (pivot) {
+            const val = pivot.dataset.pivotDomain;
+            if (!val || val === "-") return;
+            $("#huntDomain").value = val;
+            $("#huntIp").value = "";
+            search();
+            return;
+        }
+        const loadBtn = e.target.closest("[data-load-search]");
+        if (loadBtn) {
+            const row = loadBtn.closest("[data-search-id]");
+            const box = $("#huntSaved");
+            const searches = JSON.parse(box.dataset.searches || "[]");
+            const found = searches.find(s => String(s.id) === row.dataset.searchId);
+            if (found) { applyFilters(found.filters); search(); }
+            return;
+        }
+        const delBtn = e.target.closest("[data-delete-search]");
+        if (delBtn) {
+            const row = delBtn.closest("[data-search-id]");
+            fetch(`/api/hunt/saved/${row.dataset.searchId}/remove`, { method: "POST" })
+                .then(res => { if (!res.ok) throw new Error(); toast("Saved search deleted", "", "ok"); loadSaved(); })
+                .catch(() => toast("Could not delete", "", "high"));
+        }
+    });
+
+    search();
+    loadSaved();
+}
+
 function initSettings() {
     const wrap = $("#settingsThresholds");
     if (!wrap) return;
@@ -2007,6 +2158,7 @@ const CMDK_PAGES = [
     { label: "Devices", href: "/devices", icon: "i-monitor" },
     { label: "Incidents", href: "/incidents", icon: "i-alert" },
     { label: "Filtering", href: "/filtering", icon: "i-filter" },
+    { label: "Hunt", href: "/hunt", icon: "i-search" },
     { label: "Settings", href: "/settings", icon: "i-sliders" },
 ];
 
@@ -2119,6 +2271,7 @@ document.addEventListener("DOMContentLoaded", () => {
     initDpiOnboarding();
     initDpiRules();
     initSettings();
+    initHunt();
     initIncidentNotes();
     initIncidentBlockDomain();
 

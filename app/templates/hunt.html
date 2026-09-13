@@ -1,0 +1,68 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="page-head">
+    <h1>Hunt</h1>
+    <span class="subtle">search flows, DNS and TLS across everything this console has collected, with pivots</span>
+</div>
+
+<div class="card" style="margin-bottom:14px">
+    <div class="card-head"><h2>Search</h2></div>
+    <div class="card-body" style="display:flex; gap:8px; flex-wrap:wrap">
+        <select class="input" id="huntDevice" style="flex:1; min-width:170px">
+            <option value="">All devices</option>
+            {% for d in devices %}
+            <option value="{{ d.id }}">{{ d.name }}</option>
+            {% endfor %}
+        </select>
+        <input class="input" id="huntIp" placeholder="IP address…" style="flex:1; min-width:150px">
+        <input class="input" id="huntDomain" placeholder="Domain contains…" style="flex:1; min-width:150px">
+        <input class="input" id="huntPort" placeholder="Port…" type="number" style="flex:1; min-width:100px">
+        <select class="input" id="huntEventType" style="flex:1; min-width:130px">
+            <option value="">All types</option>
+            <option value="flow">flow</option>
+            <option value="dns_query">dns_query</option>
+            <option value="dns">dns</option>
+            <option value="tls">tls</option>
+            <option value="alert">alert</option>
+        </select>
+        <select class="input" id="huntRange" style="flex:1; min-width:110px">
+            <option value="1h">Last hour</option>
+            <option value="6h">Last 6 hours</option>
+            <option value="24h">Last 24 hours</option>
+            <option value="7d">Last 7 days</option>
+        </select>
+        <button class="btn" id="huntSearch">Search</button>
+        <button class="btn" id="huntSaveSearch">Save this search</button>
+    </div>
+</div>
+
+<div class="grid c3" style="margin-bottom:14px">
+    <div class="card">
+        <div class="card-head"><h2>Top Talkers</h2>
+            <span class="spacer"></span><span class="subtle">by bytes, this search</span></div>
+        <div class="card-body tight feed" id="huntTalkers"><div class="empty">Search to see results.</div></div>
+    </div>
+    <div class="card">
+        <div class="card-head"><h2>Top Destinations</h2>
+            <span class="spacer"></span><span class="subtle">domain if known, else IP</span></div>
+        <div class="card-body tight feed" id="huntDestinations"><div class="empty">Search to see results.</div></div>
+    </div>
+    <div class="card">
+        <div class="card-head"><h2>Protocol Breakdown</h2></div>
+        <div class="card-body tight feed" id="huntProtocols"><div class="empty">Search to see results.</div></div>
+    </div>
+</div>
+
+<div class="card" style="margin-bottom:14px">
+    <div class="card-head"><h2>Results</h2>
+        <span class="spacer"></span><span class="subtle" id="huntResultsSummary"></span></div>
+    <div class="card-body tight feed" id="huntResults" style="max-height:560px">
+        <div class="empty">Search above - default is everything in the last hour.</div>
+    </div>
+</div>
+
+<div class="card">
+    <div class="card-head"><h2>Saved Searches</h2></div>
+    <div class="card-body tight feed" id="huntSaved"><div class="empty">Loading…</div></div>
+</div>
+{% endblock %}

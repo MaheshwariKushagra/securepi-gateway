@@ -87,6 +87,13 @@ SCHEMA_MIGRATIONS = [
            note        TEXT NOT NULL
        )""",
     "CREATE INDEX IF NOT EXISTS idx_incident_notes_incident ON incident_notes(incident_id)",
+    "CREATE INDEX IF NOT EXISTS idx_events_dest_ip ON events(dest_ip)",
+    """CREATE TABLE IF NOT EXISTS saved_searches (
+           id         INTEGER PRIMARY KEY,
+           name       TEXT NOT NULL,
+           filters    TEXT NOT NULL,
+           created_at REAL NOT NULL
+       )""",
 ]
 
 # How long to wait between passes over the log files. Two seconds keeps the

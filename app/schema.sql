@@ -157,6 +157,9 @@ CREATE INDEX IF NOT EXISTS idx_events_type_ts     ON events(event_type, ts);
 CREATE INDEX IF NOT EXISTS idx_events_dns_rrname  ON events(dns_rrname);
 CREATE INDEX IF NOT EXISTS idx_events_tls_sni     ON events(tls_sni);
 CREATE INDEX IF NOT EXISTS idx_events_flow_id     ON events(flow_id);
+-- Added for step 6.5's Hunt/explorer page - searching and pivoting by
+-- destination IP is one of its core operations, and had no index before.
+CREATE INDEX IF NOT EXISTS idx_events_dest_ip     ON events(dest_ip);
 
 -- ----------------------------------------------------------- ingest state --
 -- Where each reader got to. Without this, a restart would either re-read the
@@ -302,5 +305,18 @@ CREATE TABLE IF NOT EXISTS incident_notes (
 );
 
 CREATE INDEX IF NOT EXISTS idx_incident_notes_incident ON incident_notes(incident_id);
+
+-- ---------------------------------------------------------- saved_searches --
+-- Named Hunt/explorer filter sets an operator wants to reuse
+-- (ENHANCEMENT-PLAN.md step 6.5). `filters` is a JSON-encoded object
+-- (device_id/ip/domain/port/event_type/range) - the same "one JSON
+-- column, validated in Python" shape step 6.3's settings table uses,
+-- since a saved search is really just a small, named config blob too.
+CREATE TABLE IF NOT EXISTS saved_searches (
+    id         INTEGER PRIMARY KEY,
+    name       TEXT NOT NULL,
+    filters    TEXT NOT NULL,
+    created_at REAL NOT NULL
+);
 
 INSERT OR IGNORE INTO ingest_stats (id) VALUES (1);

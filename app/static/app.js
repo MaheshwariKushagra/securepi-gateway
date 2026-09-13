@@ -19,6 +19,7 @@ const STATUS_META = {
     false_positive: { label: "False positive", cls: "false_positive" },
 };
 const STATUS_ORDER = ["new", "investigating", "resolved", "false_positive"];
+const LIST_STALE_AFTER_H = 48; // keep in sync with webapp.py's LIST_STALE_AFTER_HOURS
 
 /* ------------------------------------------------------------- helpers */
 
@@ -894,23 +895,183 @@ function initDeviceBlocked() {
 
 /* ---------------------------------------------------------------- filtering */
 
+function initDevicePrivacy() {
+    const wrap = $("#devicePrivacy");
+    if (!wrap) return;
+    const deviceId = wrap.dataset.deviceId;
+
+    function tier2Html(t2) {
+        if (!t2.active) {
+            return `<div class="dim" style="font-size:12px; margin-top:10px">No HTTPS-inspected traffic for this device</div>`;
+        }
+        return `
+            <div style="display:flex; gap:20px; flex-wrap:wrap; margin-top:10px">
+                <div><span class="dim">Decrypted</span> <b>${t2.decrypt}</b></div>
+                <div><span class="dim">Passed through</span> <b>${t2.passthrough}</b></div>
+                <div><span class="dim">Ads stripped from</span> <b>${t2.ads_stripped}</b></div>
+                <div><span class="dim">Ad objects removed</span> <b>${t2.ads_removed}</b></div>
+            </div>`;
+    }
+
+    async function load() {
+        try {
+            const res = await fetch(`/api/devices/${deviceId}/privacy`);
+            if (!res.ok) throw new Error("request failed");
+            const d = await res.json();
+            const t = d.trackers;
+            const topRows = t.top.length ? t.top.map(c => `
+                <tr><td class="truncate">${esc(c.company)}</td>
+                    <td class="num dim">${c.contacted} contacted</td>
+                    <td class="num" style="color:${c.blocked ? "var(--high)" : "inherit"}">${c.blocked} blocked</td></tr>`).join("")
+                : `<tr><td colspan="3" class="empty">No known tracker companies contacted</td></tr>`;
+            wrap.innerHTML = `
+                <div style="display:flex; gap:24px; flex-wrap:wrap; margin-bottom:10px">
+                    <div><div class="dim" style="font-size:11px">Blocked</div>
+                        <div style="font-size:20px; font-weight:600">${d.dns_blocked.toLocaleString()} / ${d.dns_total.toLocaleString()}
+                            <span class="dim" style="font-size:13px">(${d.block_pct}%)</span></div></div>
+                    <div><div class="dim" style="font-size:11px">Tracking companies</div>
+                        <div style="font-size:20px; font-weight:600">${t.companies_blocked} blocked of ${t.companies_contacted}</div></div>
+                    <div><div class="dim" style="font-size:11px">Estimated data saved</div>
+                        <div style="font-size:20px; font-weight:600">${d.savings.estimated_bytes_h}</div></div>
+                </div>
+                <table><tbody>${topRows}</tbody></table>
+                ${tier2Html(d.tier2)}`;
+        } catch (err) {
+            wrap.innerHTML = `<div class="empty">Could not load privacy report</div>`;
+        }
+    }
+    load();
+}
+
+function initFilteringAnalytics() {
+    const el = $("#blockPctChart");
+    if (!el) return;
+    let range = "24h";
+
+    function renderTopDomains(domains) {
+        const wrap = $("#analyticsTopDomains");
+        if (!domains.length) { wrap.innerHTML = `<div class="empty">Nothing blocked in this range</div>`; return; }
+        wrap.innerHTML = `<table><tbody>${domains.map(d => `
+            <tr><td class="mono truncate">${esc(d.domain)}</td>
+                <td class="num" style="color:var(--high)">${d.count}</td></tr>`).join("")}</tbody></table>`;
+    }
+
+    function renderTopClients(clients) {
+        const wrap = $("#analyticsTopClients");
+        if (!clients.length) { wrap.innerHTML = `<div class="empty">No blocked activity in this range</div>`; return; }
+        wrap.innerHTML = `<table><tbody>${clients.map(c => `
+            <tr class="clickable" onclick="location.href='/devices/${c.id}'">
+                <td class="truncate">${esc(c.name)}</td>
+                <td class="num dim">${c.blocked} / ${c.dns_total}</td>
+                <td class="num" style="color:var(--high)">${c.block_pct}%</td>
+            </tr>`).join("")}</tbody></table>`;
+    }
+
+    function renderTrackers(t) {
+        $("#analyticsTrackerCount").textContent = `${t.companies_blocked} blocked of ${t.companies_contacted} contacted`;
+        const wrap = $("#analyticsTrackers");
+        if (!t.top.length) { wrap.innerHTML = `<div class="empty">No known tracker companies contacted in this range</div>`; return; }
+        wrap.innerHTML = `<table><tbody>${t.top.map(c => `
+            <tr><td class="truncate">${esc(c.company)}</td>
+                <td class="num dim">${c.contacted} contacted</td>
+                <td class="num" style="color:${c.blocked ? "var(--high)" : "inherit"}">${c.blocked} blocked</td></tr>`).join("")}</tbody></table>`;
+    }
+
+    function renderTier2(t2) {
+        const wrap = $("#analyticsTier2");
+        if (!t2.active) {
+            wrap.innerHTML = `<div class="empty">No HTTPS-inspected traffic in this range - no device is enrolled, or none has browsed since.</div>`;
+            return;
+        }
+        wrap.innerHTML = `
+            <div style="display:flex; gap:20px; flex-wrap:wrap">
+                <div><span class="dim">Decrypted</span> <b>${t2.decrypt}</b></div>
+                <div><span class="dim">Passed through</span> <b>${t2.passthrough}</b></div>
+                <div><span class="dim">Ads stripped from</span> <b>${t2.ads_stripped}</b> <span class="dim">responses</span></div>
+                <div><span class="dim">Blocked paths</span> <b>${t2.path_blocked}</b></div>
+                <div><span class="dim">Ad objects removed</span> <b>${t2.ads_removed}</b></div>
+            </div>`;
+    }
+
+    async function load() {
+        try {
+            const res = await fetch(`/api/filtering/analytics?range=${range}`);
+            if (!res.ok) throw new Error("request failed");
+            const d = await res.json();
+            upsertChart("blockPct", "blockPctChart", {
+                type: "line",
+                data: {
+                    labels: d.series.labels,
+                    datasets: [
+                        { label: "Block %", data: d.series.block_pct, borderColor: "#f2545b",
+                          backgroundColor: "rgba(242,84,91,.12)", fill: true, tension: .35,
+                          pointRadius: 0, borderWidth: 2 },
+                    ],
+                },
+                options: baseChartOpts({
+                    scales: Object.assign(baseChartOpts().scales, {
+                        y: Object.assign(baseChartOpts().scales.y, {
+                            ticks: { color: CHART_TEXT, maxTicksLimit: 5, font: { size: 10 },
+                                     padding: 6, callback: v => v + "%" },
+                        }),
+                    }),
+                }),
+            });
+            $("#analyticsRequestsBlocked").textContent = d.savings.requests_blocked.toLocaleString();
+            $("#analyticsSavings").textContent = d.savings.estimated_bytes_h;
+            $("#analyticsSavingsMethod").textContent = d.savings.method;
+            renderTopDomains(d.top_blocked_domains);
+            renderTopClients(d.top_blocked_clients);
+            renderTrackers(d.trackers);
+            renderTier2(d.tier2);
+        } catch (err) {
+            $("#analyticsTopDomains").innerHTML = `<div class="empty">Could not load analytics</div>`;
+            $("#analyticsTopClients").innerHTML = "";
+            $("#analyticsTrackers").innerHTML = "";
+            $("#analyticsTier2").innerHTML = "";
+        }
+    }
+
+    $$("#analyticsRangeSel button").forEach(b => {
+        b.addEventListener("click", () => {
+            range = b.dataset.arange;
+            $$("#analyticsRangeSel button").forEach(x => x.classList.toggle("active", x === b));
+            load();
+        });
+    });
+
+    load();
+}
+
 function initFiltering() {
     const listsEl = $("#filterLists");
     if (!listsEl) return;
     const rulesEl = $("#filterRules");
     const masterBtn = $("#filteringMasterToggle");
 
-    function renderLists(filters) {
+    function renderLists(filters, healthByUrl) {
+        healthByUrl = healthByUrl || {};
         $("#filterListCount").textContent = filters.length + " list" + (filters.length === 1 ? "" : "s");
         if (!filters.length) { listsEl.innerHTML = `<div class="empty">No blocklists configured</div>`; return; }
-        listsEl.innerHTML = filters.map(f => `
+        const anyStale = filters.some(f => (healthByUrl[f.url] || {}).stale);
+        const callout = anyStale ? `<div class="callout" style="margin-bottom:8px">
+            One or more blocklists haven't synced in over ${LIST_STALE_AFTER_H}h - check their source URL.</div>` : "";
+        listsEl.innerHTML = callout + filters.map(f => {
+            const h = healthByUrl[f.url];
+            const badges = h ? `
+                <span class="dim" title="share of all blocks we've matched back to a list">${h.share_pct}% of blocks</span>
+                <span class="${h.stale ? "chip high" : "dim"}" title="${h.age_h != null ? h.age_h + "h since last sync" : "sync age unknown"}">${h.age_h != null ? Math.round(h.age_h) + "h old" : "sync age unknown"}</span>
+                ${h.low_contribution ? `<span class="chip neutral" title="Blocked very little of what we've actually seen">low contribution</span>` : ""}` : "";
+            return `
             <div class="filter-row">
                 <button class="btn ${f.enabled ? "on" : ""}" data-list-toggle="${esc(f.url)}" data-enabled="${f.enabled ? 1 : 0}">${f.enabled ? "On" : "Off"}</button>
                 <span class="name">${esc(f.name)}</span>
                 <span class="url truncate" title="${esc(f.url)}">${esc(f.url)}</span>
                 <span class="dim">${f.rules_count.toLocaleString()} rules</span>
+                ${badges}
                 <button class="btn danger" data-list-remove="${esc(f.url)}">Remove</button>
-            </div>`).join("");
+            </div>`;
+        }).join("");
     }
 
     function renderRules(rules) {
@@ -928,11 +1089,23 @@ function initFiltering() {
             const res = await fetch("/api/filtering/status");
             if (!res.ok) throw new Error("request failed");
             const data = await res.json();
-            renderLists(data.filters);
             renderRules(data.rules);
             masterBtn.textContent = data.enabled ? "Filtering: on" : "Filtering: off";
             masterBtn.classList.toggle("on", data.enabled);
             masterBtn.dataset.enabled = data.enabled ? "1" : "0";
+
+            // Health (staleness + contribution) is a second, independent
+            // fetch: it's allowed to fail (a fresh AdGuard with no
+            // telemetry yet) without taking down the list view itself.
+            let healthByUrl = {};
+            try {
+                const hres = await fetch("/api/filtering/lists/health");
+                if (hres.ok) {
+                    const hdata = await hres.json();
+                    healthByUrl = Object.fromEntries(hdata.lists.map(l => [l.url, l]));
+                }
+            } catch (err) { /* list rows just render without badges */ }
+            renderLists(data.filters, healthByUrl);
         } catch (err) {
             listsEl.innerHTML = `<div class="empty">Could not reach AdGuard Home. Is it running?</div>`;
             rulesEl.innerHTML = "";
@@ -1209,7 +1382,9 @@ document.addEventListener("DOMContentLoaded", () => {
     initDeviceFiltering();
     initDeviceQuarantine();
     initDeviceBlocked();
+    initDevicePrivacy();
     initFiltering();
+    initFilteringAnalytics();
 
     // Global row-action delegate: works across incidents list + detail page.
     // Registered on the capture phase because row markup calls

@@ -23,14 +23,18 @@ Routes:
   /api/events        recent event stream
   /api/filtering/*   AdGuard Home blocklists, rules and per-device policy
   /api/filtering/check              "why is this blocked?" - test a domain
+  /api/filtering/analytics          network-wide ad-blocking analytics
+  /api/filtering/lists/health       blocklist staleness and per-list contribution
   /api/devices/{id}/blocked         recently blocked domains for one device
   /api/devices/{id}/filtering/rules allow/block rules scoped to one device
   /api/devices/{id}/filtering/allow one-click unbreak, optionally temporary
   /api/devices/{id}/filtering/block block one domain for one device only
+  /api/devices/{id}/privacy         per-device tracker/privacy report
   /api/devices/{id}/quarantine   quarantine a device via nftables, or undo it
 """
 
 import base64
+import datetime
 import secrets
 import sqlite3
 import time
@@ -45,6 +49,7 @@ from starlette.requests import Request
 import adguard
 import quarantine
 import risk
+import tracker_entities
 
 DB_PATH = "/opt/securepi/securepi.db"
 CONSOLE_USERNAME = "securepi"
@@ -110,6 +115,25 @@ SIGNAL_STALE_AFTER = 60
 INGEST_STALE_AFTER = 30  # ingest.py polls every 2s
 
 INCIDENT_STATUSES = ("new", "investigating", "resolved", "false_positive")
+
+# Bandwidth/requests "saved" by blocking is an estimate, not a measurement:
+# we know how many DNS lookups were blocked, but not the size of the request
+# each one would have made. 2 KB/request is a commonly cited rough figure
+# for a blocked ad or tracker call (a small image, pixel or JSON beacon,
+# not a full ad creative). ENHANCEMENT-PLAN.md step 7.5 replaces this
+# constant with a value measured from this project's own benchmark; until
+# that lands, the console names this figure so nobody mistakes it for one.
+AVG_BLOCKED_REQUEST_BYTES = 2048
+
+# A blocklist that hasn't synced in this long is either offline or its
+# source URL has gone stale - either way, the operator should know rather
+# than assume it's still doing its job. See step 5.4.
+LIST_STALE_AFTER_HOURS = 48
+# Below this share of all attributed blocks, an enabled list is flagged as
+# "low contribution" in case it isn't earning its place. This is a share of
+# *observed* blocks, not a true unique-blocks count (that needs the overlap
+# experiment step 5.4 deferred to Stage 7 - see api_filtering_lists_health).
+LIST_LOW_CONTRIBUTION_SHARE = 0.01
 
 
 class IncidentUpdate(BaseModel):
@@ -267,6 +291,80 @@ def bucket_series(c, start, end, bucket_s, device_id=None):
         "allowed": allowed,
         "events": events,
     }
+
+
+def _tracker_breakdown(c, start, end, device_id=None, limit=10):
+    """Group DNS lookups in [start, end) by the tracker company they belong
+    to, per tracker_entities.py. Returns a summary plus the top companies by
+    how often they were contacted - this is what step 5.3's "N tracking
+    companies contacted, M blocked" figure and per-device privacy report
+    are built from.
+
+    Runs over raw events rather than a rollup table, since Stage 1's
+    device_hourly/filter_hourly rollups don't exist yet (see the plan's
+    "out of order" note); grouping by domain first keeps this to one row
+    per distinct domain rather than one per event.
+    """
+    dev_clause = " AND device_id=?" if device_id is not None else ""
+    dev_arg = (device_id,) if device_id is not None else ()
+    rows = c.execute(
+        "SELECT dns_rrname, count(*) n, sum(blocked=1) b FROM events"
+        " WHERE event_type='dns_query' AND dns_rrname IS NOT NULL"
+        "   AND ts >= ? AND ts < ?" + dev_clause +
+        " GROUP BY dns_rrname", (start, end) + dev_arg)
+
+    companies = {}
+    for r in rows:
+        company = tracker_entities.attribute_domain(r["dns_rrname"])
+        if company is None:
+            continue
+        slot = companies.setdefault(company, {"company": company, "contacted": 0, "blocked": 0})
+        slot["contacted"] += r["n"]
+        slot["blocked"] += r["b"] or 0
+
+    ranked = sorted(companies.values(), key=lambda x: -x["contacted"])
+    return {
+        "companies_contacted": len(ranked),
+        "companies_blocked": sum(1 for x in ranked if x["blocked"] > 0),
+        "top": ranked[:limit],
+    }
+
+
+def _savings_estimate(requests_blocked):
+    """See AVG_BLOCKED_REQUEST_BYTES above for why this is an estimate."""
+    est_bytes = requests_blocked * AVG_BLOCKED_REQUEST_BYTES
+    return {
+        "requests_blocked": requests_blocked,
+        "estimated_bytes": est_bytes,
+        "estimated_bytes_h": humanize_bytes(est_bytes),
+        "method": ("estimated as blocked requests x %d KB/request - a typical size for a "
+                   "blocked ad/tracker call, not a measurement of this network's traffic. "
+                   "Step 7.5 replaces this with a benchmarked figure." % (AVG_BLOCKED_REQUEST_BYTES // 1024)),
+    }
+
+
+def _tier2_breakdown(c, start, end, device_id=None):
+    """Counts of what the Tier-2 (selective HTTPS inspection) addon actually
+    did in [start, end): decrypt / passthrough / ads_stripped / path_blocked
+    decisions, plus the total ad objects removed. Source data is written by
+    dpi/securepi_adfilter.py and read by ingest.py's read_dpi_events() -
+    see ENHANCEMENT-PLAN.md step 5.1."""
+    dev_clause = " AND device_id=?" if device_id is not None else ""
+    dev_arg = (device_id,) if device_id is not None else ()
+    counts = {"decrypt": 0, "passthrough": 0, "ads_stripped": 0, "path_blocked": 0}
+    for r in c.execute(
+        "SELECT dpi_action, count(*) n FROM events"
+        " WHERE source='dpi' AND ts >= ? AND ts < ?" + dev_clause +
+        " GROUP BY dpi_action", (start, end) + dev_arg):
+        if r["dpi_action"] in counts:
+            counts[r["dpi_action"]] = r["n"]
+    ads_removed = c.execute(
+        "SELECT COALESCE(sum(dpi_ads_removed),0) FROM events"
+        " WHERE source='dpi' AND dpi_action='ads_stripped'"
+        "   AND ts >= ? AND ts < ?" + dev_clause, (start, end) + dev_arg).fetchone()[0]
+    counts["ads_removed"] = ads_removed
+    counts["active"] = any(v for k, v in counts.items() if k != "ads_removed")
+    return counts
 
 
 @app.get("/api/overview")
@@ -811,6 +909,131 @@ def api_filtering_check(domain: str = Query(...), device_id: int = Query(None)):
     return adguard.describe_check(result, domain)
 
 
+@app.get("/api/filtering/analytics")
+def api_filtering_analytics(range: str = Query("24h")):
+    """Network-wide ad-blocking analytics: block rate over time, what's
+    being blocked and for whom, which tracker companies are involved, an
+    estimated savings figure, and how much Tier 2 (HTTPS inspection) is
+    actually doing. See ENHANCEMENT-PLAN.md step 5.3."""
+    spec = RANGES.get(range, RANGES["24h"])
+    c = db()
+    now = time.time()
+    start = now - spec["seconds"]
+
+    series = bucket_series(c, start, now, spec["bucket"])
+    block_pct = [
+        round(100.0 * b / (b + a), 1) if (b + a) else 0.0
+        for b, a in zip(series["blocked"], series["allowed"])
+    ]
+
+    top_blocked_domains = [
+        {"domain": r["dns_rrname"], "count": r["n"]}
+        for r in c.execute(
+            "SELECT dns_rrname, count(*) n FROM events"
+            " WHERE event_type='dns_query' AND blocked=1 AND ts >= ? AND dns_rrname IS NOT NULL"
+            " GROUP BY dns_rrname ORDER BY n DESC LIMIT 12", (start,))
+    ]
+
+    top_blocked_clients = []
+    for r in c.execute(
+        "SELECT d.id, d.hostname, d.friendly_name,"
+        "       sum(e.event_type='dns_query') dns_total,"
+        "       sum(e.blocked=1) blocked"
+        "  FROM devices d JOIN events e ON e.device_id = d.id"
+        " WHERE e.ts >= ? AND e.event_type='dns_query'"
+        " GROUP BY d.id HAVING blocked > 0 ORDER BY blocked DESC LIMIT 8", (start,)):
+        dns_total, blocked = r["dns_total"] or 0, r["blocked"] or 0
+        top_blocked_clients.append({
+            "id": r["id"], "name": device_label(r),
+            "dns_total": dns_total, "blocked": blocked,
+            "block_pct": round(100.0 * blocked / dns_total, 1) if dns_total else 0.0,
+        })
+
+    dns_blocked_window = c.execute(
+        "SELECT count(*) FROM events"
+        " WHERE event_type='dns_query' AND blocked=1 AND ts >= ?", (start,)).fetchone()[0]
+
+    return {
+        "range": range, "range_label": spec["label"],
+        "series": {"labels": series["labels"], "block_pct": block_pct,
+                   "blocked": series["blocked"], "allowed": series["allowed"]},
+        "top_blocked_domains": top_blocked_domains,
+        "top_blocked_clients": top_blocked_clients,
+        "trackers": _tracker_breakdown(c, start, now),
+        "savings": _savings_estimate(dns_blocked_window),
+        "tier2": _tier2_breakdown(c, start, now),
+    }
+
+
+@app.get("/api/filtering/lists/health")
+def api_filtering_lists_health():
+    """Blocklist health and contribution (step 5.4): how stale each list's
+    last sync is, and how much of what's actually being blocked can be
+    credited to it.
+
+    Contribution is measured from this project's own historical telemetry -
+    the dns_filter_list_id captured on every blocked DNS event since step
+    5.1 - rather than the offline multi-list replay the plan originally
+    proposed. That's a direct measurement of which list's rule actually
+    matched each real block, which is both simpler and more honest than a
+    synthetic reconstruction would be; it just means blocks recorded before
+    5.1 was deployed (dns_filter_list_id IS NULL) aren't attributed to any
+    list. What this method genuinely cannot answer - the *overlap* between
+    lists, and AdGuard's memory use with lists toggled - is named in
+    "deferred_note" below rather than guessed at.
+    """
+    try:
+        filters = adguard.filtering_status().get("filters", [])
+    except adguard.AdGuardError as e:
+        raise HTTPException(502, str(e))
+    c = db()
+    now = time.time()
+
+    total_attributed = c.execute(
+        "SELECT count(*) FROM events WHERE event_type='dns_query' AND blocked=1"
+        "   AND dns_filter_list_id IS NOT NULL").fetchone()[0]
+
+    out = []
+    for f in filters:
+        list_id = f.get("id")
+        n = c.execute(
+            "SELECT count(*) FROM events WHERE event_type='dns_query' AND blocked=1"
+            "   AND dns_filter_list_id=?", (list_id,)).fetchone()[0] if list_id is not None else 0
+
+        age_h, stale = None, False
+        last_updated = f.get("last_updated")
+        if last_updated:
+            try:
+                age_h = (now - datetime.datetime.fromisoformat(last_updated).timestamp()) / 3600.0
+                stale = age_h > LIST_STALE_AFTER_HOURS
+            except ValueError:
+                pass  # unexpected timestamp shape - show "unknown" rather than guess
+
+        share = (n / total_attributed) if total_attributed else 0.0
+        out.append({
+            "id": list_id, "name": f.get("name"), "url": f.get("url"),
+            "enabled": bool(f.get("enabled")), "rules_count": f.get("rules_count", 0),
+            "last_updated": last_updated,
+            "age_h": round(age_h, 1) if age_h is not None else None,
+            "stale": stale,
+            "contribution": n, "share_pct": round(share * 100, 2),
+            "low_contribution": bool(f.get("enabled") and total_attributed and share < LIST_LOW_CONTRIBUTION_SHARE),
+        })
+    out.sort(key=lambda x: -x["contribution"])
+
+    return {
+        "lists": out,
+        "total_attributed_blocks": total_attributed,
+        "any_stale": any(x["stale"] for x in out),
+        "deferred_note": (
+            "Contribution is each list's share of blocks we've actually observed and "
+            "matched back to it, not a true unique-blocks count. The list-overlap matrix "
+            "and AdGuard's memory-vs-rules-toggled measurement from the original plan need "
+            "a controlled toggle experiment against a non-production instance - deferred to "
+            "Stage 7's evaluation campaign rather than run against the live filter here."),
+    }
+
+
 @app.get("/api/devices/{device_id}/blocked")
 def api_device_blocked(device_id: int, limit: int = Query(25)):
     """Recently blocked domains for one device, folded so a tracker that
@@ -903,6 +1126,33 @@ def api_device_block_domain(device_id: int, body: DeviceBlockRequest):
     print("filtering: blocked %s for device %d (%s) - %s" % (
         domain, device_id, device_label(d), body.reason), flush=True)
     return {"ok": True, "rule": rule, "domain": domain}
+
+
+@app.get("/api/devices/{device_id}/privacy")
+def api_device_privacy(device_id: int):
+    """Per-device privacy report: trackers contacted vs blocked, an
+    estimated savings figure, and Tier 2 (HTTPS inspection) activity for
+    this device specifically. All-time, like the rest of the device
+    detail page's aggregates - not windowed, since a "privacy report" is
+    meant to describe the device's whole history with us, not a slice of
+    it. See ENHANCEMENT-PLAN.md step 5.3."""
+    c = db()
+    if c.execute("SELECT 1 FROM devices WHERE id=?", (device_id,)).fetchone() is None:
+        raise HTTPException(404, "device not found")
+    now = time.time()
+
+    dns_agg = c.execute(
+        "SELECT count(*) total, sum(blocked=1) blocked FROM events"
+        " WHERE device_id=? AND event_type='dns_query'", (device_id,)).fetchone()
+    dns_total, dns_blocked = dns_agg["total"] or 0, dns_agg["blocked"] or 0
+
+    return {
+        "dns_total": dns_total, "dns_blocked": dns_blocked,
+        "block_pct": round(100.0 * dns_blocked / dns_total, 1) if dns_total else 0.0,
+        "trackers": _tracker_breakdown(c, 0, now, device_id=device_id),
+        "savings": _savings_estimate(dns_blocked),
+        "tier2": _tier2_breakdown(c, 0, now, device_id=device_id),
+    }
 
 
 # --------------------------------------------------------------- quarantine --

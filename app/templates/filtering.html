@@ -18,6 +18,46 @@
     <div class="card-body tight" id="checkResult"></div>
 </div>
 
+<div class="card" style="margin-bottom:14px">
+    <div class="card-head"><h2>Ad-blocking Analytics</h2>
+        <span class="spacer"></span>
+        <div class="seg" id="analyticsRangeSel">
+            <button data-arange="24h" class="active">24H</button>
+            <button data-arange="7d">7D</button>
+        </div>
+    </div>
+    <div class="card-body chart" style="height:180px"><canvas id="blockPctChart"></canvas></div>
+    <div class="card-body" style="display:flex; gap:24px; flex-wrap:wrap; border-top:1px solid var(--border)">
+        <div><div class="dim" style="font-size:11px">Requests blocked</div>
+            <div style="font-size:20px; font-weight:600" id="analyticsRequestsBlocked">—</div></div>
+        <div><div class="dim" style="font-size:11px">Estimated data + requests saved</div>
+            <div style="font-size:20px; font-weight:600" id="analyticsSavings">—</div></div>
+        <div style="flex:1; min-width:220px"><div class="dim" style="font-size:11px" id="analyticsSavingsMethod"></div></div>
+    </div>
+    <div class="card-body tight" style="border-top:1px solid var(--border)">
+        <div class="subtle" style="margin:10px 0 6px">Tier 2 (HTTPS ad removal)</div>
+        <div id="analyticsTier2"><div class="empty">Loading…</div></div>
+    </div>
+</div>
+
+<div class="grid c2">
+    <div class="card">
+        <div class="card-head"><h2>Top Blocked Domains</h2>
+            <span class="spacer"></span><span class="subtle">selected range</span></div>
+        <div class="card-body tight" id="analyticsTopDomains"><div class="empty">Loading…</div></div>
+    </div>
+    <div class="card">
+        <div class="card-head"><h2>Most Blocked-For Devices</h2></div>
+        <div class="card-body tight" id="analyticsTopClients"><div class="empty">Loading…</div></div>
+    </div>
+</div>
+
+<div class="card" style="margin-bottom:14px">
+    <div class="card-head"><h2>Tracker Companies</h2>
+        <span class="spacer"></span><span class="subtle" id="analyticsTrackerCount">—</span></div>
+    <div class="card-body tight" id="analyticsTrackers"><div class="empty">Loading…</div></div>
+</div>
+
 <div class="grid c2">
     <div class="card">
         <div class="card-head"><h2>Blocklist Sources</h2>

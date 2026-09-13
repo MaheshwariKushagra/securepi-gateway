@@ -912,9 +912,49 @@ full pass and fail paths including that `dpi_enroll.flush()` is actually
 called on failure; and all four states of the console's status endpoint
 (never run, healthy, stale, failing). mitmproxy itself had to be stubbed
 out for this local test (it's only installed in the gateway's bundled
-venv) - this stub is test-only, not part of what gets deployed. Not yet
-deployed; deploying this needs `dpi/deploy-privacy-canary.sh` run after
-`deploy-dpi.sh`, and - given it can silently unenroll every device on a
-false positive - should be watched via `journalctl -u
-securepi-privacy-canary -f` through at least one real 15-minute cycle
-before being trusted unattended.
+venv) - this stub is test-only, not part of what gets deployed.
+
+**Deployed to the live gateway and verified the same day, and this
+mitmproxy-venv detail is exactly what the deploy caught.** `dpi/deploy-
+privacy-canary.sh` installs the script and a new
+`securepi-privacy-canary.service`, independent of `securepi-dpi`'s own
+lifecycle. The very first manual run on the gateway (deliberately run
+by hand before trusting the systemd service, not just pushed live blind)
+failed with `ModuleNotFoundError: No module named 'mitmproxy'` - the
+addon file this canary imports does `from mitmproxy import http`, and
+mitmproxy is only installed inside the DPI venv, not the system Python
+the deploy script's systemd unit was pointed at
+(`/usr/bin/python3`). **Confirmed live and fixed:** the venv's own
+`/opt/securepi-dpi/bin/python3` is itself just a symlink to
+`/usr/bin/python3` - but invoking Python via that path (rather than the
+bare system path) is what makes it pick up the venv's `pyvenv.cfg` and
+add its site-packages to `sys.path`. Fixed `ExecStart` to use that path;
+redeployed; the service now starts and imports cleanly.
+
+What was actually exercised against the live gateway and the real
+production database (not a mock):
+- The very first real 15-minute cycle passed cleanly against the real,
+  correct, deployed `securepi_adfilter.py` - journal shows "ok -
+  passthrough and decrypt decisions both correct" - and the console's
+  badge read `healthy: true` with the real elapsed age.
+- **The fail-safe path, end to end, against production:** a throwaway
+  copy of the real addon with the exact `ignore_conn` typo reintroduced
+  (never the deployed file itself) was pointed at by one manual
+  `run_check()` invocation. It correctly failed, raised a real incident
+  (`id=24`, `device_id=null`, `severity=high`, the exact description
+  text naming report §6), and the console badge immediately flipped to
+  `failing: true` / `healthy: false` with the right `incident_id`. The
+  `enrolled` set was confirmed unaffected only because it was already
+  empty - `dpi_enroll.flush()` running against a genuinely populated set
+  was not tested live this session (nothing is currently enrolled to
+  safely test that against without affecting a real device). The test
+  incident was then marked resolved and the throwaway file removed -
+  nothing was left behind in the real incident queue.
+
+**Still not resolved, restated plainly:** the gap this whole step's
+rescoping was honest about - the real nftables redirect path and
+mitmproxy's original-destination handling - remains unverified by any
+automated check. This deploy proved the *decision logic* and the
+*fail-safe machinery* both work correctly against production; it did
+not and could not prove the *enforcement path* does, for the reasons
+explained above.

@@ -525,7 +525,7 @@ Never cut Stage 2, steps 5.2, 5.3, 5.7, or evaluation items 7.2–7.5.
 | 3 | 3.1 · 3.2 · 3.3 · 3.4 · 3.5 · 3.6 | Not started |
 | 4 | 4.1 · 4.2 · 4.3 · 4.4 · 4.5 | Not started |
 | 5 | **5.1 done, 5.2 done, 5.3 done, 5.4 done, 5.5 done, 5.6 done, 5.7 done, 5.8 done, 5.9 done, 5.10 done, 5.11 done (Path 1 only)** (out of order) | 5.1–5.11 done - 5.11 scoped to Path 1 (cosmetic CSS), Path 2 (scriptlets) deferred and recorded |
-| 6 | **6.1 done, 6.2 done, 6.3 done, 6.4 done, 6.5 done** · 6.6 · 6.7 | 6.1–6.5 done, rest not started |
+| 6 | **6.1 done, 6.2 done, 6.3 done, 6.4 done, 6.5 done, 6.6 done** · 6.7 | 6.1–6.6 done, 6.7 not started |
 | 7 | 7.0 – 7.9 | Not started |
 | 8 | 8.1 · 8.2 · 8.3 · 8.4 | Not started |
 
@@ -2023,3 +2023,77 @@ real audited rows (`hunt.save_search`, `hunt.remove_search`). The
 `/hunt` page's markup (all thirteen expected element ids) was confirmed
 present in the served HTML. Journal clean across all three services
 throughout.
+
+**Note on step 6.6 (weekly report, print-to-PDF), implemented locally
+and deployed live. No schema migration this step** - `/api/reports/weekly`
+reads existing tables only, so this deploy skipped the online SQLite
+backup the other Stage 6 steps needed and only `securepi-web` was
+restarted (nothing touched `ingest.py`, `schema.sql`, or the correlation
+engine's own files).
+
+- **Ad-blocking summary** reuses step 5.3/5.6's own `_tracker_breakdown`,
+  `_savings_estimate` and `_tier2_breakdown` helpers directly - they
+  already accept an arbitrary `[start, end)` window rather than only
+  "since now", so no duplicate logic was needed to make them work for an
+  arbitrary past week.
+- **Platform health** is honestly scoped to what this project actually
+  measures after the fact - event-ingest volume for the week and a count
+  of platform-effectiveness incidents (`adblock_ineffective`,
+  `privacy_scope_failure`) - rather than claiming packet-drop rates, disk
+  headroom or WAN latency, none of which Stage 3's V5 ("Platform and WAN
+  health") collects yet.
+- **Print-to-PDF** needed no PDF library at all: a new `@media print`
+  block in `app.css` hides every piece of console chrome (sidebar,
+  topbar, buttons, inputs, the week-picker controls themselves) and lets
+  the report's own cards flow as plain printed sections with
+  `break-inside: avoid` so a card doesn't split across a page boundary -
+  the browser's own print-to-PDF dialog does the rest.
+- **A genuine design bug was caught by this step's own smoke test before
+  it ever reached the gateway**, exactly the kind of thing step 6.4's
+  "no shortcuts" regression discipline exists to catch: the first
+  implementation of "riskiest devices" reused `risk.py`'s
+  `device_risk()`, which is built for the LIVE dashboard's "how worried
+  should I be right now" question and decays each incident's weight with
+  a 24-hour half-life. Evaluated at the END of a 7-day week - 7 half-lives
+  after an incident from early in that week - the contribution rounds to
+  effectively zero, so a week with a real Monday port scan would have
+  reported "no risk" by Sunday. Fixed by NOT reusing that function here:
+  riskiest devices for a past week now sums that week's own severity
+  weights with no decay at all (`SEVERITY_WEIGHT` from `risk.py`, reused
+  as a constant, not through `device_risk()`), excluding false positives
+  (adjudicated as noise) while still counting incidents that have since
+  been resolved (they were real when they happened, which is what a
+  report about the past is supposed to say). Documented as a deliberate
+  divergence from the live dashboard's own risk model, both in code
+  comments and in the report page's own caveat text.
+- **Week selection** never allows the current, still-in-progress week as
+  a default - `_week_bounds("")` always resolves to the most recently
+  FULLY COMPLETED Monday-Sunday week, so a report opened mid-week can't
+  silently under-count a week that hasn't finished yet. An explicit
+  `week=` date snaps to that date's own Monday; an empty or unparseable
+  value falls back the same way, rather than raising.
+
+Smoke-tested locally: `_week_bounds`'s snap-to-Monday behaviour, its
+never-the-current-week default, and its graceful fallback on a bad date
+string; that the report's incident/ad-blocking/platform sections are all
+scoped to exactly the selected week's `[start, end)` and never leak data
+from the day before or after; and - the test that caught the bug above -
+that a resolved, high-severity, day-one-of-the-week incident still shows
+its full undecayed weight, while a false-positive contributes nothing -
+plus the full session regression suite (`make test` and every smoke test
+file from 5.3 through 6.6) re-run clean.
+
+**Verified against real production data**: the default (most recently
+completed) week showed 26 real incidents, correctly split by real ATT&CK
+tactic (18 not-mapped, 4 Discovery, 3 Credential Access, 1 Exfiltration);
+riskiest devices correctly led with the test-harness attacker at the
+score cap (100); the ad-blocking summary showed real figures (11,071 DNS
+queries, 1,967 blocked, 17.8%) with real tracker-company attribution
+(Google Ads/Analytics, Meta/Facebook, Yandex Metrica and others) exactly
+matching what step 5.3's own analytics already show for live ranges;
+Tier 2 correctly reported inactive for a week with no DPI activity,
+rather than a fabricated figure. An explicit week from before this
+project existed correctly returned zero incidents rather than erroring.
+The `/reports/weekly` page's markup (all twelve expected element ids)
+was confirmed present in the served HTML. Journal clean across all three
+services throughout.

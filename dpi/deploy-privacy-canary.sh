@@ -20,7 +20,14 @@ Wants=securepi-dpi.service
 
 [Service]
 Type=simple
-ExecStart=/usr/bin/python3 /opt/securepi-dpi/privacy_canary.py
+# Must be the mitmproxy venv's own python3, not /usr/bin/python3 directly -
+# confirmed live: the addon file this canary imports does `from mitmproxy
+# import http`, and mitmproxy is only installed inside this venv. Even
+# though bin/python3 here is itself a symlink to /usr/bin/python3, running
+# it via this path is what makes Python pick up the venv's pyvenv.cfg and
+# add its site-packages to sys.path - invoking the bare system path skips
+# that and fails with "No module named 'mitmproxy'".
+ExecStart=/opt/securepi-dpi/bin/python3 /opt/securepi-dpi/privacy_canary.py
 Restart=on-failure
 RestartSec=10
 

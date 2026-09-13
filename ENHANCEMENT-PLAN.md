@@ -425,7 +425,7 @@ Never cut Stage 2, steps 5.2, 5.3, 5.7, or evaluation items 7.2–7.5.
 | 2 | 2.1 · 2.2 · 2.3 · 2.4 · 2.5 · 2.6 · 2.7 · 2.8 | Not started |
 | 3 | 3.1 · 3.2 · 3.3 · 3.4 · 3.5 · 3.6 | Not started |
 | 4 | 4.1 · 4.2 · 4.3 · 4.4 · 4.5 | Not started |
-| 5 | **5.1 done, 5.2 done** (out of order) · 5.3 · 5.4 · 5.5 · 5.6 · 5.7 · 5.8 · 5.9 · 5.10 · (5.11) | 5.1–5.2 done, rest not started |
+| 5 | **5.1 done, 5.2 done, 5.3 done, 5.4 done** (out of order) · 5.5 · 5.6 · 5.7 · 5.8 · 5.9 · 5.10 · (5.11) | 5.1–5.4 done, rest not started |
 | 6 | 6.1 · 6.2 · 6.3 · 6.4 · 6.5 · 6.6 · 6.7 | Not started |
 | 7 | 7.0 – 7.9 | Not started |
 | 8 | 8.1 · 8.2 · 8.3 · 8.4 | Not started |
@@ -489,3 +489,66 @@ deploy (`0 client(s)` throughout), so the decrypt/passthrough logging path
 in the addon has only been exercised by the standalone tests on the Mac,
 not by real HTTPS traffic through mitmproxy. Confirm this the next time
 either phone is on the network and browsing.
+
+**Note on step 5.3 (ad-blocking analytics), implemented locally, not yet
+deployed:** built directly on top of the raw `events` table rather than
+waiting for Stage 1's `device_hourly`/`filter_hourly` rollups, since those
+don't exist yet and 5.3 was done out of order like 5.1/5.2 before it. Added:
+- `app/tracker_entities.py` - a small, hand-curated domain -> company map
+  (~50 ad/analytics/tracking companies actually likely to appear in this
+  project's own traffic), explicitly NOT a copy of the Disconnect or
+  DuckDuckGo Tracker Radar entity lists, with a docstring explaining why
+  and what to do instead if the full dataset is ever needed.
+- `GET /api/filtering/analytics` (network-wide: block % over time, top
+  blocked domains, most-blocked-for devices, tracker company breakdown,
+  an estimated bandwidth/requests-saved figure that names its own method
+  instead of pretending to be measured, and a Tier 2 decrypt/passthrough/
+  ads-stripped/paths-blocked panel) and `GET /api/devices/{id}/privacy`
+  (the same, scoped to one device, all-time) in `app/webapp.py`.
+- New "Ad-blocking Analytics" card on the Filtering page and "Privacy
+  Report" card on the device detail page, in the existing Jinja + vanilla
+  JS style (no new libraries).
+
+Verified so far only with a standalone smoke test against a temporary
+in-memory SQLite database seeded with synthetic events (tracker-domain
+attribution, per-device vs. network-wide breakdown scoping, the savings
+estimate's arithmetic, and the Tier 2 counts including the empty-window
+case) - not yet against the live gateway's real data. `python3 -m
+py_compile`, `node --check` and a standalone Jinja parse all pass on the
+changed files. Deploying and verifying this against the real database is
+the next step, the same way 1.8/5.1/5.2 were deployed and checked.
+
+**Note on step 5.4 (blocklist health and contribution), also implemented
+locally, not yet deployed:** added `GET /api/filtering/lists/health` to
+`app/webapp.py`, surfaced as extra badges on each row of the existing
+"Blocklist Sources" list (age since last sync, a "stale" chip past 48h, a
+share-of-blocks percentage, and a "low contribution" chip) rather than as
+a separate page - the list is already the natural place to see this.
+
+One deliberate deviation from the plan's original method, made for
+honesty rather than convenience: contribution is computed from this
+project's own historical telemetry (the `dns_filter_list_id` captured on
+every blocked DNS event since step 5.1 - which list's rule actually
+matched a real block) instead of the offline multi-list replay script
+the plan described. This is a *direct* measurement rather than a
+synthetic reconstruction of one, and needed no new tooling - but it also
+means two things the original method would have given us are explicitly
+NOT provided here, and the API response says so under `deferred_note`
+rather than pretending otherwise: the list-*overlap* matrix (which other
+lists would also have matched the same domain), and AdGuard's memory use
+with lists toggled on/off. Both need a controlled experiment against a
+non-production AdGuard instance, which fits Stage 7's evaluation campaign
+better than an always-on console feature - deferred there, not dropped.
+
+Also unverified: whether AdGuard Home's real `/control/filtering/status`
+response actually includes a `last_updated` field per filter in the
+version running on the gateway. The code reads it defensively (`f.get(...)`,
+try/except around the timestamp parse) and degrades to "sync age unknown"
+if it's missing or a different shape than expected, rather than crashing -
+but this needs a live curl to confirm either way, the same lesson
+`describe_check` already taught this session once.
+
+Smoke-tested locally with mocked `adguard.filtering_status()` and an
+in-memory DB (staleness math, contribution/share arithmetic, the
+disabled-list-not-flagged case, and the missing-timestamp case). Not yet
+deployed.

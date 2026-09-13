@@ -1191,10 +1191,33 @@ function initDpiOnboarding() {
         }
     }
 
+    async function loadEffectiveness() {
+        const badge = $("#dpiEffectivenessBadge");
+        if (!badge) return;
+        try {
+            const res = await fetch("/api/filtering/dpi/effectiveness");
+            if (!res.ok) throw new Error("request failed");
+            const d = await res.json();
+            if (d.healthy) {
+                badge.textContent = "Effectiveness: OK";
+                badge.className = "chip ok";
+            } else {
+                const first = d.affected[0];
+                badge.textContent = `Effectiveness: check ${esc(first.name)}` +
+                    (d.affected.length > 1 ? ` (+${d.affected.length - 1} more)` : "");
+                badge.className = "chip high";
+                badge.onclick = () => location.href = `/incidents/${first.incident_id}`;
+            }
+        } catch (err) {
+            badge.textContent = "Effectiveness: unknown";
+        }
+    }
+
     loadCa();
     loadEnrolled();
     loadPinned();
     loadPrivacyScope();
+    loadEffectiveness();
 }
 
 function linesToList(text) {

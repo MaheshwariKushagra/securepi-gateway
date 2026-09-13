@@ -381,7 +381,78 @@ def new_device_signal(conn):
     return fired
 
 
-SIGNALS = [port_scan_signal, brute_force_signal, malicious_domain_signal, new_device_signal]
+# --------------------------------------------------------------------------
+# Signal 5: ad-blocking effectiveness watchdog (ENHANCEMENT-PLAN.md step
+# 5.10)
+#
+# A different kind of signal from the four above: not a security threat,
+# a PRODUCT one. If a device is actively decrypting YouTube traffic (Tier
+# 2 is doing its job of inspecting) but nothing is ever being stripped
+# from any of it, ad removal has stopped working - most likely because
+# YouTube changed its response format, or moved to server-side ad
+# insertion (SSAI). SSAI is documented here as this feature's expected
+# long-term end state: it splices ads into the same video stream the
+# real content comes from, so there is no longer a separate
+# ad-scheduling field to delete, and no rule-based fix (step 5.9's
+# console-editable rules included) can restore removal once that
+# happens. This signal cannot fix that day - it exists to make it
+# visible the moment it happens, instead of ad-blocking silently
+# degrading with nobody noticing.
+#
+# Reuses source='dpi' events from the SAME events table every other
+# signal reads, exactly the way step 5.1 built this telemetry to be used
+# - not a bespoke table, and not a second, DPI-specific engine.
+# --------------------------------------------------------------------------
+EFFECTIVENESS_WINDOW_SECONDS = 3600   # "a configured period", per the plan
+EFFECTIVENESS_MIN_YOUTUBE_EVENTS = 5  # enough real activity to judge by, not one stray handshake
+
+
+def adblock_effectiveness_signal(conn):
+    now = time.time()
+    since = now - EFFECTIVENESS_WINDOW_SECONDS
+
+    rows = conn.execute(
+        """
+        SELECT device_id, count(*) n_youtube, sum(dpi_action='ads_stripped') n_stripped,
+               min(ts) first_seen, max(ts) last_seen
+          FROM events
+         WHERE source='dpi' AND device_id IS NOT NULL AND ts > ?
+           AND dpi_action IN ('decrypt', 'ads_stripped')
+         GROUP BY device_id
+        HAVING n_youtube >= ? AND n_stripped = 0
+        """,
+        (since, EFFECTIVENESS_MIN_YOUTUBE_EVENTS),
+    ).fetchall()
+
+    fired = 0
+    for r in rows:
+        event_ids = [
+            e["id"] for e in conn.execute(
+                """SELECT id FROM events WHERE source='dpi' AND device_id=? AND ts > ?
+                     AND dpi_action IN ('decrypt', 'ads_stripped') ORDER BY ts""",
+                (r["device_id"], since),
+            )
+        ]
+        raise_incident(
+            conn, r["device_id"], "adblock_ineffective", "medium",
+            title="YouTube ad removal may no longer be effective",
+            description=(
+                "%d YouTube connection(s) decrypted in the last %d minutes with zero ads "
+                "stripped from any of them - likely a YouTube format change, or server-side "
+                "ad insertion (SSAI), which this feature cannot remove by design."
+                % (r["n_youtube"], EFFECTIVENESS_WINDOW_SECONDS // 60)
+            ),
+            first_seen=r["first_seen"], last_seen=r["last_seen"],
+            event_ids=event_ids,
+        )
+        fired += 1
+
+    set_window_start(conn, "adblock_ineffective", now)
+    return fired
+
+
+SIGNALS = [port_scan_signal, brute_force_signal, malicious_domain_signal, new_device_signal,
+           adblock_effectiveness_signal]
 
 
 def run_all(conn):

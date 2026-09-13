@@ -207,11 +207,45 @@ determines whether such failures are caught.
 
 | Limitation | Cause |
 |---|---|
-| Mobile apps unaffected | Certificate pinning; apps refuse a gateway certificate outright. Android 7+ additionally distrusts user-installed CAs for app traffic |
+| Mobile apps unaffected by ad removal | Certificate pinning; apps refuse a gateway certificate outright. Android 7+ additionally distrusts user-installed CAs for app traffic. Since ENHANCEMENT-PLAN.md step 5.8, a pinned app is detected after a few failed handshakes and auto-passed-through so it still *works* (with ads) rather than being left permanently broken - it just never gets ad removal |
 | Browser-only, enrolled devices only | Deliberate: coverage was traded for privacy |
 | Device trusts a gateway CA until removed | Inherent to interception. Must be uninstalled after the demonstration |
 | Fragile against upstream change | Depends on response structures YouTube may alter without notice |
 | QUIC blocked network-wide | Forces TCP fallback so traffic stays observable; a standard enterprise practice, but a deliberate degradation |
+| Server-side ad insertion (SSAI) would end first-party removal entirely | Not a bug to fix - a structural boundary of the whole approach. See below |
+
+### Server-side ad insertion (SSAI): the expected end state, not just another upstream change
+
+The "fragile against upstream change" row above understates what SSAI specifically
+would mean. Every fix this project can make - the JSON field/renderer rules (§4),
+their move to a console-editable, hot-reloadable file (ENHANCEMENT-PLAN.md step 5.9) -
+assumes the ad is *scheduled by a distinguishable instruction* somewhere in a response
+this addon can see: a field like `adPlacements`, or a feed item tagged as an ad renderer.
+Removing that instruction removes the ad because the ad was never part of the media
+stream itself.
+
+SSAI removes that assumption. It splices the advertisement into the *same* video
+segments as the real content, server-side, before either ever reaches the client. There
+is no longer a distinct "play this ad here" instruction anywhere in the response for a
+proxy to delete - the ad **is** the content, indistinguishable at the level this addon
+operates on (structured JSON responses) without decoding and re-encoding the media
+stream itself, which is a different order of engineering entirely and out of scope for
+a project of this size. No rule edit, however fast the console makes one now, can
+restore first-party removal once YouTube serves an ad this way for a given
+stream - this is a structural end state for the technique, not a bug this codebase can
+be evolved out of.
+
+**What this project does instead of pretending otherwise:** rather than silently
+degrade with nobody noticing, ENHANCEMENT-PLAN.md step 5.10 adds an effectiveness
+watchdog to the correlation engine (`adblock_effectiveness_signal` in
+`app/correlation.py`) - if a device is actively decrypting YouTube traffic but nothing
+is ever stripped from any of it over a sustained window, that is flagged as an incident
+("YouTube ad removal may no longer be effective") rather than left to be discovered by
+a user noticing ads have quietly come back. The watchdog cannot distinguish "YouTube
+switched to SSAI" from "a format change broke the field names" by itself - both look
+identical from outside (decrypting, never stripping) - but either way, the honest
+signal a user or operator needs is the same one: *ad removal has stopped working, go
+look*, not a dashboard that keeps reporting success on data it hasn't actually checked.
 
 ---
 

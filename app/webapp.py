@@ -34,6 +34,7 @@ Routes:
   /api/filtering/dpi/privacy-scope  privacy-scope canary status for the console badge
   /api/filtering/dpi/pinned         devices currently auto-bypassed for a pinned app (step 5.8)
   /api/filtering/dpi/rules          view/edit the Tier 2 rule set, with per-rule hit counts (step 5.9)
+  /api/filtering/dpi/effectiveness  ad-removal effectiveness watchdog status (step 5.10)
   /api/devices/{id}/dpi             enroll/unenroll one device for Tier 2 (replaces the CLI)
   /api/devices/{id}/blocked         recently blocked domains for one device
   /api/devices/{id}/filtering/rules allow/block rules scoped to one device
@@ -126,7 +127,7 @@ RANGES = {
 # be before the console calls it unhealthy rather than just "hasn't found
 # anything lately". Engine cycles every 15s (see engine.py); 4 missed cycles
 # is a real problem, not noise.
-SIGNALS = ["port_scan", "brute_force", "malicious_domain", "new_device"]
+SIGNALS = ["port_scan", "brute_force", "malicious_domain", "new_device", "adblock_ineffective"]
 SIGNAL_STALE_AFTER = 60
 INGEST_STALE_AFTER = 30  # ingest.py polls every 2s
 
@@ -1521,6 +1522,32 @@ def api_dpi_rules_set(body: DpiRulesUpdate):
 
     print("filtering: DPI rules updated to version %d - %s" % (new_rules["version"], body.reason), flush=True)
     return {"ok": True, "version": new_rules["version"]}
+
+
+@app.get("/api/filtering/dpi/effectiveness")
+def api_dpi_effectiveness():
+    """Whether the ad-removal effectiveness watchdog (step 5.10,
+    `correlation.adblock_effectiveness_signal`) has an open concern right
+    now - read from the incidents table the correlation engine already
+    writes to on its own schedule, not a separate status file. See
+    REPORT-adblocking.md's SSAI section for what this can and cannot
+    distinguish."""
+    c = db()
+    now = time.time()
+    rows = c.execute(
+        "SELECT i.id, i.device_id, d.hostname, d.friendly_name, i.last_seen"
+        "  FROM incidents i LEFT JOIN devices d ON d.id = i.device_id"
+        " WHERE i.signal_type='adblock_ineffective' AND i.status='new'"
+        " ORDER BY i.last_seen DESC").fetchall()
+    return {
+        "healthy": len(rows) == 0,
+        "affected": [
+            {"incident_id": r["id"], "device_id": r["device_id"],
+             "name": device_label(r) if r["device_id"] else "unknown device",
+             "age": _age(now - r["last_seen"])}
+            for r in rows
+        ],
+    }
 
 
 @app.get("/api/devices/{device_id}/dpi")

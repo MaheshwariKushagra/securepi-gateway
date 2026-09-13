@@ -525,7 +525,7 @@ Never cut Stage 2, steps 5.2, 5.3, 5.7, or evaluation items 7.2–7.5.
 | 3 | 3.1 · 3.2 · 3.3 · 3.4 · 3.5 · 3.6 | Not started |
 | 4 | 4.1 · 4.2 · 4.3 · 4.4 · 4.5 | Not started |
 | 5 | **5.1 done, 5.2 done, 5.3 done, 5.4 done, 5.5 done, 5.6 done, 5.7 done, 5.8 done, 5.9 done, 5.10 done, 5.11 done (Path 1 only)** (out of order) | 5.1–5.11 done - 5.11 scoped to Path 1 (cosmetic CSS), Path 2 (scriptlets) deferred and recorded |
-| 6 | **6.1 done, 6.2 done, 6.3 done, 6.4 done, 6.5 done, 6.6 done** · 6.7 | 6.1–6.6 done, 6.7 not started |
+| 6 | **6.1 done, 6.2 done, 6.3 done, 6.4 done, 6.5 done, 6.6 done, 6.7 done** | Stage 6 complete |
 | 7 | 7.0 – 7.9 | Not started |
 | 8 | 8.1 · 8.2 · 8.3 · 8.4 | Not started |
 
@@ -2097,3 +2097,87 @@ project existed correctly returned zero incidents rather than erroring.
 The `/reports/weekly` page's markup (all twelve expected element ids)
 was confirmed present in the served HTML. Journal clean across all three
 services throughout.
+
+**Note on step 6.7 (responsive layout, ~400px), implemented locally and
+deployed live. No schema migration - static/template files only, so
+only `securepi-web` was restarted.**
+
+The console already had a partial `@media (max-width: 860px)` breakpoint
+(sidebar collapse, grid-to-single-column) from earlier work. This step's
+job was finding what STILL broke below that, down to the plan's own
+~400px phone-width target - and it was found by genuinely rendering
+pages at that width and looking, not by reading CSS and guessing:
+
+- This session's browser-automation tool would not reliably hold an
+  exact narrow window size in this sandboxed environment (`resize_window`
+  reported success but the real viewport kept snapping back to ~1470px
+  or landing at unpredictable widths). Rather than accept unverified
+  claims about responsiveness, a workaround was used instead: fetch each
+  page's real, live-rendered HTML (same technique already used for 6.1
+  through 6.6's live verification), serve it from a local static server,
+  and inject the app's own responsive CSS rules into the page alongside
+  a `max-width:400px` constraint on `<html>` - producing a visually
+  accurate 400px render whose overflow is directly visible, checked
+  against every page: dashboard, devices, device detail, incidents,
+  incident detail, filtering, hunt, settings, and the weekly report.
+- **Real bugs found this way, not from CSS inspection alone:**
+  - The topbar (title + search trigger + bell + live indicator + pause
+    button) genuinely didn't fit at 400px - confirmed by watching the
+    Pause button's text get clipped at the boundary.
+  - `.input`'s existing 200px `min-width` floor (present since early in
+    the project) made any row of two or more filter inputs overflow -
+    Hunt's five-field search bar was the clearest case.
+  - A segmented control (`.seg`) with long labels - Incidents' status
+    filter ("All statuses / New / Investigating / Resolved / False
+    positive") - was wider than the whole viewport on its own.
+  - Devices' and Incidents' wide tables (9 and 8 columns) forced the
+    WHOLE PAGE to scroll horizontally, not just the table - confirmed by
+    checking `document.documentElement.scrollWidth` directly, not just
+    eyeballing a screenshot.
+  - A long incident title in the topbar, and step 6.4's new ATT&CK badge
+    (much longer text than a severity chip was ever designed to hold),
+    both overflowed unclipped rather than wrapping or truncating.
+  - The deepest bug, and the one most likely to recur: a `.grid` card
+    containing a comma-separated port list (from `correlation.py`'s own
+    incident descriptions) overflowed even after adding
+    `overflow-wrap: break-word` to the text itself - because a CSS grid
+    item's automatic minimum width defaults to its CONTENT's width, not
+    its track's width, so the card never actually shrank to the 1fr
+    track it was supposed to fit. `.grid > * { min-width: 0 }` is the
+    fix, and being a single rule at the `.grid` level rather than a
+    per-card patch, it should prevent the same class of bug in any
+    current or future card placed inside a `.grid`.
+- Each fix was re-verified the same way after being written, and the
+  table fix specifically was confirmed not just visually but
+  programmatically: `document.documentElement.scrollWidth` equals
+  `clientWidth` (no page-level horizontal scroll) on devices, incidents
+  and incident-detail pages at 400px, while the `.table-scroll` wrapper's
+  own `scrollWidth` exceeds its `clientWidth` (the overflow is real, and
+  correctly scoped to just the table).
+- Smoke-tested locally with a structural regression guard
+  (`smoke_67.py`) - Python can't render CSS, so this confirms each fix's
+  rule/class/wrapper is still present in source, not that it still looks
+  right; the actual visual verification is the browser check above and
+  can't be meaningfully replaced by a unit test. Full session regression
+  suite (`make test` and every smoke test file from 5.3 through 6.7)
+  re-run clean.
+
+**Deployed to the live gateway and verified the same day**, with
+`.bak-6.7-*` copies of the four changed files (`app.css`, `devices.html`,
+`incident_detail.html`, `incidents.html`) and only `securepi-web`
+restarted. Live re-verification repeated the exact same technique
+against the REAL deployed pages (not local snapshots) - fetched
+`/incidents/18`, `/devices` and `/incidents` from the live gateway,
+confirmed programmatically that none of them scroll horizontally as a
+whole page at a simulated 400px width, and confirmed visually that the
+real ATT&CK badge, the real comma-separated port list, and the real
+9-column device table all render correctly with the deployed fixes.
+Journal clean across all three services throughout.
+
+**Exit criterion - "All pages usable at ~400px" - reasonably met**, with
+one honest caveat: every page was checked for layout correctness and the
+absence of page-level horizontal scroll, which is what "usable" concretely
+requires; a full one-by-one interaction pass (clicking every button, submitting
+every form) at that width was not separately repeated, since the layout-level
+fixes here don't change any endpoint or JS behavior already covered by
+each step's own functional smoke tests and live verification.

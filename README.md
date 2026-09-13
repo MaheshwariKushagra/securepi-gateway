@@ -148,6 +148,7 @@ flowchart LR
 | File | Contents |
 |---|---|
 | [`ENHANCEMENT-PLAN.md`](ENHANCEMENT-PLAN.md) | **Active plan.** Market comparison, gap analysis, the ordered stage-by-stage roadmap, and a live log of every step's implementation, deployment and verification |
+| [`NEXT-SESSION.md`](NEXT-SESSION.md) | Session handoff — how to bring the gateway back up, where the project stands, and what's recommended next |
 | [`EVALUATION-RESULTS.md`](EVALUATION-RESULTS.md) | Day 14 evaluation: detection rate, reduction ratio, false positives, resource/throughput |
 | [`SECUREPI-15-DAY-PLAN.md`](SECUREPI-15-DAY-PLAN.md) | Original build plan, confirmed topology, scope decisions |
 | [`GATEWAY-SETUP-RUNBOOK.md`](GATEWAY-SETUP-RUNBOOK.md) | Host and network setup |

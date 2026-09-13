@@ -372,6 +372,53 @@ Order: telemetry first, because every later step displays or measures it. Then T
 >   during 5.7's deploy verification), not be treated as continuously
 >   covered.
 
+> **Open follow-up on 5.11 - revisit after Stage 5 is complete:** the
+> plan's own description of 5.11 names two things - cosmetic injection
+> AND "optionally vetted scriptlets." Only the first (**Path 1**) was
+> built. **Path 2** (JS scriptlet injection - `json-prune`/`set-constant`
+> equivalents) was deliberately NOT attempted, decided together with the
+> user rather than assumed unilaterally. Recorded here in full, the same
+> way 5.7's real-enforcement-path gap was, so it isn't lost.
+>
+> - **What Path 2 would have been:** injecting a `<script>` into
+>   decrypted HTML that overrides a specific JS property or function
+>   YouTube's player reads before it decides whether/how to show an ad -
+>   the same category of technique uBO's `set-constant`/`json-prune`
+>   scriptlets use, but as an original implementation, not ported code
+>   (uBO is GPLv3; this project's own licensing position on embedding
+>   third-party scriptlet source was never resolved, and didn't need to
+>   be once the risk case below was decided on its own).
+> - **Why it was ruled out - a risk decision, not a technical one,**
+>   confirmed explicitly with the user before proceeding: a MITM proxy
+>   CAN rewrite a response body's JavaScript the same way this project
+>   already rewrites JSON and HTML - FIRST-PARTY-ADS-ANALYSIS.md's
+>   original claim that this was impossible was itself overstated and
+>   has been corrected (§5, §5.1) as part of this same step. The real
+>   barrier is that an injected script which gets something wrong
+>   against YouTube's actively-changing, heavily-obfuscated frontend can
+>   break the page outright - not just fail to remove an ad, but leave
+>   an enrolled device's YouTube unusable - and this project has no way
+>   to verify that didn't happen without a real device actively browsing
+>   through the gateway, which wasn't available this session. Compare to
+>   Path 1 (CSS): a wrong CSS selector is a silent no-op; a wrong
+>   `set-constant` override can be a blank player.
+> - **What Path 1 (cosmetic CSS injection) delivers on its own, so the
+>   gap is smaller than it sounds:** hides leftover ad-shaped containers
+>   left behind after `strip_ads()` already removed the underlying ad
+>   instruction from the JSON - the empty box, not a functioning ad.
+>   What Path 2 would additionally catch is ad-adjacent JS *behaviour*
+>   that never went through a JSON field this addon inspects at all -
+>   narrower than it may sound, and the DECISIVE gap (SSAI) is one
+>   neither path can close - see REPORT-adblocking.md's SSAI section
+>   (step 5.10).
+> - **What picking this up later would need:** the same thing 5.7's
+>   follow-up needs - a real device (or the user's own phone,
+>   deliberately, never as the first test) actively enrolled and
+>   browsing YouTube through the gateway, so an injected scriptlet's
+>   effect can be watched and reverted immediately if the page breaks.
+>   Until that's available, Path 2 should stay deferred rather than
+>   shipped unverified.
+
 > **Cut line C** (~8½ weeks, excluding 5.11). Ad blocking becomes a full product: profiles, schedules, unbreak, analytics, list health, hardened bypass prevention. Tier 2 verifies its own privacy scope, degrades gracefully, and notices when YouTube changes.
 
 ### Stage 6 — Intelligence and console (~10 days)
@@ -477,7 +524,7 @@ Never cut Stage 2, steps 5.2, 5.3, 5.7, or evaluation items 7.2–7.5.
 | 2 | 2.1 · 2.2 · 2.3 · 2.4 · 2.5 · 2.6 · 2.7 · 2.8 | Not started |
 | 3 | 3.1 · 3.2 · 3.3 · 3.4 · 3.5 · 3.6 | Not started |
 | 4 | 4.1 · 4.2 · 4.3 · 4.4 · 4.5 | Not started |
-| 5 | **5.1 done, 5.2 done, 5.3 done, 5.4 done, 5.5 done, 5.6 done, 5.7 done, 5.8 done, 5.9 done, 5.10 done** (out of order) · (5.11) | 5.1–5.10 done, 5.11 (optional) not started |
+| 5 | **5.1 done, 5.2 done, 5.3 done, 5.4 done, 5.5 done, 5.6 done, 5.7 done, 5.8 done, 5.9 done, 5.10 done, 5.11 done (Path 1 only)** (out of order) | 5.1–5.11 done - 5.11 scoped to Path 1 (cosmetic CSS), Path 2 (scriptlets) deferred and recorded |
 | 6 | 6.1 · 6.2 · 6.3 · 6.4 · 6.5 · 6.6 · 6.7 | Not started |
 | 7 | 7.0 – 7.9 | Not started |
 | 8 | 8.1 · 8.2 · 8.3 · 8.4 | Not started |
@@ -1284,3 +1331,93 @@ the by-composition reasoning above alone - both now stand together.
 
 The new "Effectiveness" badge's markup confirmed present in the served
 Filtering page HTML; journal clean across both services throughout.
+
+**Note on step 5.11 (optional - cosmetic and scriptlet injection),
+implemented locally, not yet deployed - explicitly scoped to Path 1
+only, decided together with the user before any code was written.**
+See the "Open follow-up on 5.11" callout right after the Stage 5C table
+above for the full Path 1 vs. Path 2 record; this note covers what was
+actually built.
+
+- **`dpi/adfilter_rules.py`** gained two optional keys,
+  `cosmetic_injection_enabled` (bool, default `False`) and
+  `cosmetic_selectors` (a list of CSS selectors - custom-element tag
+  names matching YouTube's kebab-case convention for its ad renderers,
+  **not verified against a live youtube.com page this session**, since
+  a wrong or stale selector is a silent no-op rather than a breakage
+  risk - see the Path 1/Path 2 record for why that asymmetry mattered
+  to the scoping decision itself). Deliberately NOT added to
+  `REQUIRED_RULE_KEYS`: a rules file written before this step (the live
+  gateway's real one, at the time of writing) has neither key at all,
+  and must keep validating successfully with the feature off, not start
+  failing. A new `apply_defaults()` backfills both keys only when
+  they're absent, explicitly never overwriting an operator's own choice
+  (including a deliberately empty selector list) - `load_rules()` now
+  calls it after `validate_rules()`.
+- **`dpi/securepi_adfilter.py`** gained two new pure functions:
+  `inject_cosmetic_css(html_text, selectors)` (inserts one `<style>`
+  block right before `</head>`, falling back to just after `<body>`,
+  falling back to prepending the whole document - a wrong selector
+  matches nothing and changes nothing) and
+  `loosen_csp_for_inline_style(csp_header)` (adds `'unsafe-inline'` to
+  a response's `style-src`, or `default-src` if there's no `style-src`
+  directive, so the injected `<style>` tag isn't blocked by the page's
+  own Content-Security-Policy - **and only ever touches the style
+  policy**, never `script-src`, proven by its own dedicated test). Both
+  wired into `response()`'s existing HTML branch, gated behind
+  `cosmetic_injection_enabled`, logging a new `cosmetic_injected`
+  telemetry decision (`dpi_ads_removed` repurposed once again, this
+  time to carry the count of configured selectors - the addon does not
+  parse the page to know which ones actually matched anything, by
+  design, matching the no-DOM-parsing philosophy the existing
+  `ad_fields` HTML-neutralisation branch already uses).
+- **Console:** `DpiRulesUpdate` gained `cosmetic_injection_enabled`/
+  `cosmetic_selectors` as `Optional` fields defaulting to `None`, NOT
+  `False`/`[]` - a real, deliberately-avoided bug: a Pydantic default of
+  `False`/`[]` would mean any edit that only means to touch, say,
+  `blocked_paths` would silently wipe an operator's cosmetic settings
+  back to disabled every time, since FastAPI has no way to distinguish
+  "the field was omitted" from "the field was explicitly set to its
+  default." `api_dpi_rules_set` merges `None` fields against what's
+  already on disk instead. A dedicated smoke test proves exactly this
+  scenario: enable cosmetic injection with custom selectors, make an
+  unrelated `blocked_paths`-only edit, confirm the cosmetic settings
+  survived untouched. The "Tier 2 Rule Set" card gained a toggle and a
+  selectors textarea, saved together with everything else through the
+  existing single "Save rules" button - no separate save path to keep
+  in sync.
+- **`REPORT-adblocking.md`'s and `FIRST-PARTY-ADS-ANALYSIS.md`'s**
+  overstated claims were both corrected as part of this same step (the
+  plan's own A12 finding): `FIRST-PARTY-ADS-ANALYSIS.md` §5 and §5.1
+  originally stated cosmetic filtering "remains impossible" after MITM
+  and that scriptlet-style JS rewriting is a capability "TLS
+  interception does not confer" - both corrected in place (marked
+  "Corrected 2026") to the accurate, more nuanced position: both are
+  technically possible, cosmetic injection was built because it's
+  low-risk, scriptlet injection was deliberately deferred because it
+  isn't, and licensing was never actually the barrier either claim
+  implied.
+
+**Exit criterion "no functional breakage in a 10-video check" is
+explicitly NOT met, and can't be from this session.** That check needs
+a real device actively browsing real youtube.com pages through the
+actual Tier 2 pipeline - the same infrastructure gap 5.7's follow-up
+already identified (no namespace bridged onto the real `ap0` path), and
+CSS injection makes the *consequence* of skipping this check low
+(wrong selector = nothing visible happens) rather than the check being
+unnecessary. This should be verified deliberately, on a real enrolled
+device, before cosmetic injection is turned on for daily use - it ships
+here disabled by default specifically so that verification can happen
+on the user's own schedule rather than being implied as already done.
+
+Smoke-tested locally (35 cases in `make test`, up from 17): every
+`inject_cosmetic_css` anchor-selection path (head-close present, falls
+back to post-`<body>`, falls back to prepend, multiple selectors, output
+still contains every original fragment); every `loosen_csp_for_
+inline_style` case including the one that matters most structurally
+(`script-src` is provably never touched); `apply_defaults` both filling
+in absence and refusing to overwrite an explicit empty list;
+`validate_rules` accepting a file with neither optional key and
+rejecting a non-bool `cosmetic_injection_enabled` or a non-string-list
+`cosmetic_selectors`; and the console's None-preserves-existing-value
+merge behaviour end to end. Not yet deployed.

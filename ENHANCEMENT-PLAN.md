@@ -525,7 +525,7 @@ Never cut Stage 2, steps 5.2, 5.3, 5.7, or evaluation items 7.2–7.5.
 | 3 | 3.1 · 3.2 · 3.3 · 3.4 · 3.5 · 3.6 | Not started |
 | 4 | 4.1 · 4.2 · 4.3 · 4.4 · 4.5 | Not started |
 | 5 | **5.1 done, 5.2 done, 5.3 done, 5.4 done, 5.5 done, 5.6 done, 5.7 done, 5.8 done, 5.9 done, 5.10 done, 5.11 done (Path 1 only)** (out of order) | 5.1–5.11 done - 5.11 scoped to Path 1 (cosmetic CSS), Path 2 (scriptlets) deferred and recorded |
-| 6 | **6.1 done, 6.2 done, 6.3 done, 6.4 done** · 6.5 · 6.6 · 6.7 | 6.1–6.4 done, rest not started |
+| 6 | **6.1 done, 6.2 done, 6.3 done, 6.4 done, 6.5 done** · 6.6 · 6.7 | 6.1–6.5 done, rest not started |
 | 7 | 7.0 – 7.9 | Not started |
 | 8 | 8.1 · 8.2 · 8.3 · 8.4 | Not started |
 
@@ -1955,3 +1955,71 @@ this module doesn't recognize:
   existing rule-removal endpoint to leave production filtering state
   exactly as it was found.
 - Journal clean across all three services throughout.
+
+**Note on step 6.5 (Hunt / explorer), implemented locally and deployed
+live.** Scoped to what the plan's own exit criterion actually asks for -
+"everything device X talked to in the last hour, in two clicks" - rather
+than every idea in the V3 catalogue entry:
+
+- **Search** covers device, IP (matches src or dest), domain (a partial
+  `LIKE` match against `dns_rrname` OR `tls_sni`, so it catches both DNS
+  lookups and TLS SNI in one filter), port (src or dest) and event type,
+  all combining with AND, over a chosen time range reusing the same
+  `RANGES` dict `/api/devices/{id}/series` already uses. A new
+  `idx_events_dest_ip` index was added - IP search/pivoting is one of
+  this page's two core operations and the events table had no index on
+  `dest_ip` before.
+- **Aggregates** (top talkers by real bytes, top destinations, protocol
+  breakdown) are computed over the exact same filtered `WHERE` clause as
+  the results list (`_hunt_where`/`_hunt_aggregates`, factored out so
+  both queries share one definition) - "top talkers" for a domain search
+  means top talkers OF that domain, not of the whole time range.
+- **Pivoting** is a single click on any domain or IP shown anywhere on
+  the page - in the results feed or in the Top Destinations card - which
+  re-runs the search filtered to that value. This, not a separate
+  "pivot" UI, is what actually delivers the two-click exit criterion:
+  open a device's traffic in Hunt, click any destination, done.
+- **Saved searches** get their own minimal table (`saved_searches`,
+  id/name/filters-as-JSON/created_at) - the same "one JSON blob,
+  validated in Python" shape step 6.3's settings table uses, since a
+  saved search is really just a small named config blob too. Both
+  saving and deleting one are audited.
+- Deliberately NOT built: this is not a full-text search engine (no
+  query language, no regex) and it is not the plan's "network map" (V8,
+  a separate, not-yet-built item) - domain/IP matching uses the events
+  table's own existing columns and indexes, which is enough at this
+  project's real data volume.
+
+Smoke-tested locally: the `saved_searches`/`idx_events_dest_ip`
+migration path on a simulated pre-6.5 database; twelve `webapp.py`
+scenarios covering every filter individually, filters combining with AND
+rather than OR, that events outside the chosen time window never appear,
+that aggregates are computed over the filtered set (not the whole
+range), that top_destinations prefers a known domain over a raw IP, and
+the full saved-search create/list/remove/name-required/404/audit
+lifecycle - plus the full session regression suite (`make test` and
+every smoke test file from 5.3 through 6.5b) re-run clean.
+
+**Deployed to the live gateway and verified the same day**, with an
+online SQLite backup taken first (`securepi.db.pre-6.5-migration-*.bak`,
+this session's sixth schema migration against production) and
+`.bak-6.5-*` copies of every replaced file. `securepi-ingest` restarted
+first to apply the migration, confirmed both the new table and the new
+index present; `securepi-engine` was again deliberately not restarted
+(6.5 touched no file it imports), and `securepi-web` was restarted for
+the new page and endpoints.
+
+**Verified against real production data**, not a fixture: an unfiltered
+24h search returned 200 real events with a sensible real protocol
+breakdown (6,609 dns_query, 1,777 flow, 1,168 dns, 1,143 quic, 491 tls,
+47 ssh, 30 alert, 11 http, 5 anomaly, 3 dhcp, 3 fileinfo); top talkers
+correctly showed the real phone `kushagra-s-a33` (1.2 GB) ahead of the
+test-harness attacker device; a combined device+domain filter correctly
+matched a real blocked DNS query (`ads-api.x.com`); an `event_type=alert`
+filter surfaced real Suricata alerts including a genuine DoH-bypass
+detection. A real saved search was created, listed, and removed again
+via the console's own endpoints, confirmed via `GET /api/audit` as two
+real audited rows (`hunt.save_search`, `hunt.remove_search`). The
+`/hunt` page's markup (all thirteen expected element ids) was confirmed
+present in the served HTML. Journal clean across all three services
+throughout.

@@ -525,7 +525,7 @@ Never cut Stage 2, steps 5.2, 5.3, 5.7, or evaluation items 7.2–7.5.
 | 3 | 3.1 · 3.2 · 3.3 · 3.4 · 3.5 · 3.6 | Not started |
 | 4 | 4.1 · 4.2 · 4.3 · 4.4 · 4.5 | Not started |
 | 5 | **5.1 done, 5.2 done, 5.3 done, 5.4 done, 5.5 done, 5.6 done, 5.7 done, 5.8 done, 5.9 done, 5.10 done, 5.11 done (Path 1 only)** (out of order) | 5.1–5.11 done - 5.11 scoped to Path 1 (cosmetic CSS), Path 2 (scriptlets) deferred and recorded |
-| 6 | **6.1 done, 6.2 done, 6.3 done** · 6.4 · 6.5 · 6.6 · 6.7 | 6.1–6.3 done, rest not started |
+| 6 | **6.1 done, 6.2 done, 6.3 done, 6.4 done** · 6.5 · 6.6 · 6.7 | 6.1–6.4 done, rest not started |
 | 7 | 7.0 – 7.9 | Not started |
 | 8 | 8.1 · 8.2 · 8.3 · 8.4 | Not started |
 
@@ -1840,3 +1840,118 @@ against real production data:**
 - Journal clean across `securepi-ingest`, `securepi-engine` and
   `securepi-web` throughout, including across a full correlation-engine
   cycle after the restart.
+
+**Note on step 6.4 (incident workbench), implemented locally and deployed
+live.** The plan's V4 catalogue entry for this step lists a status-change
+timeline, analyst notes, an ATT&CK badge, a per-signal playbook, a
+"related incidents and campaign view", and one-click actions - each
+scoped deliberately here, the same "build the minimal genuine slice, not
+the full unbuilt feature" pattern every Stage 6 step has used so far:
+
+- **Status-change timeline** reuses `audit_log` (from step 6.3) rather
+  than a new history table - `api_update_incident` now writes a real
+  `incident.status_change` row (`target=str(incident_id)`,
+  `detail="<before> -> <after>"`) on every change instead of updating
+  silently, and the incident detail page reads them back with
+  `audit.for_target()` (a new, small addition to `audit.py`), oldest
+  entry always being the incident's own `created_at` since that
+  necessarily predates any status change.
+- **Analyst notes** get their own minimal table, `incident_notes`
+  (id/incident_id/ts/author/note) - this session's fifth schema
+  migration against production, after 5.1, 6.1, 6.2 and 6.3.
+- **ATT&CK badge** is deliberately NOT the full Stage 2 D7 ("cross-signal
+  campaign correlation + MITRE ATT&CK"), which would tag individual
+  events and build a campaign object - that hasn't been built. Instead,
+  `app/playbooks.py` gives each of the six real signal types a static
+  tag, and - matching this session's standing discipline against
+  fabricating a technique match where none genuinely applies - only
+  tags three of them:
+  - `port_scan` -> Discovery (TA0007) / **T1046** Network Service
+    Discovery, and `brute_force` -> Credential Access (TA0006) /
+    **T1110** Brute Force. Both are clean, well-established matches.
+  - `volume_anomaly` -> **tactic-level only**, Exfiltration (TA0010),
+    with no technique id and an explanatory note - a statistical
+    z-score anomaly on total bytes doesn't match one specific
+    exfiltration technique, it's simply one of the few externally
+    observable signs of that tactic.
+  - `malicious_domain`, `new_device` and `adblock_ineffective` get NO
+    tag, each with a stated reason (see `app/playbooks.py`'s module
+    docstring) rather than a guessed technique - most importantly,
+    `malicious_domain` fires on ad/tracker blocklist HIT VOLUME, which
+    EVALUATION-RESULTS.md's own finding G3 already documents as often
+    triggered by normal Android ad-SDK retry traffic, not confirmed
+    malicious infrastructure. Tagging it with a C2 or DNS-tunnelling
+    technique would overstate what it actually detected.
+- **Per-signal playbook** ("what it means / how to check / recommended
+  action") is real operational content for all six signal types,
+  written from how each signal actually behaves in this codebase, not
+  generic security advice.
+- **"Related incidents"** deliberately does NOT claim to be a campaign
+  view: it lists other still-open incidents on the same device, labelled
+  in the template as exactly that, with an explicit note that
+  cross-signal campaign correlation is a separate, not-yet-built piece
+  (Stage 2's D7).
+- **One-click actions**: the existing status buttons and quarantine
+  toggle already covered most of this before 6.4. Newly added: a "Block
+  this domain" button on `malicious_domain` incidents specifically,
+  which computes the most frequently seen domain in the incident's own
+  evidence chain and reuses the existing per-device block endpoint from
+  step 5.x (`POST /api/devices/{id}/filtering/block`) rather than a new,
+  parallel implementation.
+- The three new pieces of incident-page logic (`_top_evidence_domain`,
+  `_incident_notes`, `_incident_timeline`, `_related_open_incidents`)
+  were factored out of `page_incident_detail` into their own
+  module-level functions specifically so they could be smoke-tested
+  directly, following the same helper pattern `_event_row`/`_age`/
+  `device_label` already established in this file.
+
+Smoke-tested locally: the `incident_notes` migration path on a simulated
+pre-6.4 database; `playbooks.py`'s attack/playbook lookups for all six
+real signal types plus an unknown one (returns `None`, not a guess); and
+eight `webapp.py` scenarios covering the audited status-change timeline
+(including that a second change appends rather than replaces, and that
+an invalid status or a nonexistent incident writes nothing), note
+add/reject/404, and the three extracted helper functions - plus the full
+session regression suite (`make test` and every smoke test file from 5.3
+through 6.4b) re-run clean.
+
+**Deployed to the live gateway and verified the same day**, with an
+online SQLite backup taken first (`securepi.db.pre-6.4-migration-*.bak`,
+this session's fifth schema migration against production) and
+`.bak-6.4-*` copies of every replaced file. `securepi-ingest` restarted
+first to apply the `incident_notes` migration, confirmed present with
+the expected columns; `securepi-engine` was deliberately NOT restarted
+for this step, since 6.4 touched no file it imports (`correlation.py`
+and `rollup.py` are both untouched) - restarting a healthy, unrelated
+service would have been a needless bounce, not a safety measure.
+`securepi-web` was restarted for the new endpoints and template.
+
+**Verified against real, pre-existing production incidents** spanning
+every one of the six real signal types plus one (`privacy_scope_failure`)
+this module doesn't recognize:
+- Port scan (incident 18) and brute force (incident 19), both on the
+  test-harness attacker device, showed their real T1046/T1110 tags, full
+  playbooks, and correctly linked each other as related open incidents
+  on the same device.
+- A real malicious_domain incident (20, same test-harness device) showed
+  no ATT&CK tag, its honest non-mapping note, and a "Block
+  doubleclick.net" button naming the actual most-frequent domain from
+  its real evidence chain.
+- `volume_anomaly` (26) showed the Exfiltration/TA0010 tactic-level-only
+  tag; `adblock_ineffective` (25) and `new_device` (7) showed no tag, as
+  designed.
+- `privacy_scope_failure` (24, a signal type outside `playbooks.py`'s
+  six) correctly fell back to "No playbook is defined for this signal
+  type" rather than crashing - proving the honest-fallback path, not
+  just the happy path, works against real data.
+- A real note was added to incident 18 and a real status change
+  (new -> investigating, then reverted back to new) was made against the
+  test-harness-linked incident only, never a real device's incident;
+  `GET /api/audit` showed both as genuine rows, and the reload showed
+  both rendered correctly in the Notes and Status Timeline cards.
+- The "Block this domain" action itself was exercised for real against
+  incident 20's domain on the test-harness device, confirmed present via
+  `GET /api/devices/4/filtering/rules`, then removed again via the
+  existing rule-removal endpoint to leave production filtering state
+  exactly as it was found.
+- Journal clean across all three services throughout.

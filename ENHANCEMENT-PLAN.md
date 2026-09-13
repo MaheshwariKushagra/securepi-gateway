@@ -520,7 +520,7 @@ Never cut Stage 2, steps 5.2, 5.3, 5.7, or evaluation items 7.2–7.5.
 | Stage | Steps | Status |
 |---|---|---|
 | 0 | 0.1 · 0.2 · 0.3 | Not started |
-| 1 | **1.1 done, 1.2 done, 1.3 done, 1.4 done, 1.5 done** · 1.6 · 1.7 · **1.8 done** (1.8 out of order - see note below) | 1.1–1.5, 1.8 done, rest not started |
+| 1 | **1.1 done, 1.2 done, 1.3 done, 1.4 done, 1.5 done, 1.6 done** · 1.7 · **1.8 done** (1.8 out of order - see note below) | 1.1–1.6, 1.8 done, 1.7 not started |
 | 2 | 2.1 · 2.2 · 2.3 · 2.4 · 2.5 · 2.6 · 2.7 · 2.8 | Not started |
 | 3 | 3.1 · 3.2 · 3.3 · 3.4 · 3.5 · 3.6 | Not started |
 | 4 | 4.1 · 4.2 · 4.3 · 4.4 · 4.5 | Not started |
@@ -2569,3 +2569,81 @@ live-verify-1.5"` and back, `filtering.add_rule`/`remove_rule`,
 `device.filtering_set` both directions, `filtering.set_enabled`); the
 test-harness device's name was confirmed restored via
 `GET /api/devices`. Journal clean across all three services throughout.
+
+**Note on step 1.6 (detection fixes G1, G2, G3, G6), implemented locally
+and deployed live.** Confirmed each finding was still genuinely present
+before touching any code (read the current source directly for all
+four, rather than assuming the original gap analysis still held) -
+every one was.
+
+- **G1** (naming only, no behavior change): the port-scan signal's
+  comment called it a "horizontal" scan; the actual query (many ports,
+  ONE host) is a vertical scan by standard convention. Renamed; a real
+  horizontal scan (one port, many hosts - a network sweep) is a
+  separate, not-yet-built signal (step 2.1).
+- **G2**: `raise_incident`'s dedup now merges into an incident with
+  status `'new'` OR `'investigating'`, not `'new'` only - marking
+  something "investigating" no longer makes the very next firing open a
+  duplicate. Deliberately still excludes `'resolved'`/`'false_positive'`,
+  a genuine operator verdict that a later detection should not silently
+  reopen.
+- **G3**: `malicious_domain_signal` now thresholds on `n_distinct`
+  (distinct blocked domains), not `n_blocked` (raw lookup count) - the
+  exact real false positive `EVALUATION-RESULTS.md` documents. The
+  title/description text and `settings.py`'s own help text were updated
+  to match the new semantics.
+- **G6**: `registry.py`'s device-attribution Pass 1 now orders
+  candidate `device_ips` intervals by `first_seen DESC` before taking
+  the first match - an overlapping-interval tie-break that previously
+  depended on undefined SQLite query-planner behavior now deterministically
+  prefers the most recently opened interval.
+
+Each fix has a dedicated regression test, and - continuing the standard
+this session has applied to every bug fix, not just the first one -
+each was verified by temporarily reverting to the exact old behavior,
+confirming the test fails with a concrete wrong value, then reverting
+back to a byte-identical file: G2's test failed `2 != 1` (a duplicate
+incident instead of one merge) under the old `status = 'new'` clause;
+G3's failed `1 != 0` (fired when it shouldn't have) under the old
+`n_blocked` clause; G6's failed with the wrong device id under the old
+no-`ORDER BY` query.
+
+Smoke-tested locally: `make test` (109 tests, up from 103) and the full
+scratchpad regression (31 files) both re-run clean, including a
+dedicated new `tests/test_registry.py` for G6 (an overlapping-interval
+case that must resolve to the newer interval, and a sanity check that
+ordinary non-overlapping attribution is unaffected).
+
+**Deployed to the live gateway and verified the same day.** No schema
+migration; `.bak-1.6-*` copies of `correlation.py`, `registry.py` and
+`settings.py` were taken. `securepi-ingest` (imports `registry.py`),
+`securepi-engine` (imports `correlation.py` and `settings.py`) and
+`securepi-web` (serves `/api/settings`) were all restarted; order
+didn't matter here since nothing depends on a migration, but the same
+ingest-then-engine-then-web sequence was kept for consistency.
+
+**Verified against real production data, including a genuine live
+reproduction of the exact G6 bug scenario, not just a fixture:**
+- `GET /api/settings` showed the updated `malicious_domain_threshold`
+  help text live.
+- The fixed `malicious_domain_signal` was called directly against the
+  real live database and ran cleanly (0 fired, correctly, since there
+  was no blocked DNS activity in the real signal's 10-minute window at
+  verification time) - proving the new `n_distinct`-based query executes
+  correctly against real production schema and data, not just a
+  fixture. A real 24-hour query beforehand had already shown the actual
+  scale of the G3 problem on this network: device 2 (a real phone) had
+  107 raw blocked lookups against only 22 distinct domains that day -
+  almost a 5x gap between what the old and new logic would have counted.
+- **G6's fix was proven against a REAL overlapping interval already
+  present in production** (found by scanning the live `device_ips`
+  table for genuine overlaps, not constructed): two test-harness
+  devices' intervals for address `10.10.0.1` genuinely overlapped.
+  Twenty real events already attributed to the OLDER interval (device
+  3, under the pre-fix code) were cleared back to unattributed and
+  re-run through the now-fixed `attribute_events()` - it correctly
+  resolved all twenty to device 6, the more recently opened interval,
+  exactly as the fix specifies. Left in its corrected state rather than
+  reverted, since this is test-harness-only data and the new attribution
+  is the intended, more-correct answer going forward.
+- Journal clean across all three services throughout.

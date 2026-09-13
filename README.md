@@ -36,6 +36,7 @@ measured detection rates, false positives, and resource/throughput numbers.
 | `REPORT-adblocking.md` | Report material for the ad-blocking subsystem |
 | `FIRST-PARTY-ADS-ANALYSIS.md` | Analysis of what network-level filtering can and cannot block |
 | `EVALUATION-RESULTS.md` | Day 14 evaluation: detection rate, reduction ratio, false positives, resource/throughput |
+| `ENHANCEMENT-PLAN.md` | **Active plan.** What the 15-day plan cut and what comes back, market comparison, and the ordered stage-by-stage roadmap from here |
 | `dpi/` | Selective HTTPS inspection addon and deployment script |
 | `app/` | Ingest pipeline, correlation engine, and the SOC console (FastAPI + Jinja2 + vanilla JS) |
 | `gateway/evaluate.py` | Scripted evaluation battery — reproduces every number in `EVALUATION-RESULTS.md` |

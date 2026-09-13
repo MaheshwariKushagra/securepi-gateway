@@ -661,5 +661,40 @@ an in-memory DB): rule tagging and the tag+expiry combination case,
 profile apply/list/remove including the unknown-vendor 400 case, latency
 percentiles including the empty-sample and cached-answer-excluded cases,
 and the resolver endpoints including the confirm-required 400 case and
-that the applied config carries exactly the intended fields. Not yet
-deployed.
+that the applied config carries exactly the intended fields.
+
+**Deployed to the live gateway and verified the same day**, with the one
+deliberate exception noted below. `.bak-5.5-*` copies of every replaced
+file were taken first; `securepi-web` restarted cleanly.
+
+What was actually exercised against the live gateway:
+- `/api/native-profiles` and the read-only side of `/api/filtering/resolver`
+  - the latter showing real measured latency (p50 10.9ms / p95 33.4ms over
+  18 uncached samples in the last 24h) and confirming the gateway's actual
+  current config: DNSSEC already on, optimistic caching still off, a
+  single upstream provider (Cloudflare only, no Quad9/fallback yet) -
+  exactly the gap 5.5(c) was meant to close.
+- The native-profile apply/remove cycle, on the test-harness device
+  (`[TEST HARNESS] test-victim`, id 5) only, never a real phone, per the
+  caution in this step's own docstrings: applied the Xiaomi profile (3
+  domains, correctly `$client`-scoped and `securepi-tag:xiaomi` tagged),
+  confirmed via `/api/devices/5/filtering/rules`, then removed it and
+  confirmed zero residue both on the device and in the network-wide rules
+  list.
+- `/api/filtering/check?domain=doubleclick.net` confirmed the new `cname`
+  field is present and correctly `null` for an ordinary (non-CNAME)
+  block, alongside the existing fields.
+- Both new UI cards (`resolverQuality` on the Filtering page,
+  `deviceProfiles` on the device page) confirmed present in the actually
+  served HTML.
+
+**Deliberately NOT called live: `/api/filtering/resolver/apply`.** This
+is the one endpoint from this whole step that changes shared
+infrastructure - DNS resolution for every device on the network - rather
+than just adding a console feature, and per this project's own operating
+rules that kind of action gets confirmed explicitly rather than folded
+into a routine "deploy and verify" pass. The gateway is currently running
+with DNSSEC on but optimistic caching off and only one upstream provider
+configured; applying the recommended tuning (or doing it by hand through
+AdGuard's own settings) is left as a deliberate next decision rather than
+something this session did on its own judgment.

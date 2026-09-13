@@ -64,6 +64,7 @@ SCHEMA_MIGRATIONS = [
            PRIMARY KEY (device_id, hour_start)
        )""",
     "CREATE INDEX IF NOT EXISTS idx_device_hourly_hour ON device_hourly(hour_start)",
+    "ALTER TABLE events ADD COLUMN dhcp_params TEXT",
 ]
 
 # How long to wait between passes over the log files. Two seconds keeps the
@@ -180,6 +181,22 @@ def flatten_suricata(event):
         row["alert_severity"] = alert.get("severity")
         row["alert_signature_id"] = alert.get("signature_id")
 
+    # DHCP option 55 (the Parameter Request List) - step 6.2 device
+    # fingerprinting evidence. Only present once suricata.yaml's dhcp
+    # logger is in "extended" mode (enabled this step; confirmed live via
+    # `suricata -T` before the restart). `.get("params")` is Suricata's
+    # documented field name for this list, but NOT yet confirmed against
+    # a real extended-mode event on this gateway - no device has renewed
+    # its DHCP lease since extended mode was turned on, and forcing one
+    # would mean disconnecting a real device mid-session. Written
+    # defensively so a wrong field name is a silent no-op (column stays
+    # NULL), never an ingest crash - see ENHANCEMENT-PLAN.md step 6.2 for
+    # what still needs confirming next time a real lease renews.
+    dhcp = event.get("dhcp") or {}
+    if dhcp and dhcp.get("params"):
+        params = dhcp["params"]
+        row["dhcp_params"] = ",".join(str(p) for p in params) if isinstance(params, list) else str(params)
+
     return row
 
 
@@ -200,6 +217,7 @@ def insert_events(conn, rows):
         "blocked", "block_reason",
         "dns_filter_list_id", "dns_cached", "dns_upstream", "dns_elapsed_ms",
         "dpi_action", "dpi_ads_removed",
+        "dhcp_params",
     ]
     placeholders = ",".join("?" for _ in columns)
     sql = "INSERT INTO events (%s) VALUES (%s)" % (",".join(columns), placeholders)

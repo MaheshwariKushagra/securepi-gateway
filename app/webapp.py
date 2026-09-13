@@ -43,6 +43,7 @@ Routes:
   /api/devices/{id}/privacy         per-device tracker/privacy report
   /api/devices/{id}/quarantine   quarantine a device via nftables, or undo it
   /api/devices/{id}/baseline     behavioural-baseline "learning" status (step 6.1)
+  /api/devices/{id}/fingerprint  device type/vendor/OS classification with evidence (step 6.2)
 """
 
 import base64
@@ -65,6 +66,7 @@ from starlette.requests import Request
 import adfilter_rules
 import adguard
 import dpi_enroll
+import fingerprint
 import native_trackers
 import quarantine
 import risk
@@ -1778,6 +1780,29 @@ def api_device_baseline(device_id: int):
         "flagged": open_incident is not None,
         "incident_id": open_incident["id"] if open_incident else None,
     }
+
+
+@app.get("/api/devices/{device_id}/fingerprint")
+def api_device_fingerprint(device_id: int):
+    """Device type/vendor/OS classification with its evidence (step 6.2),
+    and - if the result matches a known vendor - the native-tracker
+    profile (step 5.5) this device would suggest. This is a second,
+    DISPLAY-ONLY identity anchor: it is not consulted anywhere in
+    registry.py's own MAC/hostname identity resolution, deliberately -
+    see ENHANCEMENT-PLAN.md's note on this step for why. Filtering
+    profile auto-suggestion (the plan's other stated goal for this step,
+    referencing Stage 4's 4.3) is not included: that profile system
+    doesn't exist yet."""
+    c = db()
+    d = c.execute("SELECT * FROM devices WHERE id=?", (device_id,)).fetchone()
+    if d is None:
+        raise HTTPException(404, "device not found")
+    result = fingerprint.classify(c, device_id, d["hostname"])
+    profile_key, profile = native_trackers.suggest_profile(result["vendor"], result["os"])
+    result["suggested_profile"] = (
+        {"vendor": profile_key, "label": profile["label"]} if profile else None
+    )
+    return result
 
 
 # --------------------------------------------------------------- quarantine --

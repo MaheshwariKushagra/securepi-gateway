@@ -68,3 +68,30 @@ NATIVE_PROFILES = {
 
 def profile(vendor):
     return NATIVE_PROFILES.get(vendor)
+
+
+# Maps a fingerprint.py vendor/os string (step 6.2) to the matching
+# NATIVE_PROFILES key, so the console can auto-suggest "this looks like a
+# Samsung phone - apply the Samsung native-tracker profile?" instead of
+# an operator having to know the mapping exists. Deliberately a small,
+# explicit dict rather than a fuzzy match - a wrong auto-suggestion is
+# worse than none, and fingerprint.py's own vendor/os strings are a
+# small, known set (see its HOSTNAME_PATTERNS).
+SUGGEST_PROFILE_FOR = {
+    "Samsung": "samsung",
+    "Xiaomi": "xiaomi",
+    "Apple": "apple",
+    "Microsoft": "windows",
+    "Windows": "windows",
+}
+
+
+def suggest_profile(vendor, os_name):
+    """Return (vendor_key, profile) if fingerprint.py's classify() result
+    maps to a known native-tracker profile, else (None, None). Checked by
+    vendor first (more specific), then by os as a fallback (a "Windows"
+    OS match with no vendor evidence still suggests the windows profile)."""
+    key = SUGGEST_PROFILE_FOR.get(vendor) or SUGGEST_PROFILE_FOR.get(os_name)
+    if key is None:
+        return None, None
+    return key, NATIVE_PROFILES.get(key)

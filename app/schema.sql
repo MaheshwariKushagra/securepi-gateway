@@ -137,7 +137,15 @@ CREATE TABLE IF NOT EXISTS events (
     --   dpi_action:      'decrypt' | 'passthrough' | 'ads_stripped' | 'path_blocked'
     --   dpi_ads_removed: count of ad objects removed, for 'ads_stripped' rows
     dpi_action      TEXT,
-    dpi_ads_removed INTEGER
+    dpi_ads_removed INTEGER,
+
+    -- DHCP option 55 (the Parameter Request List a client sends when
+    -- asking for a lease) - device fingerprinting evidence
+    -- (ENHANCEMENT-PLAN.md step 6.2). Comma-separated option numbers,
+    -- only present on event_type='dhcp' rows once suricata.yaml's dhcp
+    -- logger is in extended mode. See app/ingest.py's flatten_suricata
+    -- for why this is read defensively.
+    dhcp_params TEXT
 );
 
 -- Indexes chosen for the queries the correlation engine will actually run:

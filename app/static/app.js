@@ -718,6 +718,71 @@ function initDeviceBaseline() {
     load();
 }
 
+function initDeviceFingerprint() {
+    const wrap = $("#deviceFingerprint");
+    if (!wrap) return;
+    const deviceId = wrap.dataset.deviceId;
+
+    async function load() {
+        try {
+            const res = await fetch(`/api/devices/${deviceId}/fingerprint`);
+            if (!res.ok) throw new Error("request failed");
+            const d = await res.json();
+            const chips = [
+                d.category ? `<span class="chip neutral">${esc(d.category)}</span>` : "",
+                d.vendor ? `<span class="chip neutral">${esc(d.vendor)}</span>` : "",
+                d.os ? `<span class="chip neutral">${esc(d.os)}</span>` : "",
+                `<span class="chip ${d.confidence === "unknown" ? "neutral" : "ok"}">confidence: ${esc(d.confidence)}</span>`,
+            ].join(" ");
+
+            const evidenceRows = d.evidence.length
+                ? d.evidence.map(e => `
+                    <tr><td class="dim" style="width:1%; white-space:nowrap">${esc(e.source)}</td>
+                        <td class="truncate">${esc(e.detail)}</td></tr>`).join("")
+                : `<tr><td class="empty">No fingerprinting evidence yet</td></tr>`;
+
+            const suggestion = d.suggested_profile ? `
+                <div class="callout" style="margin-top:10px; display:flex; align-items:center; gap:10px">
+                    <div style="flex:1">Looks like a ${esc(d.suggested_profile.label)} device - apply that native-tracker profile?</div>
+                    <button class="btn" id="deviceFingerprintApplySuggestion">Apply</button>
+                </div>` : "";
+
+            wrap.innerHTML = `
+                <div style="margin-bottom:8px">${chips}</div>
+                <table><tbody>${evidenceRows}</tbody></table>
+                ${suggestion}`;
+
+            const applyBtn = $("#deviceFingerprintApplySuggestion");
+            if (applyBtn) {
+                applyBtn.addEventListener("click", () => {
+                    const select = $("#deviceProfileSelect");
+                    const apply = $("#deviceProfileApply");
+                    if (!select || !apply) return;
+                    // initDeviceProfiles() populates #deviceProfileSelect from its
+                    // own async fetch, which may not have landed yet - wait
+                    // briefly for the target option to actually exist rather than
+                    // silently setting .value to something not there yet.
+                    const trySelect = (attempt) => {
+                        const has = Array.from(select.options).some(o => o.value === d.suggested_profile.vendor);
+                        if (has) {
+                            select.value = d.suggested_profile.vendor;
+                            apply.click();
+                        } else if (attempt < 20) {
+                            setTimeout(() => trySelect(attempt + 1), 100);
+                        } else {
+                            toast("Could not apply profile", "The profile list hasn't loaded yet - try again.", "high");
+                        }
+                    };
+                    trySelect(0);
+                });
+            }
+        } catch (err) {
+            wrap.innerHTML = `<div class="empty">Could not load fingerprint</div>`;
+        }
+    }
+    load();
+}
+
 function initDeviceActivity() {
     const el = $("#deviceActivityChart");
     if (!el) return;
@@ -1833,6 +1898,7 @@ document.addEventListener("DOMContentLoaded", () => {
     initSidebar();
     initDeviceRename();
     initDeviceBaseline();
+    initDeviceFingerprint();
     initDeviceActivity();
     initDeviceFiltering();
     initDeviceQuarantine();

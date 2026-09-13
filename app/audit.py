@@ -34,3 +34,12 @@ def recent(conn, limit=200):
     return conn.execute(
         "SELECT * FROM audit_log ORDER BY id DESC LIMIT ?", (min(limit, 1000),)
     ).fetchall()
+
+
+def for_target(conn, target, limit=50):
+    """Newest-first audit rows for one target - step 6.4's incident
+    status-change timeline reads this with target=str(incident_id)."""
+    return conn.execute(
+        "SELECT * FROM audit_log WHERE target = ? ORDER BY id DESC LIMIT ?",
+        (target, min(limit, 200)),
+    ).fetchall()

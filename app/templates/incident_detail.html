@@ -5,6 +5,11 @@
     <h1 style="margin-left:8px">{{ incident.title }}</h1>
     <span class="chip {{ incident.severity }} dot">{{ incident.severity }}</span>
     <span class="status-pill {{ incident.status }}">{{ incident.status.replace('_', ' ') }}</span>
+    {% if attack %}
+    <span class="chip" title="{{ attack.note if attack.note else '' }}">
+        {{ attack.tactic }} ({{ attack.tactic_id }}){% if attack.technique %} · {{ attack.technique }} ({{ attack.technique_id }}){% endif %}
+    </span>
+    {% endif %}
     <div class="spacer"></div>
     {% if device and device.has_ip %}
     <div id="deviceQuarantine" data-device-id="{{ device.id }}">
@@ -12,6 +17,11 @@
     </div>
     {% endif %}
     <div id="incidentActions" data-incident-id="{{ incident.id }}" style="display:flex; gap:8px">
+        {% if top_domain and device %}
+        <button class="btn" id="incidentBlockDomain" data-device-id="{{ device.id }}" data-domain="{{ top_domain }}">
+            Block {{ top_domain }}
+        </button>
+        {% endif %}
         {% if incident.status != 'investigating' %}
         <button class="btn" data-set-status="investigating" data-incident-id="{{ incident.id }}">Investigate</button>
         {% endif %}
@@ -63,6 +73,59 @@
     </div>
 </div>
 
+<div class="grid c2">
+    <div class="card">
+        <div class="card-head"><h2>Playbook</h2>
+            <span class="spacer"></span>
+            <span class="subtle">what to check and what to do about this signal</span></div>
+        <div class="card-body">
+            {% if playbook %}
+            <dl class="meta-grid">
+                <dt>What it means</dt><dd style="line-height:1.6">{{ playbook.what_it_means }}</dd>
+                <dt>How to check</dt><dd style="line-height:1.6">{{ playbook.how_to_check }}</dd>
+                <dt>Recommended action</dt><dd style="line-height:1.6">{{ playbook.recommended_action }}</dd>
+            </dl>
+            {% if attack and attack.note %}
+            <p class="dim" style="font-size:11px; margin-top:12px">{{ attack.note }}</p>
+            {% endif %}
+            {% if not attack %}
+            <p class="dim" style="font-size:11px; margin-top:12px">
+                Not tagged with a MITRE ATT&amp;CK technique - this signal type doesn't map
+                cleanly to one specific attack technique (see app/playbooks.py for why).
+            </p>
+            {% endif %}
+            {% else %}
+            <div class="empty">No playbook is defined for this signal type.</div>
+            {% endif %}
+        </div>
+    </div>
+    <div class="card">
+        <div class="card-head"><h2>Related Incidents</h2>
+            <span class="spacer"></span>
+            <span class="subtle">other open incidents on this device</span></div>
+        <div class="card-body tight feed">
+            {% if not device %}
+            <div class="empty">This incident has no associated device.</div>
+            {% elif related %}
+            {% for r in related %}
+            <a class="feed-row" href="/incidents/{{ r.id }}" style="text-decoration:none; color:inherit">
+                <span class="chip {{ r.severity }} dot">{{ r.severity }}</span>
+                <span class="truncate">{{ r.title }}</span>
+                <span class="dim" style="font-size:11px">{{ r.last_seen }} ago</span>
+            </a>
+            {% endfor %}
+            {% else %}
+            <div class="empty">No other open incidents on this device right now.</div>
+            {% endif %}
+            <p class="dim" style="font-size:11px; margin-top:8px">
+                This lists other still-open incidents on the same device - it is not a
+                cross-signal campaign correlation (that's a separate, not-yet-built piece
+                of the plan).
+            </p>
+        </div>
+    </div>
+</div>
+
 <div class="card">
     <div class="card-head"><h2>Evidence Chain</h2>
         <span class="spacer"></span>
@@ -81,6 +144,41 @@
             raised from the registry itself rather than from event evidence.
         </div>
         {% endfor %}
+    </div>
+</div>
+
+<div class="grid c2" style="margin-top:14px">
+    <div class="card">
+        <div class="card-head"><h2>Analyst Notes</h2></div>
+        <div class="card-body">
+            <div style="display:flex; gap:8px; margin-bottom:12px">
+                <input class="input" type="text" id="incidentNoteInput" placeholder="Add a note…" style="flex:1">
+                <button class="btn" id="incidentNoteSave" data-incident-id="{{ incident.id }}">Add</button>
+            </div>
+            <div class="feed tight">
+                {% for n in notes %}
+                <div class="feed-row">
+                    <span class="mono dim">{{ n.ts }}</span>
+                    <span>{{ n.note }}</span>
+                </div>
+                {% else %}
+                <div class="empty">No notes yet.</div>
+                {% endfor %}
+            </div>
+        </div>
+    </div>
+    <div class="card">
+        <div class="card-head"><h2>Status Timeline</h2></div>
+        <div class="card-body">
+            <div class="feed tight">
+                {% for t in timeline %}
+                <div class="feed-row">
+                    <span class="mono dim">{{ t.ts }}</span>
+                    <span>{{ t.detail }}</span>
+                </div>
+                {% endfor %}
+            </div>
+        </div>
     </div>
 </div>
 {% endblock %}

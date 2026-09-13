@@ -51,9 +51,12 @@ Routes:
   /api/settings/password         change the console's shared Basic Auth password
   /api/audit                     recent audit log entries
   /api/attributions              third-party components this project uses, with real versions/licences
+  /api/incidents/{id}            PATCH: change status, now audited with a real timeline entry
+  /api/incidents/{id}/notes      POST: add an analyst note (step 6.4)
 """
 
 import base64
+import collections
 import datetime
 import json
 import os
@@ -76,6 +79,7 @@ import audit
 import dpi_enroll
 import fingerprint
 import native_trackers
+import playbooks
 import quarantine
 import risk
 import settings
@@ -191,6 +195,10 @@ PRIVACY_SCOPE_STALE_AFTER = 30 * 60
 
 class IncidentUpdate(BaseModel):
     status: str
+
+
+class IncidentNote(BaseModel):
+    note: str
 
 
 class DeviceUpdate(BaseModel):
@@ -691,6 +699,61 @@ def _event_row(r):
     }
 
 
+def _top_evidence_domain(signal_type, evidence):
+    """A one-click 'block this domain' action (step 6.4) is only offered
+    for malicious_domain incidents where the evidence chain actually
+    names a domain - the most frequently seen one. Reuses the existing
+    per-device block endpoint from step 5.x rather than a new one."""
+    if signal_type != "malicious_domain":
+        return None
+    domains = [e["detail"] for e in evidence if e["type"] == "dns_query" and e["detail"] != "-"]
+    if not domains:
+        return None
+    return collections.Counter(domains).most_common(1)[0][0]
+
+
+def _incident_notes(conn, incident_id):
+    return [{
+        "ts": time.strftime("%d %b %H:%M:%S", time.localtime(n["ts"])),
+        "author": n["author"], "note": n["note"],
+    } for n in conn.execute(
+        "SELECT * FROM incident_notes WHERE incident_id=? ORDER BY id DESC", (incident_id,))]
+
+
+def _incident_timeline(conn, incident_id, created_at):
+    """The status-change timeline reads from audit_log rather than a
+    dedicated history table - api_update_incident already writes one row
+    there per change (action='incident.status_change'). The incident's
+    own creation is added as the timeline's oldest entry, since it always
+    predates any status change and audit.for_target only has rows from
+    that point onward."""
+    timeline = [{
+        "ts": time.strftime("%d %b %H:%M:%S", time.localtime(a["ts"])),
+        "detail": a["detail"],
+    } for a in audit.for_target(conn, str(incident_id))
+      if a["action"] == "incident.status_change"]
+    timeline.append({
+        "ts": time.strftime("%d %b %H:%M:%S", time.localtime(created_at)),
+        "detail": "raised as new",
+    })
+    return timeline
+
+
+def _related_open_incidents(conn, device_id, exclude_incident_id, now):
+    """Other still-open incidents on the same device - NOT a cross-signal
+    campaign. Step 2's D7 (cross-signal campaign correlation + MITRE
+    ATT&CK linking) hasn't been built; this is the honest, minimal slice
+    step 6.4 itself needs, labelled as such in the template rather than
+    implying a campaign exists."""
+    return [{
+        "id": r["id"], "title": r["title"], "severity": r["severity"],
+        "signal_type": r["signal_type"],
+        "last_seen": _age(now - r["last_seen"]),
+    } for r in conn.execute(
+        "SELECT * FROM incidents WHERE device_id=? AND id!=? AND status IN ('new','investigating')"
+        " ORDER BY last_seen DESC LIMIT 10", (device_id, exclude_incident_id))]
+
+
 @app.get("/api/devices")
 def api_devices():
     c = db()
@@ -858,13 +921,33 @@ def api_update_incident(incident_id: int, body: IncidentUpdate):
     if body.status not in INCIDENT_STATUSES:
         raise HTTPException(400, "status must be one of %s" % (INCIDENT_STATUSES,))
     c = db()
-    if c.execute("SELECT 1 FROM incidents WHERE id=?", (incident_id,)).fetchone() is None:
+    row = c.execute("SELECT status FROM incidents WHERE id=?", (incident_id,)).fetchone()
+    if row is None:
         raise HTTPException(404, "incident not found")
+    before = row["status"]
     now = time.time()
     c.execute("UPDATE incidents SET status=?, updated_at=? WHERE id=?",
               (body.status, now, incident_id))
     c.commit()
+    audit.log(c, CONSOLE_USERNAME, "incident.status_change", target=str(incident_id),
+              detail="%s -> %s" % (before, body.status))
     return {"id": incident_id, "status": body.status}
+
+
+@app.post("/api/incidents/{incident_id}/notes")
+def api_add_incident_note(incident_id: int, body: IncidentNote):
+    note = body.note.strip()
+    if not note:
+        raise HTTPException(400, "note must not be empty")
+    c = db()
+    if c.execute("SELECT 1 FROM incidents WHERE id=?", (incident_id,)).fetchone() is None:
+        raise HTTPException(404, "incident not found")
+    now = time.time()
+    c.execute("INSERT INTO incident_notes (incident_id, ts, author, note) VALUES (?, ?, ?, ?)",
+              (incident_id, now, CONSOLE_USERNAME, note))
+    c.commit()
+    audit.log(c, CONSOLE_USERNAME, "incident.note_added", target=str(incident_id), detail=note)
+    return {"ok": True}
 
 
 @app.patch("/api/devices/{device_id}")
@@ -2153,6 +2236,11 @@ def page_incident_detail(request: Request, incident_id: int):
         " JOIN events e ON e.id = ie.event_id WHERE ie.incident_id=?"
         " ORDER BY e.ts", (incident_id,))]
 
+    top_domain = _top_evidence_domain(i["signal_type"], evidence)
+    notes = _incident_notes(c, incident_id)
+    timeline = _incident_timeline(c, incident_id, i["created_at"])
+    related = _related_open_incidents(c, i["device_id"], incident_id, now) if i["device_id"] else []
+
     return templates.TemplateResponse("incident_detail.html", {
         "request": request, "active": "incidents", "title": i["title"],
         "incident": {
@@ -2163,5 +2251,9 @@ def page_incident_detail(request: Request, incident_id: int):
             "last_seen": time.strftime("%d %b %H:%M:%S", time.localtime(i["last_seen"])),
             "age": _age(now - i["last_seen"]),
         },
-        "device": dev, "evidence": evidence,
+        "device": dev, "evidence": evidence, "notes": notes, "timeline": timeline,
+        "related": related,
+        "attack": playbooks.get_attack(i["signal_type"]),
+        "playbook": playbooks.get_playbook(i["signal_type"]),
+        "top_domain": top_domain,
     })

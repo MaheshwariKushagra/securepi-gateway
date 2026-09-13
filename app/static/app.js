@@ -606,6 +606,55 @@ function renderIncidents() {
     }).join("");
 }
 
+function initIncidentBlockDomain() {
+    const btn = $("#incidentBlockDomain");
+    if (!btn) return;
+    const deviceId = btn.dataset.deviceId;
+    const domain = btn.dataset.domain;
+
+    btn.addEventListener("click", async () => {
+        const reason = prompt(`Why block "${domain}" for this device?`, "blocked from an incident's playbook action");
+        if (reason === null || !reason.trim()) return;  // cancelled, or empty
+        try {
+            const res = await fetch(`/api/devices/${deviceId}/filtering/block`, {
+                method: "POST", headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ domain, reason: reason.trim() }),
+            });
+            if (!res.ok) throw new Error("request failed");
+            toast("Domain blocked for this device", domain, "ok");
+            btn.disabled = true;
+            btn.textContent = `Blocked ${domain}`;
+        } catch (err) {
+            toast("Could not block domain", "AdGuard Home did not accept the change.", "high");
+        }
+    });
+}
+
+function initIncidentNotes() {
+    const btn = $("#incidentNoteSave");
+    const input = $("#incidentNoteInput");
+    if (!btn || !input) return;
+    const incidentId = btn.dataset.incidentId;
+
+    const submit = async () => {
+        const note = input.value.trim();
+        if (!note) return;
+        try {
+            const res = await fetch(`/api/incidents/${incidentId}/notes`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ note }),
+            });
+            if (!res.ok) throw new Error("request failed");
+            location.reload();
+        } catch (err) {
+            toast("Could not add note", "The note was not saved.", "high");
+        }
+    };
+    btn.addEventListener("click", submit);
+    input.addEventListener("keydown", (e) => { if (e.key === "Enter") submit(); });
+}
+
 async function updateIncidentStatus(id, status) {
     try {
         const res = await fetch(`/api/incidents/${id}`, {
@@ -2070,6 +2119,8 @@ document.addEventListener("DOMContentLoaded", () => {
     initDpiOnboarding();
     initDpiRules();
     initSettings();
+    initIncidentNotes();
+    initIncidentBlockDomain();
 
     // Global row-action delegate: works across incidents list + detail page.
     // Registered on the capture phase because row markup calls

@@ -286,4 +286,21 @@ CREATE TABLE IF NOT EXISTS audit_log (
 
 CREATE INDEX IF NOT EXISTS idx_audit_log_ts ON audit_log(ts);
 
+-- ----------------------------------------------------------- incident_notes --
+-- Free-text analyst notes on an incident (ENHANCEMENT-PLAN.md step 6.4,
+-- "Incident workbench"). Status changes are NOT stored here - they already
+-- go through audit_log (action='incident.status_change', target=the
+-- incident id as text), which is what the workbench's status-change
+-- timeline reads from. This table is only for notes an operator writes
+-- by hand, e.g. "confirmed this is the new smart TV, false positive".
+CREATE TABLE IF NOT EXISTS incident_notes (
+    id          INTEGER PRIMARY KEY,
+    incident_id INTEGER NOT NULL REFERENCES incidents(id),
+    ts          REAL NOT NULL,
+    author      TEXT NOT NULL,
+    note        TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_incident_notes_incident ON incident_notes(incident_id);
+
 INSERT OR IGNORE INTO ingest_stats (id) VALUES (1);

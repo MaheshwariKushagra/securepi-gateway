@@ -520,7 +520,7 @@ Never cut Stage 2, steps 5.2, 5.3, 5.7, or evaluation items 7.2–7.5.
 | Stage | Steps | Status |
 |---|---|---|
 | 0 | 0.1 · 0.2 · 0.3 | Not started |
-| 1 | 1.1 · 1.2 · 1.3 · 1.4 · 1.5 · 1.6 · 1.7 · **1.8 done** (out of order - see note below) | 1.8 done, rest not started |
+| 1 | **1.1 done** · 1.2 · 1.3 · 1.4 · 1.5 · 1.6 · 1.7 · **1.8 done** (1.8 out of order - see note below) | 1.1, 1.8 done, rest not started |
 | 2 | 2.1 · 2.2 · 2.3 · 2.4 · 2.5 · 2.6 · 2.7 · 2.8 | Not started |
 | 3 | 3.1 · 3.2 · 3.3 · 3.4 · 3.5 · 3.6 | Not started |
 | 4 | 4.1 · 4.2 · 4.3 · 4.4 · 4.5 | Not started |
@@ -2181,3 +2181,77 @@ requires; a full one-by-one interaction pass (clicking every button, submitting
 every form) at that width was not separately repeated, since the layout-level
 fixes here don't change any endpoint or JS behavior already covered by
 each step's own functional smoke tests and live verification.
+
+## Stage 1 progress notes
+
+**Note on step 1.1 (test suite), implemented locally.** Before writing
+anything, checked how much of this step's own scope Stage 6's work had
+already covered out of order - it hadn't covered the test suite itself
+at all. This session's many per-step "smoke tests" all lived in a
+session-scoped scratchpad directory outside the repository, re-run
+manually each time; nothing was committed, and `make test` never grew
+beyond step 5.9's DPI addon tests. This step is what makes that
+permanent: two new files under `tests/`, both real, committed,
+`unittest`-discoverable code, not a description of testing.
+
+- **`tests/fixtures.py`** - the temp-DB helper (`temp_db()`, applying the
+  real `schema.sql` to a fresh in-memory SQLite connection every time)
+  plus small row-insertion helpers (`insert_device`, `insert_flow`,
+  `insert_dns_query`, `insert_dpi_event`, `insert_device_hourly`) for
+  DB-level signal tests, and synthetic eve.json/AdGuard-querylog
+  generators (`make_eve_flow`, `make_eve_dns_query`, `make_eve_alert`,
+  `make_agh_entry`) for parsing-level tests - both halves of what this
+  step's own row asks for. No real device data anywhere in either: every
+  IP is a private-range or RFC 5737 documentation address, every domain
+  an obviously-fake example.com-style name.
+- **`tests/test_correlation.py`** - positive, negative and (where
+  applicable) dedup tests for all six of `correlation.py`'s current
+  signals (port_scan, brute_force, malicious_domain, new_device,
+  adblock_effectiveness, behavioral_baseline), run against a real temp
+  database rather than mocks, plus dedicated tests for `raise_incident`'s
+  own dedup-window and outside-window behaviour.
+- **`tests/test_ingest.py`** - tests for `flatten_suricata`/`flatten_agh`
+  against the synthetic eve/querylog fixtures, covering the PARSING layer
+  specifically - a renamed or reshaped upstream JSON field would break
+  here without ever reaching a signal, a different failure mode than the
+  DB-level tests above.
+- **The malicious_domain tests deliberately document CURRENT behaviour**
+  (thresholding on raw blocked-query count), not finding G3's fix
+  (distinct-domain counting) - G3 is step 1.6's job, and it will update
+  these tests alongside that fix. Writing a test for not-yet-fixed
+  behaviour here would have made `make test` red, directly against this
+  step's own exit criterion.
+- **Regression tests for the two historical bugs G7/1.1 refer to** -
+  both already fixed before this step existed (see
+  `EVALUATION-RESULTS.md` and the comments already in `correlation.py`),
+  now permanently guarded:
+  - `new_device_signal`'s old persisted-watermark bug (a device too new
+    to qualify on one engine cycle could never match again, because the
+    watermark advanced past it regardless) - `test_trailing_window_regression_not_a_persisted_watermark`
+    simulates two cycles with a mocked clock and asserts the device
+    fires on the second one.
+  - `raise_incident`'s old cumulative evidence-count bug (a signal
+    re-confirming the same events across several cycles reported far
+    more "evidence" than actually existed) - `test_evidence_count_regression_not_cumulative`
+    calls it seven times with the same eight event ids and asserts the
+    count stays 8, not 56.
+- **The exit criterion - "`make test` green. Reintroducing either old
+  bug fails a test" - was verified directly, not assumed:** each fix was
+  temporarily reverted to its exact documented old behaviour (the old
+  cumulative `UPDATE ... SET evidence_count = evidence_count + ?`, and
+  the old `get_window_start`/`set_window_start`-gated query), the
+  corresponding regression test was confirmed to fail
+  (`56 != 8` and `0 != 1` respectively), and the file was then reverted
+  to a byte-identical `git diff` before moving on. This is the same
+  standard applied to every other step this session - a claim about
+  test coverage is checked, not stated.
+- The Makefile's own header comment was updated to describe the real,
+  current scope (68 tests: DPI addon + six correlation signals +
+  ingest parsing) rather than the old "not yet the full project test
+  suite" placeholder.
+
+No gateway deployment for this step - `tests/` and the `Makefile` are
+Mac-side developer tooling, never installed on the gateway, matching
+the plan's own §7 verification approach ("On the Mac: `make test`
+covers signals..."). Full session regression re-run clean: `make test`
+(68 tests) and all 30 scratchpad smoke test files from Stage 5/6.

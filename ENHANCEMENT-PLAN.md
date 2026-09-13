@@ -1546,4 +1546,53 @@ produces no row rather than a zero row; **"harness bulk upload fires"**
 does not fire) as two literal, named test cases; a device below the
 7-sample threshold is never judged even against a huge spike; amounts
 below the 5 MB floor never fire regardless of relative jump; and the
-console endpoint's learning/normal/flagged states. Not yet deployed.
+console endpoint's learning/normal/flagged states.
+
+**Deployed to the live gateway and verified the same day**, including an
+online SQLite backup taken first (`securepi.db.pre-6.1-migration-*.bak`,
+this session's first genuine schema migration against production since
+5.1's) and `.bak-6.1-*` copies of every replaced file. Migration order
+mattered here and was followed deliberately: `securepi-ingest` (the only
+process that calls `apply_migrations()`) was restarted and confirmed to
+have created `device_hourly` and its index **before** `securepi-engine`
+was restarted - `correlation.connect()` is a bare `sqlite3.connect()`
+with no migration logic of its own, so starting the engine first would
+have crashed `rollup.py`'s very first query against a table that didn't
+exist yet.
+
+- **The automatic engine-loop integration proved itself without being
+  asked to:** a manual `rollup.rollup_closed_hours()` invocation run
+  shortly after `securepi-engine`'s restart returned 0 new rows - not
+  because rollup was broken, but because the live engine's own 15-second
+  loop had already rolled up every closed hour on its own in the
+  ~30-60 seconds since restart. Checking `device_hourly` directly
+  confirmed **25 real rows for the two real devices**, with sensible
+  real numbers (e.g. one phone's real hourly download reaching 862 MB) -
+  a stronger proof than a manual one-off call would have been, since it
+  demonstrates the actual production wiring works unattended.
+- `correlation.run_all()` run by hand immediately after confirmed all
+  six signals execute cleanly against production, `behavioral_baseline_
+  signal` included, with zero exceptions and zero false positives on
+  real data.
+- `GET /api/devices/{id}/baseline` against both real phones correctly
+  read `learning: true, days_seen: 1.1` - an honest reflection of how
+  young this deployment actually is, not a synthetic success.
+- **The plan's exact "harness bulk upload fires" scenario was then
+  reproduced live against production**, on the test-harness device only:
+  10 days of ~2 MB/hour `device_hourly` history seeded directly, plus a
+  real 500 MB spike in the events table for the current hour.
+  `behavioral_baseline_signal` fired correctly (`z=595626.7` given how
+  extreme the seeded spike was), the resulting incident named the right
+  device, a sensible description, and `severity: medium`; the console's
+  `flagged` field flipped to `true` immediately. Notably, `learning`
+  stayed `true` on the same device throughout - correctly demonstrating
+  that the console badge's simpler days-since-first-seen check and the
+  signal's own precise per-hour-of-day sample gate are genuinely
+  independent, exactly as designed, rather than one silently standing in
+  for the other. The incident was marked resolved and every synthetic
+  row (`device_hourly` and the event) deleted; a follow-up query
+  confirmed zero residue and the endpoint read `learning: true, flagged:
+  false` again.
+- Journal clean across `securepi-ingest`, `securepi-engine` and
+  `securepi-web` throughout; the new baseline badge markup confirmed
+  present in the served device page HTML.

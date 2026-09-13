@@ -1111,10 +1111,14 @@ def api_rename_device(device_id: int, body: DeviceUpdate):
     if not name:
         raise HTTPException(400, "friendly_name must not be empty")
     c = db()
-    if c.execute("SELECT 1 FROM devices WHERE id=?", (device_id,)).fetchone() is None:
+    row = c.execute("SELECT friendly_name, hostname FROM devices WHERE id=?", (device_id,)).fetchone()
+    if row is None:
         raise HTTPException(404, "device not found")
+    before = row["friendly_name"] or row["hostname"] or ("device %d" % device_id)
     c.execute("UPDATE devices SET friendly_name=? WHERE id=?", (name, device_id))
     c.commit()
+    audit.log(c, CONSOLE_USERNAME, "device.rename", target=str(device_id),
+              detail="%s -> %s" % (before, name))
     return {"id": device_id, "friendly_name": name}
 
 
@@ -1146,6 +1150,7 @@ def api_filtering_set_enabled(body: FilteringToggle):
         adguard.set_filtering_enabled(body.enabled)
     except adguard.AdGuardError as e:
         raise HTTPException(502, str(e))
+    audit.log(db(), CONSOLE_USERNAME, "filtering.set_enabled", detail="enabled=%s" % body.enabled)
     return {"enabled": body.enabled}
 
 
@@ -1158,6 +1163,7 @@ def api_filtering_add_list(body: BlocklistAdd):
         adguard.add_blocklist(name, url)
     except adguard.AdGuardError as e:
         raise HTTPException(502, str(e))
+    audit.log(db(), CONSOLE_USERNAME, "filtering.add_list", target=url, detail=name)
     return {"ok": True}
 
 
@@ -1167,6 +1173,8 @@ def api_filtering_toggle_list(body: BlocklistToggle):
         adguard.set_blocklist_enabled(body.url, body.enabled)
     except adguard.AdGuardError as e:
         raise HTTPException(502, str(e))
+    audit.log(db(), CONSOLE_USERNAME, "filtering.toggle_list", target=body.url,
+              detail="enabled=%s" % body.enabled)
     return {"url": body.url, "enabled": body.enabled}
 
 
@@ -1176,6 +1184,7 @@ def api_filtering_remove_list(body: BlocklistUrl):
         adguard.remove_blocklist(body.url)
     except adguard.AdGuardError as e:
         raise HTTPException(502, str(e))
+    audit.log(db(), CONSOLE_USERNAME, "filtering.remove_list", target=body.url)
     return {"ok": True}
 
 
@@ -1190,6 +1199,7 @@ def api_filtering_add_rule(body: RuleAdd):
         adguard.add_user_rule(domain, body.action)
     except adguard.AdGuardError as e:
         raise HTTPException(502, str(e))
+    audit.log(db(), CONSOLE_USERNAME, "filtering.add_rule", target=domain, detail=body.action)
     return {"ok": True}
 
 
@@ -1199,6 +1209,7 @@ def api_filtering_remove_rule(body: RuleRemove):
         adguard.remove_user_rule(body.rule)
     except adguard.AdGuardError as e:
         raise HTTPException(502, str(e))
+    audit.log(db(), CONSOLE_USERNAME, "filtering.remove_rule", target=body.rule)
     return {"ok": True}
 
 
@@ -1258,6 +1269,8 @@ def api_device_filtering_set(device_id: int, body: DeviceFilterUpdate):
         adguard.set_client_filtering(identifiers, device_label(d), body.enabled)
     except adguard.AdGuardError as e:
         raise HTTPException(502, str(e))
+    audit.log(c, CONSOLE_USERNAME, "device.filtering_set", target=str(device_id),
+              detail="enabled=%s" % body.enabled)
     return {"id": device_id, "filtering_enabled": body.enabled}
 
 
@@ -1892,6 +1905,8 @@ def api_device_dpi_set(device_id: int, body: DpiEnrollRequest):
             dpi_enroll.unenroll(ip_row["ip"])
     except dpi_enroll.DpiEnrollError as e:
         raise HTTPException(502, str(e))
+    audit.log(c, CONSOLE_USERNAME, "device.dpi_set", target=str(device_id),
+              detail="enrolled=%s%s" % (body.enrolled, " for %dh" % body.hours if body.enrolled else ""))
     return {"id": device_id, "enrolled": body.enrolled, "ip": ip_row["ip"],
             "expires_in_s": body.hours * 3600 if body.enrolled else None}
 
@@ -2263,6 +2278,8 @@ def api_device_quarantine_set(device_id: int, body: QuarantineUpdate):
             quarantine.release(ip_row["ip"])
     except quarantine.QuarantineError as e:
         raise HTTPException(502, str(e))
+    audit.log(c, CONSOLE_USERNAME, "device.quarantine_set", target=str(device_id),
+              detail="quarantined=%s" % body.quarantined)
     return {"id": device_id, "quarantined": body.quarantined, "ip": ip_row["ip"]}
 
 

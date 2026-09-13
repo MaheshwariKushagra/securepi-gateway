@@ -477,7 +477,7 @@ Never cut Stage 2, steps 5.2, 5.3, 5.7, or evaluation items 7.2–7.5.
 | 2 | 2.1 · 2.2 · 2.3 · 2.4 · 2.5 · 2.6 · 2.7 · 2.8 | Not started |
 | 3 | 3.1 · 3.2 · 3.3 · 3.4 · 3.5 · 3.6 | Not started |
 | 4 | 4.1 · 4.2 · 4.3 · 4.4 · 4.5 | Not started |
-| 5 | **5.1 done, 5.2 done, 5.3 done, 5.4 done, 5.5 done, 5.6 done, 5.7 done** (out of order) · 5.8 · 5.9 · 5.10 · (5.11) | 5.1–5.7 done, rest not started |
+| 5 | **5.1 done, 5.2 done, 5.3 done, 5.4 done, 5.5 done, 5.6 done, 5.7 done, 5.8 done** (out of order) · 5.9 · 5.10 · (5.11) | 5.1–5.8 done, rest not started |
 | 6 | 6.1 · 6.2 · 6.3 · 6.4 · 6.5 · 6.6 · 6.7 | Not started |
 | 7 | 7.0 – 7.9 | Not started |
 | 8 | 8.1 · 8.2 · 8.3 · 8.4 | Not started |
@@ -1010,3 +1010,46 @@ automated check. This deploy proved the *decision logic* and the
 *fail-safe machinery* both work correctly against production; it did
 not and could not prove the *enforcement path* does, for the reasons
 explained above.
+
+**Note on step 5.8 (pinning-aware auto-passthrough), implemented locally,
+not yet deployed.** Builds directly on 5.6's `tls_failed_client` hook:
+`dpi/securepi_adfilter.py` now keeps two small in-process dicts on the
+addon instance - `_pin_fail_count` and `_pin_bypass_until`, both keyed on
+`(src_ip, sni)` - rather than a database table, since this is consulted
+on every single TLS handshake decision and only ever holds entries for
+the tiny number of (enrolled device, DECRYPT_SUFFIXES host) pairs that
+could ever reach this code at all. State resets on a `securepi-dpi`
+restart; documented as an accepted, honest trade-off rather than
+something worth persisting.
+
+After `PIN_FAILURE_THRESHOLD` (3, a starting value - no Settings page
+exists yet to tune it, see finding C5) consecutive handshake failures for
+the exact same pair, `tls_clienthello` starts passing that pair through
+undecrypted for `PIN_BYPASS_HOURS` (24, from the plan) instead of
+attempting to decrypt it again. The failure counter resets to zero the
+moment a bypass is set, so a fresh streak is needed after the bypass
+naturally expires - this project doesn't try to detect whether the
+underlying pinning is still happening versus attempt it again "just in
+case"; 24 hours of ad-supported-but-working is the accepted trade-off.
+
+Reuses the existing Tier 2 telemetry pipeline with no schema change: a
+new `pin_bypass` `dpi_action` value, with `dpi_ads_removed` repurposed to
+carry the bypass's own expiry epoch (documented in `_log_event`'s
+docstring) rather than a count - the same reuse-a-nullable-column
+reasoning `schema.sql`'s header already gives for `tls_sni`/
+`block_reason`. New `GET /api/filtering/dpi/pinned` surfaces currently-
+active bypasses (grouped by device+host, filtered to `expires_at > now`)
+as the console's "App pins its certificate - bypassed" list on the Tier 2
+card; `_tier2_breakdown()` picks up the new action value automatically
+for the analytics and per-device privacy panels.
+
+Smoke-tested locally against the real addon file (mitmproxy stubbed out
+for the test only, as in 5.7's test): the first attempt on a pair still
+tries to decrypt; staying one failure below the threshold keeps trying;
+reaching the threshold bypasses the very next attempt and resets the
+counter; **a different device hitting the same pinned host is
+unaffected** (the state is genuinely per-pair, not per-host); a
+non-allowlisted host is untouched by any of this; and an artificially
+expired bypass correctly stops applying. Also smoke-tested the new
+console endpoint's grouping and expiry filter, and that
+`_tier2_breakdown` reports the new counts. Not yet deployed.

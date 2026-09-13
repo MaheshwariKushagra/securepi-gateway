@@ -1880,6 +1880,38 @@ def api_settings_get():
     return {"settings": settings.all_settings(db())}
 
 
+@app.post("/api/settings/password")
+def api_settings_password(body: PasswordChange):
+    """Change the console's Basic Auth password. There is one shared
+    account today (finding C7 - no sessions, no per-user accounts yet),
+    so this changes the one password everyone uses. Never logs the
+    actual password value, before or after, into the audit trail or the
+    journal - only that a change happened.
+
+    Declared here, before the /api/settings/{key} route below, on
+    purpose: Starlette matches routes in declaration order, and a
+    parameterized route with the same method and segment count would
+    otherwise swallow every request to this literal path with key=
+    "password", routing it through SettingUpdate's (value, reason)
+    body instead of PasswordChange's - which is exactly what happened
+    until this was caught during 6.3's live verification."""
+    try:
+        current = _console_password()
+    except FileNotFoundError:
+        raise HTTPException(500, "console password file is missing")
+    if not secrets.compare_digest(body.current_password, current):
+        raise HTTPException(400, "current password is incorrect")
+    if len(body.new_password) < 12:
+        raise HTTPException(400, "new password must be at least 12 characters")
+    if body.new_password == body.current_password:
+        raise HTTPException(400, "new password must be different from the current one")
+    with open(CONSOLE_PASSWORD_FILE, "w") as f:
+        f.write(body.new_password)
+    audit.log(db(), CONSOLE_USERNAME, "settings.password_change", detail="password changed (value not logged)")
+    print("settings: console password changed", flush=True)
+    return {"ok": True}
+
+
 @app.post("/api/settings/{key}")
 def api_settings_set(key: str, body: SettingUpdate):
     if not body.reason.strip():
@@ -1936,30 +1968,6 @@ def api_settings_channels():
         "note": "No notification channels are configured yet - incidents are visible in the "
                 "console and the systemd journal only. This is Stage 4's R3, not yet built.",
     }
-
-
-@app.post("/api/settings/password")
-def api_settings_password(body: PasswordChange):
-    """Change the console's Basic Auth password. There is one shared
-    account today (finding C7 - no sessions, no per-user accounts yet),
-    so this changes the one password everyone uses. Never logs the
-    actual password value, before or after, into the audit trail or the
-    journal - only that a change happened."""
-    try:
-        current = _console_password()
-    except FileNotFoundError:
-        raise HTTPException(500, "console password file is missing")
-    if not secrets.compare_digest(body.current_password, current):
-        raise HTTPException(400, "current password is incorrect")
-    if len(body.new_password) < 12:
-        raise HTTPException(400, "new password must be at least 12 characters")
-    if body.new_password == body.current_password:
-        raise HTTPException(400, "new password must be different from the current one")
-    with open(CONSOLE_PASSWORD_FILE, "w") as f:
-        f.write(body.new_password)
-    audit.log(db(), CONSOLE_USERNAME, "settings.password_change", detail="password changed (value not logged)")
-    print("settings: console password changed", flush=True)
-    return {"ok": True}
 
 
 @app.get("/api/audit")

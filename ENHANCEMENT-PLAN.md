@@ -775,4 +775,60 @@ Smoke-tested locally (mocked `subprocess.run`/`nft`, an in-memory DB):
 element shapes, and specifically that `enroll()` issues a delete before
 its add; CA info parsing for both the success and "certificate not
 found" cases; the trust-check flipping from "trusted" to "check_ca" when
-a later `tls_failed` event is added. Not yet deployed.
+a later `tls_failed` event is added.
+
+**Deployed to the live gateway and verified the same day - and this is
+the step where live verification caught two real bugs neither the local
+smoke tests nor the earlier live nftables probe had surfaced.**
+`.bak-5.6-*` copies of `/etc/nftables.conf`, `webapp.py`, both templates,
+`app.js` and the DPI addon were taken first; `nft -c -f` checked the new
+nftables config in the actual target path (not just a throwaway table)
+before reloading; both real runtime sets (`enrolled`, `quarantine`) were
+confirmed empty immediately before the reload, so there was nothing to
+capture/restore this time. `securepi-web` and `securepi-dpi` both
+restarted cleanly (mitmproxy's own script auto-reload had in fact already
+picked up the new addon file before the explicit restart even ran).
+
+**Bug found live #1 - `_ca_info()`'s fingerprint was silently never
+populated.** `curl`ing `/api/filtering/ca` came back with every other
+field but no `fingerprint_sha256` at all. Running the same `openssl x509
+-fingerprint -sha256` command directly on the gateway showed why: the
+real output line is `sha256 Fingerprint=...` (lowercase "sha256"), not
+`SHA256 Fingerprint=...` as assumed from the flag's own name. Fixed to a
+case-insensitive match; redeployed just `webapp.py` and re-curled - the
+fingerprint now renders. Also confirmed live: the real CA is valid for
+10 years (2026-2036), not a short-lived one - consistent with 5.6d's
+rotation being out of scope, not a new problem this uncovered.
+
+**Bug found live #2 - `unenroll()`'s "does not exist" check never
+matched.** The very first enroll attempt against the test-harness device
+failed outright, because `enroll()` calls `unenroll()` first (see the
+docstring on why) and that unconditionally raised. The real nft error for
+deleting a non-existent element from THIS set is `"Error: Could not
+process rule: No such file or directory"` - confirmed by deliberately
+provoking the same case against `quarantine.py`'s own set for comparison,
+which instead prints `"Error: element does not exist"`. **The two sets
+give genuinely different error text for the identical situation**,
+because `quarantine` has `flags interval` and `enrolled` has `flags
+timeout` - copying quarantine.py's exact string was not safe to assume.
+Fixed with a small tuple of known "not found" markers instead of one
+hardcoded string, redeployed, and confirmed the full cycle end to end
+against the test-harness device only (never a real phone): enroll at 24h
+→ nft shows `timeout: 86400` → re-enroll at 1h → nft shows the timeout
+actually replaced with `3600`, proving the delete-then-add fix genuinely
+resets the clock rather than merely not-erroring → unenroll → nft set
+empty again → a second unenroll on the same (already-unenrolled) device
+succeeds as a no-op rather than raising.
+
+Also verified: the onboarding card (`dpiCaInfo`/`dpiEnrolledList`) and
+the device-page toggle (`deviceDpi`) both present in the actually served
+HTML; no errors in either service's journal across the whole test.
+
+**Still not verified live: the `tls_failed_client` hook and the CA-trust
+badge it feeds.** Nothing in this test cycle produced a real failed TLS
+handshake (the test-harness device was enrolled but never actually
+initiated HTTPS traffic through the proxy). Worth checking deliberately -
+enroll a device without installing the CA first and confirm a `tls_failed`
+row appears and the badge on `/api/filtering/dpi/enrolled` turns
+"check_ca" - on the test-harness device or a spare device, never a real
+phone as the first check.

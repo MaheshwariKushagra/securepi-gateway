@@ -38,6 +38,24 @@ import correlation  # noqa: E402
 import settings  # noqa: E402
 
 
+class PortScanNamingTests(unittest.TestCase):
+    """Regression guard for finding G1: this signal detects many ports on
+    ONE host, which is a VERTICAL scan by standard convention, not
+    "horizontal" as an earlier comment mislabelled it. A HORIZONTAL scan
+    (one port across many hosts) is a different, not-yet-built signal
+    (ENHANCEMENT-PLAN.md step 2.1). No behavior changed for this finding -
+    only the source's own naming - so this test reads correlation.py's
+    source text directly rather than asserting on detection behavior."""
+
+    def test_source_no_longer_calls_this_signal_horizontal(self):
+        import os
+        path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "app", "correlation.py")
+        with open(path) as fh:
+            source = fh.read()
+        self.assertNotIn("horizontal port scan", source.lower())
+        self.assertIn("vertical port scan", source.lower())
+
+
 class PortScanSignalTests(unittest.TestCase):
     def test_fires_on_enough_distinct_ports_to_one_host(self):
         conn = fixtures.temp_db()
@@ -118,14 +136,18 @@ class BruteForceSignalTests(unittest.TestCase):
 
 
 class MaliciousDomainSignalTests(unittest.TestCase):
-    """See the module docstring: this documents CURRENT (raw-count)
-    behaviour, not G3's fix - that's step 1.6."""
+    """Tests the FIXED behaviour: the threshold applies to distinct
+    blocked domains, not raw blocked-lookup count (ENHANCEMENT-PLAN.md
+    finding G3, fixed in step 1.6). See test_g3_regression_repeated_lookups_to_one_domain_do_not_fire
+    below for the exact real-world false positive this fix addresses -
+    EVALUATION-RESULTS.md documents it firing on normal Android ad-SDK
+    traffic that retries the same domain rapidly."""
 
-    def test_fires_on_enough_blocked_lookups(self):
+    def test_fires_on_enough_distinct_blocked_domains(self):
         conn = fixtures.temp_db()
         fixtures.insert_device(conn, 1)
         now = time.time()
-        for i in range(15):  # meets the default threshold
+        for i in range(15):  # 15 distinct domains, meets the default threshold
             fixtures.insert_dns_query(conn, 1, "ads%d.example.com" % i, now - 5, blocked=True)
         self.assertEqual(correlation.malicious_domain_signal(conn), 1)
 
@@ -136,6 +158,21 @@ class MaliciousDomainSignalTests(unittest.TestCase):
         for i in range(5):
             fixtures.insert_dns_query(conn, 1, "ads%d.example.com" % i, now - 5, blocked=True)
         self.assertEqual(correlation.malicious_domain_signal(conn), 0)
+
+    def test_g3_regression_repeated_lookups_to_one_domain_do_not_fire(self):
+        """The exact real false positive G3 describes: many blocked
+        lookups (well above the threshold as a raw count), but all to
+        the SAME one or two domains - normal ad-SDK retry behaviour, not
+        a device probing many different disallowed destinations. Must
+        NOT fire, even though the OLD (buggy) raw-count logic would have."""
+        conn = fixtures.temp_db()
+        fixtures.insert_device(conn, 1)
+        now = time.time()
+        for i in range(40):  # 40 blocked lookups, but only 2 distinct domains
+            domain = "ads.example.com" if i % 2 == 0 else "tracker.example.com"
+            fixtures.insert_dns_query(conn, 1, domain, now - 5, blocked=True)
+        self.assertEqual(correlation.malicious_domain_signal(conn), 0,
+                          "high raw count against only 2 distinct domains must not fire")
 
     def test_allowed_queries_do_not_count(self):
         conn = fixtures.temp_db()
@@ -295,6 +332,48 @@ class RaiseIncidentDedupAndEvidenceTests(unittest.TestCase):
         rows = conn.execute("SELECT * FROM incidents WHERE device_id=1").fetchall()
         self.assertEqual(len(rows), 1)
         self.assertEqual(rows[0]["description"], "d2")  # the later call's description wins
+
+    def test_g2_regression_merges_into_an_investigating_incident_too(self):
+        """Regression test for finding G2: the old code only merged into
+        an incident with status 'new', so an operator marking something
+        "investigating" made the very next firing open a DUPLICATE
+        incident instead of extending the one already being looked at."""
+        conn = fixtures.temp_db()
+        fixtures.insert_device(conn, 1)
+        now = time.time()
+        eids = self._insert_events(conn, 1, 3, now - 100)
+        incident_id = correlation.raise_incident(
+            conn, 1, "port_scan", "high", "t1", "d1", now - 100, now - 100, eids)
+        conn.execute("UPDATE incidents SET status='investigating' WHERE id=?", (incident_id,))
+        conn.commit()
+
+        correlation.raise_incident(conn, 1, "port_scan", "high", "t2", "d2", now - 90, now - 90, eids)
+
+        rows = conn.execute("SELECT * FROM incidents WHERE device_id=1").fetchall()
+        self.assertEqual(len(rows), 1, "must extend the investigating incident, not open a duplicate")
+        self.assertEqual(rows[0]["status"], "investigating", "merging must not silently revert the status")
+        self.assertEqual(rows[0]["description"], "d2")
+
+    def test_g2_does_not_merge_into_a_resolved_incident(self):
+        """The other half of G2's fix: 'resolved' and 'false_positive'
+        are a genuine operator verdict, so a fresh detection after one
+        must start a NEW incident rather than silently reopening the old
+        one by merging into it."""
+        conn = fixtures.temp_db()
+        fixtures.insert_device(conn, 1)
+        now = time.time()
+        eids = self._insert_events(conn, 1, 3, now - 100)
+        incident_id = correlation.raise_incident(
+            conn, 1, "port_scan", "high", "t1", "d1", now - 100, now - 100, eids)
+        conn.execute("UPDATE incidents SET status='resolved' WHERE id=?", (incident_id,))
+        conn.commit()
+
+        correlation.raise_incident(conn, 1, "port_scan", "high", "t2", "d2", now - 90, now - 90, eids)
+
+        rows = conn.execute("SELECT * FROM incidents WHERE device_id=1 ORDER BY id").fetchall()
+        self.assertEqual(len(rows), 2, "a resolved incident must not be silently reopened by a merge")
+        self.assertEqual(rows[0]["status"], "resolved")
+        self.assertEqual(rows[1]["status"], "new")
 
     def test_outside_dedup_window_creates_a_separate_incident(self):
         conn = fixtures.temp_db()

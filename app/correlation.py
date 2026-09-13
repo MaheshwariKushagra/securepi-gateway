@@ -87,11 +87,22 @@ def raise_incident(conn, device_id, signal_type, severity, title, description,
     This dedup step is where the alert-to-incident reduction actually happens:
     without it, a signal that fires once per cycle while a scan is in progress
     would produce one incident per cycle instead of one incident per scan.
+
+    Merges into an incident with status 'new' OR 'investigating' - an
+    operator marking something "investigating" is not the same as closing
+    it out, and the pattern that raised it may well still be ongoing
+    (ENHANCEMENT-PLAN.md finding G2: the old code merged into 'new' only,
+    so marking an incident "investigating" made the very next firing open
+    a duplicate). Deliberately does NOT merge into 'resolved' or
+    'false_positive' - those are a genuine operator verdict, and silently
+    reopening one by merging a new detection into it would undermine that
+    decision; a fresh detection after a real resolution correctly starts
+    a new incident instead.
     """
     dedup_window = settings.get(conn, "dedup_window_seconds")
     existing = conn.execute(
         """SELECT id, evidence_count FROM incidents
-            WHERE device_id = ? AND signal_type = ? AND status = 'new'
+            WHERE device_id = ? AND signal_type = ? AND status IN ('new', 'investigating')
               AND last_seen >= ?
             ORDER BY last_seen DESC LIMIT 1""",
         (device_id, signal_type, last_seen - dedup_window),
@@ -138,12 +149,20 @@ def raise_incident(conn, device_id, signal_type, severity, title, description,
 
 
 # --------------------------------------------------------------------------
-# Signal 1: horizontal port scan
+# Signal 1: vertical port scan (ENHANCEMENT-PLAN.md finding G1)
 #
-# One device contacting many distinct destination ports. Grouped by
+# One device contacting many distinct destination PORTS on ONE host - a
+# vertical scan by standard convention (many ports, one host). Grouped by
 # (device, dest_ip) so a scan of one host is distinguished from a device that
 # legitimately uses many ports across many different destinations (normal
 # browsing does this constantly - one destination, one or two ports).
+#
+# This was previously mislabelled "horizontal" in this comment - the
+# opposite of standard usage, where a HORIZONTAL scan is one port probed
+# across many HOSTS (a network sweep), not what this signal detects. Fixed
+# as G1; no behavior changed, only the name - a network-sweep signal of
+# the standard-horizontal kind is a separate, not-yet-built item
+# (ENHANCEMENT-PLAN.md step 2.1).
 #
 # Threshold chosen deliberately low (8 ports / 5 minutes) because this signal
 # is meant to catch the slow scan that a per-packet IDS signature misses, not
@@ -272,14 +291,21 @@ def brute_force_signal(conn):
 # --------------------------------------------------------------------------
 # Signal 3: malicious/blocked-domain repeat offender
 #
-# Fires on a device whose DNS queries are being blocked repeatedly, not on
-# any single blocked lookup - one blocked ad domain is normal background
-# noise on any modern device; a device that is repeatedly trying blocked
-# domains, especially many DISTINCT ones, is the more interesting signal
-# (an app or process persistently trying to reach something disallowed).
+# Fires on a device whose DNS queries are being blocked across many
+# DISTINCT domains, not on raw blocked-lookup volume (ENHANCEMENT-PLAN.md
+# finding G3, and a real false positive documented in
+# EVALUATION-RESULTS.md: this signal used to threshold on raw count and
+# fired on normal Android ad-SDK traffic, which retries the SAME handful
+# of ad/tracker domains rapidly - high raw volume, low distinct-domain
+# count). One blocked ad domain, even hit repeatedly, is normal
+# background noise on any modern device; a device repeatedly trying many
+# DIFFERENT blocked domains is the more interesting signal (an app or
+# process persistently trying to reach a range of disallowed
+# destinations, not just retrying one ad slot).
 # --------------------------------------------------------------------------
 # Window and threshold both live in app/settings.py - see port_scan_signal's
-# own note above.
+# own note above. The threshold applies to DISTINCT domains (n_distinct
+# below), not raw lookup count (n_blocked) - see the fix note above.
 
 
 def malicious_domain_signal(conn):
@@ -301,7 +327,7 @@ def malicious_domain_signal(conn):
            AND device_id IS NOT NULL
            AND ts > ?
          GROUP BY device_id
-        HAVING n_blocked >= ?
+        HAVING n_distinct >= ?
         """,
         (since, threshold),
     ).fetchall()
@@ -323,8 +349,8 @@ def malicious_domain_signal(conn):
         ]
         raise_incident(
             conn, r["device_id"], "malicious_domain", "medium",
-            title="Repeated blocked-domain lookups (%d in %ds)"
-                  % (r["n_blocked"], window),
+            title="Blocked lookups against %d distinct domains (%ds window)"
+                  % (r["n_distinct"], window),
             description=(
                 "%d blocked DNS queries across %d distinct domains. Top domains: %s."
                 % (r["n_blocked"], r["n_distinct"],
@@ -584,16 +610,8 @@ if __name__ == "__main__":
     print(run_all(c))
 
 # --------------------------------------------------------------------------
-# Known edge case, found during testing: device_ips intervals for the SAME
-# address that overlap in time are not deterministically resolved by the
-# attribution query in registry.py (whichever row SQLite's correlated
-# subquery returns first wins, with no defined tie-break). This surfaced when
-# two manually-inserted test-harness mappings for the same test IP
-# overlapped; it cannot occur through the normal DHCP-driven path, because
-# touch_interval() always extends an existing interval for the same device
-# rather than opening a second one, and only opens a new interval when the
-# device differs. Recorded here as a known limitation rather than a bug in
-# the signals themselves - not fixed given the project timeline, but worth
-# a defensive tie-break (e.g. prefer the most recently opened interval) if
-# revisited.
+# Finding G6 (device_ips intervals for the same address that overlap in
+# time having no defined tie-break) is fixed - see registry.py's
+# attribute_events(), Pass 1's own comment, for the fix and the reasoning
+# behind it (prefer the most recently opened interval).
 # --------------------------------------------------------------------------

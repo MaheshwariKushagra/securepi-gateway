@@ -54,7 +54,9 @@ SETTINGS_SCHEMA = {
     "malicious_domain_threshold": {
         "default": 15, "type": int, "min": 2, "max": 1000,
         "label": "Malicious-domain threshold",
-        "help": "Blocked DNS lookups from one device, in the signal's window, before it's flagged.",
+        "help": "Distinct blocked domains from one device, in the signal's window, before it's "
+                "flagged - not raw lookup count, so retrying the same ad domain doesn't count "
+                "toward it (finding G3).",
     },
     "baseline_z_threshold": {
         "default": 3.0, "type": float, "min": 1.0, "max": 10.0,

@@ -221,7 +221,19 @@ def attribute_events(conn, limit=50000):
 
     # Pass 1 - the address interval actually contains the event's timestamp.
     # This is the only pass that is unambiguous when an address has been
-    # reused by different devices over time.
+    # reused by different devices over time - EXCEPT when two intervals for
+    # the SAME address genuinely overlap in time, which cannot happen through
+    # the normal DHCP-driven path (touch_interval() always extends an
+    # existing interval for the same device rather than opening a second
+    # one, and only opens a new interval when the device differs), but did
+    # surface once during testing from two manually-inserted test-harness
+    # mappings for the same test IP (ENHANCEMENT-PLAN.md finding G6). The
+    # tie-break below - prefer the most recently OPENED interval
+    # (`ORDER BY di.first_seen DESC`) - makes that case deterministic
+    # instead of depending on whichever row SQLite's query planner happens
+    # to return first with no ORDER BY, on the reasoning that a newer
+    # interval is more likely to reflect the address's current owner than a
+    # stale one that happens to still be open.
     conn.execute(
         """
         UPDATE events
@@ -230,6 +242,7 @@ def attribute_events(conn, limit=50000):
                 WHERE di.ip = events.src_ip
                   AND events.ts >= di.first_seen
                   AND events.ts <= di.last_seen + 300
+                ORDER BY di.first_seen DESC
                 LIMIT 1)
          WHERE device_id IS NULL AND src_ip LIKE ?
            AND EXISTS (

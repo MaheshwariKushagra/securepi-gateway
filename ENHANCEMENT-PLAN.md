@@ -525,7 +525,7 @@ Never cut Stage 2, steps 5.2, 5.3, 5.7, or evaluation items 7.2–7.5.
 | 3 | 3.1 · 3.2 · 3.3 · 3.4 · 3.5 · 3.6 | Not started |
 | 4 | 4.1 · 4.2 · 4.3 · 4.4 · 4.5 | Not started |
 | 5 | **5.1 done, 5.2 done, 5.3 done, 5.4 done, 5.5 done, 5.6 done, 5.7 done, 5.8 done, 5.9 done, 5.10 done, 5.11 done (Path 1 only)** (out of order) | 5.1–5.11 done - 5.11 scoped to Path 1 (cosmetic CSS), Path 2 (scriptlets) deferred and recorded |
-| 6 | **6.1 done** · 6.2 · 6.3 · 6.4 · 6.5 · 6.6 · 6.7 | 6.1 done, rest not started |
+| 6 | **6.1 done, 6.2 done** · 6.3 · 6.4 · 6.5 · 6.6 · 6.7 | 6.1–6.2 done, rest not started |
 | 7 | 7.0 – 7.9 | Not started |
 | 8 | 8.1 · 8.2 · 8.3 · 8.4 | Not started |
 
@@ -1596,3 +1596,84 @@ exist yet.
 - Journal clean across `securepi-ingest`, `securepi-engine` and
   `securepi-web` throughout; the new baseline badge markup confirmed
   present in the served device page HTML.
+
+**Note on step 6.2 (device fingerprinting), implemented locally.**
+Investigated what's actually available live before writing any
+classification code, which shaped the whole design:
+
+- **Suricata's DHCP logger was already enabled but in non-extended
+  mode** (`extended: no` in `/etc/suricata/suricata.yaml`, confirmed
+  live) - meaning option 55 (the Parameter Request List) was never being
+  logged at all, only a basic MAC→IP→hostname mapping AdGuard's own
+  lease table already gives us. Flipped to `extended: yes`, validated
+  with `suricata -T` before restarting, confirmed live (15 real,
+  pre-existing `event_type=dhcp` records already sat in `eve.json`, none
+  extended). **No device has renewed its DHCP lease since** - forcing
+  one would mean disconnecting a real device mid-session - so the new
+  `dhcp_params` column (schema.sql, `ingest.py`'s `flatten_suricata`)
+  has never actually been exercised against a real extended-mode event.
+  Written defensively (`.get()`, never assumes the field exists) so a
+  wrong guess at Suricata's field name is a silent no-op, not a crash -
+  confirm this the next time either real phone's lease renews.
+- **JA3 cannot honestly classify anything.** Checked the real database:
+  device 2 (a confirmed Android phone) has shown *five different*
+  frequently-recurring JA3 hashes, because JA3 varies per app/TLS
+  library making the connection, not per OS. Using one device's own
+  observed hashes as a "known Android" reference would be circular -
+  it would only ever match that same phone's own traffic mix, not
+  generalize to any other Android device. JA3 is therefore surfaced as
+  **evidence only** (`fingerprint.py`'s `_ja3_evidence`, weight 0 by
+  construction, proven by a dedicated smoke test), never a
+  classification vote.
+- **MAC OUI is deliberately a two-entry table** (Raspberry Pi Foundation
+  only). Getting an IEEE OUI hex prefix wrong from memory is actively
+  misleading in a way a wrong domain name isn't - this file explicitly
+  declines to guess Apple/Samsung/etc. OUI prefixes without a real
+  registry to check them against, documented in `fingerprint.py`'s own
+  docstring rather than shipped with quiet false confidence. It's also
+  moot for both real phones on this network specifically, since both
+  use randomized MACs - reported honestly as `"every MAC seen for this
+  device is randomized"` evidence, not silently skipped.
+- **Hostname patterns and connectivity-check domains carry the real
+  classification weight**, and were checked for generality before being
+  trusted: the two real devices' actual hostnames (`kushagra-s-a33`,
+  `divye-s-s21-fe`) are classified correctly by *generic* rules -
+  Samsung's own public Galaxy model-code convention (`-a[0-9]{2}`,
+  `-s2[0-9]`) - not by hardcoding either specific hostname, confirmed by
+  a smoke test that uses those exact real strings as input specifically
+  to prove the rules aren't overfit to them.
+- **Deliberately NOT built: Stage 4's filtering-profile auto-suggestion**
+  the plan also asks for (referencing step 4.3) - that profile system
+  (Standard/Kids/IoT-restricted/Unrestricted) doesn't exist at all yet.
+  What DOES exist and was wired up instead: auto-suggesting a **step
+  5.5 native-tracker profile** (`native_trackers.py`'s new
+  `suggest_profile()`), which is what the plan's own exit criterion
+  ("correct list suggestion shown") is actually asking about - "list"
+  meaning a tracker list, not a filtering profile.
+- **Deliberately NOT wired into identity resolution.** The plan calls
+  this a "second identity anchor" - built as exactly that (a second,
+  independently-computed, DISPLAY-ONLY signal an operator can see
+  alongside the MAC/hostname-based identity `registry.py` already
+  resolves), not as an input INTO that resolution logic. Making
+  fingerprint evidence actively influence which device a MAC gets
+  attributed to would be a real change to core identity resolution, out
+  of scope for a "second anchor" as described.
+- **Console:** `GET /api/devices/{id}/fingerprint` and a "Fingerprint"
+  section on the device page's existing Identity card (not a new card -
+  it belongs with the MAC/IP history it's meant to sit alongside),
+  showing category/vendor/OS/confidence chips, the full evidence list,
+  and - when a native-tracker profile match exists - an "Apply" button
+  that reuses step 5.5's real apply flow (sets the existing profile
+  dropdown and clicks its real Apply button, rather than a second,
+  parallel POST implementation) with a short poll-and-wait in case that
+  dropdown's own async load hasn't finished yet.
+
+Smoke-tested locally: the DHCP params flattening (including that a
+non-extended event, or any non-dhcp event, is completely unaffected);
+`classify()` against both real devices' actual hostnames (Samsung/
+Android/phone, correctly, via generic rules); a device with zero
+evidence honestly reporting `unknown` rather than a guess; a real OUI
+match; JA3 and DHCP-params evidence appearing but never voting;
+`suggest_profile()`'s vendor/os/no-match cases; and the console
+endpoint including its 404 and its profile-suggestion shape. Not yet
+deployed.

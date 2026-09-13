@@ -477,7 +477,7 @@ Never cut Stage 2, steps 5.2, 5.3, 5.7, or evaluation items 7.2–7.5.
 | 2 | 2.1 · 2.2 · 2.3 · 2.4 · 2.5 · 2.6 · 2.7 · 2.8 | Not started |
 | 3 | 3.1 · 3.2 · 3.3 · 3.4 · 3.5 · 3.6 | Not started |
 | 4 | 4.1 · 4.2 · 4.3 · 4.4 · 4.5 | Not started |
-| 5 | **5.1 done, 5.2 done, 5.3 done, 5.4 done, 5.5 done, 5.6 done, 5.7 done, 5.8 done** (out of order) · 5.9 · 5.10 · (5.11) | 5.1–5.8 done, rest not started |
+| 5 | **5.1 done, 5.2 done, 5.3 done, 5.4 done, 5.5 done, 5.6 done, 5.7 done, 5.8 done, 5.9 done** (out of order) · 5.10 · (5.11) | 5.1–5.9 done, rest not started |
 | 6 | 6.1 · 6.2 · 6.3 · 6.4 · 6.5 · 6.6 · 6.7 | Not started |
 | 7 | 7.0 – 7.9 | Not started |
 | 8 | 8.1 · 8.2 · 8.3 · 8.4 | Not started |
@@ -1080,3 +1080,72 @@ What was actually exercised against the live gateway:
   immediately afterward; a follow-up query confirmed zero residue.
 - Both Tier 2 UI cards' new markup (`dpiPinnedList`) confirmed present
   in the served HTML; journal clean across both services throughout.
+
+**Note on step 5.9 (rule-set refactor and tests), implemented locally,
+not yet deployed - built to the plan's exact scope, no more and no
+less.** The plan names four constants to move: `AD_FIELDS`,
+`AD_RENDERERS`, `BLOCKED_PATHS`, `DECRYPT_SUFFIXES`. Reading the addon
+file to do this turned up a fifth, `HTML_PLAYER_PAGES`, that was already
+dead code - declared but never once read anywhere in the addon's logic,
+predating this session entirely. Rather than migrate an unused field
+into a new console-editable file (where an operator would reasonably
+assume editing it does something), it was dropped rather than carried
+forward - a small, justified cleanup, not scope creep, and not one of
+the four things the plan actually asked to move.
+
+- New `dpi/adfilter_rules.py`: the shared default rule set and
+  `validate_rules()`, deliberately dependency-free (stdlib only) so it's
+  safe to import from both `dpi/securepi_adfilter.py` (needs mitmproxy,
+  runs in the DPI venv) and `app/webapp.py` (must NOT need mitmproxy).
+  Since this project's deployment has no shared site-packages between
+  those two environments, the one source file in git gets installed to
+  BOTH `/opt/securepi-dpi/adfilter_rules.py` and
+  `/opt/securepi/adfilter_rules.py` - documented explicitly in the
+  module's own docstring as a deliberate choice, not an oversight.
+- New `dpi/adfilter-rules.json`, seeded from the exact values that used
+  to be hardcoded, so nothing changes in practice on a fresh deploy.
+- `securepi_adfilter.py`: `strip_ads()` now takes `ad_fields`/
+  `ad_renderers` as explicit parameters instead of reading module
+  constants - purely testable, no hidden dependency - and an optional
+  `hits` dict it increments per matched rule name. A new
+  `_ensure_rules_fresh()` checks `RULES_PATH`'s mtime (cheap enough to do
+  on every hook call, not worth a timer) and reloads only on a real
+  change; a missing or invalid file logs a warning and keeps whatever
+  was already loaded, falling back to the built-in defaults on a cold
+  start - a bad edit degrades to "keep working with the last known-good
+  rules," never to broken ad-blocking. `_write_rule_stats()` snapshots
+  hit counts to `RULE_STATS_PATH` via a temp-file-plus-atomic-rename,
+  written only when a count actually changes (ad-stripping and
+  path-blocking are both naturally infrequent enough events that this
+  adds no meaningful I/O).
+- Console: `GET/POST /api/filtering/dpi/rules` in `app/webapp.py`, using
+  the shared `adfilter_rules.validate_rules()` so a bad edit is refused
+  with the identical logic the addon's own loader uses - not a
+  hand-rolled second copy that could quietly drift out of sync. A
+  `decrypt_suffixes` change needs `confirm_privacy_scope_change: true`
+  (mirroring step 5.5's resolver-tuning confirm gate) since it changes
+  what this gateway is even able to decrypt; every edit requires a
+  `reason` string, printed to the journal as the same audit stopgap
+  every other filtering endpoint already uses pending Stage 1.5's real
+  `audit_log` table. New "Tier 2 Rule Set" card on the Filtering page:
+  one textarea per rule category (one rule per line), a hit-count
+  summary next to each, and a `confirm()` dialog (matching the resolver
+  card's own pattern) when the decrypt scope actually changes.
+- New `tests/test_adfilter.py` (17 cases) plus a root `Makefile` with a
+  `test` target - the plan's own exit criterion, `make test` covers the
+  addon, verified to actually run and pass. Covers exactly the four
+  things the plan's exit criterion names for `strip_ads` (nested fields
+  removed at varying depth, ad renderers dropped from lists with
+  everything else preserved in order, real content preserved, output
+  still valid JSON via an actual `json.dumps`/`json.loads` round trip)
+  plus hit-counter accuracy and `validate_rules()`'s full rejection
+  surface. mitmproxy is stubbed out for these tests, the same technique
+  steps 5.7 and 5.8 already used locally, documented in the test file's
+  own docstring as test-only.
+
+Both `make test` (17/17) and every earlier smoke test in this session
+were re-run after this change with no regressions - the new
+`import adfilter_rules` in `webapp.py` meant every earlier smoke script
+needed `dpi/` added to its own `sys.path`, which surfaced as an honest
+`ModuleNotFoundError` (not a hidden failure) and was fixed before moving
+on, not worked around. Not yet deployed.

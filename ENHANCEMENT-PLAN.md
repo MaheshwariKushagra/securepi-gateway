@@ -477,7 +477,7 @@ Never cut Stage 2, steps 5.2, 5.3, 5.7, or evaluation items 7.2–7.5.
 | 2 | 2.1 · 2.2 · 2.3 · 2.4 · 2.5 · 2.6 · 2.7 · 2.8 | Not started |
 | 3 | 3.1 · 3.2 · 3.3 · 3.4 · 3.5 · 3.6 | Not started |
 | 4 | 4.1 · 4.2 · 4.3 · 4.4 · 4.5 | Not started |
-| 5 | **5.1 done, 5.2 done, 5.3 done, 5.4 done, 5.5 done, 5.6 done, 5.7 done, 5.8 done, 5.9 done** (out of order) · 5.10 · (5.11) | 5.1–5.9 done, rest not started |
+| 5 | **5.1 done, 5.2 done, 5.3 done, 5.4 done, 5.5 done, 5.6 done, 5.7 done, 5.8 done, 5.9 done, 5.10 done** (out of order) · (5.11) | 5.1–5.10 done, 5.11 (optional) not started |
 | 6 | 6.1 · 6.2 · 6.3 · 6.4 · 6.5 · 6.6 · 6.7 | Not started |
 | 7 | 7.0 – 7.9 | Not started |
 | 8 | 8.1 · 8.2 · 8.3 · 8.4 | Not started |
@@ -1188,3 +1188,71 @@ side with the DPI venv's `bin/python3`) before either was restarted.
   tuning apply endpoint got.
 - The new "Tier 2 Rule Set" card's markup confirmed present in the
   served HTML; journal clean across both services throughout.
+
+**Note on step 5.10 (effectiveness watchdog and SSAI readiness),
+implemented locally, not yet deployed.** Unlike 5.7's privacy-scope
+canary, this needed no separate process or mitmproxy access: it's a
+new fifth signal, `adblock_effectiveness_signal`, added to
+`app/correlation.py`'s existing `SIGNALS` list and picked up
+automatically by the already-running `engine.py` service on its normal
+15-second cycle - the same reuse-what-already-exists reasoning that put
+5.7's fail-safe incident through the same `incidents` table rather than
+a bespoke one.
+
+- **Logic:** a windowed query over `events` (`source='dpi'`) per device:
+  count YouTube-family decrypt activity (`dpi_action IN ('decrypt',
+  'ads_stripped')`) in the last `EFFECTIVENESS_WINDOW_SECONDS` (3600,
+  "a configured period" per the plan); if that count is at least
+  `EFFECTIVENESS_MIN_YOUTUBE_EVENTS` (5, enough real activity to judge
+  by rather than one stray handshake) and **zero** of those events are
+  `ads_stripped`, raise a medium-severity `adblock_ineffective` incident
+  through the same `raise_incident()` every other signal uses -
+  dedup, evidence chain and all, for free.
+- Registered in `webapp.py`'s `SIGNALS` list too, so `/api/system`
+  tracks its own staleness the same way it already does for the other
+  four signals.
+- New `GET /api/filtering/dpi/effectiveness` and an "Effectiveness"
+  badge on the Filtering page's Tier 2 card (green when no open
+  `adblock_ineffective` incident exists, red and linking to the
+  incident when one does) - not named in the plan's own exit criteria
+  for this step, but a small, proportionate addition matching the
+  already-built privacy-scope badge's exact pattern, so the watchdog's
+  own status is visible rather than only surfacing through the general
+  incident queue.
+- **SSAI documented as the expected end state**, per the plan's own
+  wording - not in this plan document, but in `REPORT-adblocking.md`
+  (§8, "Limitations, stated plainly"), the document this project's own
+  report material actually lives in. Explains precisely why SSAI is a
+  structural end state no rule update can fix (the ad is spliced into
+  the same media segments as real content, so there is no longer a
+  distinguishable scheduling instruction for a JSON-stripping proxy to
+  remove) and points to this signal as the detection mechanism for when
+  that day arrives. Also corrected the report's pre-existing "mobile
+  apps unaffected" limitation row while touching that table, to reflect
+  step 5.8's auto-passthrough (a pinned app now works, just without ad
+  removal, instead of being left permanently broken) - a small, honest
+  update prompted by work already completed this session, not scope
+  creep.
+
+**Exit criterion "removing a rule in a test deploy makes the watchdog
+fire" is satisfied by composition, not a redundant end-to-end test:**
+step 5.9's own fixture tests already prove `strip_ads()` returns 0 when
+a field is absent from `ad_fields`/`ad_renderers`; `response()`'s
+existing `if removed:` guard (unchanged by this step) is the one place
+that decides whether an `ads_stripped` telemetry event is written at
+all; and this step's own smoke test #1 below proves the watchdog fires
+exactly when YouTube decrypt activity continues with zero `ads_stripped`
+events. Chaining these three already-proven, unchanged-by-each-other
+behaviours together end to end would exercise no code path not already
+covered twice over - so it wasn't built as a fourth redundant test, and
+that reasoning is recorded here rather than left implicit.
+
+Smoke-tested locally (in-memory DB, no mocks needed - this is a pure SQL
+signal like the other four): active decrypting with zero stripped fires
+with the correct title/severity/device; the same activity WITH at least
+one `ads_stripped` does not false-alarm; one stray handshake below the
+minimum-activity floor does not false-alarm; activity outside the
+window is ignored; a sustained failure across two cycles extends one
+incident rather than duplicating; registration in both `SIGNALS` lists
+confirmed. Also smoke-tested the new status endpoint's healthy/unhealthy
+shapes. Not yet deployed.

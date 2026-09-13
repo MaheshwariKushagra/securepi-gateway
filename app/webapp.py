@@ -1260,7 +1260,11 @@ def _ca_info():
         return {"available": False, "error": result.stderr.strip() or "CA certificate not found"}
     info = {"available": True}
     for line in result.stdout.splitlines():
-        if line.startswith("SHA256 Fingerprint="):
+        # Confirmed live against the real gateway: openssl prints this as
+        # "sha256 Fingerprint=..." (lowercase "sha256") - assuming the
+        # all-caps spelling from openssl's own flag name was wrong and
+        # would have left fingerprint_sha256 silently missing forever.
+        if line.lower().startswith("sha256 fingerprint="):
             info["fingerprint_sha256"] = line.split("=", 1)[1]
         elif line.startswith("notBefore="):
             info["not_before"] = line.split("=", 1)[1]

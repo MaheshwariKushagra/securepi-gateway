@@ -106,8 +106,19 @@ def enroll(ip, hours=DEFAULT_TIMEOUT_HOURS):
         raise DpiEnrollError("could not enroll %s: %s" % (ip, result.stderr.strip()))
 
 
+_NOT_FOUND_MARKERS = (
+    "does not exist",       # what quarantine.py's flags-interval set reports
+    "no such file or directory",  # what THIS flags-timeout set reports instead -
+    # confirmed live: the two sets give genuinely different error text for
+    # the exact same "delete an element that isn't there" case, which is
+    # why this can't just copy quarantine.py's single-string check.
+)
+
+
 def unenroll(ip):
     """Idempotent: unenrolling an address that was never enrolled is a no-op."""
     result = _run(["delete", "element", FAMILY, TABLE, SET_NAME, "{ %s }" % ip])
-    if result.returncode != 0 and "does not exist" not in result.stderr:
-        raise DpiEnrollError("could not unenroll %s: %s" % (ip, result.stderr.strip()))
+    if result.returncode != 0:
+        stderr_lower = result.stderr.lower()
+        if not any(marker in stderr_lower for marker in _NOT_FOUND_MARKERS):
+            raise DpiEnrollError("could not unenroll %s: %s" % (ip, result.stderr.strip()))

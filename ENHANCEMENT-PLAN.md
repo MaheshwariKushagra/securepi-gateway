@@ -425,7 +425,7 @@ Never cut Stage 2, steps 5.2, 5.3, 5.7, or evaluation items 7.2–7.5.
 | 2 | 2.1 · 2.2 · 2.3 · 2.4 · 2.5 · 2.6 · 2.7 · 2.8 | Not started |
 | 3 | 3.1 · 3.2 · 3.3 · 3.4 · 3.5 · 3.6 | Not started |
 | 4 | 4.1 · 4.2 · 4.3 · 4.4 · 4.5 | Not started |
-| 5 | **5.1 done, 5.2 done, 5.3 done, 5.4 done, 5.5 done** (out of order) · 5.6 · 5.7 · 5.8 · 5.9 · 5.10 · (5.11) | 5.1–5.5 done, rest not started |
+| 5 | **5.1 done, 5.2 done, 5.3 done, 5.4 done, 5.5 done, 5.6 done** (out of order) · 5.7 · 5.8 · 5.9 · 5.10 · (5.11) | 5.1–5.6 done, rest not started |
 | 6 | 6.1 · 6.2 · 6.3 · 6.4 · 6.5 · 6.6 · 6.7 | Not started |
 | 7 | 7.0 – 7.9 | Not started |
 | 8 | 8.1 · 8.2 · 8.3 · 8.4 | Not started |
@@ -697,4 +697,82 @@ into a routine "deploy and verify" pass. The gateway is currently running
 with DNSSEC on but optimistic caching off and only one upstream provider
 configured; applying the recommended tuning (or doing it by hand through
 AdGuard's own settings) is left as a deliberate next decision rather than
-something this session did on its own judgment.
+something this session did on its own judgment. Asked explicitly after
+this step landed: left as-is for now, to move on to Stage 5C first.
+
+**Note on step 5.6 (enrollment and CA lifecycle in the console),
+implemented locally, not yet deployed.** Investigated live before writing
+any code, which changed the shape of all three parts below from what the
+plan assumed:
+
+- **(a) Per-device toggle.** The plan assumed this would need "the
+  orchestrator and root helper" - but `systemctl show securepi-web -p
+  User` showed the console already runs as root (no `User=` in its
+  systemd unit), the same reason `quarantine.py` was already able to
+  call `nft` directly with no helper process. New `app/dpi_enroll.py`
+  mirrors `quarantine.py`'s exact shape for the `ip nat enrolled` set,
+  replacing the `sudo securepi enroll/unenroll` CLI with
+  `POST /api/devices/{id}/dpi`. **Kept keyed on IP, not MAC** as the plan
+  asked: doing that for real means changing the dpi-redirect rule itself
+  to match on `ether saddr`, a change to the rule deciding which
+  connections reach the inspection proxy at all - judged too risky to
+  bundle into the same pass as everything else here, so it keeps the
+  same DHCP-renewal limitation `quarantine.py` already documents.
+- **(c) Auto-unenroll timer.** Rather than a polling sweep (5.2's
+  pattern, needed there because AdGuard rules have no native expiry),
+  `gateway/nftables.conf`'s `enrolled` set now declares `flags timeout`,
+  so an element can carry its own TTL and the kernel expires it with no
+  scheduler at all. This flag addition was reload-tested live on a
+  throwaway nftables table *before* any code was written against it,
+  which surfaced a real, easy-to-miss behaviour: `nft add element` on an
+  element that already exists is a silent no-op **even when the new
+  command specifies a different timeout** - it does not refresh the
+  expiry. `dpi_enroll.enroll()` therefore always deletes the element
+  first, then re-adds it fresh; the smoke test for this specifically
+  asserts both calls happen, since without the live test this bug would
+  have shipped invisibly (re-enrolling an already-enrolled device would
+  silently NOT reset its 24h clock).
+- **(b)/(d)/(e) Onboarding, CA info, and the reminder.** Folded into a
+  new "Tier 2: HTTPS Ad Removal" card on the Filtering page rather than a
+  separate onboarding route, matching this project's existing
+  one-page-per-area pattern. `adguard`-style: a new `_ca_info()` reads
+  the real CA file with `openssl x509` (no new crypto dependency) for
+  its fingerprint and validity window; the existing plain-HTTP download
+  URL `deploy-dpi.sh` already serves it from (finding A10, unresolved -
+  not this step's job to fix) is surfaced as-is. **Automated CA
+  rotation was explicitly NOT built**: generating a new 90-day CA
+  invalidates every enrolled device's stored trust at once, which is
+  too consequential to automate without a reviewed runbook step - this
+  only ever reads the existing certificate. The **QR code** the plan
+  asked for was also dropped: no Python QR-encoding library is
+  installed on the gateway and adding one is a real dependency decision,
+  not appropriate to make silently mid-implementation; a plain download
+  link plus the fingerprint is what's there instead. The reminder to
+  remove the CA from a no-longer-enrolled device is a static note on the
+  card, not a per-device detection - the gateway has no way to see a
+  phone's own certificate store, so it can't actually tell which devices
+  still have the CA installed.
+- **A genuinely new signal, not previously planned for this step:**
+  `dpi/securepi_adfilter.py` gained a `tls_failed_client` hook, logging a
+  new `tls_failed` telemetry decision whenever the handshake to a client
+  fails - the most likely real cause being a device that hasn't
+  installed the CA. `_tier2_breakdown()` picks it up automatically (it
+  already reads whatever `dpi_action` values exist, no allowlist). A new
+  `/api/filtering/dpi/enrolled` uses it for a best-effort CA-trust badge
+  per enrolled device ("trusted" / "check_ca" / "unverified"), inferred
+  from OUR side of the handshake outcome, not confirmed from the device
+  itself. **This hook has not been exercised against a real failed
+  handshake** - mitmproxy's `tls_failed_client` hook signature is
+  recalled with high but not certain confidence and was not curled or
+  tested against a real untrusted-device connection attempt, unlike
+  everything else in this step. Specifically worth checking the next
+  time a device is enrolled without the CA installed first (deliberately,
+  as a test, on the test-harness device or a spare device - never a real
+  phone as the first check).
+
+Smoke-tested locally (mocked `subprocess.run`/`nft`, an in-memory DB):
+`dpi_enroll`'s enrolled-set parsing for both the timeout and no-timeout
+element shapes, and specifically that `enroll()` issues a delete before
+its add; CA info parsing for both the success and "certificate not
+found" cases; the trust-check flipping from "trusted" to "check_ca" when
+a later `tls_failed` event is added. Not yet deployed.

@@ -877,10 +877,11 @@ function initDeviceBlocked() {
                 const res = await fetch(`/api/filtering/check?domain=${encodeURIComponent(domain)}&device_id=${deviceId}`);
                 if (!res.ok) throw new Error("request failed");
                 const r = await res.json();
+                const detail = r.cname ? `${r.reason} — via CNAME to ${r.cname}` : r.reason;
                 if (r.blocked) {
-                    toast("Blocked", r.reason, "high");
+                    toast("Blocked", detail, "high");
                 } else {
-                    toast("Allowed", r.reason, "ok");
+                    toast("Allowed", detail, "ok");
                 }
             } catch (err) {
                 toast("Check failed", "Could not reach AdGuard Home.", "high");
@@ -938,6 +939,139 @@ function initDevicePrivacy() {
                 ${tier2Html(d.tier2)}`;
         } catch (err) {
             wrap.innerHTML = `<div class="empty">Could not load privacy report</div>`;
+        }
+    }
+    load();
+}
+
+function initDeviceProfiles() {
+    const wrap = $("#deviceProfiles");
+    if (!wrap) return;
+    const deviceId = wrap.dataset.deviceId;
+    const select = $("#deviceProfileSelect");
+    const appliedEl = $("#deviceProfilesApplied");
+
+    function renderApplied(applied) {
+        if (!applied.length) {
+            appliedEl.innerHTML = `<div class="dim" style="font-size:11px">No native-tracker profile applied</div>`;
+            return;
+        }
+        appliedEl.innerHTML = applied.map(a => `
+            <div class="filter-row">
+                <span class="chip ok">${esc(a.label)}</span>
+                <span class="dim">${a.rule_count} domain${a.rule_count === 1 ? "" : "s"} blocked</span>
+                <button class="btn danger" data-remove-profile="${esc(a.vendor)}">Remove</button>
+            </div>`).join("");
+    }
+
+    async function loadApplied() {
+        try {
+            const res = await fetch(`/api/devices/${deviceId}/filtering/profiles`);
+            if (!res.ok) throw new Error("request failed");
+            const d = await res.json();
+            renderApplied(d.applied);
+        } catch (err) {
+            appliedEl.innerHTML = `<div class="empty">Could not load applied profiles</div>`;
+        }
+    }
+
+    async function loadOptions() {
+        try {
+            const res = await fetch("/api/native-profiles");
+            if (!res.ok) throw new Error("request failed");
+            const d = await res.json();
+            select.innerHTML = d.profiles.map(p =>
+                `<option value="${esc(p.vendor)}">${esc(p.label)} (${p.domain_count})</option>`).join("");
+        } catch (err) {
+            select.innerHTML = `<option value="">Unavailable</option>`;
+        }
+    }
+
+    $("#deviceProfileApply").addEventListener("click", async () => {
+        const vendor = select.value;
+        if (!vendor) return;
+        try {
+            const res = await fetch(`/api/devices/${deviceId}/filtering/profile`, {
+                method: "POST", headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ vendor }),
+            });
+            if (!res.ok) throw new Error("request failed");
+            toast("Profile applied", select.options[select.selectedIndex].text, "ok");
+            loadApplied();
+        } catch (err) {
+            toast("Could not apply profile", "AdGuard Home did not accept the change.", "high");
+        }
+    });
+
+    appliedEl.addEventListener("click", async (e) => {
+        const btn = e.target.closest("[data-remove-profile]");
+        if (!btn) return;
+        const vendor = btn.dataset.removeProfile;
+        try {
+            const res = await fetch(`/api/devices/${deviceId}/filtering/profile/remove`, {
+                method: "POST", headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ vendor }),
+            });
+            if (!res.ok) throw new Error("request failed");
+            toast("Profile removed", "", "ok");
+            loadApplied();
+        } catch (err) {
+            toast("Could not remove profile", "AdGuard Home did not accept the change.", "high");
+        }
+    });
+
+    loadOptions();
+    loadApplied();
+}
+
+function initResolverQuality() {
+    const wrap = $("#resolverQuality");
+    if (!wrap) return;
+
+    async function load() {
+        try {
+            const res = await fetch("/api/filtering/resolver?range=24h");
+            if (!res.ok) throw new Error("request failed");
+            const d = await res.json();
+            const cur = d.current, lat = d.latency;
+            const needsTuning = !cur.cache_optimistic || !cur.dnssec_enabled || cur.upstream_dns.length < 2;
+            wrap.innerHTML = `
+                <div style="display:flex; gap:24px; flex-wrap:wrap; margin-bottom:10px">
+                    <div><div class="dim" style="font-size:11px">DNS latency (uncached), p50 / p95</div>
+                        <div style="font-size:18px; font-weight:600">${lat.p50_ms ?? "—"} ms / ${lat.p95_ms ?? "—"} ms</div>
+                        <div class="dim" style="font-size:11px">${lat.sample_size} samples, ${esc(d.range_label)}</div></div>
+                    <div><div class="dim" style="font-size:11px">Upstream resolvers</div>
+                        <div class="mono" style="font-size:13px">${cur.upstream_dns.map(esc).join(", ") || "none configured"}</div>
+                        <div class="dim" style="font-size:11px">mode: ${esc(cur.upstream_mode)}</div></div>
+                    <div><div class="dim" style="font-size:11px">Cache</div>
+                        <div style="font-size:13px">${cur.cache_enabled ? "on" : "off"}${cur.cache_optimistic ? ", optimistic" : ""}</div></div>
+                    <div><div class="dim" style="font-size:11px">DNSSEC</div>
+                        <div style="font-size:13px">${cur.dnssec_enabled ? "on" : "off"}</div></div>
+                </div>
+                ${needsTuning ? `
+                    <div class="callout" style="display:flex; align-items:center; gap:10px; flex-wrap:wrap">
+                        <div style="flex:1">Recommended: optimistic caching, DNSSEC, and at least two independent
+                            upstream resolvers queried in parallel. This changes DNS resolution for every device
+                            on the network at once.</div>
+                        <button class="btn" id="applyResolverTuning">Apply recommended tuning</button>
+                    </div>` : `<div class="dim" style="font-size:12px">Resolver is already tuned.</div>`}`;
+            const applyBtn = $("#applyResolverTuning");
+            if (applyBtn) applyBtn.addEventListener("click", async () => {
+                if (!confirm("This changes DNS resolution for every device on the network right now. Continue?")) return;
+                try {
+                    const res = await fetch("/api/filtering/resolver/apply", {
+                        method: "POST", headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({ confirm: true }),
+                    });
+                    if (!res.ok) throw new Error("request failed");
+                    toast("Resolver tuning applied", "", "ok");
+                    load();
+                } catch (err) {
+                    toast("Could not apply tuning", "AdGuard Home did not accept the change.", "high");
+                }
+            });
+        } catch (err) {
+            wrap.innerHTML = `<div class="empty">Could not reach AdGuard Home</div>`;
         }
     }
     load();
@@ -1233,6 +1367,7 @@ function initFiltering() {
                 </div>
                 <div class="dim" style="font-size:12px; margin-top:6px; padding-left:2px">
                     ${esc(r.reason)}${r.rule ? ` — <span class="mono">${esc(r.rule)}</span>` : ""}
+                    ${r.cname ? ` — via CNAME to <span class="mono">${esc(r.cname)}</span>` : ""}
                 </div>`;
         } catch (err) {
             resultEl.innerHTML = `<div class="empty">Could not reach AdGuard Home</div>`;
@@ -1383,8 +1518,10 @@ document.addEventListener("DOMContentLoaded", () => {
     initDeviceQuarantine();
     initDeviceBlocked();
     initDevicePrivacy();
+    initDeviceProfiles();
     initFiltering();
     initFilteringAnalytics();
+    initResolverQuality();
 
     // Global row-action delegate: works across incidents list + detail page.
     // Registered on the capture phase because row markup calls

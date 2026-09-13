@@ -25,6 +25,10 @@ Routes:
   /api/filtering/check              "why is this blocked?" - test a domain
   /api/filtering/analytics          network-wide ad-blocking analytics
   /api/filtering/lists/health       blocklist staleness and per-list contribution
+  /api/native-profiles              vendor telemetry profiles a device can be assigned
+  /api/devices/{id}/filtering/profile(s)  apply/remove/list a device's native-tracker profiles
+  /api/filtering/resolver           resolver quality: config + measured DNS latency
+  /api/filtering/resolver/apply     apply recommended resolver tuning (needs confirm=true)
   /api/devices/{id}/blocked         recently blocked domains for one device
   /api/devices/{id}/filtering/rules allow/block rules scoped to one device
   /api/devices/{id}/filtering/allow one-click unbreak, optionally temporary
@@ -47,6 +51,7 @@ from pydantic import BaseModel
 from starlette.requests import Request
 
 import adguard
+import native_trackers
 import quarantine
 import risk
 import tracker_entities
@@ -158,6 +163,14 @@ class DeviceRuleRequest(BaseModel):
 class DeviceBlockRequest(BaseModel):
     domain: str
     reason: str
+
+
+class NativeProfileRequest(BaseModel):
+    vendor: str
+
+
+class ResolverTuningRequest(BaseModel):
+    confirm: bool = False
 
 
 class QuarantineUpdate(BaseModel):
@@ -365,6 +378,35 @@ def _tier2_breakdown(c, start, end, device_id=None):
     counts["ads_removed"] = ads_removed
     counts["active"] = any(v for k, v in counts.items() if k != "ads_removed")
     return counts
+
+
+def _percentile(sorted_values, pct):
+    """Nearest-rank percentile of an already-sorted list. Returns None for
+    an empty list rather than raising, since "no data yet" is a normal
+    state here (a fresh gateway with little DNS traffic)."""
+    if not sorted_values:
+        return None
+    idx = min(len(sorted_values) - 1, int(round(pct / 100.0 * (len(sorted_values) - 1))))
+    return round(sorted_values[idx], 1)
+
+
+def _dns_latency_percentiles(c, start, end, sample_limit=5000):
+    """p50/p95 DNS resolution latency (step 5.5c), from dns_elapsed_ms
+    captured on every AdGuard query since step 5.1. Only meaningful for
+    NOT-cached answers - a cache hit's latency says more about SQLite than
+    about the upstream resolver, so it's excluded here rather than
+    diluting the figure."""
+    rows = c.execute(
+        "SELECT dns_elapsed_ms FROM events"
+        " WHERE event_type='dns_query' AND dns_cached=0 AND dns_elapsed_ms IS NOT NULL"
+        "   AND ts >= ? AND ts < ? ORDER BY id DESC LIMIT ?",
+        (start, end, sample_limit)).fetchall()
+    values = sorted(r["dns_elapsed_ms"] for r in rows)
+    return {
+        "sample_size": len(values),
+        "p50_ms": _percentile(values, 50),
+        "p95_ms": _percentile(values, 95),
+    }
 
 
 @app.get("/api/overview")
@@ -1032,6 +1074,152 @@ def api_filtering_lists_health():
             "a controlled toggle experiment against a non-production instance - deferred to "
             "Stage 7's evaluation campaign rather than run against the live filter here."),
     }
+
+
+@app.get("/api/native-profiles")
+def api_native_profiles():
+    """The vendor telemetry profiles a device can be assigned - see
+    app/native_trackers.py. Read-only: this just lists what's available,
+    it doesn't touch any device."""
+    return {
+        "profiles": [
+            {"vendor": v, "label": p["label"], "domain_count": len(p["domains"])}
+            for v, p in native_trackers.NATIVE_PROFILES.items()
+        ],
+    }
+
+
+@app.get("/api/devices/{device_id}/filtering/profiles")
+def api_device_profiles(device_id: int):
+    """Which native-tracker profiles are currently applied to this device,
+    derived from the tag on its own $client-scoped block rules - there is
+    no separate table for this, the same way temporary allow rules track
+    their own expiry in their comment rather than a database row."""
+    c = db()
+    d = c.execute("SELECT * FROM devices WHERE id=?", (device_id,)).fetchone()
+    if d is None:
+        raise HTTPException(404, "device not found")
+    try:
+        rules = adguard.device_scoped_rules(device_label(d))
+    except adguard.AdGuardError as e:
+        raise HTTPException(502, str(e))
+    applied = {}
+    for r in rules:
+        if r["tag"] and r["tag"] in native_trackers.NATIVE_PROFILES:
+            applied.setdefault(r["tag"], 0)
+            applied[r["tag"]] += 1
+    return {"applied": [
+        {"vendor": v, "label": native_trackers.NATIVE_PROFILES[v]["label"], "rule_count": n}
+        for v, n in applied.items()
+    ]}
+
+
+@app.post("/api/devices/{device_id}/filtering/profile")
+def api_device_apply_profile(device_id: int, body: NativeProfileRequest):
+    """Apply a native-tracker profile to one device: a $client-scoped block
+    rule per domain in the profile, tagged so it can be found and removed
+    as a group later. See ENHANCEMENT-PLAN.md step 5.5 - and its own
+    caution about not trusting these domain lists on a real device without
+    checking first."""
+    prof = native_trackers.profile(body.vendor)
+    if prof is None:
+        raise HTTPException(400, "unknown vendor profile: %s" % body.vendor)
+    c = db()
+    d = c.execute("SELECT * FROM devices WHERE id=?", (device_id,)).fetchone()
+    if d is None:
+        raise HTTPException(404, "device not found")
+    name = device_label(d)
+    added = 0
+    try:
+        for domain in prof["domains"]:
+            rule = adguard.add_client_rule(name, domain, "block", tag=body.vendor)
+            if rule:
+                added += 1
+    except adguard.AdGuardError as e:
+        raise HTTPException(502, str(e))
+    print("filtering: applied native profile '%s' (%d domains) to device %d (%s)" % (
+        body.vendor, len(prof["domains"]), device_id, name), flush=True)
+    return {"ok": True, "vendor": body.vendor, "domains": prof["domains"]}
+
+
+@app.post("/api/devices/{device_id}/filtering/profile/remove")
+def api_device_remove_profile(device_id: int, body: NativeProfileRequest):
+    c = db()
+    d = c.execute("SELECT * FROM devices WHERE id=?", (device_id,)).fetchone()
+    if d is None:
+        raise HTTPException(404, "device not found")
+    name = device_label(d)
+    try:
+        removed = adguard.remove_client_rule_group(name, body.vendor)
+    except adguard.AdGuardError as e:
+        raise HTTPException(502, str(e))
+    print("filtering: removed native profile '%s' (%d rules) from device %d (%s)" % (
+        body.vendor, removed, device_id, name), flush=True)
+    return {"ok": True, "vendor": body.vendor, "removed": removed}
+
+
+@app.get("/api/filtering/resolver")
+def api_filtering_resolver(range: str = Query("24h")):
+    """Resolver quality (step 5.5c): the current AdGuard resolver config,
+    and DNS latency actually measured from this network's own traffic -
+    not a synthetic benchmark. Read-only; see api_apply_resolver_tuning
+    for the one endpoint that can change any of this."""
+    spec = RANGES.get(range, RANGES["24h"])
+    c = db()
+    now = time.time()
+    try:
+        cfg = adguard.dns_config()
+    except adguard.AdGuardError as e:
+        raise HTTPException(502, str(e))
+    latency = _dns_latency_percentiles(c, now - spec["seconds"], now)
+    recommended = {
+        "cache_optimistic": True,
+        "dnssec_enabled": True,
+        "upstream_mode": "parallel",
+        "upstream_dns_note": "at least two independent DoT/DoH upstreams (e.g. Cloudflare + Quad9)",
+    }
+    return {
+        "current": {
+            "upstream_dns": cfg.get("upstream_dns", []),
+            "fallback_dns": cfg.get("fallback_dns", []),
+            "upstream_mode": cfg.get("upstream_mode") or "(default)",
+            "cache_enabled": bool(cfg.get("cache_enabled")),
+            "cache_optimistic": bool(cfg.get("cache_optimistic")),
+            "cache_size": cfg.get("cache_size"),
+            "dnssec_enabled": bool(cfg.get("dnssec_enabled")),
+        },
+        "recommended": recommended,
+        "latency": latency,
+        "range": range, "range_label": spec["label"],
+    }
+
+
+@app.post("/api/filtering/resolver/apply")
+def api_apply_resolver_tuning(body: ResolverTuningRequest):
+    """Apply the recommended resolver tuning: optimistic caching on, DNSSEC
+    on, and two independent DoT upstreams (Cloudflare + Quad9) queried in
+    parallel with a fallback pair. This changes DNS resolution for every
+    device on the network at once, which is exactly the kind of shared,
+    hard-to-instantly-undo action this project's own operating rules say
+    to get explicit confirmation for - `confirm` has to be sent as true,
+    on purpose, from an operator who has seen what it's about to change
+    (the console shows GET /api/filtering/resolver's "current" block
+    first). There is no scheduler or auto-apply path here."""
+    if not body.confirm:
+        raise HTTPException(400, "resolver tuning requires confirm=true")
+    try:
+        new_cfg = adguard.set_dns_tuning(
+            upstream_dns=["tls://1.1.1.1", "tls://1.0.0.1", "tls://9.9.9.9"],
+            fallback_dns=["tls://9.9.9.9", "tls://1.1.1.1"],
+            cache_optimistic=True,
+            dnssec_enabled=True,
+            upstream_mode="parallel",
+        )
+    except adguard.AdGuardError as e:
+        raise HTTPException(502, str(e))
+    print("filtering: applied recommended resolver tuning (optimistic cache, "
+          "DNSSEC, parallel dual-DoT upstreams)", flush=True)
+    return {"ok": True, "applied": new_cfg}
 
 
 @app.get("/api/devices/{device_id}/blocked")

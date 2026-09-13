@@ -86,6 +86,17 @@
                 <div class="subtle" style="flex:1">Network access (quarantine)</div>
                 <button class="btn" id="deviceQuarantineToggle">Loading…</button>
             </div>
+            <div style="margin-top:14px" id="deviceProfiles" data-device-id="{{ device.id }}">
+                <div class="subtle" style="margin-bottom:6px">Native telemetry profile</div>
+                <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap">
+                    <select class="input" id="deviceProfileSelect" style="flex:1; min-width:160px"><option value="">Loading…</option></select>
+                    <button class="btn" id="deviceProfileApply">Apply</button>
+                </div>
+                <div class="dim" style="font-size:11px; margin-top:4px">
+                    Blocks a vendor's own OS/app telemetry for this device only - a small, hand-checked starting list, not a full third-party blocklist.
+                </div>
+                <div id="deviceProfilesApplied" style="margin-top:8px"></div>
+            </div>
         </div>
     </div>
 

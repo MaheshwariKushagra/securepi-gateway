@@ -14,6 +14,7 @@ memory-constrained gateway (see SECUREPI-15-DAY-PLAN.md 2.6).
 """
 
 import json
+import re
 import time
 import urllib.error
 import urllib.parse
@@ -246,7 +247,17 @@ def describe_check(result, domain):
     "rules":[...], ...}, no "host" or "name" key anywhere). Assuming one
     existed was a real bug caught during the first live deploy of this
     feature - the console showed "null" as the domain in every result
-    until this was fixed."""
+    until this was fixed.
+
+    `cname`, if AdGuard reports one, means the block happened via
+    CNAME-cloaking: the queried domain itself doesn't match any rule, but
+    the address it's an alias for does (see ENHANCEMENT-PLAN.md step
+    5.5). This on-demand check is the only place this project currently
+    surfaces that - AdGuard's stored query log has no equivalent field
+    (confirmed by inspecting it directly), only the raw base64 DNS answer
+    packet, which would need a hand-written wire-format parser to read;
+    tagging historical blocked events as CNAME-cloaked or not is deferred
+    rather than guessed at from an unparsed field."""
     reason = result.get("reason", "")
     rule = None
     filter_id = None
@@ -260,12 +271,17 @@ def describe_check(result, domain):
         "reason": _REASON_TEXT.get(reason, reason or "Unknown"),
         "rule": rule,
         "filter_list_id": filter_id,
+        "cname": result.get("cname") or None,
     }
 
 
 # ------------------------------------------------- per-device allow/block
 
-def add_client_rule(client_name, domain, action, expires_at=None):
+_EXPIRES_RE = re.compile(r"securepi-expires:(\d+)")
+_TAG_RE = re.compile(r"securepi-tag:(\S+)")
+
+
+def add_client_rule(client_name, domain, action, expires_at=None, tag=None):
     """A per-DEVICE allow or block rule, using AdGuard's $client rule
     modifier so it affects only the one persistent client named
     `client_name` (see set_client_filtering above - every device we manage
@@ -280,12 +296,22 @@ def add_client_rule(client_name, domain, action, expires_at=None):
     below is what finds and removes it later. A real scheduled job belongs
     in ENHANCEMENT-PLAN.md step 1.3/4.1; until that exists, the filtering
     endpoints in webapp.py call the sweep opportunistically on every
-    request, which is enough for a "pause this for an hour" feature."""
+    request, which is enough for a "pause this for an hour" feature.
+
+    `tag`, if given, marks the rule as belonging to a named group in that
+    same comment (space-separated from the expiry, if both are present) -
+    used by native-tracker profiles (step 5.5) so every rule a profile
+    added can be found and removed together later by
+    remove_client_rule_group(), the same way a single temporary rule finds
+    itself again via its expiry."""
     verb = "@@" if action == "allow" else ""
     base = "%s||%s^$client=%s" % (verb, domain, client_name)
-    rule = base
+    comment_bits = []
     if expires_at:
-        rule = "%s  # securepi-expires:%d" % (base, int(expires_at))
+        comment_bits.append("securepi-expires:%d" % int(expires_at))
+    if tag:
+        comment_bits.append("securepi-tag:%s" % tag)
+    rule = ("%s  # %s" % (base, " ".join(comment_bits))) if comment_bits else base
     rules = user_rules()
     if not any(r.split("  #")[0] == base for r in rules):
         rules.append(rule)
@@ -295,6 +321,26 @@ def add_client_rule(client_name, domain, action, expires_at=None):
 
 def remove_client_rule(rule):
     remove_user_rule(rule)
+
+
+def remove_client_rule_group(client_name, tag):
+    """Remove every rule scoped to this device AND carrying this tag in
+    one go - what "remove this native-tracker profile" (step 5.5) actually
+    does. Returns how many rules were removed."""
+    marker = "$client=%s" % client_name
+    tag_marker = "securepi-tag:%s" % tag
+    rules = user_rules()
+    keep = []
+    removed = 0
+    for r in rules:
+        base, _, comment = r.partition("  #")
+        if marker in base and tag_marker in comment:
+            removed += 1
+            continue
+        keep.append(r)
+    if removed:
+        _request("POST", "/control/filtering/set_rules", {"rules": keep})
+    return removed
 
 
 def device_scoped_rules(client_name):
@@ -308,13 +354,10 @@ def device_scoped_rules(client_name):
             continue
         desc = describe_rule(base)
         desc["rule"] = r
-        expires_at = None
-        if "securepi-expires:" in comment:
-            try:
-                expires_at = int(comment.split("securepi-expires:")[1].strip())
-            except ValueError:
-                pass
-        desc["expires_at"] = expires_at
+        m = _EXPIRES_RE.search(comment)
+        desc["expires_at"] = int(m.group(1)) if m else None
+        t = _TAG_RE.search(comment)
+        desc["tag"] = t.group(1) if t else None
         out.append(desc)
     return list(reversed(out))
 
@@ -322,22 +365,63 @@ def device_scoped_rules(client_name):
 def sweep_expired_client_rules():
     """Remove any $client rule past the expiry recorded in its own comment.
     See add_client_rule's docstring for why this lives here instead of in a
-    scheduler. Returns True if anything was actually removed."""
+    scheduler. Returns True if anything was actually removed.
+
+    Matches the expiry with a regex rather than a plain substring split,
+    so it still works now that a rule's comment can carry a tag alongside
+    the expiry (add_client_rule above) instead of only ever one or the
+    other."""
     now = time.time()
     rules = user_rules()
     keep = []
     changed = False
     for r in rules:
         base, _, comment = r.partition("  #")
-        if "securepi-expires:" in comment:
-            try:
-                expires_at = int(comment.split("securepi-expires:")[1].strip())
-            except ValueError:
-                expires_at = None
-            if expires_at is not None and expires_at < now:
-                changed = True
-                continue
+        m = _EXPIRES_RE.search(comment)
+        if m and int(m.group(1)) < now:
+            changed = True
+            continue
         keep.append(r)
     if changed:
         _request("POST", "/control/filtering/set_rules", {"rules": keep})
     return changed
+
+
+# ------------------------------------------------------------- resolver --
+#
+# Resolver quality (step 5.5c): cache behaviour, DNSSEC, and upstream
+# redundancy. Read-only by default - applying a change here affects DNS
+# resolution for the whole network, which is exactly the kind of
+# shared-infrastructure change this project's own operating rules say to
+# confirm before doing, not just before deploying the code that could do
+# it. set_dns_tuning() exists so the console can offer it as an explicit,
+# reviewable action; nothing calls it automatically.
+
+def dns_config():
+    """Current resolver configuration, straight from AdGuard - confirmed
+    live against the real endpoint (GET /control/dns_info), not guessed:
+    upstream_dns, cache_optimistic, dnssec_enabled and friends."""
+    return _request("GET", "/control/dns_info") or {}
+
+
+def set_dns_tuning(upstream_dns=None, fallback_dns=None, cache_optimistic=None,
+                    dnssec_enabled=None, upstream_mode=None):
+    """Update resolver settings, changing only the fields actually passed
+    in - everything else is read back from the live config first and sent
+    through unchanged, since AdGuard's dns_config endpoint replaces the
+    whole object rather than patching it (same pattern as
+    set_client_filtering's full-object POST). Every argument left as None
+    is a no-op for that field."""
+    current = dns_config()
+    if upstream_dns is not None:
+        current["upstream_dns"] = upstream_dns
+    if fallback_dns is not None:
+        current["fallback_dns"] = fallback_dns
+    if cache_optimistic is not None:
+        current["cache_optimistic"] = cache_optimistic
+    if dnssec_enabled is not None:
+        current["dnssec_enabled"] = dnssec_enabled
+    if upstream_mode is not None:
+        current["upstream_mode"] = upstream_mode
+    _request("POST", "/control/dns_config", current)
+    return current

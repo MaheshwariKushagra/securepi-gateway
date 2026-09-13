@@ -1052,4 +1052,31 @@ unaffected** (the state is genuinely per-pair, not per-host); a
 non-allowlisted host is untouched by any of this; and an artificially
 expired bypass correctly stops applying. Also smoke-tested the new
 console endpoint's grouping and expiry filter, and that
-`_tier2_breakdown` reports the new counts. Not yet deployed.
+`_tier2_breakdown` reports the new counts.
+
+**Deployed to the live gateway and verified the same day.** `.bak-5.8-*`
+copies were taken first; both `securepi-web` and `securepi-dpi`
+restarted cleanly (compiled first with the DPI venv's own
+`bin/python3 -m py_compile`, same lesson 5.7's deploy already taught).
+Restarting `securepi-dpi` resets its in-process pinning dicts, which is
+the accepted trade-off described above - nothing was enrolled at the
+time, so nothing real was affected either way.
+
+What was actually exercised against the live gateway:
+- The real, just-deployed `/opt/securepi-dpi/securepi_adfilter.py` was
+  imported fresh in-process (same technique 5.7 used) via the DPI venv's
+  `bin/python3`, using the test-harness device's IP - never a real
+  phone - and driven through the exact `PIN_FAILURE_THRESHOLD` failures:
+  confirmed `ignore_connection` flips to `True` only after the threshold,
+  not before, against the actual deployed bytes.
+- `GET /api/filtering/dpi/pinned` and the analytics `tier2` block both
+  read correctly against real (empty) production state.
+- A single synthetic `pin_bypass` row was inserted directly into the
+  live production database for the test-harness device (id 5), to prove
+  the endpoint's live SQL - grouping, the device-name join, and the
+  `expires_at > now` filter - all work against the real schema, not just
+  the local copy: it correctly resolved to `"[TEST HARNESS]
+  test-victim"` with the right `expires_in_s`. The row was deleted
+  immediately afterward; a follow-up query confirmed zero residue.
+- Both Tier 2 UI cards' new markup (`dpiPinnedList`) confirmed present
+  in the served HTML; journal clean across both services throughout.

@@ -1675,5 +1675,41 @@ Android/phone, correctly, via generic rules); a device with zero
 evidence honestly reporting `unknown` rather than a guess; a real OUI
 match; JA3 and DHCP-params evidence appearing but never voting;
 `suggest_profile()`'s vendor/os/no-match cases; and the console
-endpoint including its 404 and its profile-suggestion shape. Not yet
-deployed.
+endpoint including its 404 and its profile-suggestion shape.
+
+**Deployed to the live gateway and verified the same day**, with an
+online SQLite backup taken first (`securepi.db.pre-6.2-migration-*.bak`,
+this session's third schema migration against production, after 5.1 and
+6.1) and `.bak-6.2-*` copies of every replaced file. `securepi-ingest`
+restarted first to apply the `dhcp_params` migration, confirmed present
+before `securepi-web` was restarted - the same ordering discipline
+6.1's deploy established, since `fingerprint.py`'s
+`_dhcp_params_evidence` would otherwise query a column that didn't
+exist yet.
+
+**The exit criterion - "Both phones classified with evidence. Correct
+list suggestion shown" - was met exactly, against real production
+data, not a fixture:**
+- Device 1 (`divye-s-s21-fe`): `category: phone, vendor: Samsung,
+  os: Android, confidence: high`, from a real hostname match on the
+  `-s2[0-9]` pattern plus a **real** DNS history hit on
+  `connectivitycheck.gstatic.com` - this device genuinely performed an
+  Android connectivity check that got logged and matched.
+- Device 2 (`kushagra-s-a33`): the same result via the `-a[0-9]{2}`
+  pattern, **plus real hits on both** `connectivitycheck.gstatic.com`
+  **and** `connectivitycheck.android.com`, plus its real top-3 JA3
+  hashes correctly appearing as evidence with weight 0 (present, not
+  voting) exactly as designed.
+- Both correctly reported the randomized-MAC OUI limitation honestly
+  (`"every MAC seen for this device is randomized"`) rather than a
+  false OUI guess, and both suggested the real Samsung native-tracker
+  profile (`suggested_profile: {vendor: "samsung", label: "Samsung (One
+  UI) telemetry"}`) - confirming the classification-to-profile mapping
+  resolves to a real, valid `NATIVE_PROFILES` key on the actually
+  deployed `native_trackers.py`, not just in isolation.
+
+The new Fingerprint section's markup confirmed present in the served
+device page HTML; journal clean across `securepi-web`,
+`securepi-ingest` and `suricata` throughout. **Still unconfirmed, as
+already flagged above:** a real extended-mode DHCP event with an
+actual `dhcp_params` value - no lease has renewed yet to produce one.

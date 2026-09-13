@@ -134,6 +134,95 @@ def strip_ads(node, ad_fields, ad_renderers, hits=None):
     return removed
 
 
+def inject_cosmetic_css(html_text, selectors):
+    """
+    ENHANCEMENT-PLAN.md step 5.11, Path 1 (cosmetic CSS injection only -
+    see the plan's own record of Path 2, scriptlet injection, and why it
+    was deferred rather than built).
+
+    Insert a <style> block that hides each selector with `display:none`,
+    for leftover ad-placeholder containers that survive strip_ads() (the
+    JSON instruction telling YouTube to show an ad is gone, but the
+    custom element YouTube's own client-side JS still renders for it can
+    remain, as an empty box). Placed right before </head> when present -
+    ahead of first paint - falling back to right after the opening <body>
+    tag, and as a last resort prepended to the whole document. A CSS
+    selector that never matches anything on a given page is a silent
+    no-op, not a breakage risk - this is deliberately the lowest-risk
+    form of in-page modification this addon does, unlike a JS scriptlet
+    would be (see Path 2's record).
+
+    Returns (new_text, injected). `injected` is False, and `new_text` is
+    `html_text` unchanged, when `selectors` is empty - there is nothing
+    to hide, so nothing is inserted.
+    """
+    if not selectors:
+        return html_text, False
+
+    style_block = "<style>%s</style>" % "".join(
+        "%s{display:none!important}" % sel for sel in selectors
+    )
+
+    lower = html_text.lower()
+    head_close = lower.find("</head>")
+    if head_close != -1:
+        return html_text[:head_close] + style_block + html_text[head_close:], True
+
+    body_open = lower.find("<body")
+    if body_open != -1:
+        tag_end = html_text.find(">", body_open)
+        if tag_end != -1:
+            return html_text[:tag_end + 1] + style_block + html_text[tag_end + 1:], True
+
+    return style_block + html_text, True
+
+
+def loosen_csp_for_inline_style(csp_header):
+    """
+    Given a Content-Security-Policy header value, return a new value that
+    additionally allows the inline <style> tag inject_cosmetic_css() just
+    added - browsers block injected inline styles under a CSP that
+    restricts style-src (or default-src, when there's no style-src
+    directive) unless 'unsafe-inline' is present. Loosens ONLY the style
+    policy, never script-src or anything else - this addon injects CSS,
+    not JavaScript (see Path 2's record for why that line matters).
+
+    Returns `csp_header` completely unchanged if it already allows inline
+    styles, or if it restricts neither style-src nor default-src (nothing
+    to loosen). Returns falsy input unchanged.
+    """
+    if not csp_header:
+        return csp_header
+
+    directives = [d.strip() for d in csp_header.split(";") if d.strip()]
+    new_directives = []
+    found_style_src = False
+    found_default_src_index = None
+
+    for i, d in enumerate(directives):
+        parts = d.split()
+        if not parts:
+            continue
+        name = parts[0].lower()
+        if name == "style-src":
+            found_style_src = True
+            if "'unsafe-inline'" not in parts:
+                parts.append("'unsafe-inline'")
+            new_directives.append(" ".join(parts))
+        else:
+            if name == "default-src":
+                found_default_src_index = len(new_directives)
+            new_directives.append(d)
+
+    if not found_style_src and found_default_src_index is not None:
+        parts = new_directives[found_default_src_index].split()
+        if "'unsafe-inline'" not in parts:
+            parts.append("'unsafe-inline'")
+        new_directives[found_default_src_index] = " ".join(parts)
+
+    return "; ".join(new_directives)
+
+
 class SecurePiAdFilter:
     def __init__(self):
         self.decrypted = 0       # connections we chose to inspect
@@ -425,10 +514,31 @@ class SecurePiAdFilter:
                     text = text.replace(marker, '"no_ads"')
                     changed = True
                     self._rule_hits["ad_fields"][field] = self._rule_hits["ad_fields"].get(field, 0) + 1
+
+            # Cosmetic CSS injection (step 5.11, Path 1 - off by default,
+            # see adfilter_rules.py's OPTIONAL_RULE_DEFAULTS). Independent
+            # of the field-neutralisation above: hides leftover empty ad
+            # containers even on a page where no ad_fields marker matched.
+            if self._rules.get("cosmetic_injection_enabled") and self._rules.get("cosmetic_selectors"):
+                text, injected = inject_cosmetic_css(text, self._rules["cosmetic_selectors"])
+                if injected:
+                    changed = True
+                    csp = flow.response.headers.get("content-security-policy")
+                    if csp:
+                        loosened = loosen_csp_for_inline_style(csp)
+                        if loosened != csp:
+                            flow.response.headers["content-security-policy"] = loosened
+                    try:
+                        src_ip = flow.client_conn.address[0]
+                    except Exception:
+                        src_ip = None
+                    self._log_event(src_ip, "cosmetic_injected", sni=flow.request.host,
+                                     ads_removed=len(self._rules["cosmetic_selectors"]))
+
             if changed:
                 flow.response.set_text(text)
                 self.cleaned += 1
-                logger.info("securepi: neutralised ad fields in %s", path)
+                logger.info("securepi: neutralised ad fields / injected cosmetic CSS in %s", path)
                 self._write_rule_stats()
 
 

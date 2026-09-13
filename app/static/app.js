@@ -1228,12 +1228,20 @@ function initDpiRules() {
     const form = $("#dpiRulesForm");
     if (!form) return;
     let baselineDecryptSuffixes = [];
+    let cosmeticEnabled = false;
+    const cosmeticBtn = $("#dpiCosmeticToggle");
 
     function summariseHits(items, elId) {
         const el = $(elId);
         if (!el) return;
         const dead = items.filter(i => i.hits === 0).length;
         el.textContent = dead ? `(${items.length} rules, ${dead} with zero hits)` : `(${items.length} rules)`;
+    }
+
+    function renderCosmeticToggle() {
+        if (!cosmeticBtn) return;
+        cosmeticBtn.textContent = cosmeticEnabled ? "On" : "Off";
+        cosmeticBtn.classList.toggle("on", cosmeticEnabled);
     }
 
     async function load() {
@@ -1246,6 +1254,9 @@ function initDpiRules() {
             $("#dpiRuleAdFields").value = d.ad_fields.map(x => x.rule).join("\n");
             $("#dpiRuleAdRenderers").value = d.ad_renderers.map(x => x.rule).join("\n");
             $("#dpiRuleBlockedPaths").value = d.blocked_paths.map(x => x.rule).join("\n");
+            $("#dpiRuleCosmeticSelectors").value = (d.cosmetic_selectors || []).join("\n");
+            cosmeticEnabled = !!d.cosmetic_injection_enabled;
+            renderCosmeticToggle();
             summariseHits(d.ad_fields, "#dpiRuleAdFieldsHits");
             summariseHits(d.ad_renderers, "#dpiRuleAdRenderersHits");
             summariseHits(d.blocked_paths, "#dpiRuleBlockedPathsHits");
@@ -1256,11 +1267,19 @@ function initDpiRules() {
         }
     }
 
+    if (cosmeticBtn) {
+        cosmeticBtn.addEventListener("click", () => {
+            cosmeticEnabled = !cosmeticEnabled;
+            renderCosmeticToggle();
+        });
+    }
+
     $("#dpiRulesSave").addEventListener("click", async () => {
         const decrypt_suffixes = linesToList($("#dpiRuleDecryptSuffixes").value);
         const ad_fields = linesToList($("#dpiRuleAdFields").value);
         const ad_renderers = linesToList($("#dpiRuleAdRenderers").value);
         const blocked_paths = linesToList($("#dpiRuleBlockedPaths").value);
+        const cosmetic_selectors = linesToList($("#dpiRuleCosmeticSelectors").value);
         const reason = $("#dpiRuleReason").value.trim();
         if (!reason) { toast("Reason required", "Say why you're changing the rules.", "high"); return; }
 
@@ -1276,7 +1295,8 @@ function initDpiRules() {
             const res = await fetch("/api/filtering/dpi/rules", {
                 method: "POST", headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({ decrypt_suffixes, ad_fields, ad_renderers, blocked_paths,
-                                        reason, confirm_privacy_scope_change }),
+                                        reason, confirm_privacy_scope_change,
+                                        cosmetic_injection_enabled: cosmeticEnabled, cosmetic_selectors }),
             });
             if (!res.ok) {
                 const err = await res.json().catch(() => ({}));

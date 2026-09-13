@@ -248,6 +248,147 @@ class ValidateRulesTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             adfilter_rules.validate_rules(["not", "a", "dict"])
 
+    def test_optional_keys_absent_still_valid(self):
+        # A rules file written before step 5.11 has neither optional key
+        # at all - must still pass validation, not be treated as broken.
+        rules = dict(adfilter_rules.DEFAULT_RULES)
+        del rules["cosmetic_injection_enabled"]
+        del rules["cosmetic_selectors"]
+        adfilter_rules.validate_rules(rules)  # must not raise
+
+    def test_cosmetic_injection_enabled_must_be_bool(self):
+        bad = dict(adfilter_rules.DEFAULT_RULES)
+        bad["cosmetic_injection_enabled"] = "yes"
+        with self.assertRaises(ValueError):
+            adfilter_rules.validate_rules(bad)
+
+    def test_cosmetic_selectors_empty_list_is_valid(self):
+        # Unlike the four required categories, an empty cosmetic_selectors
+        # list is a deliberate, valid choice (injection with nothing to
+        # hide), not an error.
+        ok = dict(adfilter_rules.DEFAULT_RULES)
+        ok["cosmetic_selectors"] = []
+        adfilter_rules.validate_rules(ok)  # must not raise
+
+    def test_cosmetic_selectors_must_be_strings(self):
+        bad = dict(adfilter_rules.DEFAULT_RULES)
+        bad["cosmetic_selectors"] = ["ytd-display-ad-renderer", 42]
+        with self.assertRaises(ValueError):
+            adfilter_rules.validate_rules(bad)
+
+
+class ApplyDefaultsTests(unittest.TestCase):
+    """apply_defaults() is what lets an adfilter-rules.json written before
+    step 5.11 upgrade gracefully - the live gateway's real rules file (no
+    cosmetic_* keys at all, at the time this step was written) must load
+    successfully with cosmetic injection OFF, not fail or silently turn
+    itself on."""
+
+    def test_missing_keys_filled_in_with_safe_defaults(self):
+        rules = {k: v for k, v in adfilter_rules.DEFAULT_RULES.items()
+                 if k not in ("cosmetic_injection_enabled", "cosmetic_selectors")}
+        adfilter_rules.apply_defaults(rules)
+        self.assertIs(rules["cosmetic_injection_enabled"], False)
+        self.assertTrue(len(rules["cosmetic_selectors"]) > 0)
+
+    def test_existing_choice_is_not_overwritten(self):
+        rules = dict(adfilter_rules.DEFAULT_RULES)
+        rules["cosmetic_injection_enabled"] = True
+        rules["cosmetic_selectors"] = []  # operator deliberately emptied this
+        adfilter_rules.apply_defaults(rules)
+        self.assertIs(rules["cosmetic_injection_enabled"], True)
+        self.assertEqual(rules["cosmetic_selectors"], [])
+
+
+class CosmeticCssInjectionTests(unittest.TestCase):
+    """inject_cosmetic_css() - step 5.11, Path 1."""
+
+    def test_empty_selectors_is_a_no_op(self):
+        html = "<html><head></head><body>hi</body></html>"
+        new_html, injected = addon.inject_cosmetic_css(html, [])
+        self.assertFalse(injected)
+        self.assertEqual(new_html, html)
+
+    def test_inserted_before_head_close_when_present(self):
+        html = "<html><head><title>t</title></head><body>hi</body></html>"
+        new_html, injected = addon.inject_cosmetic_css(html, ["ytd-display-ad-renderer"])
+        self.assertTrue(injected)
+        self.assertIn("<style>ytd-display-ad-renderer{display:none!important}</style></head>", new_html)
+        # Real content is untouched, just relocated around the insertion.
+        self.assertIn("<title>t</title>", new_html)
+        self.assertIn("<body>hi</body>", new_html)
+
+    def test_multiple_selectors_each_get_their_own_rule(self):
+        html = "<html><head></head><body></body></html>"
+        new_html, injected = addon.inject_cosmetic_css(html, ["sel-a", "sel-b"])
+        self.assertTrue(injected)
+        self.assertIn("sel-a{display:none!important}", new_html)
+        self.assertIn("sel-b{display:none!important}", new_html)
+
+    def test_falls_back_to_after_body_open_when_no_head_close(self):
+        html = "<html><body id=\"x\">hi</body></html>"
+        new_html, injected = addon.inject_cosmetic_css(html, ["sel-a"])
+        self.assertTrue(injected)
+        self.assertTrue(new_html.startswith("<html><body id=\"x\"><style>"))
+        self.assertIn("hi</body></html>", new_html)
+
+    def test_falls_back_to_prepend_when_neither_anchor_present(self):
+        html = "just some fragment, no head or body tags"
+        new_html, injected = addon.inject_cosmetic_css(html, ["sel-a"])
+        self.assertTrue(injected)
+        self.assertTrue(new_html.startswith("<style>sel-a{display:none!important}</style>"))
+        self.assertTrue(new_html.endswith(html))
+
+    def test_output_is_still_well_formed_enough_to_contain_original_bytes(self):
+        html = "<!DOCTYPE html><html><head><meta charset=\"utf-8\"></head><body><div>Video</div></body></html>"
+        new_html, injected = addon.inject_cosmetic_css(html, ["ytd-ad-slot-renderer"])
+        self.assertTrue(injected)
+        # Nothing from the original document was dropped, only inserted into.
+        for fragment in ("<!DOCTYPE html>", "<meta charset=\"utf-8\">", "<div>Video</div>"):
+            self.assertIn(fragment, new_html)
+
+
+class CspLoosenForInlineStyleTests(unittest.TestCase):
+    """loosen_csp_for_inline_style() - step 5.11, Path 1."""
+
+    def test_falsy_input_returned_unchanged(self):
+        self.assertEqual(addon.loosen_csp_for_inline_style(""), "")
+        self.assertIsNone(addon.loosen_csp_for_inline_style(None))
+
+    def test_style_src_gets_unsafe_inline_appended(self):
+        csp = "default-src 'self'; style-src 'self' fonts.googleapis.com"
+        out = addon.loosen_csp_for_inline_style(csp)
+        self.assertIn("style-src 'self' fonts.googleapis.com 'unsafe-inline'", out)
+        # default-src is untouched - only the style policy was loosened.
+        self.assertIn("default-src 'self'", out)
+
+    def test_already_allows_inline_style_is_unchanged(self):
+        csp = "style-src 'self' 'unsafe-inline'"
+        out = addon.loosen_csp_for_inline_style(csp)
+        self.assertEqual(out, csp)
+
+    def test_no_style_src_falls_back_to_loosening_default_src(self):
+        csp = "default-src 'self' example.com; script-src 'self'"
+        out = addon.loosen_csp_for_inline_style(csp)
+        self.assertIn("default-src 'self' example.com 'unsafe-inline'", out)
+        # script-src must NOT be touched - this function only ever loosens
+        # style, never script (see its own docstring on why that matters).
+        self.assertIn("script-src 'self'", out)
+        self.assertNotIn("script-src 'self' 'unsafe-inline'", out)
+
+    def test_neither_style_src_nor_default_src_present_is_unchanged(self):
+        csp = "script-src 'self'; img-src *"
+        out = addon.loosen_csp_for_inline_style(csp)
+        self.assertEqual(out, csp)
+
+    def test_script_src_is_never_modified_by_this_function(self):
+        # The single most important property of this function, given its
+        # own docstring's promise: it must be structurally impossible for
+        # it to loosen script execution, only style.
+        csp = "style-src 'none'; script-src 'self' 'nonce-abc123'"
+        out = addon.loosen_csp_for_inline_style(csp)
+        self.assertIn("script-src 'self' 'nonce-abc123'", out)
+
 
 if __name__ == "__main__":
     unittest.main()

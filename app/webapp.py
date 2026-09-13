@@ -52,6 +52,7 @@ import secrets
 import sqlite3
 import subprocess
 import time
+from typing import Optional
 
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.responses import HTMLResponse, PlainTextResponse
@@ -215,6 +216,15 @@ class DpiRulesUpdate(BaseModel):
     blocked_paths: list[str]
     reason: str
     confirm_privacy_scope_change: bool = False
+    # Step 5.11, Path 1 (cosmetic CSS injection only - see
+    # ENHANCEMENT-PLAN.md's record of Path 2 and why it was deferred).
+    # None (not False/[]) means "not sent, leave the current value alone" -
+    # api_dpi_rules_set merges these against the rules already on disk,
+    # so a request that only means to edit e.g. blocked_paths can't
+    # silently wipe an operator's cosmetic settings back to defaults just
+    # by omitting these two fields.
+    cosmetic_injection_enabled: Optional[bool] = None
+    cosmetic_selectors: Optional[list[str]] = None
 
 
 class QuarantineUpdate(BaseModel):
@@ -1476,6 +1486,9 @@ def api_dpi_rules_get():
         "ad_renderers": annotate("ad_renderers"),
         "blocked_paths": annotate("blocked_paths"),
         "stats_age": _age(time.time() - stats["written_at"]) if stats.get("written_at") else None,
+        # Step 5.11, Path 1 - see adfilter_rules.py's OPTIONAL_RULE_DEFAULTS.
+        "cosmetic_injection_enabled": rules.get("cosmetic_injection_enabled", False),
+        "cosmetic_selectors": rules.get("cosmetic_selectors", []),
     }
 
 
@@ -1494,18 +1507,28 @@ def api_dpi_rules_set(body: DpiRulesUpdate):
     endpoints."""
     if not body.reason.strip():
         raise HTTPException(400, "a reason is required")
+    current = _read_dpi_rules()
     new_rules = {
         "decrypt_suffixes": body.decrypt_suffixes,
         "ad_fields": body.ad_fields,
         "ad_renderers": body.ad_renderers,
         "blocked_paths": body.blocked_paths,
+        # None means "this request doesn't mean to touch cosmetic
+        # settings" - keep whatever's already on disk, not the Pydantic
+        # field default, so an edit to e.g. blocked_paths alone can never
+        # silently reset these. See DpiRulesUpdate's own docstring.
+        "cosmetic_injection_enabled": (
+            body.cosmetic_injection_enabled if body.cosmetic_injection_enabled is not None
+            else current.get("cosmetic_injection_enabled", False)),
+        "cosmetic_selectors": (
+            body.cosmetic_selectors if body.cosmetic_selectors is not None
+            else current.get("cosmetic_selectors", [])),
     }
     try:
         adfilter_rules.validate_rules(new_rules)
     except ValueError as e:
         raise HTTPException(400, str(e))
 
-    current = _read_dpi_rules()
     if set(new_rules["decrypt_suffixes"]) != set(current.get("decrypt_suffixes", [])):
         if not body.confirm_privacy_scope_change:
             raise HTTPException(400,

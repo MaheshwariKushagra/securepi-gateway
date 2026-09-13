@@ -35,5 +35,16 @@
     "/pagead/",
     "/ptracking",
     "/youtubei/v1/log_event"
+  ],
+  "cosmetic_injection_enabled": false,
+  "cosmetic_selectors": [
+    "ytd-display-ad-renderer",
+    "ytd-ad-slot-renderer",
+    "ytd-in-feed-ad-layout-renderer",
+    "ytd-promoted-sparkles-web-renderer",
+    "ytd-companion-slot-renderer",
+    "ytd-banner-promo-renderer",
+    "ytd-statement-banner-renderer",
+    "ytd-primetime-promo-renderer"
   ]
 }

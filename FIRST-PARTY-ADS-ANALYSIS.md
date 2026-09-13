@@ -110,19 +110,28 @@ process, after TLS termination and after the DOM is parsed, it has:
 |---|---|
 | Full request URL including path and query | Hostname only |
 | The initiating document and frame context | Nothing |
-| The parsed DOM, for cosmetic element hiding | Nothing |
-| JavaScript execution context, for scriptlet injection | Nothing |
+| The parsed, live DOM, to hide elements it can actually see rendered | A response body it can inject *blind* CSS selectors into - see the correction below |
+| JavaScript execution context, for scriptlet injection | The ability to inject or rewrite `<script>` tags in a response body - technically possible, deliberately not done. See the correction below |
 | Per-request blocking before the request is issued | Post-hoc packet visibility only |
 
-uBO's three main techniques each depend on information the gateway does not possess:
+uBO's three main techniques each depend on information the gateway does not possess, or
+capability it deliberately does not use:
 
 1. **Network filtering** by full URL path — the gateway sees no paths.
-2. **Cosmetic filtering**, injecting CSS to hide elements — the gateway has no DOM.
-3. **Scriptlet injection**, neutralising ad logic in JavaScript — the gateway cannot
-   execute or modify page scripts.
+2. **Cosmetic filtering**, injecting CSS to hide elements — the gateway *can* inject CSS
+   targeting known selectors, without ever seeing the live DOM; this is weaker than uBO's
+   live, DOM-aware hiding, not impossible. **Corrected 2026, see below.**
+3. **Scriptlet injection**, neutralising ad logic in JavaScript — technically possible for
+   a MITM proxy (it can inject or rewrite `<script>` content the same way it can inject
+   CSS), but deliberately not built here: an injected script that gets something wrong can
+   break the page outright, in a way this project has no way to verify without a real
+   device actively browsing through the gateway. A risk-based decision, not a technical
+   barrier - see the correction below.
 
 So the barrier is not licensing, packaging, or effort. **The gateway does not have the
-inputs uBO's algorithms consume.** Porting it would mean inventing the data it needs.
+per-request, per-frame inputs uBO's *network-filtering* algorithm consumes** (item 1
+above). Porting that specific engine would mean inventing data that doesn't exist at this
+vantage point. Cosmetic and scriptlet injection are a different story, addressed below.
 
 The correct relationship between the two is complementary, not integrated:
 
@@ -168,14 +177,32 @@ local trust store. Relocating the same design to a router serving mobile devices
 | Certificate pinning in the YouTube and X apps | Apps refuse to connect; they do not degrade, they stop |
 | Android 7+ CA policy | User-installed CAs are not trusted for app traffic at all |
 | 15 heterogeneous devices | Manual CA installation on each; IoT devices cannot accept one |
-| No DOM after MITM | Cosmetic filtering remains impossible — MITM yields HTTP bodies, not the post-JavaScript DOM |
+| No DOM after MITM | Cosmetic hiding is *blind* - selectors are injected without ever seeing whether they match anything real - not impossible. **Corrected 2026, see below** |
 
-**The decisive point: even paying all of those costs does not achieve the goal.** YouTube
-advertisement segments are not a distinct URL for a matching engine to reject. They arrive
-inside the same DASH manifest as the content. Removing them is what uBO's *scriptlet
-injection* accomplishes, by rewriting JavaScript within the page — a capability TLS
-interception does not confer. The result would be rewriting minified JavaScript in transit
-against a vendor who alters it deliberately and continuously.
+> **Correction (2026), on the "No DOM after MITM" row above:** this originally read
+> "Cosmetic filtering remains impossible." That overstated it. A MITM proxy cannot see the
+> rendered DOM, so it cannot do what uBO does - observe which elements actually exist and
+> hide exactly those, adapting live as the page changes. But it CAN still inject a
+> `<style>` block targeting known, stable selectors (custom element tag names, in
+> YouTube's case) into the HTML response before the browser ever renders it. A selector
+> that doesn't match anything on a given page is a silent no-op, not a failure - which is
+> exactly why this was judged low-risk enough to actually build: ENHANCEMENT-PLAN.md step
+> 5.11, `inject_cosmetic_css()` in `dpi/securepi_adfilter.py`, shipped and tested. It is
+> real, but strictly weaker than browser-side cosmetic filtering, not equivalent to it -
+> "limited" is the accurate word this table should have used, not "impossible."
+
+**The decisive point: even paying all of those costs does not fully achieve the goal.**
+YouTube advertisement segments are not a distinct URL for a matching engine to reject.
+They arrive inside the same DASH manifest as the content. Fully removing every trace of
+them the way uBO's *scriptlet injection* does - rewriting JavaScript within the page -
+is technically *possible* for a MITM proxy (it can rewrite any response body, JS
+included, the same way this project already rewrites JSON and HTML), but was
+deliberately not attempted: an injected script that gets something wrong against a
+target this complex and actively-changing can break the page outright, with no way to
+verify the fix short of a real device actively browsing through the gateway. That is a
+risk-management decision this project made explicitly (see ENHANCEMENT-PLAN.md's record
+of "Path 2" under step 5.11), not evidence that TLS interception structurally cannot
+confer the capability.
 
 | Effort | Gain |
 |---|---|

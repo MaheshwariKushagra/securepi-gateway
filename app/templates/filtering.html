@@ -96,6 +96,17 @@
             <div class="subtle" style="margin-bottom:4px">Blocked paths - endpoints refused with an empty response <span id="dpiRuleBlockedPathsHits" class="dim"></span></div>
             <textarea class="input" id="dpiRuleBlockedPaths" style="width:100%; min-height:60px; font-family:monospace; font-size:12px"></textarea>
         </div>
+        <div style="border-top:1px solid var(--border); padding-top:12px">
+            <div style="display:flex; align-items:center; gap:10px; margin-bottom:6px">
+                <div class="subtle" style="flex:1">
+                    Cosmetic CSS injection (optional, off by default) - hide leftover ad-shaped
+                    containers on decrypted pages. CSS only, never JavaScript - see the card's
+                    tooltip for what that boundary means.
+                </div>
+                <button class="btn" id="dpiCosmeticToggle" title="Injects a <style> block on allowlisted HTML pages; never executes JavaScript on the page">Loading…</button>
+            </div>
+            <textarea class="input" id="dpiRuleCosmeticSelectors" style="width:100%; min-height:60px; font-family:monospace; font-size:12px" placeholder="One CSS selector per line, e.g. ytd-display-ad-renderer"></textarea>
+        </div>
         <div class="dim" style="font-size:11px">One rule per line. Hit counts are since the DPI service last restarted - a rule with zero hits for a while may be dead.</div>
         <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap">
             <input class="input" id="dpiRuleReason" placeholder="Reason for this change (required)" style="flex:1; min-width:220px">

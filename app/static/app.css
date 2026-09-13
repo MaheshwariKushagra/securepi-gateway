@@ -540,3 +540,19 @@ a.link:hover { text-decoration: underline; }
     main { padding: 16px 14px 40px; }
     .kpi-spark-wrap { display: none; }
 }
+
+/* ------------------------------------------------------------- print (6.6) */
+/* The weekly report (step 6.6) is meant to be saved as a PDF straight from
+   the browser's own print dialog, with no PDF library - this is the entire
+   mechanism that makes that possible. Console chrome (sidebar, topbar,
+   command palette, toasts, every button/input) is hidden; the report's own
+   cards are left to flow as plain printed sections. */
+@media print {
+    .sidebar, .topbar, .cmdk-overlay, .toast-stack, .notif-panel,
+    .btn, button, select, input, .report-no-print { display: none !important; }
+    .shell, .main { display: block; width: 100%; }
+    main { padding: 0; }
+    body { background: #fff; color: #000; }
+    .card { border: 1px solid #999; box-shadow: none; break-inside: avoid; margin-bottom: 12px; }
+    a { color: inherit; text-decoration: none; }
+}

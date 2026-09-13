@@ -1,0 +1,56 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="page-head report-no-print">
+    <h1>Weekly Report</h1>
+    <span class="subtle">a printable security and ad-blocking summary for any past week</span>
+    <div class="spacer"></div>
+    <button class="btn" id="reportPrevWeek">&larr; Previous week</button>
+    <input class="input" type="date" id="reportWeekPicker" style="width:150px">
+    <button class="btn" id="reportNextWeek">Next week &rarr;</button>
+    <button class="btn" id="reportPrint">Print / Save as PDF</button>
+</div>
+
+<div class="page-head" id="reportWeekLabel" style="margin-top:-6px">
+    <h2 style="font-size:16px; font-weight:600" id="reportWeekRange">Loading…</h2>
+</div>
+
+<div class="card" style="margin-bottom:14px">
+    <div class="card-head"><h2>Incidents by ATT&amp;CK Tactic</h2>
+        <span class="spacer"></span><span class="subtle" id="reportIncidentTotal"></span></div>
+    <div class="card-body tight feed" id="reportTactics"><div class="empty">Loading…</div></div>
+</div>
+
+<div class="card" style="margin-bottom:14px">
+    <div class="card-head"><h2>Riskiest Devices</h2></div>
+    <div class="card-body tight feed" id="reportRiskiest"><div class="empty">Loading…</div></div>
+    <div class="card-body" style="border-top:1px solid var(--border)">
+        <div class="dim" style="font-size:11px">
+            Severity weight accumulated from this week's own incidents (resolved incidents
+            still count - they were real; false positives don't). This is deliberately NOT
+            the live dashboard's decaying risk score, which has a 24-hour half-life and would
+            round an incident from early in the week to zero by the time the week ends.
+        </div>
+    </div>
+</div>
+
+<div class="card" style="margin-bottom:14px">
+    <div class="card-head"><h2>Ad-Blocking Summary</h2></div>
+    <div class="card-body">
+        <dl class="meta-grid" id="reportAdblockSummary"></dl>
+    </div>
+    <div class="card-body tight feed" id="reportTrackers"></div>
+    <div class="card-body tight feed" id="reportTier2"></div>
+</div>
+
+<div class="card">
+    <div class="card-head"><h2>Platform Health</h2></div>
+    <div class="card-body">
+        <dl class="meta-grid" id="reportPlatform"></dl>
+        <p class="dim" style="font-size:11px; margin-top:10px">
+            Limited to what this project actually measures after the fact - event
+            ingest volume and platform-effectiveness incidents. Packet drops, disk
+            headroom and WAN latency are not yet collected (Stage 3's V5, not built).
+        </p>
+    </div>
+</div>
+{% endblock %}

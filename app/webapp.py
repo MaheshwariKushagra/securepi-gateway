@@ -18,6 +18,7 @@ Routes:
   /filtering         DNS filtering: blocklists, custom rules, query log
   /settings          thresholds, audit log, password, OSS attributions (step 6.3)
   /hunt              flow/DNS/TLS search with pivots, top talkers, saved searches (step 6.5)
+  /reports/weekly    weekly security summary, print-to-PDF (step 6.6)
 
   /api/overview      everything the dashboard needs, one round trip
   /api/devices       device inventory
@@ -58,6 +59,8 @@ Routes:
   /api/hunt                      search + top talkers/destinations/protocol breakdown
   /api/hunt/saved                list/create saved searches
   /api/hunt/saved/{id}/remove    delete a saved search
+  /reports/weekly                weekly security summary, print-to-PDF (step 6.6)
+  /api/reports/weekly            incidents by tactic, riskiest devices, ad-blocking, platform health
 """
 
 import base64
@@ -2293,6 +2296,112 @@ def page_filtering(request: Request):
 def page_settings(request: Request):
     return templates.TemplateResponse("settings.html", {
         "request": request, "active": "settings", "title": "Settings"})
+
+
+def _week_bounds(week_str):
+    """The Monday-to-Sunday week containing `week_str` (an ISO date), or
+    the most recently FULLY COMPLETED week if `week_str` is empty or
+    unparseable - deliberately never the current, still-in-progress week,
+    since a report for a week that hasn't finished yet would silently
+    under-count everything in it."""
+    today = datetime.date.today()
+    monday = today - datetime.timedelta(days=today.weekday() + 7)
+    if week_str:
+        try:
+            d = datetime.date.fromisoformat(week_str)
+            monday = d - datetime.timedelta(days=d.weekday())
+        except ValueError:
+            pass
+    start = datetime.datetime.combine(monday, datetime.time.min).timestamp()
+    end = start + 7 * 86400
+    return start, end, monday
+
+
+@app.get("/api/reports/weekly")
+def api_weekly_report(week: str = Query("")):
+    """The weekly security summary (ENHANCEMENT-PLAN.md step 6.6):
+    incidents by ATT&CK tactic, riskiest devices, an ad-blocking summary,
+    and platform health, all scoped to one Monday-Sunday week. Reuses
+    step 5.3/5.6's own analytics helpers (_tracker_breakdown,
+    _savings_estimate, _tier2_breakdown) rather than duplicating them -
+    they already accept an arbitrary [start, end) window, not just
+    "since now"."""
+    c = db()
+    start, end, monday = _week_bounds(week)
+
+    incidents = c.execute(
+        "SELECT * FROM incidents WHERE created_at >= ? AND created_at < ?", (start, end)).fetchall()
+    by_tactic = collections.Counter()
+    for i in incidents:
+        attack = playbooks.get_attack(i["signal_type"])
+        by_tactic[attack["tactic"] if attack else "Not ATT&CK-mapped"] += 1
+    incidents_by_tactic = [{"tactic": t, "count": n} for t, n in by_tactic.most_common()]
+
+    # Riskiest devices FOR THIS WEEK - deliberately NOT risk.device_risk(),
+    # which was tried first and rejected: that function's decay has a
+    # 24-hour half-life, built for "how worried should I be right now" on
+    # the live dashboard. Evaluated a full 7 days later (this function's
+    # own end-of-week timestamp), an incident from early in the week has
+    # already decayed through ~7 half-lives and rounds to zero - a report
+    # that showed "no risk" for a week that had a real port scan on Monday
+    # would be actively misleading. Retrospective scoring instead sums
+    # each week's own severity weights with no decay - "what happened this
+    # week", not "how urgent does it still look today". Resolved incidents
+    # still count (they were real); false positives don't (adjudicated as
+    # noise).
+    weight_by_device = collections.Counter()
+    for i in incidents:
+        if i["status"] == "false_positive" or i["device_id"] is None:
+            continue
+        weight_by_device[i["device_id"]] += risk.SEVERITY_WEIGHT.get(i["severity"], 0)
+
+    riskiest = []
+    for device_id, weight in weight_by_device.items():
+        d = c.execute("SELECT * FROM devices WHERE id=?", (device_id,)).fetchone()
+        if d is None or weight <= 0:
+            continue
+        score = min(100, round(weight))
+        riskiest.append({"id": device_id, "name": device_label(d),
+                          "score": score, "band": risk.risk_band(score)})
+    riskiest.sort(key=lambda x: -x["score"])
+
+    dns_total = c.execute(
+        "SELECT count(*) FROM events WHERE event_type='dns_query' AND ts >= ? AND ts < ?",
+        (start, end)).fetchone()[0]
+    dns_blocked = c.execute(
+        "SELECT count(*) FROM events WHERE event_type='dns_query' AND blocked=1 AND ts >= ? AND ts < ?",
+        (start, end)).fetchone()[0]
+
+    # Platform health: only what's genuinely measurable after the fact.
+    # Stage 3's V5 ("Platform and WAN health" - Suricata stats, disk
+    # headroom, a WAN latency probe) hasn't been built, so this
+    # deliberately does not claim any packet-drop or WAN-latency figure.
+    events_ingested = c.execute(
+        "SELECT count(*) FROM events WHERE ts >= ? AND ts < ?", (start, end)).fetchone()[0]
+    platform_signal_types = ("adblock_ineffective", "privacy_scope_failure")
+    platform_incidents = sum(1 for i in incidents if i["signal_type"] in platform_signal_types)
+
+    return {
+        "week_start": monday.isoformat(),
+        "week_end": (monday + datetime.timedelta(days=6)).isoformat(),
+        "incident_count": len(incidents),
+        "incidents_by_tactic": incidents_by_tactic,
+        "riskiest_devices": riskiest[:10],
+        "adblock": {
+            "dns_total": dns_total, "dns_blocked": dns_blocked,
+            "block_pct": round(100.0 * dns_blocked / dns_total, 1) if dns_total else 0.0,
+            "trackers": _tracker_breakdown(c, start, end),
+            "savings": _savings_estimate(dns_blocked),
+            "tier2": _tier2_breakdown(c, start, end),
+        },
+        "platform": {"events_ingested": events_ingested, "platform_incidents": platform_incidents},
+    }
+
+
+@app.get("/reports/weekly", response_class=HTMLResponse)
+def page_weekly_report(request: Request):
+    return templates.TemplateResponse("reports_weekly.html", {
+        "request": request, "active": "reports", "title": "Weekly Report"})
 
 
 @app.get("/devices/{device_id}", response_class=HTMLResponse)

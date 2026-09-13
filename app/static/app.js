@@ -1366,6 +1366,73 @@ function linesToList(text) {
     return text.split("\n").map(s => s.trim()).filter(Boolean);
 }
 
+function initWeeklyReport() {
+    const picker = $("#reportWeekPicker");
+    if (!picker) return;
+
+    function shiftWeek(days) {
+        const d = new Date(picker.value + "T00:00:00");
+        d.setDate(d.getDate() + days);
+        picker.value = d.toISOString().slice(0, 10);
+        load();
+    }
+
+    async function load() {
+        const params = picker.value ? `?week=${picker.value}` : "";
+        try {
+            const res = await fetch(`/api/reports/weekly${params}`);
+            if (!res.ok) throw new Error("request failed");
+            const d = await res.json();
+            picker.value = d.week_start;
+            $("#reportWeekRange").textContent = `${d.week_start} to ${d.week_end}`;
+            $("#reportIncidentTotal").textContent = `${d.incident_count} incidents this week`;
+
+            $("#reportTactics").innerHTML = d.incidents_by_tactic.length ? d.incidents_by_tactic.map(t => `
+                <div class="feed-row"><span class="truncate">${esc(t.tactic)}</span><span class="dim">${t.count}</span></div>
+            `).join("") : `<div class="empty">No incidents this week.</div>`;
+
+            $("#reportRiskiest").innerHTML = d.riskiest_devices.length ? d.riskiest_devices.map(r => `
+                <div class="feed-row">
+                    <span class="chip ${r.band} dot">${esc(r.band)}</span>
+                    <span class="truncate">${esc(r.name)}</span>
+                    <span class="dim">score ${r.score}</span>
+                </div>`).join("") : `<div class="empty">No devices carried risk this week.</div>`;
+
+            const a = d.adblock;
+            $("#reportAdblockSummary").innerHTML = `
+                <dt>DNS queries</dt><dd>${a.dns_total.toLocaleString()}</dd>
+                <dt>Blocked</dt><dd>${a.dns_blocked.toLocaleString()} (${a.block_pct}%)</dd>
+                <dt>Tracker companies contacted</dt><dd>${a.trackers.companies_contacted} (${a.trackers.companies_blocked} at least partly blocked)</dd>
+                <dt>Estimated savings</dt><dd>${esc(a.savings.estimated_bytes_h)} <span class="dim">(${esc(a.savings.method)})</span></dd>`;
+
+            $("#reportTrackers").innerHTML = a.trackers.top.length ? `
+                <div class="feed-row"><span><strong>Top tracker companies</strong></span></div>
+                ${a.trackers.top.map(t => `
+                <div class="feed-row"><span class="truncate">${esc(t.company)}</span><span class="dim">${t.contacted}x contacted, ${t.blocked}x blocked</span></div>
+                `).join("")}` : "";
+
+            $("#reportTier2").innerHTML = a.tier2.active ? `
+                <div class="feed-row"><span><strong>Tier 2 (HTTPS ad removal)</strong></span></div>
+                <div class="feed-row"><span>Ads removed</span><span class="dim">${a.tier2.ads_removed}</span></div>
+                <div class="feed-row"><span>Decrypted / passthrough / path-blocked</span><span class="dim">${a.tier2.decrypt} / ${a.tier2.passthrough} / ${a.tier2.path_blocked}</span></div>
+            ` : `<div class="feed-row"><span class="dim">No Tier 2 activity this week.</span></div>`;
+
+            $("#reportPlatform").innerHTML = `
+                <dt>Events ingested</dt><dd>${d.platform.events_ingested.toLocaleString()}</dd>
+                <dt>Platform-effectiveness incidents</dt><dd>${d.platform.platform_incidents}</dd>`;
+        } catch (err) {
+            $("#reportTactics").innerHTML = `<div class="empty">Could not load the report.</div>`;
+        }
+    }
+
+    picker.addEventListener("change", load);
+    $("#reportPrevWeek").addEventListener("click", () => shiftWeek(-7));
+    $("#reportNextWeek").addEventListener("click", () => shiftWeek(7));
+    $("#reportPrint").addEventListener("click", () => window.print());
+
+    load();
+}
+
 function initHunt() {
     const wrap = $("#huntResults");
     if (!wrap) return;
@@ -2159,6 +2226,7 @@ const CMDK_PAGES = [
     { label: "Incidents", href: "/incidents", icon: "i-alert" },
     { label: "Filtering", href: "/filtering", icon: "i-filter" },
     { label: "Hunt", href: "/hunt", icon: "i-search" },
+    { label: "Weekly Report", href: "/reports/weekly", icon: "i-report" },
     { label: "Settings", href: "/settings", icon: "i-sliders" },
 ];
 
@@ -2272,6 +2340,7 @@ document.addEventListener("DOMContentLoaded", () => {
     initDpiRules();
     initSettings();
     initHunt();
+    initWeeklyReport();
     initIncidentNotes();
     initIncidentBlockDomain();
 

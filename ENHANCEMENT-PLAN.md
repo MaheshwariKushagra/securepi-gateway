@@ -520,7 +520,7 @@ Never cut Stage 2, steps 5.2, 5.3, 5.7, or evaluation items 7.2–7.5.
 | Stage | Steps | Status |
 |---|---|---|
 | 0 | 0.1 · 0.2 · 0.3 | Not started |
-| 1 | **1.1 done, 1.2 done, 1.3 done, 1.4 done, 1.5 done, 1.6 done** · 1.7 · **1.8 done** (1.8 out of order - see note below) | 1.1–1.6, 1.8 done, 1.7 not started |
+| 1 | **1.1 done, 1.2 done, 1.3 done, 1.4 done, 1.5 done, 1.6 done, 1.7 done, 1.8 done** (1.8 out of order - see note below) | Stage 1 complete |
 | 2 | 2.1 · 2.2 · 2.3 · 2.4 · 2.5 · 2.6 · 2.7 · 2.8 | Not started |
 | 3 | 3.1 · 3.2 · 3.3 · 3.4 · 3.5 · 3.6 | Not started |
 | 4 | 4.1 · 4.2 · 4.3 · 4.4 · 4.5 | Not started |
@@ -2647,3 +2647,75 @@ reproduction of the exact G6 bug scenario, not just a fixture:**
   reverted, since this is test-harness-only data and the new attribution
   is the intended, more-correct answer going forward.
 - Journal clean across all three services throughout.
+
+**Note on step 1.7 (AP client isolation), implemented locally and
+deployed live.** Added `ap_isolate=1` to `gateway/hostapd.conf` (finding
+G8) - without it, two devices on `SecurePi-Test` can talk directly to
+each other over the AP itself, invisibly to this project's own
+sensors: Suricata only sees traffic that actually reaches the gateway,
+and client-to-client 802.11 frames never do, so a phone-to-phone scan
+or any other peer traffic would be completely undetectable. Documented
+the real, accepted trade-off directly in the config file: isolation
+also blocks legitimate local peer-to-peer traffic (Chromecast/AirPlay
+casting, local printer discovery, DLNA, mDNS/Bonjour discovery between
+two devices on this AP) - acceptable for a security-evaluation network,
+not a home entertainment one, per the step's own "document the
+casting/mDNS trade-off" instruction.
+
+**Deployed to the live gateway.** `.bak-1.7-*` copy of
+`/etc/hostapd/hostapd.conf` taken first; `hostapd` was restarted and
+came up cleanly (`AP-ENABLED` in the journal, no errors) with the new
+directive in place.
+
+**The exit criterion - "Client-to-client test flow appears in events" -
+could NOT be fully live-verified, and that limitation is recorded here
+rather than silently skipped or falsely claimed.** Two real constraints,
+checked directly rather than assumed:
+
+- The test harness's network namespaces (`ns_attacker`/`ns_victim`) are
+  deliberately connected via a separate bridge (`br-test`), entirely
+  isolated from `ap0`/hostapd - confirmed by reading
+  `setup-test-harness.sh`'s own header and veth wiring. `ap_isolate`
+  only affects real 802.11 association on `ap0`; the test harness never
+  goes through it at all, so it cannot exercise this fix regardless of
+  how it's used.
+- Testing the real effect therefore needs two devices genuinely
+  associated with `SecurePi-Test` - which means the two real phones,
+  since there is no second controllable WiFi client on this network.
+  Checked live before attempting anything: `iw dev ap0 station dump`
+  showed ZERO devices currently associated, and both real devices' own
+  event history confirmed why - device 1 last active ~37 hours ago,
+  device 2 ~12.4 hours ago, both well before this change and at an hour
+  (past 4am local time) where neither phone is in active use. Per this
+  session's own standing safety rule, orchestrating traffic between the
+  two real, in-use devices is not something to do without the user's
+  own participation (unlike the test harness, there is no way to
+  script "make phone A ping phone B" without physically touching both
+  phones) - this was confirmed as genuinely blocked, not worked around.
+- What WAS verified: the config change did not disrupt anything (both
+  real devices were already disconnected well before the restart, not
+  because of it), `hostapd` restarted cleanly with the new directive
+  active, and `ap0` came back up on the correct channel/SSID with no
+  errors in its journal.
+
+**Left for the user to confirm when convenient**: with both phones on
+`SecurePi-Test`, one device pinging or otherwise reaching the other
+directly should now appear as a real flow in Hunt/the events table
+(previously invisible) - the Console's Hunt page (step 6.5) is the
+easiest way to check, filtering by either device's IP over a recent
+time range.
+
+This closes Stage 1 (steps 1.1 through 1.8, with 1.8 already done out
+of order before this stretch of work began): every step implemented,
+locally tested (with a permanent, committed test suite as of this
+stage - step 1.1's own achievement, 110 tests total), deployed to the
+live gateway, and verified against real production data wherever that
+was genuinely possible, with the one step where full live verification
+wasn't possible (1.7) recorded honestly rather than glossed over. Four
+real, previously-undiscovered or previously-unfixed bugs were found and
+fixed along the way: a persisted-watermark bug and a cumulative
+evidence-count bug (both already fixed before this stage began, now
+permanently regression-tested), a 5.5-hour timestamp skew affecting
+every AdGuard-sourced event (found live during step 1.4's own
+investigation, not hypothesised), and G1/G2/G3/G6's detection-accuracy
+findings from the original gap analysis.

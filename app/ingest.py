@@ -65,6 +65,20 @@ SCHEMA_MIGRATIONS = [
        )""",
     "CREATE INDEX IF NOT EXISTS idx_device_hourly_hour ON device_hourly(hour_start)",
     "ALTER TABLE events ADD COLUMN dhcp_params TEXT",
+    """CREATE TABLE IF NOT EXISTS settings (
+           key        TEXT PRIMARY KEY,
+           value      TEXT NOT NULL,
+           updated_at REAL NOT NULL
+       )""",
+    """CREATE TABLE IF NOT EXISTS audit_log (
+           id     INTEGER PRIMARY KEY,
+           ts     REAL NOT NULL,
+           actor  TEXT NOT NULL,
+           action TEXT NOT NULL,
+           target TEXT,
+           detail TEXT
+       )""",
+    "CREATE INDEX IF NOT EXISTS idx_audit_log_ts ON audit_log(ts)",
 ]
 
 # How long to wait between passes over the log files. Two seconds keeps the

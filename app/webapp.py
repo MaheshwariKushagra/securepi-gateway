@@ -16,6 +16,7 @@ Routes:
   /incidents         incident queue
   /incidents/{id}    incident detail with evidence chain
   /filtering         DNS filtering: blocklists, custom rules, query log
+  /settings          thresholds, audit log, password, OSS attributions (step 6.3)
 
   /api/overview      everything the dashboard needs, one round trip
   /api/devices       device inventory
@@ -44,6 +45,12 @@ Routes:
   /api/devices/{id}/quarantine   quarantine a device via nftables, or undo it
   /api/devices/{id}/baseline     behavioural-baseline "learning" status (step 6.1)
   /api/devices/{id}/fingerprint  device type/vendor/OS classification with evidence (step 6.2)
+  /api/settings                  view/edit console-tunable detection thresholds (step 6.3)
+  /api/settings/retention        honest "not yet implemented" - Stage 1's F3
+  /api/settings/channels         honest "not yet implemented" - Stage 4's R3
+  /api/settings/password         change the console's shared Basic Auth password
+  /api/audit                     recent audit log entries
+  /api/attributions              third-party components this project uses, with real versions/licences
 """
 
 import base64
@@ -54,7 +61,7 @@ import secrets
 import sqlite3
 import subprocess
 import time
-from typing import Optional
+from typing import Any, Optional
 
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.responses import HTMLResponse, PlainTextResponse
@@ -65,11 +72,13 @@ from starlette.requests import Request
 
 import adfilter_rules
 import adguard
+import audit
 import dpi_enroll
 import fingerprint
 import native_trackers
 import quarantine
 import risk
+import settings
 import tracker_entities
 
 DB_PATH = "/opt/securepi/securepi.db"
@@ -233,6 +242,21 @@ class DpiRulesUpdate(BaseModel):
     # by omitting these two fields.
     cosmetic_injection_enabled: Optional[bool] = None
     cosmetic_selectors: Optional[list[str]] = None
+
+
+class SettingUpdate(BaseModel):
+    # `value: Any`, not `float` or `int` - a typed field would let
+    # FastAPI/Pydantic silently coerce the JSON number before
+    # settings.validate() ever sees it (an int setting sent as `3` could
+    # arrive already turned into `3.0`), defeating that function's own
+    # int-vs-float check. Passed through exactly as the client sent it.
+    value: Any
+    reason: str
+
+
+class PasswordChange(BaseModel):
+    current_password: str
+    new_password: str
 
 
 class QuarantineUpdate(BaseModel):
@@ -1208,6 +1232,8 @@ def api_device_apply_profile(device_id: int, body: NativeProfileRequest):
         raise HTTPException(502, str(e))
     print("filtering: applied native profile '%s' (%d domains) to device %d (%s)" % (
         body.vendor, len(prof["domains"]), device_id, name), flush=True)
+    audit.log(c, CONSOLE_USERNAME, "filtering.apply_native_profile", target=name,
+              detail="vendor=%s domains=%d" % (body.vendor, len(prof["domains"])))
     return {"ok": True, "vendor": body.vendor, "domains": prof["domains"]}
 
 
@@ -1224,6 +1250,8 @@ def api_device_remove_profile(device_id: int, body: NativeProfileRequest):
         raise HTTPException(502, str(e))
     print("filtering: removed native profile '%s' (%d rules) from device %d (%s)" % (
         body.vendor, removed, device_id, name), flush=True)
+    audit.log(c, CONSOLE_USERNAME, "filtering.remove_native_profile", target=name,
+              detail="vendor=%s rules_removed=%d" % (body.vendor, removed))
     return {"ok": True, "vendor": body.vendor, "removed": removed}
 
 
@@ -1288,6 +1316,8 @@ def api_apply_resolver_tuning(body: ResolverTuningRequest):
         raise HTTPException(502, str(e))
     print("filtering: applied recommended resolver tuning (optimistic cache, "
           "DNSSEC, parallel dual-DoT upstreams)", flush=True)
+    audit.log(db(), CONSOLE_USERNAME, "filtering.resolver_tuning_apply",
+              detail="optimistic cache, DNSSEC, parallel dual-DoT upstreams")
     return {"ok": True, "applied": new_cfg}
 
 
@@ -1552,6 +1582,8 @@ def api_dpi_rules_set(body: DpiRulesUpdate):
     os.replace(tmp_path, DPI_RULES_PATH)  # atomic - the addon must never read a half-written file
 
     print("filtering: DPI rules updated to version %d - %s" % (new_rules["version"], body.reason), flush=True)
+    audit.log(db(), CONSOLE_USERNAME, "filtering.dpi_rules_update",
+              target="version %d" % new_rules["version"], detail=body.reason)
     return {"ok": True, "version": new_rules["version"]}
 
 
@@ -1689,12 +1721,15 @@ def api_device_allow_domain(device_id: int, body: DeviceRuleRequest):
         rule = adguard.add_client_rule(device_label(d), domain, "allow", expires_at)
     except adguard.AdGuardError as e:
         raise HTTPException(502, str(e))
-    # A real audit_log table lands in ENHANCEMENT-PLAN.md step 1.5; until
-    # then, printing to stdout still puts this in the systemd journal,
-    # which is more than the console action would otherwise leave behind.
+    # The real audit_log table (ENHANCEMENT-PLAN.md step 1.5) was built
+    # as step 6.3's own prerequisite - see app/audit.py. print() stays
+    # too: it's still useful to someone watching `journalctl -f` live,
+    # which querying a table isn't.
     print("filtering: allowed %s for device %d (%s) - %s%s" % (
         domain, device_id, device_label(d), body.reason,
         " [temporary, %dh]" % body.hours if body.temporary else ""), flush=True)
+    audit.log(c, CONSOLE_USERNAME, "filtering.allow", target="device %d: %s" % (device_id, domain),
+              detail=body.reason + (" [temporary, %dh]" % body.hours if body.temporary else ""))
     return {"ok": True, "rule": rule, "domain": domain, "expires_at": expires_at}
 
 
@@ -1717,6 +1752,8 @@ def api_device_block_domain(device_id: int, body: DeviceBlockRequest):
         raise HTTPException(502, str(e))
     print("filtering: blocked %s for device %d (%s) - %s" % (
         domain, device_id, device_label(d), body.reason), flush=True)
+    audit.log(c, CONSOLE_USERNAME, "filtering.block", target="device %d: %s" % (device_id, domain),
+              detail=body.reason)
     return {"ok": True, "rule": rule, "domain": domain}
 
 
@@ -1805,6 +1842,141 @@ def api_device_fingerprint(device_id: int):
     return result
 
 
+# ------------------------------------------------------- settings and audit --
+#
+# Step 6.3 ("Settings view + attributions"). Four detection thresholds are
+# genuinely console-tunable via app/settings.py - see that module's own
+# docstring for exactly which ones, and why not every constant this
+# project has. Retention and notification channels are surfaced honestly
+# as NOT YET IMPLEMENTED below, rather than a settings control that would
+# not actually do anything - Stage 1's F3 (retention) and Stage 4's R3
+# (notification channels) don't exist yet.
+
+# Third-party components this project actually ships or depends on, with
+# real installed versions and licences - checked directly on the gateway
+# (`AdGuardHome --version`, `suricata` banner, `mitmdump --version`) and
+# read from chart.min.js's own header comment, not guessed. tracker_
+# entities.py and native_trackers.py are this project's own original,
+# hand-curated files (documented as such in their own docstrings), not
+# derived from any licensed dataset, so they carry no third-party licence
+# to attribute here.
+ATTRIBUTIONS = [
+    {"name": "Suricata", "version": "7.0.3", "license": "GPLv2",
+     "url": "https://suricata.io/", "role": "network IDS / flow, DNS and TLS metadata sensor"},
+    {"name": "AdGuard Home", "version": "v0.107.79", "license": "GPLv3",
+     "url": "https://github.com/AdguardTeam/AdGuardHome",
+     "role": "DNS filtering, DHCP server, blocklist management"},
+    {"name": "mitmproxy", "version": "12.2.3", "license": "MIT",
+     "url": "https://mitmproxy.org/", "role": "selective HTTPS inspection (Tier 2 ad removal)"},
+    {"name": "Chart.js", "version": "v4.4.4", "license": "MIT",
+     "url": "https://www.chartjs.org/", "role": "console dashboard charts"},
+    {"name": "nftables", "version": "(system package)", "license": "GPLv2",
+     "url": "https://netfilter.org/projects/nftables/", "role": "firewall, NAT, quarantine and DPI redirect"},
+]
+
+
+@app.get("/api/settings")
+def api_settings_get():
+    return {"settings": settings.all_settings(db())}
+
+
+@app.post("/api/settings/{key}")
+def api_settings_set(key: str, body: SettingUpdate):
+    if not body.reason.strip():
+        raise HTTPException(400, "a reason is required")
+    c = db()
+    try:
+        before = settings.get(c, key)
+        settings.set_value(c, key, body.value)
+    except settings.SettingsError as e:
+        raise HTTPException(400, str(e))
+    audit.log(c, CONSOLE_USERNAME, "settings.update", target=key,
+              detail="%s -> %s (%s)" % (before, body.value, body.reason))
+    print("settings: %s changed from %s to %s - %s" % (key, before, body.value, body.reason), flush=True)
+    return {"ok": True, "key": key, "value": body.value}
+
+
+@app.post("/api/settings/{key}/reset")
+def api_settings_reset(key: str):
+    c = db()
+    try:
+        before = settings.get(c, key)
+        settings.reset_to_default(c, key)
+    except settings.SettingsError as e:
+        raise HTTPException(400, str(e))
+    after = settings.get(c, key)
+    audit.log(c, CONSOLE_USERNAME, "settings.reset", target=key, detail="%s -> default (%s)" % (before, after))
+    return {"ok": True, "key": key, "value": after}
+
+
+@app.get("/api/settings/retention")
+def api_settings_retention():
+    """Honest placeholder: Stage 1's F3 ("Retention + hourly rollups")
+    hasn't been built. Nothing in this codebase currently deletes a raw
+    event or an old device_hourly row - the database only ever grows.
+    Surfaced as a real API response rather than a Settings control that
+    would silently do nothing, so the console never implies a retention
+    policy is enforced when none is."""
+    return {
+        "implemented": False,
+        "note": "No retention policy is enforced yet - raw events and hourly rollups are kept "
+                "indefinitely. This is Stage 1's F3, not yet built.",
+    }
+
+
+@app.get("/api/settings/channels")
+def api_settings_channels():
+    """Same honesty as retention above: Stage 4's R3 (notification
+    channels - ntfy/Telegram/email/webhook) hasn't been built. Every
+    "notify" this project currently does is a print() into the systemd
+    journal."""
+    return {
+        "implemented": False,
+        "channels": [],
+        "note": "No notification channels are configured yet - incidents are visible in the "
+                "console and the systemd journal only. This is Stage 4's R3, not yet built.",
+    }
+
+
+@app.post("/api/settings/password")
+def api_settings_password(body: PasswordChange):
+    """Change the console's Basic Auth password. There is one shared
+    account today (finding C7 - no sessions, no per-user accounts yet),
+    so this changes the one password everyone uses. Never logs the
+    actual password value, before or after, into the audit trail or the
+    journal - only that a change happened."""
+    try:
+        current = _console_password()
+    except FileNotFoundError:
+        raise HTTPException(500, "console password file is missing")
+    if not secrets.compare_digest(body.current_password, current):
+        raise HTTPException(400, "current password is incorrect")
+    if len(body.new_password) < 12:
+        raise HTTPException(400, "new password must be at least 12 characters")
+    if body.new_password == body.current_password:
+        raise HTTPException(400, "new password must be different from the current one")
+    with open(CONSOLE_PASSWORD_FILE, "w") as f:
+        f.write(body.new_password)
+    audit.log(db(), CONSOLE_USERNAME, "settings.password_change", detail="password changed (value not logged)")
+    print("settings: console password changed", flush=True)
+    return {"ok": True}
+
+
+@app.get("/api/audit")
+def api_audit(limit: int = Query(200)):
+    rows = audit.recent(db(), limit=limit)
+    return {"entries": [
+        {"id": r["id"], "ts": time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(r["ts"])),
+         "actor": r["actor"], "action": r["action"], "target": r["target"], "detail": r["detail"]}
+        for r in rows
+    ]}
+
+
+@app.get("/api/attributions")
+def api_attributions():
+    return {"attributions": ATTRIBUTIONS}
+
+
 # --------------------------------------------------------------- quarantine --
 #
 # Enforcement lives entirely in the `inet filter quarantine` nftables set;
@@ -1872,6 +2044,12 @@ def page_incidents(request: Request):
 def page_filtering(request: Request):
     return templates.TemplateResponse("filtering.html", {
         "request": request, "active": "filtering", "title": "Filtering"})
+
+
+@app.get("/settings", response_class=HTMLResponse)
+def page_settings(request: Request):
+    return templates.TemplateResponse("settings.html", {
+        "request": request, "active": "settings", "title": "Settings"})
 
 
 @app.get("/devices/{device_id}", response_class=HTMLResponse)

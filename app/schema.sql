@@ -252,4 +252,38 @@ CREATE TABLE IF NOT EXISTS device_hourly (
 
 CREATE INDEX IF NOT EXISTS idx_device_hourly_hour ON device_hourly(hour_start);
 
+-- ---------------------------------------------------------------- settings --
+-- Runtime-tunable thresholds (ENHANCEMENT-PLAN.md step 6.3, and the minimal
+-- slice of Stage 1's F2 "central config" this step needs). One row per
+-- setting; `value` is JSON-encoded so an int, float, bool or string all
+-- round-trip cleanly through the same column. A key with no row here simply
+-- uses app/settings.py's own built-in default - this table only ever holds
+-- OVERRIDES, not a full copy of every setting's value.
+CREATE TABLE IF NOT EXISTS settings (
+    key        TEXT PRIMARY KEY,
+    value      TEXT NOT NULL,
+    updated_at REAL NOT NULL
+);
+
+-- -------------------------------------------------------------- audit_log --
+-- One row per console action that changes something (ENHANCEMENT-PLAN.md
+-- step 1.5, "Audit log" - built here as the minimal prerequisite step 6.3's
+-- "audit viewer" needs, the same way step 6.1 built device_hourly and 6.2
+-- built dhcp_params rather than waiting for their own stage). Several
+-- endpoints across app/webapp.py already print an audit-shaped line to the
+-- journal as a stopgap "until step 1.5 exists" - this table is that step,
+-- and those print() calls now also write here. The print() lines stay too:
+-- the journal is still useful for someone watching live, this table is what
+-- makes the history queryable and displayable in the console itself.
+CREATE TABLE IF NOT EXISTS audit_log (
+    id         INTEGER PRIMARY KEY,
+    ts         REAL NOT NULL,
+    actor      TEXT NOT NULL,   -- the console username; there is only one today
+    action     TEXT NOT NULL,   -- short verb-object, e.g. 'filtering.allow', 'settings.update'
+    target     TEXT,            -- what it acted on, e.g. a domain, a device id, a setting key
+    detail     TEXT             -- free-text: the reason given, the before/after values, etc.
+);
+
+CREATE INDEX IF NOT EXISTS idx_audit_log_ts ON audit_log(ts);
+
 INSERT OR IGNORE INTO ingest_stats (id) VALUES (1);

@@ -1317,6 +1317,163 @@ function linesToList(text) {
     return text.split("\n").map(s => s.trim()).filter(Boolean);
 }
 
+function initSettings() {
+    const wrap = $("#settingsThresholds");
+    if (!wrap) return;
+
+    async function loadThresholds() {
+        try {
+            const res = await fetch("/api/settings");
+            if (!res.ok) throw new Error("request failed");
+            const d = await res.json();
+            wrap.innerHTML = Object.entries(d.settings).map(([key, s]) => `
+                <div class="filter-row" data-key="${esc(key)}">
+                    <span class="truncate" title="${esc(s.help)}">${esc(s.label)}</span>
+                    <input class="input" type="number" step="any" value="${s.value}"
+                           min="${s.min ?? ''}" max="${s.max ?? ''}" style="width:100px" data-setting-input>
+                    ${s.overridden ? `<span class="chip neutral" title="default: ${s.default}">custom</span>` : `<span class="dim">default</span>`}
+                    <button class="btn" data-setting-save>Save</button>
+                    ${s.overridden ? `<button class="btn danger" data-setting-reset>Reset</button>` : ""}
+                </div>`).join("");
+        } catch (err) {
+            wrap.innerHTML = `<div class="empty">Could not load settings</div>`;
+        }
+    }
+
+    wrap.addEventListener("click", async (e) => {
+        const row = e.target.closest(".filter-row");
+        if (!row) return;
+        const key = row.dataset.key;
+        if (e.target.matches("[data-setting-save]")) {
+            const input = row.querySelector("[data-setting-input]");
+            const raw = input.value.trim();
+            const value = raw.includes(".") ? parseFloat(raw) : parseInt(raw, 10);
+            if (Number.isNaN(value)) { toast("Invalid value", "Enter a number.", "high"); return; }
+            const reason = prompt(`Reason for changing ${key}?`);
+            if (!reason || !reason.trim()) { toast("Reason required", "", "high"); return; }
+            try {
+                const res = await fetch(`/api/settings/${key}`, {
+                    method: "POST", headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ value, reason }),
+                });
+                if (!res.ok) {
+                    const err = await res.json().catch(() => ({}));
+                    throw new Error(err.detail || "request failed");
+                }
+                toast("Setting updated", key, "ok");
+                loadThresholds();
+                loadAudit();
+            } catch (err) {
+                toast("Could not update setting", String(err.message || err), "high");
+            }
+        } else if (e.target.matches("[data-setting-reset]")) {
+            try {
+                const res = await fetch(`/api/settings/${key}/reset`, { method: "POST" });
+                if (!res.ok) throw new Error("request failed");
+                toast("Reverted to default", key, "ok");
+                loadThresholds();
+                loadAudit();
+            } catch (err) {
+                toast("Could not reset setting", "", "high");
+            }
+        }
+    });
+
+    async function loadRetention() {
+        const el = $("#settingsRetention");
+        if (!el) return;
+        try {
+            const res = await fetch("/api/settings/retention");
+            const d = await res.json();
+            el.innerHTML = `<div class="callout">${esc(d.note)}</div>`;
+        } catch (err) {
+            el.innerHTML = `<div class="empty">Could not load</div>`;
+        }
+    }
+
+    async function loadChannels() {
+        const el = $("#settingsChannels");
+        if (!el) return;
+        try {
+            const res = await fetch("/api/settings/channels");
+            const d = await res.json();
+            el.innerHTML = `<div class="callout">${esc(d.note)}</div>`;
+        } catch (err) {
+            el.innerHTML = `<div class="empty">Could not load</div>`;
+        }
+    }
+
+    async function loadAudit() {
+        const el = $("#settingsAudit");
+        if (!el) return;
+        try {
+            const res = await fetch("/api/audit?limit=100");
+            const d = await res.json();
+            if (!d.entries.length) { el.innerHTML = `<div class="empty">No audited actions yet</div>`; return; }
+            el.innerHTML = d.entries.map(e => `
+                <div class="feed-row">
+                    <span class="mono dim">${esc(e.ts)}</span>
+                    <span class="type-tag">${esc(e.action)}</span>
+                    <span class="truncate mono" title="${esc(e.detail || '')}">${esc(e.target || '')}</span>
+                    <span class="dim" style="font-size:11px">${esc(e.detail || '')}</span>
+                </div>`).join("");
+        } catch (err) {
+            el.innerHTML = `<div class="empty">Could not load audit log</div>`;
+        }
+    }
+
+    async function loadAttributions() {
+        const el = $("#settingsAttributions");
+        if (!el) return;
+        try {
+            const res = await fetch("/api/attributions");
+            const d = await res.json();
+            el.innerHTML = `<table><tbody>${d.attributions.map(a => `
+                <tr>
+                    <td><a class="link" href="${esc(a.url)}" target="_blank" rel="noopener">${esc(a.name)}</a></td>
+                    <td class="dim">${esc(a.version)}</td>
+                    <td><span class="chip neutral">${esc(a.license)}</span></td>
+                    <td class="dim truncate">${esc(a.role)}</td>
+                </tr>`).join("")}</tbody></table>`;
+        } catch (err) {
+            el.innerHTML = `<div class="empty">Could not load attributions</div>`;
+        }
+    }
+
+    const pwBtn = $("#settingsPwSave");
+    if (pwBtn) {
+        pwBtn.addEventListener("click", async () => {
+            const current_password = $("#settingsPwCurrent").value;
+            const new_password = $("#settingsPwNew").value;
+            if (!current_password || !new_password) {
+                toast("Both fields required", "", "high"); return;
+            }
+            try {
+                const res = await fetch("/api/settings/password", {
+                    method: "POST", headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ current_password, new_password }),
+                });
+                if (!res.ok) {
+                    const err = await res.json().catch(() => ({}));
+                    throw new Error(err.detail || "request failed");
+                }
+                $("#settingsPwCurrent").value = "";
+                $("#settingsPwNew").value = "";
+                toast("Password changed", "Use the new password next time you sign in.", "ok");
+                loadAudit();
+            } catch (err) {
+                toast("Could not change password", String(err.message || err), "high");
+            }
+        });
+    }
+
+    loadThresholds();
+    loadRetention();
+    loadChannels();
+    loadAudit();
+    loadAttributions();
+}
+
 function initDpiRules() {
     const form = $("#dpiRulesForm");
     if (!form) return;
@@ -1801,6 +1958,7 @@ const CMDK_PAGES = [
     { label: "Devices", href: "/devices", icon: "i-monitor" },
     { label: "Incidents", href: "/incidents", icon: "i-alert" },
     { label: "Filtering", href: "/filtering", icon: "i-filter" },
+    { label: "Settings", href: "/settings", icon: "i-sliders" },
 ];
 
 let cmdkItems = [];
@@ -1911,6 +2069,7 @@ document.addEventListener("DOMContentLoaded", () => {
     initResolverQuality();
     initDpiOnboarding();
     initDpiRules();
+    initSettings();
 
     // Global row-action delegate: works across incidents list + detail page.
     // Registered on the capture phase because row markup calls

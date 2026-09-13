@@ -36,6 +36,8 @@ that is the point of having a correlation layer at all.
 import sqlite3
 import time
 
+import settings
+
 DB_PATH = "/opt/securepi/securepi.db"
 
 # How far apart two firings of the SAME signal for the SAME device can be
@@ -145,8 +147,13 @@ def raise_incident(conn, device_id, signal_type, severity, title, description,
 # is meant to catch the slow scan that a per-packet IDS signature misses, not
 # just to duplicate what Suricata's own scan rules already flag.
 # --------------------------------------------------------------------------
-PORT_SCAN_THRESHOLD = 8
 PORT_SCAN_WINDOW_SECONDS = 300
+# The threshold itself lives in app/settings.py (step 6.3) - queried
+# fresh every cycle below, the same "no cached state" design this
+# signal's own trailing-window re-evaluation already follows. The window
+# duration stays a plain constant here; see settings.py's own module
+# docstring for why only the four count/z-score thresholds were wired
+# up to be console-tunable, not every constant in this file.
 
 
 def port_scan_signal(conn):
@@ -159,6 +166,7 @@ def port_scan_signal(conn):
     # overlapping scans from creating duplicate incidents.
     now = time.time()
     since = now - PORT_SCAN_WINDOW_SECONDS
+    threshold = settings.get(conn, "port_scan_threshold")
 
     rows = conn.execute(
         """
@@ -173,7 +181,7 @@ def port_scan_signal(conn):
          GROUP BY device_id, dest_ip
         HAVING n_ports >= ?
         """,
-        (since, PORT_SCAN_THRESHOLD),
+        (since, threshold),
     ).fetchall()
 
     fired = 0
@@ -210,8 +218,8 @@ def port_scan_signal(conn):
 # single legitimate SSH session: a real login is one flow; a brute-force
 # attempt is dozens of separate, quick ones.
 # --------------------------------------------------------------------------
-BRUTE_FORCE_THRESHOLD = 6
 BRUTE_FORCE_WINDOW_SECONDS = 120
+# Threshold lives in app/settings.py - see port_scan_signal's own note above.
 
 
 def brute_force_signal(conn):
@@ -219,6 +227,7 @@ def brute_force_signal(conn):
     # not be gated by "since the engine last ran".
     now = time.time()
     since = now - BRUTE_FORCE_WINDOW_SECONDS
+    threshold = settings.get(conn, "brute_force_threshold")
 
     placeholders = ",".join("?" for _ in AUTH_PORTS)
     rows = conn.execute(
@@ -233,7 +242,7 @@ def brute_force_signal(conn):
          GROUP BY device_id, dest_ip, dest_port
         HAVING n_attempts >= ?
         """,
-        (*AUTH_PORTS.keys(), since, BRUTE_FORCE_THRESHOLD),
+        (*AUTH_PORTS.keys(), since, threshold),
     ).fetchall()
 
     fired = 0
@@ -271,14 +280,15 @@ def brute_force_signal(conn):
 # domains, especially many DISTINCT ones, is the more interesting signal
 # (an app or process persistently trying to reach something disallowed).
 # --------------------------------------------------------------------------
-MALICIOUS_DOMAIN_THRESHOLD = 15
 MALICIOUS_DOMAIN_WINDOW_SECONDS = 600
+# Threshold lives in app/settings.py - see port_scan_signal's own note above.
 
 
 def malicious_domain_signal(conn):
     # Trailing window every cycle - same reasoning as port_scan_signal.
     now = time.time()
     since = now - MALICIOUS_DOMAIN_WINDOW_SECONDS
+    threshold = settings.get(conn, "malicious_domain_threshold")
 
     rows = conn.execute(
         """
@@ -294,7 +304,7 @@ def malicious_domain_signal(conn):
          GROUP BY device_id
         HAVING n_blocked >= ?
         """,
-        (since, MALICIOUS_DOMAIN_THRESHOLD),
+        (since, threshold),
     ).fetchall()
 
     fired = 0
@@ -477,7 +487,9 @@ def adblock_effectiveness_signal(conn):
 # --------------------------------------------------------------------------
 BASELINE_MIN_SAMPLES = 7            # "learning badge until 7 days of data exist", per the plan
 BASELINE_MIN_BYTES_FLOOR = 5 * 1024 * 1024  # 5 MB - below this, a z-score alone is just noise
-BASELINE_Z_THRESHOLD = 3.0
+# The z-score threshold lives in app/settings.py (step 6.3) - see
+# port_scan_signal's own note above for why only this one of this
+# signal's three constants is console-tunable.
 
 
 def _hour_start(ts):
@@ -488,6 +500,7 @@ def behavioral_baseline_signal(conn):
     now = time.time()
     current_hour_start = _hour_start(now)
     current_hour_of_day = time.localtime(current_hour_start).tm_hour
+    z_threshold = settings.get(conn, "baseline_z_threshold")
 
     # The current hour is still open, so it has no device_hourly row yet
     # (rollup.py only ever rolls up FULLY closed hours) - summed directly
@@ -531,7 +544,7 @@ def behavioral_baseline_signal(conn):
             continue  # perfectly flat history - nothing to compare a deviation against
 
         z = (current_bytes - mean) / stdev
-        if z > BASELINE_Z_THRESHOLD:
+        if z > z_threshold:
             raise_incident(
                 conn, device_id, "volume_anomaly", "medium",
                 title="Unusual data volume for this device at this time of day",

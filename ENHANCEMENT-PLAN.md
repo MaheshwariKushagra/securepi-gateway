@@ -520,7 +520,7 @@ Never cut Stage 2, steps 5.2, 5.3, 5.7, or evaluation items 7.2–7.5.
 | Stage | Steps | Status |
 |---|---|---|
 | 0 | 0.1 · 0.2 · 0.3 | Not started |
-| 1 | **1.1 done, 1.2 done** · 1.3 · 1.4 · 1.5 · 1.6 · 1.7 · **1.8 done** (1.8 out of order - see note below) | 1.1, 1.2, 1.8 done, rest not started |
+| 1 | **1.1 done, 1.2 done, 1.3 done** · 1.4 · 1.5 · 1.6 · 1.7 · **1.8 done** (1.8 out of order - see note below) | 1.1, 1.2, 1.3, 1.8 done, rest not started |
 | 2 | 2.1 · 2.2 · 2.3 · 2.4 · 2.5 · 2.6 · 2.7 · 2.8 | Not started |
 | 3 | 3.1 · 3.2 · 3.3 · 3.4 · 3.5 · 3.6 | Not started |
 | 4 | 4.1 · 4.2 · 4.3 · 4.4 · 4.5 | Not started |
@@ -2322,3 +2322,75 @@ gateway, confirmed via `GET /api/audit` as two genuine audited rows with
 accurate before/after detail; the `/settings` page's threshold section
 markup was confirmed present in the served HTML. Journal clean across
 all three services throughout.
+
+**Note on step 1.3 (retention + hourly rollups), implemented locally
+and deployed live.** `device_hourly` and `app/rollup.py` already existed
+from step 6.1 - this step's genuine remaining scope was the actual
+pruning (nothing in this codebase had ever deleted a row before this),
+plus the "DB size logged daily" exit criterion.
+
+- **The evidence-chain-safety subtlety, worked out before writing any
+  pruning code:** incidents live for 365 days, but flow/TLS events (the
+  bulk of incidents' own evidence chains) would otherwise prune at only
+  14 days - meaning a 20-day-old incident's "why was this raised"
+  evidence would silently go missing while the incident itself was
+  still very much alive, directly against this project's own
+  evidence-chain design principle. Fixed by never pruning an event still
+  linked via `incident_events`, and by pruning incidents FIRST in
+  `run_retention()` (which also deletes their `incident_events` rows) so
+  an event only becomes eligible for its own age-based pruning once
+  nothing surviving still cites it. Proven end to end by a dedicated
+  test (`test_evidence_event_becomes_eligible_only_after_its_incident_is_pruned`),
+  not just asserted.
+- **DNS's 30-day window vs. flow/TLS's 14 is explicit; everything else
+  in `events` this project's schema holds (alerts, DHCP, HTTP, QUIC*,
+  anomaly, DPI decisions) was NOT separately specified by the plan's own
+  wording** ("flow/TLS 14 days, DNS 30 days") - given the same 30-day
+  bucket as DNS here as a stated interpretation of an unstated case,
+  documented in `retention.py`'s own module docstring rather than
+  silently decided. (*QUIC itself was grouped with flow/TLS at 14 days,
+  since it is bulk connection telemetry of the same kind, not DNS-like.)
+- **Rides `engine.py`'s existing 15-second loop** rather than a new
+  systemd timer/service, the same pattern step 6.1 established for
+  `rollup.py` - `run_retention_if_due()` is a cheap `SELECT` on every
+  cycle except the ~1-in-5760 that's actually due each day, gated on a
+  stored timestamp reusing the existing `signal_state` table (as
+  `signal_type='retention'`, which is not one of `webapp.py`'s `SIGNALS`
+  list, so it never appears in the pipeline-health panel - bookkeeping,
+  not a detection signal).
+- `audit_log` is deliberately never pruned - an audit trail that forgets
+  its own history after some window would defeat the point of having
+  one, matching step 6.3's own framing of what that table is for.
+
+Smoke-tested locally: 12 new tests covering flow/TLS's 14-day window,
+DNS's 30-day window, the evidence-chain-safety rule in isolation and end
+to end, incident pruning cascading to `incident_events`/`incident_notes`,
+`device_hourly`'s 180-day window, the once-a-day gate (confirmed it does
+NOT run again a minute later, and DOES run again after a full interval
+has passed), and `db_size_bytes` against a real schema. `make test` (83
+tests, up from 71) and the full scratchpad regression (31 files) both
+re-run clean.
+
+**Deployed to the live gateway and verified the same day**, with an
+online SQLite backup taken first (`securepi.db.pre-1.3-retention-*.bak`)
+specifically because this step's whole job is deleting real rows - the
+only deploy this session where the backup was precautionary against the
+new code's own intended behavior, not just routine practice before a
+file swap. Real data age was checked first (oldest event ~1.9 days,
+oldest incident ~1.5 days, oldest `device_hourly` row ~1.9 days - this
+gateway's real history is nowhere near any of the 14/30/180/365-day
+windows yet), confirming it was safe to let retention run for real
+immediately rather than only against a fixture. `.bak-1.3-*` copies of
+`engine.py` were taken (`retention.py` is new, nothing to back up); only
+`securepi-engine` needed restarting.
+
+**Verified against real production data**: on restart, the engine's very
+first cycle ran retention immediately (no `signal_state` row yet) and
+logged `retention: removed 0 incidents, 0 events, 0 device_hourly rows -
+db size 9.1 MB` - the correct, real answer given nothing in this
+database is old enough to prune yet. Confirmed the once-a-day gate held
+on the live gateway too: no second "retention:" log line appeared over
+the following cycles, and the `signal_state` row's timestamp matched.
+`GET /api/system` showed the ingest pipeline and all six signals still
+healthy after the restart. Journal clean across all three services
+throughout.

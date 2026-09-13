@@ -1255,4 +1255,32 @@ minimum-activity floor does not false-alarm; activity outside the
 window is ignored; a sustained failure across two cycles extends one
 incident rather than duplicating; registration in both `SIGNALS` lists
 confirmed. Also smoke-tested the new status endpoint's healthy/unhealthy
-shapes. Not yet deployed.
+shapes.
+
+**Deployed to the live gateway and verified the same day - end to end,
+against real production data, exactly matching the plan's own exit
+criterion.** `.bak-5.10-*` copies were taken first; `securepi-engine`
+and `securepi-web` both restarted cleanly; `correlation.run_all()` was
+run by hand against the real database immediately after (not just
+waited for the next 15s cycle) and returned
+`{'adblock_effectiveness_signal': 0, ...}` alongside the four existing
+signals, all clean, no exceptions.
+
+**Then the plan's exact scenario was reproduced live:** six synthetic
+`decrypt`-only DPI events (device 5, `[TEST HARNESS] test-victim` - never
+a real device) were inserted directly into the production database,
+`run_all()` was re-run, and it fired:
+`{'adblock_effectiveness_signal': 1, ...}`. The resulting incident
+carried the exact right title ("YouTube ad removal may no longer be
+effective"), the SSAI-aware description, `severity: medium`,
+`evidence_count: 6`, and correctly resolved to
+`"[TEST HARNESS] test-victim"`. `GET /api/filtering/dpi/effectiveness`
+immediately reflected it (`healthy: false`, the right `incident_id`).
+The incident was then marked resolved and the synthetic events deleted;
+a follow-up query confirmed zero residue and the endpoint read
+`healthy: true` again. This is a stronger, more literal proof of the
+plan's own "removing a rule... makes the watchdog fire" criterion than
+the by-composition reasoning above alone - both now stand together.
+
+The new "Effectiveness" badge's markup confirmed present in the served
+Filtering page HTML; journal clean across both services throughout.

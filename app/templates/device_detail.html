@@ -14,6 +14,7 @@
     {% if risk.score > 0 %}
     <span class="chip {{ risk.band }}" title="Risk score: {{ risk.score }} / 100">risk: {{ risk.score }}</span>
     {% endif %}
+    <span class="chip neutral" id="baselineBadge" data-device-id="{{ device.id }}" title="Behavioural baseline (step 6.1): compares each hour against this device's own history at that hour of day">Baseline: loading…</span>
 </div>
 
 <div class="kpis">

@@ -35,14 +35,17 @@ EVE_PATH = "/var/log/suricata/eve.json"
 AGH_QUERYLOG_PATH = "/opt/AdGuardHome/data/querylog.json"
 DPI_EVENTS_PATH = "/var/log/securepi/dpi-events.jsonl"
 
-# Columns added to the events table after the Day 14 database was already
-# created on the gateway. schema.sql already lists these for a FRESH
-# install (open_db() below runs it in full when the events table doesn't
-# exist yet), but the live gateway's existing database needs each one added
-# by hand - SQLite has no "ADD COLUMN IF NOT EXISTS", so every statement is
-# wrapped in try/except and only the "duplicate column" error (meaning it
-# was already applied, on a later run of this same code) is swallowed; any
-# other error still surfaces. See ENHANCEMENT-PLAN.md step 5.1.
+# Schema changes made after the Day 14 database was already created on the
+# gateway. schema.sql already lists these for a FRESH install (open_db()
+# below runs it in full when the events table doesn't exist yet), but the
+# live gateway's existing database needs each one applied by hand.
+#
+# ALTER TABLE statements are wrapped in try/except because SQLite has no
+# "ADD COLUMN IF NOT EXISTS" - only the "duplicate column" error (meaning
+# it was already applied, on a later run of this same code) is swallowed;
+# any other error still surfaces. CREATE TABLE/INDEX IF NOT EXISTS
+# statements (step 6.1's device_hourly) need no such handling - they are
+# already idempotent by construction, so a plain execute() is enough.
 SCHEMA_MIGRATIONS = [
     "ALTER TABLE events ADD COLUMN dns_filter_list_id INTEGER",
     "ALTER TABLE events ADD COLUMN dns_cached INTEGER",
@@ -50,6 +53,17 @@ SCHEMA_MIGRATIONS = [
     "ALTER TABLE events ADD COLUMN dns_elapsed_ms REAL",
     "ALTER TABLE events ADD COLUMN dpi_action TEXT",
     "ALTER TABLE events ADD COLUMN dpi_ads_removed INTEGER",
+    """CREATE TABLE IF NOT EXISTS device_hourly (
+           device_id   INTEGER NOT NULL REFERENCES devices(id),
+           hour_start  INTEGER NOT NULL,
+           bytes_down  INTEGER NOT NULL DEFAULT 0,
+           bytes_up    INTEGER NOT NULL DEFAULT 0,
+           dns_queries INTEGER NOT NULL DEFAULT 0,
+           dns_blocked INTEGER NOT NULL DEFAULT 0,
+           flows       INTEGER NOT NULL DEFAULT 0,
+           PRIMARY KEY (device_id, hour_start)
+       )""",
+    "CREATE INDEX IF NOT EXISTS idx_device_hourly_hour ON device_hourly(hour_start)",
 ]
 
 # How long to wait between passes over the log files. Two seconds keeps the

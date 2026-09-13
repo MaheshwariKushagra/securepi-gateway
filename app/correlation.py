@@ -451,8 +451,106 @@ def adblock_effectiveness_signal(conn):
     return fired
 
 
+# --------------------------------------------------------------------------
+# Signal 6: behavioural baseline / volume anomaly (ENHANCEMENT-PLAN.md
+# step 6.1)
+#
+# Every other signal here looks for a specific KNOWN bad pattern (a scan,
+# repeated auth failures, blocked-domain bursts). This one is different:
+# it has no fixed threshold for "too much traffic" at all, because there
+# isn't one - a smart TV streaming 4K and a text sensor pinging once an
+# hour are both normal, for THAT device. Instead it asks whether THIS
+# device is doing something unusual for ITSELF, at THIS hour of day,
+# compared to its own history - the EWMA-per-hour-of-day approach F§12.3
+# describes, computed fresh from device_hourly (app/rollup.py) each cycle
+# rather than maintained as running state, the same "recompute from a
+# windowed query, not an incremental stream processor" philosophy this
+# whole file states up top.
+#
+# "Learning" isn't a separate mode - it falls out of the sample-count
+# gate below. A device younger than BASELINE_MIN_SAMPLES hours of history
+# AT THIS SPECIFIC HOUR OF DAY is simply never judged, full stop, not
+# judged against a thin or default baseline. See webapp.py's
+# api_device_baseline for the console's "still learning" badge, which
+# uses a simpler days-since-first-seen approximation of this same idea
+# for display purposes.
+# --------------------------------------------------------------------------
+BASELINE_MIN_SAMPLES = 7            # "learning badge until 7 days of data exist", per the plan
+BASELINE_MIN_BYTES_FLOOR = 5 * 1024 * 1024  # 5 MB - below this, a z-score alone is just noise
+BASELINE_Z_THRESHOLD = 3.0
+
+
+def _hour_start(ts):
+    return int(ts // 3600) * 3600
+
+
+def behavioral_baseline_signal(conn):
+    now = time.time()
+    current_hour_start = _hour_start(now)
+    current_hour_of_day = time.localtime(current_hour_start).tm_hour
+
+    # The current hour is still open, so it has no device_hourly row yet
+    # (rollup.py only ever rolls up FULLY closed hours) - summed directly
+    # from raw events instead, so an ongoing burst can be judged within
+    # the same hour it's happening, not only after it closes.
+    current_totals = conn.execute(
+        """
+        SELECT device_id,
+               COALESCE(sum(CASE WHEN event_type='flow' THEN bytes_toclient END),0)
+             + COALESCE(sum(CASE WHEN event_type='flow' THEN bytes_toserver END),0) total_bytes
+          FROM events
+         WHERE device_id IS NOT NULL AND ts >= ? AND ts < ?
+         GROUP BY device_id
+        """,
+        (current_hour_start, now),
+    ).fetchall()
+
+    fired = 0
+    for row in current_totals:
+        device_id, current_bytes = row["device_id"], row["total_bytes"]
+        if current_bytes < BASELINE_MIN_BYTES_FLOOR:
+            continue  # too small to mean anything either way
+
+        history = conn.execute(
+            """
+            SELECT bytes_down + bytes_up total FROM device_hourly
+             WHERE device_id = ? AND hour_start < ?
+               AND CAST(strftime('%H', hour_start, 'unixepoch', 'localtime') AS INTEGER) = ?
+            """,
+            (device_id, current_hour_start, current_hour_of_day),
+        ).fetchall()
+
+        if len(history) < BASELINE_MIN_SAMPLES:
+            continue  # still learning this device's pattern for this hour of day
+
+        values = [h["total"] for h in history]
+        mean = sum(values) / len(values)
+        variance = sum((v - mean) ** 2 for v in values) / (len(values) - 1)
+        stdev = variance ** 0.5
+        if stdev == 0:
+            continue  # perfectly flat history - nothing to compare a deviation against
+
+        z = (current_bytes - mean) / stdev
+        if z > BASELINE_Z_THRESHOLD:
+            raise_incident(
+                conn, device_id, "volume_anomaly", "medium",
+                title="Unusual data volume for this device at this time of day",
+                description=(
+                    "%.1f MB so far this hour, vs. a %d-day average of %.1f MB at %02d:00 "
+                    "(z=%.1f) - could be a large upload/exfiltration, or just an unusually "
+                    "heavy session." % (current_bytes / 1e6, len(values), mean / 1e6,
+                                         current_hour_of_day, z)
+                ),
+                first_seen=current_hour_start, last_seen=now, event_ids=[],
+            )
+            fired += 1
+
+    set_window_start(conn, "volume_anomaly", now)
+    return fired
+
+
 SIGNALS = [port_scan_signal, brute_force_signal, malicious_domain_signal, new_device_signal,
-           adblock_effectiveness_signal]
+           adblock_effectiveness_signal, behavioral_baseline_signal]
 
 
 def run_all(conn):

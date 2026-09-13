@@ -220,4 +220,28 @@ CREATE TABLE IF NOT EXISTS signal_state (
     last_run_ts REAL NOT NULL
 );
 
+-- ------------------------------------------------------------ device_hourly --
+-- One row per device per fully-closed hour: how much it did in that hour.
+-- ENHANCEMENT-PLAN.md step 6.1 (behavioural baselines) needs this to compare
+-- "this hour" against the same hour-of-day on past days - a windowed query
+-- over raw `events` can't do that cheaply once there are weeks of history,
+-- the way the four original signals' short trailing windows can.
+--
+-- This table, and app/rollup.py which fills it, are the minimal prerequisite
+-- 6.1 actually needs - not the full Stage 1 F3 feature ("Retention + hourly
+-- rollups"), which also prunes old raw events and keeps rollups for 180 days.
+-- Nothing here deletes anything; that's F3's job, still to come.
+CREATE TABLE IF NOT EXISTS device_hourly (
+    device_id   INTEGER NOT NULL REFERENCES devices(id),
+    hour_start  INTEGER NOT NULL,   -- epoch seconds, truncated to the top of the hour
+    bytes_down  INTEGER NOT NULL DEFAULT 0,
+    bytes_up    INTEGER NOT NULL DEFAULT 0,
+    dns_queries INTEGER NOT NULL DEFAULT 0,
+    dns_blocked INTEGER NOT NULL DEFAULT 0,
+    flows       INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (device_id, hour_start)
+);
+
+CREATE INDEX IF NOT EXISTS idx_device_hourly_hour ON device_hourly(hour_start);
+
 INSERT OR IGNORE INTO ingest_stats (id) VALUES (1);

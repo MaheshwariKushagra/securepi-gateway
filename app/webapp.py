@@ -42,6 +42,7 @@ Routes:
   /api/devices/{id}/filtering/block block one domain for one device only
   /api/devices/{id}/privacy         per-device tracker/privacy report
   /api/devices/{id}/quarantine   quarantine a device via nftables, or undo it
+  /api/devices/{id}/baseline     behavioural-baseline "learning" status (step 6.1)
 """
 
 import base64
@@ -128,7 +129,12 @@ RANGES = {
 # be before the console calls it unhealthy rather than just "hasn't found
 # anything lately". Engine cycles every 15s (see engine.py); 4 missed cycles
 # is a real problem, not noise.
-SIGNALS = ["port_scan", "brute_force", "malicious_domain", "new_device", "adblock_ineffective"]
+SIGNALS = ["port_scan", "brute_force", "malicious_domain", "new_device", "adblock_ineffective",
+           "volume_anomaly"]
+
+# Step 6.1's own exit criterion calls this "the learning badge until 7
+# days of data exist" - matches BASELINE_MIN_SAMPLES in correlation.py.
+BASELINE_LEARNING_DAYS = 7
 SIGNAL_STALE_AFTER = 60
 INGEST_STALE_AFTER = 30  # ingest.py polls every 2s
 
@@ -1736,6 +1742,41 @@ def api_device_privacy(device_id: int):
         "trackers": _tracker_breakdown(c, 0, now, device_id=device_id),
         "savings": _savings_estimate(dns_blocked),
         "tier2": _tier2_breakdown(c, 0, now, device_id=device_id),
+    }
+
+
+# ------------------------------------------------------------ intelligence --
+#
+# Stage 6 (ENHANCEMENT-PLAN.md): behavioural baselines, device
+# fingerprinting, hunt/explorer. Reads correlation.py's own signal
+# (behavioral_baseline_signal) and app/rollup.py's device_hourly table -
+# this app never recomputes the baseline itself, the same "one source of
+# truth" discipline the filtering endpoints already follow for AdGuard.
+
+@app.get("/api/devices/{device_id}/baseline")
+def api_device_baseline(device_id: int):
+    """Status for the console's "learning" badge (step 6.1). Uses a
+    simpler days-since-first-seen approximation of the signal's own,
+    more precise per-hour-of-day sample count (correlation.py's
+    BASELINE_MIN_SAMPLES) - good enough for a badge that just needs to
+    say "give it about a week", not to make the actual detection
+    decision, which the signal computes fresh itself every cycle."""
+    c = db()
+    d = c.execute("SELECT * FROM devices WHERE id=?", (device_id,)).fetchone()
+    if d is None:
+        raise HTTPException(404, "device not found")
+    now = time.time()
+    days_seen = (now - d["first_seen"]) / 86400.0
+    open_incident = c.execute(
+        "SELECT id, last_seen FROM incidents"
+        " WHERE device_id=? AND signal_type='volume_anomaly' AND status='new'"
+        " ORDER BY last_seen DESC LIMIT 1", (device_id,)).fetchone()
+    return {
+        "learning": days_seen < BASELINE_LEARNING_DAYS,
+        "days_seen": round(days_seen, 1),
+        "days_needed": BASELINE_LEARNING_DAYS,
+        "flagged": open_incident is not None,
+        "incident_id": open_incident["id"] if open_incident else None,
     }
 
 

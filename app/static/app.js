@@ -690,6 +690,34 @@ function initDeviceRename() {
     });
 }
 
+function initDeviceBaseline() {
+    const badge = $("#baselineBadge");
+    if (!badge) return;
+    const deviceId = badge.dataset.deviceId;
+
+    async function load() {
+        try {
+            const res = await fetch(`/api/devices/${deviceId}/baseline`);
+            if (!res.ok) throw new Error("request failed");
+            const d = await res.json();
+            if (d.flagged) {
+                badge.textContent = "Baseline: unusual volume";
+                badge.className = "chip high dot";
+                badge.onclick = () => location.href = `/incidents/${d.incident_id}`;
+            } else if (d.learning) {
+                badge.textContent = `Baseline: learning (${d.days_seen}/${d.days_needed}d)`;
+                badge.className = "chip neutral";
+            } else {
+                badge.textContent = "Baseline: normal";
+                badge.className = "chip ok";
+            }
+        } catch (err) {
+            badge.textContent = "Baseline: unknown";
+        }
+    }
+    load();
+}
+
 function initDeviceActivity() {
     const el = $("#deviceActivityChart");
     if (!el) return;
@@ -1804,6 +1832,7 @@ function refresh() {
 document.addEventListener("DOMContentLoaded", () => {
     initSidebar();
     initDeviceRename();
+    initDeviceBaseline();
     initDeviceActivity();
     initDeviceFiltering();
     initDeviceQuarantine();

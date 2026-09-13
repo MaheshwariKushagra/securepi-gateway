@@ -525,7 +525,7 @@ Never cut Stage 2, steps 5.2, 5.3, 5.7, or evaluation items 7.2–7.5.
 | 3 | 3.1 · 3.2 · 3.3 · 3.4 · 3.5 · 3.6 | Not started |
 | 4 | 4.1 · 4.2 · 4.3 · 4.4 · 4.5 | Not started |
 | 5 | **5.1 done, 5.2 done, 5.3 done, 5.4 done, 5.5 done, 5.6 done, 5.7 done, 5.8 done, 5.9 done, 5.10 done, 5.11 done (Path 1 only)** (out of order) | 5.1–5.11 done - 5.11 scoped to Path 1 (cosmetic CSS), Path 2 (scriptlets) deferred and recorded |
-| 6 | **6.1 done, 6.2 done** · 6.3 · 6.4 · 6.5 · 6.6 · 6.7 | 6.1–6.2 done, rest not started |
+| 6 | **6.1 done, 6.2 done, 6.3 done** · 6.4 · 6.5 · 6.6 · 6.7 | 6.1–6.3 done, rest not started |
 | 7 | 7.0 – 7.9 | Not started |
 | 8 | 8.1 · 8.2 · 8.3 · 8.4 | Not started |
 
@@ -1713,3 +1713,130 @@ device page HTML; journal clean across `securepi-web`,
 `securepi-ingest` and `suricata` throughout. **Still unconfirmed, as
 already flagged above:** a real extended-mode DHCP event with an
 actual `dhcp_params` value - no lease has renewed yet to produce one.
+
+**Note on step 6.3 (settings, audit log, tunable thresholds), implemented
+locally and deployed live.** Two genuine, minimal prerequisites this step
+actually needed - both scoped narrowly, not as the full features their
+parent stages describe:
+
+- **A `settings` table, standing in for Stage 1's F2 central config** -
+  not the full "every constant in one place" version F2 describes, but a
+  small, named, validated subset of four thresholds that were previously
+  hardcoded constants in `correlation.py`: `port_scan_threshold`,
+  `brute_force_threshold`, `malicious_domain_threshold`, and
+  `baseline_z_threshold` (6.1's z-score, added to the schema this step).
+  Values are JSON-encoded strings read fresh on every `settings.get()`
+  call, deliberately uncached, so a change takes effect on the
+  correlation engine's very next 15-second cycle with no restart.
+  Deliberately left hardcoded: window durations (still constants in each
+  signal function) and the Tier 2 DPI addon's own pinning/effectiveness
+  thresholds, which already have a separate hot-reload path from step
+  5.9 that this system doesn't touch.
+- **An `audit_log` table, standing in for Stage 1.5's audit log** - not
+  session-auth or a full security event log, just `audit.log()`/
+  `audit.recent()` wired into every write endpoint that was still using
+  a `print()`-based audit stopgap (native profile apply/remove, resolver
+  tuning, DPI rule changes, domain allow/block), plus the two new
+  settings-change and password-change endpoints. Both the `print()` and
+  the real audit row are kept - the journal is still useful for live
+  tailing, the table is what makes history queryable from the console.
+
+**A genuine regression surfaced and fixed during this step, not
+silently absorbed:** adding a new `audit.log(db(), ...)` call into two
+endpoints that had never touched the database before
+(`api_apply_resolver_tuning`, `api_dpi_rules_set`) broke three earlier
+smoke tests (`smoke_55b.py`, `smoke_59.py`, `smoke_511.py`) that called
+those endpoints directly without mocking `webapp.db`, since the real
+`db()` points at a path (`/opt/securepi/securepi.db`) that only exists
+on the gateway. Fixed by giving each affected test file a real
+in-memory SQLite connection with `schema.sql` loaded and mocking
+`webapp.db` to return it - the general lesson recorded here for future
+steps: adding a database write to a previously database-free function
+requires auditing and updating every existing test that exercises that
+function, not just the ones written for the new work.
+
+Other design decisions:
+- `SettingUpdate.value` is typed `Any` rather than `float`/`int` in the
+  Pydantic model, specifically so `settings.validate()` sees the value's
+  true JSON-sent type (to reject a bool where an int/float is expected)
+  rather than having FastAPI silently coerce it first.
+- Password change uses `secrets.compare_digest` for a timing-safe
+  current-password check, enforces a 12-character minimum, requires the
+  new value to differ from the old, and - proven by a smoke test - never
+  writes the actual password text into any audit-log row, before or
+  after.
+- Retention (`/api/settings/retention`) and notification channels
+  (`/api/settings/channels`) surface an honest `"implemented": false`
+  shape naming the real unbuilt stage (F3, R3) rather than a Settings
+  control that would silently do nothing.
+- Attributions list real, currently-deployed versions and licences for
+  every third-party component actually in use (Suricata 7.0.3 GPLv2,
+  AdGuard Home v0.107.79 GPLv3, mitmproxy 12.2.3 MIT, Chart.js v4.4.4
+  MIT, nftables GPLv2), checked against the gateway rather than guessed.
+
+Smoke-tested locally: the `settings`/`audit_log` migration path on a
+simulated pre-6.3 database; `settings.py`'s get/validate/set/reset
+behaviour including a live proof that changing `port_scan_threshold`
+genuinely changes `correlation.port_scan_signal`'s firing behaviour, not
+just plumbing; `audit.py`'s log/recent behaviour; and all eight
+`webapp.py` endpoint scenarios (settings shape, update with a real audit
+row, invalid-value and missing-reason rejection, reset, the honest
+retention/channels shape, real attribution data, and the password-change
+accept/reject paths with the never-logged guarantee) - plus the full
+session regression suite (`make test` and every smoke test file from
+5.3 through 6.3) re-run clean after the three-test fix above.
+
+**Deployed to the live gateway and verified the same day**, with an
+online SQLite backup taken first (`securepi.db.pre-6.3-migration-*.bak`,
+this session's fourth schema migration against production, after 5.1,
+6.1 and 6.2) and `.bak-6.3-*` copies of every replaced file.
+`securepi-ingest` restarted first to apply the `settings`/`audit_log`
+migration, confirmed both tables present with the expected columns,
+before `securepi-engine` (needed for the new `settings.get()` calls in
+every signal) and then `securepi-web` (needed for the new endpoints and
+the `/settings` page) were restarted - the same ordering discipline
+6.1 and 6.2 established.
+
+**A real bug was caught during this live verification, not before it -
+proving the value of testing over real HTTP rather than only through
+direct function calls:** `POST /api/settings/password` was silently
+unreachable. `POST /api/settings/{key}` was declared earlier in
+`webapp.py`, and Starlette matches routes in declaration order, so
+every request to `/api/settings/password` matched the parameterized
+route first, with `key="password"`, and was validated against
+`SettingUpdate`'s `(value, reason)` body instead of `PasswordChange`'s
+`(current_password, new_password)` - returning a confusing "reason is
+required" 422 instead of ever reaching the password-change logic. The
+existing smoke test (`smoke_63b.py`) never caught this because it calls
+`webapp.api_settings_password(...)` directly, bypassing the router
+entirely. Fixed by moving the password route's declaration before
+`/api/settings/{key}`'s, redeployed, and re-verified live: the wrong-
+current-password, too-short, and same-as-current rejection paths all now
+correctly return their real 400 messages instead of the routing 422.
+The actual successful-change path was deliberately NOT exercised
+against the live production password (to avoid leaving the real console
+credential in an undocumented state) - that path is proven correct by
+`smoke_63b.py`'s own isolated test, which does perform and verify a real
+successful change including the never-logged guarantee.
+
+**Exit criterion - "All settings editable, validated, audited" - met
+against real production data:**
+- `GET /api/settings` returns all four thresholds at their real
+  defaults (8, 6, 15, 3.0), each showing `overridden: false`.
+- A real `port_scan_threshold` change (8 → 10, with a reason) and reset
+  (10 → default 8) were both performed against the live gateway; `GET
+  /api/audit` shows both as real rows with accurate before/after detail
+  and the reason text, and the value is confirmed back at its default
+  afterwards.
+- `GET /api/settings/retention` and `/api/settings/channels` return
+  their honest not-implemented shape.
+- `GET /api/attributions` returns the real, verified OSS attribution
+  data.
+- The password-change endpoint's three rejection paths were verified
+  live post-fix, and confirmed to leave no audit trace (as designed -
+  `audit.log` is only called after a successful change).
+- The `/settings` page's markup (all eight expected element ids) was
+  confirmed present in the served HTML.
+- Journal clean across `securepi-ingest`, `securepi-engine` and
+  `securepi-web` throughout, including across a full correlation-engine
+  cycle after the restart.

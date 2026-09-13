@@ -320,6 +320,58 @@ Order: telemetry first, because every later step displays or measures it. Then T
 | 5.10 | **Effectiveness watchdog and SSAI readiness.** Track ads stripped per YouTube watch session. If YouTube traffic continues but stripping stays at zero for a configured period, raise "YouTube ad removal may no longer be effective (format change or server-side ad insertion)" and notify. Document SSAI as the expected end state | A9, Mkt research | Removing a rule in a test deploy makes the watchdog fire. Report section drafted | 0.5 |
 | 5.11 | *(Optional)* **Cosmetic and scriptlet injection** for allowlisted hosts only: inject a stylesheet hiding leftover ad containers, and optionally vetted scriptlets (`json-prune`, `set-constant` equivalents, licences checked) into decrypted HTML. Handle CSP nonces carefully. Measure breakage. Also correct `FIRST-PARTY-ADS-ANALYSIS.md` §5.1 (A12) | Mkt (uBO, AdGuard apps), A12 | Leftover ad placeholders gone on the test pages with no functional breakage in a 10-video check | 1.5 |
 
+> **Open follow-up on 5.7 - revisit after 5.11:** 5.7 as built does NOT
+> exercise the real nftables redirect rule or mitmproxy's transparent-mode
+> handling, only the addon's own decision method. Closing that gap needs
+> the `ap0` network-topology work described just below. Full detail is in
+> §8's tracker note for step 5.7; the short version:
+>
+> - **What the plan asked for:** a canary client in a test namespace,
+>   enrolled, opening a real TLS connection **through the actual
+>   nftables `dpi-redirect` rule** to prove the *enforcing* component -
+>   not the addon's log - makes the right call.
+> - **Why that was ruled out, checked live, in this order:**
+>   1. `ns_victim` (the existing safe test namespace, `gateway/
+>      setup-test-harness.sh`) sits on `br-test`, which `evaluate.py`'s
+>      own comments already establish has no path to `ap0` - the
+>      interface the redirect rule matches on (`iifname "ap0" ip saddr
+>      @enrolled tcp dport 443 ... redirect to :8080`). Traffic from it
+>      never reaches that rule.
+>   2. Connecting straight to `127.0.0.1:8080` (mitmproxy's own port)
+>      with `openssl s_client -servername <host>` was tried live for
+>      both an allowlisted and non-allowlisted host - both failed the
+>      handshake identically. mitmproxy's transparent mode needs the
+>      kernel's original-destination info that only a genuine nftables
+>      REDIRECT carries; a direct connection can't supply that, so it
+>      can't even reach the point of making the decision this check
+>      needs to observe.
+>   3. The only way left to genuinely exercise the rule is a client
+>      whose traffic actually arrives on `ap0` - which means either
+>      bridging a new synthetic namespace onto the same interface the
+>      live AP and the two real phones depend on (network-topology
+>      surgery on production, not something to improvise mid-session),
+>      or using a real enrolled device as an unwitting scheduled target
+>      (rejected outright - it would mean inspecting real traffic on a
+>      timer its owner never chose, against this project's own opt-in
+>      stance).
+> - **What was built instead:** `dpi/privacy_canary.py` imports the real
+>   addon file fresh every cycle and calls its actual `tls_clienthello()`
+>   method directly with a synthetic ClientHello, reading the same
+>   `ignore_connection` attribute the report's own historical typo broke.
+>   Proven (by a smoke test that reintroduces that exact typo) to catch
+>   that whole class of regression. It cannot catch a bug in the redirect
+>   rule itself, or in mitmproxy's original-destination handling.
+> - **What closing the gap for real would take, next time this is
+>   picked up:** a dedicated network namespace bridged onto `ap0` itself
+>   (not `br-test`), added carefully enough not to disturb the live AP or
+>   the two real phones - likely its own veth pair on a small VLAN or a
+>   second SSID reserved for gateway self-tests, checked first against a
+>   spare AP/router before touching this one. Until that exists, the
+>   redirect rule and traffic path should keep getting a deliberate,
+>   manual check from time to time (as this session did once, by hand,
+>   during 5.7's deploy verification), not be treated as continuously
+>   covered.
+
 > **Cut line C** (~8½ weeks, excluding 5.11). Ad blocking becomes a full product: profiles, schedules, unbreak, analytics, list health, hardened bypass prevention. Tier 2 verifies its own privacy scope, degrades gracefully, and notices when YouTube changes.
 
 ### Stage 6 — Intelligence and console (~10 days)

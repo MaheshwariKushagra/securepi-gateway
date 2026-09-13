@@ -133,7 +133,10 @@ body {
     backdrop-filter: blur(12px);
     border-bottom: 1px solid var(--border);
 }
-.topbar-title { font-size: 15px; font-weight: 650; letter-spacing: -0.01em; white-space: nowrap; }
+.topbar-title {
+    font-size: 15px; font-weight: 650; letter-spacing: -0.01em; white-space: nowrap;
+    overflow: hidden; text-overflow: ellipsis; min-width: 40px;
+}
 .only-collapsed { display: none; }
 .shell.collapsed .only-collapsed { display: inline-flex; }
 
@@ -313,7 +316,12 @@ main { padding: 22px 24px 56px; max-width: 1560px; margin: 0 auto; width: 100%; 
 
 /* -------------------------------------------------------------- layout */
 
+/* A grid item's automatic min-width is its content's own min-content size,
+   not its track's size - without this, a card containing long unbreakable
+   text (like a comma-separated port list) stays at its content width and
+   pushes past its 1fr track instead of shrinking to it. */
 .grid { display: grid; gap: 14px; margin-bottom: 14px; }
+.grid > * { min-width: 0; }
 .grid.c2 { grid-template-columns: 2fr 1fr; }
 .grid.c3 { grid-template-columns: repeat(3, 1fr); }
 .grid.c2e { grid-template-columns: 1fr 1fr; }
@@ -360,6 +368,10 @@ a.link:hover { text-decoration: underline; }
 .chip.low    { background: var(--low-bg);    color: var(--low); }
 .chip.ok     { background: var(--ok-bg);     color: var(--ok); }
 .chip.neutral{ background: var(--surface-3); color: var(--text-2); }
+/* The ATT&CK badge (step 6.4) carries much longer text than a severity or
+   status chip ever does - override the base .chip's nowrap so it wraps
+   onto a second line instead of overflowing the page at narrow widths. */
+.attack-badge { white-space: normal; max-width: 100%; text-align: left; line-height: 1.5; }
 .chip.dot::before { content: ""; width: 5px; height: 5px; border-radius: 50%; background: currentColor; }
 
 .status-dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; margin-right: 7px; vertical-align: middle; }
@@ -426,12 +438,13 @@ a.link:hover { text-decoration: underline; }
 
 .meta-grid { display: grid; grid-template-columns: auto 1fr; gap: 7px 18px; font-size: 12.5px; align-items: baseline; }
 .meta-grid dt { color: var(--text-3); white-space: nowrap; }
-.meta-grid dd { color: var(--text); }
+.meta-grid dd { color: var(--text); overflow-wrap: break-word; }
 
 .callout {
     background: var(--surface-2); border-left: 2px solid var(--accent);
     padding: 11px 14px; border-radius: 0 var(--r-sm) var(--r-sm) 0;
     color: var(--text-2); font-size: 12.5px; line-height: 1.55;
+    overflow-wrap: break-word;
 }
 .callout.high { border-left-color: var(--high); }
 
@@ -527,6 +540,12 @@ a.link:hover { text-decoration: underline; }
 .filter-row .btn { padding: 3px 10px; font-size: 11.5px; }
 .filter-row .btn.danger:hover { background: var(--high-bg); color: var(--high); border-color: transparent; }
 
+/* A wide data table (devices, incidents) would otherwise force the whole
+   page to scroll horizontally at narrow widths - this scopes the scroll
+   to just the table itself, the one part of a page allowed to be wider
+   than the viewport. Harmless at any width where the table already fits. */
+.table-scroll { overflow-x: auto; }
+
 /* ------------------------------------------------------- responsive shell */
 
 @media (max-width: 860px) {
@@ -539,6 +558,19 @@ a.link:hover { text-decoration: underline; }
     .cmdk-trigger { min-width: auto; }
     main { padding: 16px 14px 40px; }
     .kpi-spark-wrap { display: none; }
+}
+
+/* Phone-width fixes (step 6.7's ~400px target). The 860px breakpoint above
+   handles the sidebar and command palette; below this, the topbar itself
+   stops fitting (title + search + bell + live indicator + pause button),
+   .input's 200px floor makes any row of two or more inputs overflow, and
+   a segmented control (.seg) with several long labels can be wider than
+   the whole viewport on its own. */
+@media (max-width: 480px) {
+    .topbar { padding: 0 14px; gap: 6px; }
+    .live .dim { display: none; }
+    .input { min-width: 140px; }
+    .seg { flex-wrap: wrap; }
 }
 
 /* ------------------------------------------------------------- print (6.6) */

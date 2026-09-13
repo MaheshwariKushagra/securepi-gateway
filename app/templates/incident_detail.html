@@ -6,7 +6,7 @@
     <span class="chip {{ incident.severity }} dot">{{ incident.severity }}</span>
     <span class="status-pill {{ incident.status }}">{{ incident.status.replace('_', ' ') }}</span>
     {% if attack %}
-    <span class="chip" title="{{ attack.note if attack.note else '' }}">
+    <span class="chip attack-badge" title="{{ attack.note if attack.note else '' }}">
         {{ attack.tactic }} ({{ attack.tactic_id }}){% if attack.technique %} · {{ attack.technique }} ({{ attack.technique_id }}){% endif %}
     </span>
     {% endif %}
@@ -16,7 +16,7 @@
         <button class="btn" id="deviceQuarantineToggle">Loading…</button>
     </div>
     {% endif %}
-    <div id="incidentActions" data-incident-id="{{ incident.id }}" style="display:flex; gap:8px">
+    <div id="incidentActions" data-incident-id="{{ incident.id }}" style="display:flex; gap:8px; flex-wrap:wrap">
         {% if top_domain and device %}
         <button class="btn" id="incidentBlockDomain" data-device-id="{{ device.id }}" data-domain="{{ top_domain }}">
             Block {{ top_domain }}
@@ -151,8 +151,8 @@
     <div class="card">
         <div class="card-head"><h2>Analyst Notes</h2></div>
         <div class="card-body">
-            <div style="display:flex; gap:8px; margin-bottom:12px">
-                <input class="input" type="text" id="incidentNoteInput" placeholder="Add a note…" style="flex:1">
+            <div style="display:flex; gap:8px; margin-bottom:12px; flex-wrap:wrap">
+                <input class="input" type="text" id="incidentNoteInput" placeholder="Add a note…" style="flex:1; min-width:140px">
                 <button class="btn" id="incidentNoteSave" data-incident-id="{{ incident.id }}">Add</button>
             </div>
             <div class="feed tight">

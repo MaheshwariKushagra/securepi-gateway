@@ -525,7 +525,7 @@ Never cut Stage 2, steps 5.2, 5.3, 5.7, or evaluation items 7.2–7.5.
 | 3 | 3.1 · 3.2 · 3.3 · 3.4 · 3.5 · 3.6 | Not started |
 | 4 | 4.1 · 4.2 · 4.3 · 4.4 · 4.5 | Not started |
 | 5 | **5.1 done, 5.2 done, 5.3 done, 5.4 done, 5.5 done, 5.6 done, 5.7 done, 5.8 done, 5.9 done, 5.10 done, 5.11 done (Path 1 only)** (out of order) | 5.1–5.11 done - 5.11 scoped to Path 1 (cosmetic CSS), Path 2 (scriptlets) deferred and recorded |
-| 6 | 6.1 · 6.2 · 6.3 · 6.4 · 6.5 · 6.6 · 6.7 | Not started |
+| 6 | **6.1 done** · 6.2 · 6.3 · 6.4 · 6.5 · 6.6 · 6.7 | 6.1 done, rest not started |
 | 7 | 7.0 – 7.9 | Not started |
 | 8 | 8.1 · 8.2 · 8.3 · 8.4 | Not started |
 
@@ -1469,3 +1469,81 @@ real deployed code, with every deliberate scope reduction (5.6's
 IP-vs-MAC keying, 5.7's substitute canary, 5.9's dropped dead constant,
 5.11's Path 2 deferral) recorded with its reasoning rather than left
 implicit.
+
+## Stage 6 progress notes
+
+**Note on step 6.1 (behavioural baselines), implemented locally.** Stage
+6 as written assumes pieces of Stages 1-4 that don't exist yet; 6.1
+specifically needs `device_hourly` (Stage 1's F3, "Retention + hourly
+rollups"), which hasn't been built. Rather than block on Stage 1 or fake
+the dependency, the minimal necessary piece was built as part of this
+step, clearly scoped as exactly that - not the full F3 feature:
+
+- **`app/schema.sql`** gained the `device_hourly` table (one row per
+  device per closed hour: bytes down/up, DNS queries/blocked, flows).
+  Since `ingest.py`'s `open_db()` only re-runs the *entire* schema.sql
+  on a genuinely fresh database - an existing one (the live gateway's)
+  only ever gets `apply_migrations()`'s statement list - the `CREATE
+  TABLE`/`CREATE INDEX IF NOT EXISTS` statements were also added to
+  `SCHEMA_MIGRATIONS`, which until now only ever held `ALTER TABLE`
+  statements for new columns. They need no try/except wrapping the
+  existing entries do (a "duplicate column" error has no equivalent for
+  `IF NOT EXISTS` DDL - it's already idempotent by construction),
+  documented in that list's own updated comment. Verified with a smoke
+  test that specifically simulates the live gateway's actual situation
+  (an existing DB, `device_hourly` absent) rather than only a fresh one.
+- **New `app/rollup.py`**: `rollup_closed_hours()` aggregates every
+  fully-closed hour that doesn't have a `device_hourly` row yet, resuming
+  from the table's own `MAX(hour_start)` - no separate watermark table,
+  matching how `ingest_state`/`signal_state` already read their own
+  progress back from the data. Naturally a no-op on any cycle where
+  nothing new has closed, which is what let it ride `engine.py`'s
+  existing 15-second loop (called right before `correlation.run_all()`,
+  so a freshly-closed hour is visible to the baseline signal the same
+  cycle it closes) instead of getting a fourth new systemd service this
+  session. Explicitly does NOT prune raw events - that's F3's job,
+  still to come; this table only ever grows.
+- **`app/correlation.py`** gained a sixth signal,
+  `behavioral_baseline_signal`: for each device with real activity in
+  the current (still-open) hour, compares it against that device's own
+  `device_hourly` history at the SAME hour-of-day (not a flat trailing
+  window - a smart TV at 9pm and a sensor at 3am have different normal
+  volumes for themselves), using a z-score against that history's mean
+  and sample stdev. Two independent gates before anything is judged:
+  `BASELINE_MIN_SAMPLES` (7 - "learning badge until 7 days of data
+  exist," from the plan) same-hour-of-day historical rows, and
+  `BASELINE_MIN_BYTES_FLOOR` (5 MB) so a tiny device's relatively-large
+  but absolutely-trivial jump can't fire. "Learning" isn't a separate
+  mode in the signal itself - a device below the sample-count gate is
+  simply never judged, full stop, not judged against a thin baseline.
+- **Console:** `GET /api/devices/{id}/baseline` and a "Baseline" badge
+  next to the existing risk-score chip on the device page. Deliberately
+  uses a SIMPLER approximation for display (days since `devices.
+  first_seen` >= 7) rather than replicating the signal's own precise
+  per-hour-of-day sample count - good enough to tell an operator "give
+  it about a week," not meant to make the actual detection decision,
+  which stays entirely in `correlation.py`.
+
+**The real gateway's own history is honestly too short to test this
+against live yet** - confirmed by checking directly: only ~35 hours of
+real event history exist (`min(ts)` to `max(ts)` across `events`), a
+project barely two days old, nowhere near
+`BASELINE_MIN_SAMPLES`'s 7-day threshold. This isn't a gap in the
+implementation - it's genuinely where the project's real deployment
+timeline is, and it's exactly the case the plan's own "learning badge"
+concept exists for. The signal logic itself was proven correct with
+synthetic `device_hourly` history for the test-harness device (matching
+this session's established precedent of using synthetic data on that
+one device, never a real one, to prove logic no real history can yet
+exercise), directly against the plan's own exit criterion wording:
+
+Smoke-tested locally: the migration path on a simulated pre-6.1
+database; `rollup.py`'s aggregation, idempotent resume, that the
+in-progress hour is never rolled up early, and that a quiet hour
+produces no row rather than a zero row; **"harness bulk upload fires"**
+(10 days of ~2 MB/hour seeded history, then a 500 MB hour - fires) and
+**"normal days don't"** (the same history, an ordinary ~2.1 MB hour -
+does not fire) as two literal, named test cases; a device below the
+7-sample threshold is never judged even against a huge spike; amounts
+below the 5 MB floor never fire regardless of relative jump; and the
+console endpoint's learning/normal/flagged states. Not yet deployed.

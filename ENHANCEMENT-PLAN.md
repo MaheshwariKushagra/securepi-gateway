@@ -520,7 +520,7 @@ Never cut Stage 2, steps 5.2, 5.3, 5.7, or evaluation items 7.2–7.5.
 | Stage | Steps | Status |
 |---|---|---|
 | 0 | 0.1 · 0.2 · 0.3 | Not started |
-| 1 | **1.1 done, 1.2 done, 1.3 done, 1.4 done** · 1.5 · 1.6 · 1.7 · **1.8 done** (1.8 out of order - see note below) | 1.1–1.4, 1.8 done, rest not started |
+| 1 | **1.1 done, 1.2 done, 1.3 done, 1.4 done, 1.5 done** · 1.6 · 1.7 · **1.8 done** (1.8 out of order - see note below) | 1.1–1.5, 1.8 done, rest not started |
 | 2 | 2.1 · 2.2 · 2.3 · 2.4 · 2.5 · 2.6 · 2.7 · 2.8 | Not started |
 | 3 | 3.1 · 3.2 · 3.3 · 3.4 · 3.5 · 3.6 | Not started |
 | 4 | 4.1 · 4.2 · 4.3 · 4.4 · 4.5 | Not started |
@@ -2513,3 +2513,59 @@ much-older wall-clock ingest time - exactly the skew direction and
 rough size the bug analysis predicted, visible in the live data itself
 rather than only in a calculation. Journal clean across all three
 services throughout.
+
+**Note on step 1.5 (complete audit log coverage), implemented locally
+and deployed live.** Step 6.3 built `audit_log` and wired it into every
+write endpoint that existed at the time; this step's remaining scope
+was purely completion - ten endpoints (device rename; network-wide
+filtering enable, blocklist add/toggle/remove, custom rule add/remove;
+per-device filtering/DPI-enrollment/quarantine toggles) were still using
+the print()-only stopgap. All 23 of `webapp.py`'s write endpoints are
+now audited.
+
+- **Six of the ten had no `db()` call at all before this step** - the
+  network-wide filtering endpoints (`api_filtering_set_enabled`,
+  `api_filtering_add_list`, `api_filtering_toggle_list`,
+  `api_filtering_remove_list`, `api_filtering_add_rule`,
+  `api_filtering_remove_rule`) - meaning adding `audit.log()` introduced
+  a genuinely new database dependency to each, the same regression class
+  already caught once this session at step 6.3. Checked directly this
+  time before committing: the one existing scratchpad smoke test that
+  exercises any of them (`smoke_56.py`) already mocks `webapp.db` for
+  those call sites, so nothing broke - confirmed by running the full
+  regression, not assumed from the diff.
+- **A permanent regression guard was added**, not just a one-time
+  check: `tests/test_audit_coverage.py` statically scans `webapp.py`'s
+  real source for every `@app.post`/`patch`/`put`-decorated function and
+  asserts `audit.log(...)` appears in its body, against an explicit
+  (currently empty) allowlist for any endpoint that's genuinely
+  write-shaped but stateless. A future endpoint added without an audit
+  call now fails `make test` immediately. Verified by temporarily
+  deleting one real `audit.log()` call, confirming the test fails
+  naming exactly that endpoint, then reverting to a byte-identical file.
+
+Smoke-tested locally: the coverage test itself, plus the full
+regression suite (`make test`, 103 tests, and all 31 scratchpad smoke
+files) re-run clean after the six new `db()` calls were added.
+
+**Deployed to the live gateway and verified the same day.** No schema
+migration (the `audit_log` table already existed from step 6.3), so
+only a `.bak-1.5-*` copy of `webapp.py` and a restart of `securepi-web`
+were needed.
+
+**Verified against real production data**, exercising a representative
+mix of the newly-audited endpoints - both the ones that already had
+`db()` and the ones that needed a new call - all using safe, reversible
+or explicitly no-op actions: renamed the test-harness device and
+renamed it back; added a custom block rule for an obviously-fake test
+domain and removed it again; toggled the test-harness device's own
+per-device filtering off then back on; and, for the one genuinely
+network-wide toggle (`filtering.set_enabled`), checked the real current
+state first (enabled) and set it to that SAME value, exercising the
+endpoint with zero real protection gap. `GET /api/audit` showed all six
+real actions with accurate before/after detail
+(`device.rename: "[TEST HARNESS] test-attacker" -> "[TEST HARNESS]
+live-verify-1.5"` and back, `filtering.add_rule`/`remove_rule`,
+`device.filtering_set` both directions, `filtering.set_enabled`); the
+test-harness device's name was confirmed restored via
+`GET /api/devices`. Journal clean across all three services throughout.

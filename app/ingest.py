@@ -27,12 +27,15 @@ import sqlite3
 import sys
 import time
 
+import adguard
 import registry
 
 DB_PATH = "/opt/securepi/securepi.db"
 SCHEMA_PATH = "/opt/securepi/schema.sql"
 EVE_PATH = "/var/log/suricata/eve.json"
 AGH_QUERYLOG_PATH = "/opt/AdGuardHome/data/querylog.json"
+AGH_API_PAGE_SIZE = 500  # comfortably covers real accumulation between 2s polls - see read_agh_api's docstring
+AGH_WATERMARK_STARTUP_LOOKBACK_SECONDS = 300  # first-ever run: start 5 minutes back, not from epoch 0
 DPI_EVENTS_PATH = "/var/log/securepi/dpi-events.jsonl"
 
 # Schema changes made after the Day 14 database was already created on the
@@ -88,6 +91,7 @@ SCHEMA_MIGRATIONS = [
        )""",
     "CREATE INDEX IF NOT EXISTS idx_incident_notes_incident ON incident_notes(incident_id)",
     "CREATE INDEX IF NOT EXISTS idx_events_dest_ip ON events(dest_ip)",
+    "ALTER TABLE ingest_state ADD COLUMN watermark_ts REAL",
     """CREATE TABLE IF NOT EXISTS saved_searches (
            id         INTEGER PRIMARY KEY,
            name       TEXT NOT NULL,
@@ -137,23 +141,62 @@ def apply_migrations(conn):
     conn.commit()
 
 
-def to_epoch(timestamp):
+def parse_rfc3339(timestamp):
     """
-    Convert Suricata's timestamp to epoch seconds.
+    Parse an RFC3339 timestamp with nanosecond-or-fewer fractional precision
+    and either a 'Z' suffix or an explicit +/-HH:MM offset (colon optional),
+    returning epoch seconds.
 
-    Suricata writes e.g. '2026-09-12T09:27:53.123456+0000'. Python's fromisoformat
-    handles this in 3.11+, but we fall back to a manual parse rather than lose
-    the event if the format ever shifts.
+    A real bug, found and fixed as part of step 1.4: this project's two
+    timestamp parsers previously disagreed about what format they'd even
+    see, and one of them was silently wrong as a result.
+
+    - Suricata's own eve.json docstring example claimed '+0000' (UTC).
+      Checked live against this gateway's real eve.json: it is actually
+      '2026-09-14T03:53:12.151693+0530' - the system's local IST offset,
+      not UTC, and without a colon. `datetime.fromisoformat()` rejects
+      that (no colon) on any Python version, so every event was silently
+      falling through to a fallback that discarded the offset entirely
+      and treated the naive wall-clock value as system-local time. That
+      happened to produce the right answer ONLY because this gateway's
+      own system timezone is also Asia/Kolkata (+05:30) - confirmed live
+      via `timedatectl` - a coincidence any future redeploy in a
+      different timezone would silently break.
+    - AdGuard's querylog (both the on-disk file AND the /control/querylog
+      API - checked both live) returns a MIX of 'Z' and explicit-offset
+      timestamps in the same response/file, not always 'Z' as the old
+      code assumed. The old `to_epoch_agh` built its own string with a
+      HARDCODED '+00:00' regardless of the source timestamp's real
+      offset - for a '+05:30' entry, that is a genuine, deterministic
+      5.5-hour error, confirmed by computing both the buggy and correct
+      epoch for the same real timestamp and comparing.
+
+    One shared, tested parser now backs both Suricata and AdGuard
+    ingestion, handling any offset form rather than assuming one.
     """
     from datetime import datetime
     try:
-        return datetime.fromisoformat(timestamp).timestamp()
+        if timestamp.endswith("Z"):
+            body, offset = timestamp[:-1], "+00:00"
+        else:
+            # The offset's sign is the LAST +/- in the string - searching
+            # from the end avoids matching the date portion's own hyphens
+            # ("2026-09-14T..."), which always precede any real offset.
+            sign_pos = max(timestamp.rfind("+"), timestamp.rfind("-"))
+            body, offset = timestamp[:sign_pos], timestamp[sign_pos:]
+            if ":" not in offset:  # "+0530" -> "+05:30"
+                offset = offset[:3] + ":" + offset[3:]
+        head, _, frac = body.partition(".")
+        frac = (frac[:6] if frac else "").ljust(6, "0")
+        return datetime.fromisoformat("%s.%s%s" % (head, frac, offset)).timestamp()
     except Exception:
-        try:
-            head = timestamp[:26]
-            return datetime.strptime(head, "%Y-%m-%dT%H:%M:%S.%f").timestamp()
-        except Exception:
-            return time.time()
+        return time.time()
+
+
+def to_epoch(timestamp):
+    """Convert Suricata's eve.json timestamp to epoch seconds. See
+    parse_rfc3339's own docstring for the real bug this used to have."""
+    return parse_rfc3339(timestamp)
 
 
 def flatten_suricata(event):
@@ -329,17 +372,11 @@ def read_eve(conn):
 
 
 def to_epoch_agh(timestamp):
-    """AdGuard timestamps look like '2026-09-12T00:37:50.376866267Z' - RFC3339
-    with nanosecond precision, which Python's fromisoformat cannot parse
-    directly (it wants microseconds, and a real +00:00 offset, not 'Z')."""
-    from datetime import datetime
-    try:
-        # Truncate sub-second digits to 6 (microseconds) and normalise 'Z'.
-        head, _, frac_and_zone = timestamp.partition(".")
-        frac = frac_and_zone.rstrip("Z")[:6].ljust(6, "0")
-        return datetime.fromisoformat(head + "." + frac + "+00:00").timestamp()
-    except Exception:
-        return time.time()
+    """Convert an AdGuard Home timestamp (file querylog or the
+    /control/querylog API - both seen live to return a MIX of 'Z' and
+    explicit-offset forms) to epoch seconds. See parse_rfc3339's own
+    docstring for the real 5.5-hour bug this function used to have."""
+    return parse_rfc3339(timestamp)
 
 
 def flatten_agh(entry):
@@ -424,6 +461,148 @@ def read_agh_querylog(conn):
     return read, saved, errors
 
 
+def flatten_agh_api(entry, ts=None):
+    """Turn one /control/querylog API entry into a flat events-table row -
+    a DIFFERENT shape from the on-disk file's own format (flatten_agh
+    above), confirmed live against the real API (both a blocked and an
+    allowed real entry fetched and inspected directly, not guessed):
+    'client'/'question.name'/'question.type' instead of 'IP'/'QH'/'QT',
+    a top-level 'rule' string plus a 'rules' array instead of nested
+    'Result.Rules', 'elapsedMs' as a MILLISECOND STRING ('7.459497')
+    instead of 'Elapsed' nanoseconds, and 'cached'/'upstream' at the top
+    level instead of nested under 'Result'.
+
+    Blocked-vs-allowed comes from 'reason': AdGuard's own documented
+    naming convention is that every 'Filtered*' reason means blocked and
+    every 'NotFiltered*' reason means allowed. Confirmed live against
+    the two reasons this gateway actually produces
+    (FilteredBlackList, NotFilteredNotFound) - the fuller reason enum
+    (safe browsing, parental control, safe search, custom rule,
+    rewrite...) was not each individually exercised live, since none of
+    those features are enabled on this gateway. Followed here as a
+    stated interpretation of AdGuard's own convention, not a guess."""
+    question = entry.get("question") or {}
+    rules = entry.get("rules") or []
+    reason = entry.get("reason") or ""
+    row = {
+        "ts": ts if ts is not None else parse_rfc3339(entry.get("time", "")),
+        "ts_iso": entry.get("time"),
+        "source": "adguard",
+        "event_type": "dns_query",
+        "src_ip": entry.get("client"),
+        "proto": "udp",
+        "dns_type": "query",
+        "dns_rrname": question.get("name"),
+        "dns_rrtype": question.get("type"),
+        "blocked": 1 if reason.startswith("Filtered") else 0,
+        "dns_cached": 1 if entry.get("cached") else 0,
+        "dns_upstream": entry.get("upstream") or None,
+    }
+    try:
+        elapsed_ms = float(entry.get("elapsedMs") or 0)
+        if elapsed_ms:
+            row["dns_elapsed_ms"] = elapsed_ms
+    except (TypeError, ValueError):
+        pass
+    if rules:
+        row["block_reason"] = rules[0].get("text")
+        row["dns_filter_list_id"] = rules[0].get("filter_list_id")
+    return row
+
+
+def get_agh_watermark(conn):
+    row = conn.execute(
+        "SELECT watermark_ts FROM ingest_state WHERE source='adguard_api'"
+    ).fetchone()
+    if row is not None and row["watermark_ts"] is not None:
+        return row["watermark_ts"]
+    start = time.time() - AGH_WATERMARK_STARTUP_LOOKBACK_SECONDS
+    conn.execute(
+        "INSERT INTO ingest_state (source, file_path, file_inode, byte_offset, watermark_ts, updated_at)"
+        " VALUES ('adguard_api', '(control API)', NULL, 0, ?, ?)"
+        " ON CONFLICT(source) DO UPDATE SET watermark_ts=excluded.watermark_ts",
+        (start, time.time()),
+    )
+    conn.commit()
+    return start
+
+
+def set_agh_watermark(conn, ts):
+    conn.execute(
+        "UPDATE ingest_state SET watermark_ts=?, updated_at=? WHERE source='adguard_api'",
+        (ts, time.time()),
+    )
+
+
+def read_agh_api(conn):
+    """Poll AdGuard's /control/querylog API - real-time, not gated on
+    AdGuard's own flush-to-disk cadence the way tailing querylog.json is
+    (confirmed live in EVALUATION-RESULTS.md: the on-disk file can sit
+    unwritten for 7+ hours under real traffic, because AdGuard only
+    flushes when its 1000-entry in-memory buffer rotates - the exact gap
+    this step exists to close). Raises adguard.AdGuardError if the admin
+    API can't be reached; read_agh() below catches that and falls back
+    to the file reader for that cycle, per this step's own "file reader
+    kept as fallback".
+
+    No cursor/pagination beyond one page per poll: at this project's
+    real event volume (measured live - see ENHANCEMENT-PLAN.md step
+    6.6's note: roughly 950 DNS queries/day network-wide, under 1/minute
+    on average) one page of AGH_API_PAGE_SIZE entries per 2-second poll
+    comfortably covers what actually accumulates between polls. A gap
+    larger than one page between polls (the service down for a while, or
+    a genuine traffic spike) would silently skip the overflow rather
+    than page forward to catch up - a real, stated limitation, not a
+    silent one; the fallback-to-file path would separately still pick up
+    what the API poll missed, subject to the file's OWN latency
+    characteristics.
+    """
+    watermark = get_agh_watermark(conn)
+    resp = adguard._request("GET", "/control/querylog?limit=%d" % AGH_API_PAGE_SIZE)
+    data = (resp or {}).get("data") or []
+
+    rows = []
+    newest = watermark
+    seen_this_page = set()
+    for entry in data:
+        ts = parse_rfc3339(entry.get("time", ""))
+        if ts <= watermark:
+            continue
+        # A defensive duplicate guard within one fetched page - the API
+        # has no stable per-entry id to key on, so this is the best
+        # available "have I already queued this exact entry" check.
+        dedup_key = (ts, entry.get("client"), (entry.get("question") or {}).get("name"))
+        if dedup_key in seen_this_page:
+            continue
+        seen_this_page.add(dedup_key)
+        rows.append(flatten_agh_api(entry, ts))
+        if ts > newest:
+            newest = ts
+
+    saved = insert_events(conn, rows)
+    if newest > watermark:
+        set_agh_watermark(conn, newest)
+    conn.execute(
+        "UPDATE ingest_stats SET events_read = events_read + ?,"
+        " events_saved = events_saved + ?, last_run = ? WHERE id = 1",
+        (len(data), saved, time.time()),
+    )
+    conn.commit()
+    return len(data), saved, 0
+
+
+def read_agh(conn):
+    """Try the real-time /control/querylog API first; fall back to
+    tailing the on-disk file if AdGuard's admin API can't be reached
+    right now (e.g. AdGuard itself restarting) - step 1.4's own "file
+    reader kept as fallback"."""
+    try:
+        return read_agh_api(conn)
+    except adguard.AdGuardError as e:
+        print("AdGuard API unreachable (%s) - falling back to file tailing this cycle" % e, flush=True)
+        return read_agh_querylog(conn)
+
+
 def flatten_dpi(entry):
     """Turn one structured line from the DPI addon's telemetry log (see
     dpi/securepi_adfilter.py's _log_event) into an events row. Reuses the
@@ -505,7 +684,7 @@ def main():
             cycle += 1
 
             read, saved, errors = read_eve(conn)
-            a_read, a_saved, a_errors = read_agh_querylog(conn)
+            a_read, a_saved, a_errors = read_agh(conn)
             d_read, d_saved, d_errors = read_dpi_events(conn)
             saved += a_saved + d_saved
             errors += a_errors + d_errors

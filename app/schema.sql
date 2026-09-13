@@ -173,7 +173,13 @@ CREATE TABLE IF NOT EXISTS ingest_state (
     file_path   TEXT NOT NULL,
     file_inode  INTEGER,
     byte_offset INTEGER NOT NULL DEFAULT 0,
-    updated_at  REAL NOT NULL
+    updated_at  REAL NOT NULL,
+    -- Step 1.4: the AdGuard API-polling reader has no file/byte-offset
+    -- concept (it's not tailing a file), so it needs a real epoch-seconds
+    -- watermark instead - REAL, not byte_offset's INTEGER, since AdGuard's
+    -- own timestamps carry nanosecond precision and truncating to whole
+    -- seconds could re-ingest (or skip) an entry at a second boundary.
+    watermark_ts REAL
 );
 
 -- ------------------------------------------------------------- statistics --

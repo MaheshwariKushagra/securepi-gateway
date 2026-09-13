@@ -161,3 +161,37 @@ def make_agh_entry(client_ip="10.10.0.50", domain="ads.example.com",
             "Rules": [{"FilterListID": 1, "Text": "||%s^" % domain}],
         }
     return entry
+
+
+def make_agh_api_entry(client_ip="10.10.0.50", domain="ads.example.com",
+                        blocked=True, timestamp=None, cached=False,
+                        upstream="tls://1.1.1.1", elapsed_ms="5.123456",
+                        reason=None):
+    """A synthetic /control/querylog API entry - a DIFFERENT shape from
+    the on-disk file (make_agh_entry above). Fields and their real
+    values (including the exact two 'reason' strings used below) were
+    confirmed live against the real gateway's real AdGuard API before
+    being encoded here, not guessed - see app/ingest.py's
+    flatten_agh_api docstring."""
+    if reason is None:
+        reason = "FilteredBlackList" if blocked else "NotFilteredNotFound"
+    entry = {
+        "answer": [{"type": "A", "value": "0.0.0.0" if blocked else "93.184.216.34", "ttl": 10}],
+        "answer_dnssec": False,
+        "cached": cached,
+        "client": client_ip,
+        "client_info": {"whois": {}, "name": "", "disallowed_rule": "", "disallowed": False},
+        "client_proto": "",
+        "elapsedMs": elapsed_ms,
+        "question": {"class": "IN", "name": domain, "type": "A"},
+        "reason": reason,
+        "rules": [],
+        "status": "NOERROR",
+        "time": timestamp or "2026-09-14T10:00:00.500000000Z",
+        "upstream": upstream or "",
+    }
+    if blocked:
+        entry["filterId"] = 1
+        entry["rule"] = "||%s^" % domain
+        entry["rules"] = [{"filter_list_id": 1, "text": "||%s^" % domain}]
+    return entry

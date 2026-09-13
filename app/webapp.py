@@ -31,6 +31,7 @@ Routes:
   /api/filtering/resolver/apply     apply recommended resolver tuning (needs confirm=true)
   /api/filtering/ca                 Tier 2 CA fingerprint, validity, download URL
   /api/filtering/dpi/enrolled       every enrolled device, expiry, and a CA-trust check
+  /api/filtering/dpi/privacy-scope  privacy-scope canary status for the console badge
   /api/devices/{id}/dpi             enroll/unenroll one device for Tier 2 (replaces the CLI)
   /api/devices/{id}/blocked         recently blocked domains for one device
   /api/devices/{id}/filtering/rules allow/block rules scoped to one device
@@ -150,6 +151,12 @@ LIST_LOW_CONTRIBUTION_SHARE = 0.01
 # both fixed by that script, not discovered at runtime.
 DPI_CA_PATH = "/opt/securepi-dpi/ca/mitmproxy-ca-cert.pem"
 DPI_CA_DOWNLOAD_URL = "http://10.10.0.1:8081/securepi-ca.crt"
+
+# dpi/privacy_canary.py (step 5.7) checks every 15 minutes; twice that
+# before the console calls the check itself stale, the same slack
+# SIGNAL_STALE_AFTER/INGEST_STALE_AFTER give the correlation engine and
+# ingest above.
+PRIVACY_SCOPE_STALE_AFTER = 30 * 60
 
 
 class IncidentUpdate(BaseModel):
@@ -1328,6 +1335,34 @@ def api_filtering_dpi_enrolled():
             "expires_in_s": row["expires_in_s"], "trust": trust,
         })
     return {"enrolled": out}
+
+
+@app.get("/api/filtering/dpi/privacy-scope")
+def api_privacy_scope():
+    """Status for the console's "privacy scope verified N min ago" badge
+    (step 5.7). Reads what dpi/privacy_canary.py - a separate,
+    continuously-running process, not something this endpoint invokes -
+    already wrote: when it last ran (signal_state), and whether an open
+    failure incident exists right now (incidents). If the canary hasn't
+    been deployed at all, this reads as "stale", which is the honest
+    state to show rather than a false green."""
+    c = db()
+    now = time.time()
+    row = c.execute(
+        "SELECT last_run_ts FROM signal_state WHERE signal_type='privacy_scope'").fetchone()
+    last_run = row["last_run_ts"] if row else None
+    stale = (last_run is None) or (now - last_run) >= PRIVACY_SCOPE_STALE_AFTER
+    failing = c.execute(
+        "SELECT id FROM incidents WHERE signal_type='privacy_scope_failure' AND status='new'"
+        " ORDER BY last_seen DESC LIMIT 1").fetchone()
+    return {
+        "last_checked": time.strftime("%H:%M:%S", time.localtime(last_run)) if last_run else None,
+        "age": _age(now - last_run) if last_run else None,
+        "stale": stale,
+        "failing": failing is not None,
+        "incident_id": failing["id"] if failing else None,
+        "healthy": (not stale) and (failing is None),
+    }
 
 
 @app.get("/api/devices/{device_id}/dpi")

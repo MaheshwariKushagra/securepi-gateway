@@ -1144,8 +1144,32 @@ function initDpiOnboarding() {
         }
     }
 
+    async function loadPrivacyScope() {
+        const badge = $("#privacyScopeBadge");
+        if (!badge) return;
+        try {
+            const res = await fetch("/api/filtering/dpi/privacy-scope");
+            if (!res.ok) throw new Error("request failed");
+            const d = await res.json();
+            if (d.failing) {
+                badge.textContent = "Privacy scope: check failed - Tier 2 disabled";
+                badge.className = "chip high";
+                if (d.incident_id) badge.onclick = () => location.href = `/incidents/${d.incident_id}`;
+            } else if (d.stale) {
+                badge.textContent = d.last_checked ? `Privacy scope: stale (last checked ${d.age} ago)` : "Privacy scope: not yet checked";
+                badge.className = "chip neutral";
+            } else {
+                badge.textContent = `Privacy scope verified ${d.age} ago`;
+                badge.className = "chip ok";
+            }
+        } catch (err) {
+            $("#privacyScopeBadge").textContent = "Privacy scope: unknown";
+        }
+    }
+
     loadCa();
     loadEnrolled();
+    loadPrivacyScope();
 }
 
 function initResolverQuality() {

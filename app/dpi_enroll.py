@@ -115,6 +115,17 @@ _NOT_FOUND_MARKERS = (
 )
 
 
+def flush():
+    """Unenroll every device at once. This is the fail-safe path for step
+    5.7's privacy-scope canary: if there's any doubt the addon is making
+    the right decrypt/passthrough decision, the right response is to stop
+    inspecting everyone immediately, not leave any device exposed while
+    someone investigates."""
+    result = _run(["flush", "set", FAMILY, TABLE, SET_NAME])
+    if result.returncode != 0:
+        raise DpiEnrollError("could not flush the enrolled set: %s" % result.stderr.strip())
+
+
 def unenroll(ip):
     """Idempotent: unenrolling an address that was never enrolled is a no-op."""
     result = _run(["delete", "element", FAMILY, TABLE, SET_NAME, "{ %s }" % ip])

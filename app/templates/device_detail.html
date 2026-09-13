@@ -86,6 +86,10 @@
                 <div class="subtle" style="flex:1">Network access (quarantine)</div>
                 <button class="btn" id="deviceQuarantineToggle">Loading…</button>
             </div>
+            <div style="margin-top:10px; display:flex; align-items:center; gap:10px" id="deviceDpi" data-device-id="{{ device.id }}">
+                <div class="subtle" style="flex:1">HTTPS ad removal (Tier 2) <span class="dim" id="deviceDpiExpiry"></span></div>
+                <button class="btn" id="deviceDpiToggle">Loading…</button>
+            </div>
             <div style="margin-top:14px" id="deviceProfiles" data-device-id="{{ device.id }}">
                 <div class="subtle" style="margin-bottom:6px">Native telemetry profile</div>
                 <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap">

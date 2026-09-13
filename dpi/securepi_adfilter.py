@@ -213,6 +213,34 @@ class SecurePiAdFilter:
             self.decrypted += 1
             self._log_event(src_ip, "decrypt", sni=sni)
 
+    def tls_failed_client(self, data):
+        """
+        Runs when the TLS handshake between mitmproxy and the CLIENT fails,
+        on a connection we chose to decrypt above. The most common real
+        cause on this project is a device that hasn't installed (or has
+        removed) the SecurePi CA: it doesn't trust the certificate we
+        present, so the handshake never completes.
+
+        This is the ad-blocking equivalent of tls_clienthello's telemetry,
+        feeding the console's CA-trust check (ENHANCEMENT-PLAN.md step
+        5.6b/e) and, later, pinning-aware auto-passthrough (step 5.8) -
+        both need to know which (device, host) pairs are failing, not just
+        that ad-blocking itself is still working. NOT yet exercised against
+        a real failed handshake as of this deploy - see the plan's note on
+        this step for what specifically still needs checking.
+        """
+        sni = None
+        try:
+            sni = data.client_hello.sni
+        except Exception:
+            pass
+        src_ip = None
+        try:
+            src_ip = data.context.client.peername[0]
+        except Exception:
+            pass
+        self._log_event(src_ip, "tls_failed", sni=sni)
+
     def request(self, flow):
         """
         Runs before each request on a decrypted connection.

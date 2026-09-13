@@ -29,6 +29,9 @@ Routes:
   /api/devices/{id}/filtering/profile(s)  apply/remove/list a device's native-tracker profiles
   /api/filtering/resolver           resolver quality: config + measured DNS latency
   /api/filtering/resolver/apply     apply recommended resolver tuning (needs confirm=true)
+  /api/filtering/ca                 Tier 2 CA fingerprint, validity, download URL
+  /api/filtering/dpi/enrolled       every enrolled device, expiry, and a CA-trust check
+  /api/devices/{id}/dpi             enroll/unenroll one device for Tier 2 (replaces the CLI)
   /api/devices/{id}/blocked         recently blocked domains for one device
   /api/devices/{id}/filtering/rules allow/block rules scoped to one device
   /api/devices/{id}/filtering/allow one-click unbreak, optionally temporary
@@ -41,6 +44,7 @@ import base64
 import datetime
 import secrets
 import sqlite3
+import subprocess
 import time
 
 from fastapi import FastAPI, HTTPException, Query
@@ -51,6 +55,7 @@ from pydantic import BaseModel
 from starlette.requests import Request
 
 import adguard
+import dpi_enroll
 import native_trackers
 import quarantine
 import risk
@@ -140,6 +145,12 @@ LIST_STALE_AFTER_HOURS = 48
 # experiment step 5.4 deferred to Stage 7 - see api_filtering_lists_health).
 LIST_LOW_CONTRIBUTION_SHARE = 0.01
 
+# Where deploy-dpi.sh installs the Tier 2 inspection CA (see step 5.6d) and
+# the plain-HTTP URL it's already served from for devices to download -
+# both fixed by that script, not discovered at runtime.
+DPI_CA_PATH = "/opt/securepi-dpi/ca/mitmproxy-ca-cert.pem"
+DPI_CA_DOWNLOAD_URL = "http://10.10.0.1:8081/securepi-ca.crt"
+
 
 class IncidentUpdate(BaseModel):
     status: str
@@ -171,6 +182,11 @@ class NativeProfileRequest(BaseModel):
 
 class ResolverTuningRequest(BaseModel):
     confirm: bool = False
+
+
+class DpiEnrollRequest(BaseModel):
+    enrolled: bool
+    hours: int = dpi_enroll.DEFAULT_TIMEOUT_HOURS
 
 
 class QuarantineUpdate(BaseModel):
@@ -359,12 +375,14 @@ def _savings_estimate(requests_blocked):
 def _tier2_breakdown(c, start, end, device_id=None):
     """Counts of what the Tier-2 (selective HTTPS inspection) addon actually
     did in [start, end): decrypt / passthrough / ads_stripped / path_blocked
-    decisions, plus the total ad objects removed. Source data is written by
-    dpi/securepi_adfilter.py and read by ingest.py's read_dpi_events() -
-    see ENHANCEMENT-PLAN.md step 5.1."""
+    / tls_failed decisions, plus the total ad objects removed. tls_failed
+    (step 5.6) is what the CA-trust check in api_filtering_dpi_enrolled
+    reads to notice a device that likely hasn't installed the CA. Source
+    data is written by dpi/securepi_adfilter.py and read by ingest.py's
+    read_dpi_events() - see ENHANCEMENT-PLAN.md step 5.1."""
     dev_clause = " AND device_id=?" if device_id is not None else ""
     dev_arg = (device_id,) if device_id is not None else ()
-    counts = {"decrypt": 0, "passthrough": 0, "ads_stripped": 0, "path_blocked": 0}
+    counts = {"decrypt": 0, "passthrough": 0, "ads_stripped": 0, "path_blocked": 0, "tls_failed": 0}
     for r in c.execute(
         "SELECT dpi_action, count(*) n FROM events"
         " WHERE source='dpi' AND ts >= ? AND ts < ?" + dev_clause +
@@ -1220,6 +1238,137 @@ def api_apply_resolver_tuning(body: ResolverTuningRequest):
     print("filtering: applied recommended resolver tuning (optimistic cache, "
           "DNSSEC, parallel dual-DoT upstreams)", flush=True)
     return {"ok": True, "applied": new_cfg}
+
+
+def _ca_info():
+    """Tier 2 inspection CA fingerprint and validity window, read straight
+    from the certificate file with openssl rather than adding a crypto
+    library dependency - the same shell-out approach quarantine.py and
+    dpi_enroll.py already use for one-off system facts. See
+    ENHANCEMENT-PLAN.md step 5.6d. Automated rotation is NOT implemented
+    here - generating a new CA invalidates every enrolled device's stored
+    trust at once, which is too consequential to automate without a
+    reviewed runbook step; this only ever reads the existing one."""
+    try:
+        result = subprocess.run(
+            ["openssl", "x509", "-in", DPI_CA_PATH, "-noout",
+             "-fingerprint", "-sha256", "-enddate", "-startdate"],
+            capture_output=True, text=True, timeout=5)
+    except (OSError, subprocess.TimeoutExpired) as e:
+        return {"available": False, "error": str(e)}
+    if result.returncode != 0:
+        return {"available": False, "error": result.stderr.strip() or "CA certificate not found"}
+    info = {"available": True}
+    for line in result.stdout.splitlines():
+        if line.startswith("SHA256 Fingerprint="):
+            info["fingerprint_sha256"] = line.split("=", 1)[1]
+        elif line.startswith("notBefore="):
+            info["not_before"] = line.split("=", 1)[1]
+        elif line.startswith("notAfter="):
+            info["not_after"] = line.split("=", 1)[1]
+    return info
+
+
+@app.get("/api/filtering/ca")
+def api_filtering_ca():
+    """CA info for the Tier 2 onboarding card: fingerprint, validity dates,
+    and the existing plain-HTTP download URL deploy-dpi.sh already serves
+    it from (finding A10 - still plain HTTP, not changed by this step)."""
+    info = _ca_info()
+    info["download_url"] = DPI_CA_DOWNLOAD_URL
+    return info
+
+
+@app.get("/api/filtering/dpi/enrolled")
+def api_filtering_dpi_enrolled():
+    """Every currently-enrolled device: its auto-unenroll countdown, and a
+    best-effort CA-trust check inferred from its own recent Tier 2
+    telemetry (step 5.6b/e). "trusted" means we've seen a successful
+    decrypt/ads_stripped more recently than any tls_failed; "check_ca"
+    means the opposite; "unverified" means no Tier 2 telemetry at all yet.
+    This is inferred from OUR side of the handshake outcome, not confirmed
+    from the device itself - the gateway has no way to see whether a
+    phone actually trusts the certificate beyond whether the handshake it
+    attempted succeeded."""
+    try:
+        rows = dpi_enroll.enrolled()
+    except dpi_enroll.DpiEnrollError as e:
+        raise HTTPException(502, str(e))
+    c = db()
+    out = []
+    for row in rows:
+        ip = row["ip"]
+        name = ip
+        dev_row = c.execute(
+            "SELECT device_id FROM device_ips WHERE ip=? ORDER BY last_seen DESC LIMIT 1",
+            (ip,)).fetchone()
+        device_id = dev_row["device_id"] if dev_row else None
+        if device_id is not None:
+            d = c.execute("SELECT * FROM devices WHERE id=?", (device_id,)).fetchone()
+            if d:
+                name = device_label(d)
+        last_ok = c.execute(
+            "SELECT max(ts) FROM events WHERE source='dpi' AND src_ip=?"
+            "   AND dpi_action IN ('decrypt','ads_stripped')", (ip,)).fetchone()[0]
+        last_fail = c.execute(
+            "SELECT max(ts) FROM events WHERE source='dpi' AND src_ip=?"
+            "   AND dpi_action='tls_failed'", (ip,)).fetchone()[0]
+        if last_fail and (not last_ok or last_fail > last_ok):
+            trust = "check_ca"
+        elif last_ok:
+            trust = "trusted"
+        else:
+            trust = "unverified"
+        out.append({
+            "ip": ip, "device_id": device_id, "name": name,
+            "expires_in_s": row["expires_in_s"], "trust": trust,
+        })
+    return {"enrolled": out}
+
+
+@app.get("/api/devices/{device_id}/dpi")
+def api_device_dpi_status(device_id: int):
+    c = db()
+    if c.execute("SELECT 1 FROM devices WHERE id=?", (device_id,)).fetchone() is None:
+        raise HTTPException(404, "device not found")
+    ip_row = c.execute(
+        "SELECT ip FROM device_ips WHERE device_id=? ORDER BY last_seen DESC LIMIT 1",
+        (device_id,)).fetchone()
+    if ip_row is None:
+        return {"enrolled": False, "ip": None, "expires_in_s": None}
+    try:
+        rows = {e["ip"]: e for e in dpi_enroll.enrolled()}
+    except dpi_enroll.DpiEnrollError as e:
+        raise HTTPException(502, str(e))
+    row = rows.get(ip_row["ip"])
+    return {
+        "enrolled": row is not None, "ip": ip_row["ip"],
+        "expires_in_s": row["expires_in_s"] if row else None,
+    }
+
+
+@app.post("/api/devices/{device_id}/dpi")
+def api_device_dpi_set(device_id: int, body: DpiEnrollRequest):
+    """Enroll or unenroll one device for Tier 2 (HTTPS ad removal) - the
+    console's replacement for the `sudo securepi enroll/unenroll` CLI. See
+    ENHANCEMENT-PLAN.md step 5.6a."""
+    c = db()
+    if c.execute("SELECT 1 FROM devices WHERE id=?", (device_id,)).fetchone() is None:
+        raise HTTPException(404, "device not found")
+    ip_row = c.execute(
+        "SELECT ip FROM device_ips WHERE device_id=? ORDER BY last_seen DESC LIMIT 1",
+        (device_id,)).fetchone()
+    if ip_row is None:
+        raise HTTPException(400, "device has no known IP address to enforce against")
+    try:
+        if body.enrolled:
+            dpi_enroll.enroll(ip_row["ip"], hours=body.hours)
+        else:
+            dpi_enroll.unenroll(ip_row["ip"])
+    except dpi_enroll.DpiEnrollError as e:
+        raise HTTPException(502, str(e))
+    return {"id": device_id, "enrolled": body.enrolled, "ip": ip_row["ip"],
+            "expires_in_s": body.hours * 3600 if body.enrolled else None}
 
 
 @app.get("/api/devices/{device_id}/blocked")

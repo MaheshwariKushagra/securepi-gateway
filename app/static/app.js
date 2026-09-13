@@ -814,6 +814,56 @@ function initDeviceQuarantine() {
     load();
 }
 
+function humanizeSeconds(s) {
+    if (s == null) return "";
+    if (s < 60) return `${s}s`;
+    if (s < 3600) return `${Math.round(s / 60)}m`;
+    return `${Math.round(s / 3600)}h`;
+}
+
+function initDeviceDpi() {
+    const wrap = $("#deviceDpi");
+    if (!wrap) return;
+    const deviceId = wrap.dataset.deviceId;
+    const btn = $("#deviceDpiToggle");
+    const expiryEl = $("#deviceDpiExpiry");
+
+    async function load() {
+        try {
+            const res = await fetch(`/api/devices/${deviceId}/dpi`);
+            if (!res.ok) throw new Error("request failed");
+            const data = await res.json();
+            btn.textContent = data.enrolled ? "Enrolled — click to unenroll" : "Enroll this device";
+            btn.classList.toggle("on", data.enrolled);
+            btn.dataset.enrolled = data.enrolled ? "1" : "0";
+            expiryEl.textContent = (data.enrolled && data.expires_in_s != null)
+                ? `— auto-unenrolls in ${humanizeSeconds(data.expires_in_s)}` : "";
+        } catch (err) {
+            btn.textContent = "Unavailable";
+        }
+    }
+
+    btn.addEventListener("click", async () => {
+        const enrolled = btn.dataset.enrolled !== "1";
+        try {
+            const res = await fetch(`/api/devices/${deviceId}/dpi`, {
+                method: "POST", headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ enrolled, hours: 24 }),
+            });
+            if (!res.ok) throw new Error("request failed");
+            toast(enrolled ? "Device enrolled" : "Device unenrolled",
+                  enrolled ? "HTTPS ad removal is active for this device for the next 24h. It needs the SecurePi CA installed - see the Filtering page."
+                           : "This device's HTTPS traffic is no longer inspected.",
+                  "ok");
+            load();
+        } catch (err) {
+            toast("Update failed", "Could not reach the firewall.", "high");
+        }
+    });
+
+    load();
+}
+
 function initDeviceBlocked() {
     const wrap = $("#deviceBlocked");
     if (!wrap) return;
@@ -1022,6 +1072,80 @@ function initDeviceProfiles() {
 
     loadOptions();
     loadApplied();
+}
+
+const DPI_TRUST_META = {
+    trusted:    { label: "CA trusted",       cls: "ok" },
+    check_ca:   { label: "check CA install", cls: "high" },
+    unverified: { label: "not verified yet", cls: "neutral" },
+};
+
+function initDpiOnboarding() {
+    const caEl = $("#dpiCaInfo");
+    if (!caEl) return;
+    const listEl = $("#dpiEnrolledList");
+
+    async function loadCa() {
+        try {
+            const res = await fetch("/api/filtering/ca");
+            if (!res.ok) throw new Error("request failed");
+            const d = await res.json();
+            if (!d.available) {
+                caEl.innerHTML = `<div class="empty">Tier 2 is not installed on this gateway (${esc(d.error || "no CA found")})</div>`;
+                return;
+            }
+            caEl.innerHTML = `
+                <div style="display:flex; gap:24px; flex-wrap:wrap; margin-bottom:10px">
+                    <div><div class="dim" style="font-size:11px">Valid until</div>
+                        <div style="font-size:14px">${esc(d.not_after || "unknown")}</div></div>
+                    <div><div class="dim" style="font-size:11px">Fingerprint (SHA-256)</div>
+                        <div class="mono truncate" style="font-size:11px; max-width:280px">${esc(d.fingerprint_sha256 || "unknown")}</div></div>
+                    <div><a class="btn" href="${esc(d.download_url)}" target="_blank" rel="noopener">Download CA certificate</a></div>
+                </div>
+                <div class="dim" style="font-size:12px; line-height:1.6">
+                    Install this certificate as a trusted root on a device before enrolling it, or its HTTPS
+                    traffic will fail to load once enrolled: iOS/macOS - open the link, Install in Settings ›
+                    General › VPN & Device Management, then enable full trust under Certificate Trust Settings.
+                    Android - open the link, install as a "CA certificate" under Settings › Security ›
+                    Encryption. Windows - open the .crt file, install into "Trusted Root Certification
+                    Authorities" for the local machine.
+                </div>
+                <div class="callout" style="margin-top:10px">
+                    Remove this certificate from any device that is no longer enrolled below - the gateway
+                    can't see or remind you of this itself, since it has no visibility into a device's own
+                    certificate store.
+                </div>`;
+        } catch (err) {
+            caEl.innerHTML = `<div class="empty">Could not load CA info</div>`;
+        }
+    }
+
+    async function loadEnrolled() {
+        try {
+            const res = await fetch("/api/filtering/dpi/enrolled");
+            if (!res.ok) throw new Error("request failed");
+            const d = await res.json();
+            if (!d.enrolled.length) {
+                listEl.innerHTML = `<div class="empty">No devices enrolled</div>`;
+                return;
+            }
+            listEl.innerHTML = d.enrolled.map(e => {
+                const t = DPI_TRUST_META[e.trust] || DPI_TRUST_META.unverified;
+                return `
+                <div class="filter-row">
+                    <span class="chip ${t.cls}">${t.label}</span>
+                    <span class="truncate">${e.device_id ? `<a href="/devices/${e.device_id}">${esc(e.name)}</a>` : esc(e.name)}</span>
+                    <span class="dim mono">${esc(e.ip)}</span>
+                    <span class="dim">${e.expires_in_s != null ? `expires in ${humanizeSeconds(e.expires_in_s)}` : ""}</span>
+                </div>`;
+            }).join("");
+        } catch (err) {
+            listEl.innerHTML = `<div class="empty">Could not load enrolled devices</div>`;
+        }
+    }
+
+    loadCa();
+    loadEnrolled();
 }
 
 function initResolverQuality() {
@@ -1516,12 +1640,14 @@ document.addEventListener("DOMContentLoaded", () => {
     initDeviceActivity();
     initDeviceFiltering();
     initDeviceQuarantine();
+    initDeviceDpi();
     initDeviceBlocked();
     initDevicePrivacy();
     initDeviceProfiles();
     initFiltering();
     initFilteringAnalytics();
     initResolverQuality();
+    initDpiOnboarding();
 
     // Global row-action delegate: works across incidents list + detail page.
     // Registered on the capture phase because row markup calls

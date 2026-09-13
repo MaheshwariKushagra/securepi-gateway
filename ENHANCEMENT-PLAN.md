@@ -550,5 +550,54 @@ but this needs a live curl to confirm either way, the same lesson
 
 Smoke-tested locally with mocked `adguard.filtering_status()` and an
 in-memory DB (staleness math, contribution/share arithmetic, the
-disabled-list-not-flagged case, and the missing-timestamp case). Not yet
-deployed.
+disabled-list-not-flagged case, and the missing-timestamp case).
+
+**Deployed to the live gateway and verified the same day.** `.bak-5.3-5.4-*`
+copies of every replaced file were taken first (`webapp.py`, both
+templates, `static/app.js`), plus the new `tracker_entities.py`; no
+schema change this time, so no DB backup was needed. `securepi-web`
+restarted cleanly (`sudo systemctl restart securepi-web`, journal clean,
+`sudo python3 -m py_compile webapp.py tracker_entities.py` on the
+gateway's own interpreter passed before the restart).
+
+What was actually exercised against the live gateway:
+- `/api/filtering/analytics?range=24h` - real tracker attribution across
+  19 companies (Google Ads/Analytics, Meta, Firebase/Crashlytics, Branch,
+  Yandex Metrica, Hotjar, AdColony and more), real top-blocked-domains
+  and top-blocked-clients tables, a real savings figure. Tier 2 correctly
+  reports `active: false` - consistent with the still-empty DPI telemetry
+  log noted above.
+- `/api/devices/{id}/privacy` against both real phones (ids 1 and 2) -
+  distinct, plausible per-device tracker breakdowns (34% and 37% block
+  rates respectively).
+- `/api/filtering/lists/health` - **this is what resolved the one
+  specific thing flagged as unverified above.** AdGuard's real
+  `/control/filtering/status` (curled directly against port 3000, past
+  this app's own layer) does return `last_updated` as a genuine
+  RFC3339-with-offset string (`"2026-09-13T06:56:12+05:30"`), and
+  `datetime.fromisoformat` parses it correctly - age_h and staleness
+  came back sane for all 5 configured lists.
+- The Filtering and device-detail pages were curled directly and checked
+  for the new card markup (`analyticsRangeSel`, `blockPctChart`,
+  `devicePrivacy`, etc.) actually present in the rendered HTML, and the
+  deployed `static/app.js` was confirmed to contain the new
+  `initFilteringAnalytics`/`initDevicePrivacy` functions.
+
+**One real thing this surfaced, not a bug:** of 1,963 blocked DNS events
+stored so far, only 6 carry a `dns_filter_list_id` at all, and all 6
+point to list id 1 ("AdGuard DNS filter"), never to HaGeZi/OISD/Peter
+Lowe/AdAway despite AdGuard's own on-disk `querylog.json` showing those
+four lists matching plenty of queries. Tracing it: `read_agh_querylog`'s
+byte-offset watermark means a querylog line already read (and inserted)
+before this session's schema migration keeps whatever columns
+`flatten_agh` produced *at read time* - it is never re-read and
+backfilled just because the column exists now. So "6 attributed blocks,
+all from list 1" is exactly what the plan's own caveat already predicted
+("blocks recorded before 5.1 was deployed aren't attributed to any
+list"), not a defect in this feature; the per-list contribution numbers
+will become meaningful as more DNS traffic is ingested from here forward.
+Confirmed live: a `doubleclick.net` block logged after the deploy carries
+`dns_filter_list_id=1` correctly. Worth re-checking `/api/filtering/lists/health`
+again after a few real days of traffic, specifically whether HaGeZi/OISD/
+Peter Lowe/AdAway ever earn a non-zero share once given the chance -
+list 1 alone may simply be catching most common ad domains first.

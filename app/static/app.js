@@ -961,6 +961,7 @@ function initDevicePrivacy() {
                 <div><span class="dim">Passed through</span> <b>${t2.passthrough}</b></div>
                 <div><span class="dim">Ads stripped from</span> <b>${t2.ads_stripped}</b></div>
                 <div><span class="dim">Ad objects removed</span> <b>${t2.ads_removed}</b></div>
+                <div><span class="dim">Pinning bypasses</span> <b>${t2.pin_bypass}</b></div>
             </div>`;
     }
 
@@ -1144,6 +1145,29 @@ function initDpiOnboarding() {
         }
     }
 
+    async function loadPinned() {
+        const wrap = $("#dpiPinnedList");
+        if (!wrap) return;
+        try {
+            const res = await fetch("/api/filtering/dpi/pinned");
+            if (!res.ok) throw new Error("request failed");
+            const d = await res.json();
+            if (!d.pinned.length) {
+                wrap.innerHTML = `<div class="empty">No apps currently bypassed</div>`;
+                return;
+            }
+            wrap.innerHTML = d.pinned.map(p => `
+                <div class="filter-row">
+                    <span class="chip neutral">bypassed</span>
+                    <span class="truncate">${p.device_id ? `<a href="/devices/${p.device_id}">${esc(p.name)}</a>` : esc(p.name)}</span>
+                    <span class="dim mono truncate">${esc(p.sni)}</span>
+                    <span class="dim">expires in ${humanizeSeconds(p.expires_in_s)}</span>
+                </div>`).join("");
+        } catch (err) {
+            wrap.innerHTML = `<div class="empty">Could not load pinned apps</div>`;
+        }
+    }
+
     async function loadPrivacyScope() {
         const badge = $("#privacyScopeBadge");
         if (!badge) return;
@@ -1169,6 +1193,7 @@ function initDpiOnboarding() {
 
     loadCa();
     loadEnrolled();
+    loadPinned();
     loadPrivacyScope();
 }
 
@@ -1272,6 +1297,8 @@ function initFilteringAnalytics() {
                 <div><span class="dim">Ads stripped from</span> <b>${t2.ads_stripped}</b> <span class="dim">responses</span></div>
                 <div><span class="dim">Blocked paths</span> <b>${t2.path_blocked}</b></div>
                 <div><span class="dim">Ad objects removed</span> <b>${t2.ads_removed}</b></div>
+                <div><span class="dim">TLS handshake failures</span> <b>${t2.tls_failed}</b></div>
+                <div><span class="dim">Pinning bypasses</span> <b>${t2.pin_bypass}</b></div>
             </div>`;
     }
 

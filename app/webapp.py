@@ -32,6 +32,7 @@ Routes:
   /api/filtering/ca                 Tier 2 CA fingerprint, validity, download URL
   /api/filtering/dpi/enrolled       every enrolled device, expiry, and a CA-trust check
   /api/filtering/dpi/privacy-scope  privacy-scope canary status for the console badge
+  /api/filtering/dpi/pinned         devices currently auto-bypassed for a pinned app (step 5.8)
   /api/devices/{id}/dpi             enroll/unenroll one device for Tier 2 (replaces the CLI)
   /api/devices/{id}/blocked         recently blocked domains for one device
   /api/devices/{id}/filtering/rules allow/block rules scoped to one device
@@ -382,14 +383,19 @@ def _savings_estimate(requests_blocked):
 def _tier2_breakdown(c, start, end, device_id=None):
     """Counts of what the Tier-2 (selective HTTPS inspection) addon actually
     did in [start, end): decrypt / passthrough / ads_stripped / path_blocked
-    / tls_failed decisions, plus the total ad objects removed. tls_failed
-    (step 5.6) is what the CA-trust check in api_filtering_dpi_enrolled
-    reads to notice a device that likely hasn't installed the CA. Source
-    data is written by dpi/securepi_adfilter.py and read by ingest.py's
-    read_dpi_events() - see ENHANCEMENT-PLAN.md step 5.1."""
+    / tls_failed / pin_bypass decisions, plus the total ad objects removed.
+    tls_failed (step 5.6) is what the CA-trust check in
+    api_filtering_dpi_enrolled reads to notice a device that likely hasn't
+    installed the CA. pin_bypass (step 5.8) is a connection auto-passed-
+    through because the same (device, host) pair failed the handshake
+    repeatedly - see api_filtering_dpi_pinned for the "currently bypassed"
+    view of the same data. Source data is written by
+    dpi/securepi_adfilter.py and read by ingest.py's read_dpi_events() -
+    see ENHANCEMENT-PLAN.md step 5.1."""
     dev_clause = " AND device_id=?" if device_id is not None else ""
     dev_arg = (device_id,) if device_id is not None else ()
-    counts = {"decrypt": 0, "passthrough": 0, "ads_stripped": 0, "path_blocked": 0, "tls_failed": 0}
+    counts = {"decrypt": 0, "passthrough": 0, "ads_stripped": 0, "path_blocked": 0,
+              "tls_failed": 0, "pin_bypass": 0}
     for r in c.execute(
         "SELECT dpi_action, count(*) n FROM events"
         " WHERE source='dpi' AND ts >= ? AND ts < ?" + dev_clause +
@@ -1363,6 +1369,44 @@ def api_privacy_scope():
         "incident_id": failing["id"] if failing else None,
         "healthy": (not stale) and (failing is None),
     }
+
+
+@app.get("/api/filtering/dpi/pinned")
+def api_filtering_dpi_pinned():
+    """Currently-active pinning-aware auto-passthroughs (step 5.8): a
+    (device, host) pair the addon has stopped trying to decrypt for a
+    while because the app kept failing the handshake - almost always
+    certificate pinning, not a missing CA (the console's CA-trust check,
+    step 5.6, is a better read on that case). This is the console's "App
+    pins its certificate - bypassed" indicator.
+
+    dpi_ads_removed on a pin_bypass row holds the bypass's own expiry
+    epoch, not a count - see securepi_adfilter.py's _log_event docstring
+    for why that field does double duty rather than adding a new column."""
+    c = db()
+    now = time.time()
+    rows = c.execute(
+        "SELECT src_ip, tls_sni, max(ts) last_seen, max(dpi_ads_removed) expires_at"
+        " FROM events WHERE source='dpi' AND dpi_action='pin_bypass'"
+        " GROUP BY src_ip, tls_sni HAVING expires_at > ?", (now,)).fetchall()
+    out = []
+    for r in rows:
+        ip = r["src_ip"]
+        name = ip
+        dev_row = c.execute(
+            "SELECT device_id FROM device_ips WHERE ip=? ORDER BY last_seen DESC LIMIT 1",
+            (ip,)).fetchone()
+        device_id = dev_row["device_id"] if dev_row else None
+        if device_id is not None:
+            d = c.execute("SELECT * FROM devices WHERE id=?", (device_id,)).fetchone()
+            if d:
+                name = device_label(d)
+        out.append({
+            "ip": ip, "device_id": device_id, "name": name, "sni": r["tls_sni"],
+            "last_seen": _age(now - r["last_seen"]),
+            "expires_in_s": int(r["expires_at"] - now),
+        })
+    return {"pinned": out}
 
 
 @app.get("/api/devices/{device_id}/dpi")

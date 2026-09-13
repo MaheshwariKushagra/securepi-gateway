@@ -54,6 +54,20 @@ DECRYPT_SUFFIXES = (
     "ytimg.com",
 )
 
+# Pinning-aware auto-passthrough (ENHANCEMENT-PLAN.md step 5.8). Some apps
+# pin the server certificate they expect and will never trust ours, no
+# matter how many times we try - the YouTube app is the example the plan
+# names. Without this, that app would be permanently broken on an
+# enrolled device: every attempt decrypts, every handshake fails.
+#
+# After PIN_FAILURE_THRESHOLD consecutive TLS failures for the exact same
+# (device, host) pair, that pair is passed through undecrypted (no ad
+# removal, but the app works) for PIN_BYPASS_HOURS. Both are plain
+# constants, not read from any config - see finding C5 in
+# ENHANCEMENT-PLAN.md; a Settings page to tune these belongs to Stage 1.
+PIN_FAILURE_THRESHOLD = 3
+PIN_BYPASS_HOURS = 24
+
 # Fields inside the YouTube player JSON that schedule advertisements.
 # Removing them leaves a valid response describing a video with no ads.
 #
@@ -152,11 +166,29 @@ class SecurePiAdFilter:
         self._last_report = 0
         self._events_fh = None   # opened lazily - see _log_event
 
+        # Pinning-aware auto-passthrough state (step 5.8). Plain in-process
+        # dicts, not the database: this is consulted on every single TLS
+        # handshake decision, and only ever holds entries for the small
+        # number of (enrolled device, DECRYPT_SUFFIXES host) pairs this
+        # addon could ever decrypt in the first place - not arbitrary
+        # untrusted input, so unbounded growth isn't a real concern here.
+        # Resets on a service restart, which is an acceptable, honest
+        # trade-off: a fresh process makes no promises about a bypass that
+        # started under a previous run.
+        self._pin_fail_count = {}    # (src_ip, sni) -> consecutive TLS failures
+        self._pin_bypass_until = {}  # (src_ip, sni) -> epoch time the bypass ends
+
     def _log_event(self, src_ip, decision, sni=None, ads_removed=None, blocked_path=None):
         """Append one telemetry line. Failures here (disk full, permissions)
         must never take down ad-blocking itself, so they are swallowed after
         one journal warning - this is a nice-to-have analytics feed, not the
-        enforcement path."""
+        enforcement path.
+
+        `ads_removed` does double duty for decision='pin_bypass' (step
+        5.8): it carries the epoch timestamp the bypass ends, not a count
+        of anything removed. Same reasoning as schema.sql reusing tls_sni/
+        block_reason for DPI purposes - one shape, read differently
+        depending on `decision`, rather than a field per decision type."""
         try:
             if self._events_fh is None:
                 os.makedirs(os.path.dirname(DPI_EVENTS_PATH), exist_ok=True)
@@ -201,6 +233,17 @@ class SecurePiAdFilter:
         except Exception:
             pass  # telemetry is best-effort; never let this break the decision below
 
+        # Pinning-aware auto-passthrough (step 5.8): even though this host
+        # is one we'd normally decrypt, back off if this exact (device,
+        # host) pair has recently failed the handshake too many times in a
+        # row - see tls_failed_client below for where the bypass gets set.
+        bypass_until = self._pin_bypass_until.get((src_ip, sni))
+        if wanted and bypass_until and bypass_until > time.time():
+            data.ignore_connection = True
+            self.passed_through += 1
+            self._log_event(src_ip, "pin_bypass", sni=sni, ads_removed=int(bypass_until))
+            return
+
         if not wanted:
             # NOTE: the attribute is ignore_connection in mitmproxy 12.
             # Setting the wrong name silently does nothing - Python creates a
@@ -223,11 +266,17 @@ class SecurePiAdFilter:
 
         This is the ad-blocking equivalent of tls_clienthello's telemetry,
         feeding the console's CA-trust check (ENHANCEMENT-PLAN.md step
-        5.6b/e) and, later, pinning-aware auto-passthrough (step 5.8) -
-        both need to know which (device, host) pairs are failing, not just
-        that ad-blocking itself is still working. NOT yet exercised against
-        a real failed handshake as of this deploy - see the plan's note on
-        this step for what specifically still needs checking.
+        5.6b/e) and pinning-aware auto-passthrough (step 5.8) - both need
+        to know which (device, host) pairs are failing, not just that
+        ad-blocking itself is still working. NOT yet exercised against a
+        real failed handshake as of this deploy - see the plan's note on
+        step 5.6 for what specifically still needs checking.
+
+        Certificate pinning is the other real cause besides a missing CA,
+        and the two look identical from here: repeated failures for the
+        exact same (device, host) pair. After PIN_FAILURE_THRESHOLD of
+        them, that pair backs off into auto-passthrough - see
+        tls_clienthello above - rather than trying, and failing, forever.
         """
         sni = None
         try:
@@ -240,6 +289,17 @@ class SecurePiAdFilter:
         except Exception:
             pass
         self._log_event(src_ip, "tls_failed", sni=sni)
+
+        if src_ip is None or not sni:
+            return  # nothing to key a (device, host) pair on
+        key = (src_ip, sni)
+        self._pin_fail_count[key] = self._pin_fail_count.get(key, 0) + 1
+        if self._pin_fail_count[key] >= PIN_FAILURE_THRESHOLD:
+            self._pin_bypass_until[key] = time.time() + PIN_BYPASS_HOURS * 3600
+            self._pin_fail_count[key] = 0
+            logger.info("securepi: %s failed the handshake for %s %d times in a row - "
+                        "bypassing (undecrypted) for %dh, likely certificate pinning",
+                        src_ip, sni, PIN_FAILURE_THRESHOLD, PIN_BYPASS_HOURS)
 
     def request(self, flow):
         """

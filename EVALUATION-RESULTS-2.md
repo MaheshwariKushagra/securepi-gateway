@@ -303,3 +303,20 @@ New `dns_tunneling_signal` in `app/correlation.py` groups DNS queries by (device
 | "Harness generators detected" | Synthetic tunnelling (25 distinct high-entropy subdomains) and DGA (12 genuine-NXDOMAIN high-entropy lookups) rows were inserted for the isolated test-attacker device (id 4, real DNS traffic never generated) and the signal run live: **both fired correctly**, with accurate titles, severities and descriptions. Cleaned up afterward |
 
 7 new unit tests for the signal (`DnsTunnelingSignalTests`), `ShannonEntropyTests` and `BaseDomainTests` for the two new helper functions, and 2 new `flatten_agh_api` tests for the `dns_rcode`/`status` fix. 6 new settings (window, plus one min-distinct/min-entropy/min-txt-ratio for tunnelling and one min-nxdomain-count/min-entropy for DGA).
+
+### 2.6 — C2 beaconing
+
+New `beacon_signal` in `app/correlation.py`: a RITA-style regularity score, not a literal port of RITA's own scoring code (which wasn't available to verify against in this environment - this project's own standard favors a formula simple enough to state and check by hand over one copied without being able to confirm it matches). Scores every (device, destination IP, destination port) pair on the **coefficient of variation** (stdev/mean) of both the *intervals between connections* and the *connection sizes* - CV near 0 means "every gap and every payload was nearly identical", the beacon signature; CV near or above 1 means ordinary, irregular traffic. Combined as `0.7 × timing_score + 0.3 × size_score`, weighted toward timing since a C2 channel's payload can legitimately vary a little more than its check-in timer.
+
+**The formula was calibrated against the exit criterion's own numeric target before writing the signal**, not tuned after the fact: a synthetic 60-second-interval, 10%-jitter beacon (Python's own `random`, seeded) scores **0.955** under this formula; a synthetic irregular, human-like browsing pattern (exponential inter-arrival times, wildly varying page sizes) scores **0.15**. Both checked in an interactive scratch run before either the settings default (`beacon_score_threshold: 0.8`) or the signal itself were written.
+
+`ALLOWLIST_BEACON_PORTS` covers NTP (123/udp) specifically - confirmed **39 real NTP flow events already exist on this gateway's own history**, so the allowlist has real, not just hypothetical, relevance. A broader push-notification allowlist (Apple APNs, Google FCM) is deliberately **not** included: those need vendor-specific IP ranges this project has no way to confirm live without an enrolled device actively using them, and the honest position is to name that gap rather than guess at ranges.
+
+**Live verification, 14 September 2026 - both halves of the exit criterion run against the real gateway:**
+
+| Check | Result |
+|---|---|
+| "No real-phone incidents" | Ran the signal's exact scoring logic against **all 5,551 real flow events** from a real device's full 2.5-day history (405 distinct destination pairs) - **zero false positives**. The highest score seen on any real destination was **0.30**, comfortably below the 0.8 threshold |
+| "Harness beacon (60s, 10% jitter) ≥ 0.8" | A synthetic 60-second/10%-jitter beacon (30 connections) was inserted for the isolated test-attacker device (id 4, no real traffic) and the signal run live: fired with **regularity score 0.95** - "Possible C2 beacon to 203.0.113.199:8443", evidence_count 30. Cleaned up afterward |
+
+8 new unit tests (`BeaconSignalTests`, `CoefficientOfVariationTests`) - including a direct check that the exit criterion's own 60s/10%-jitter shape scores ≥ 0.8 under the real formula, not just an assertion that *some* incident was raised. 3 new settings (`beacon_window_seconds`, `beacon_min_connections`, `beacon_score_threshold`). ATT&CK: `beacon` → Command and Control / T1071 Application Layer Protocol (base technique - the score doesn't identify which protocol carries the beacon, only that the channel behaves like one).

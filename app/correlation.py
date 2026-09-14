@@ -35,6 +35,7 @@ that is the point of having a correlation layer at all.
 
 import math
 import sqlite3
+import statistics
 import time
 from collections import Counter, defaultdict
 
@@ -876,6 +877,117 @@ def dns_tunneling_signal(conn):
 
 
 # --------------------------------------------------------------------------
+# Signal 1h: C2 beaconing (ENHANCEMENT-PLAN.md step 2.6)
+#
+# A RITA-style regularity score, not a full port of RITA itself (that
+# tool's actual scoring code wasn't available to verify against in this
+# environment, and this project's own standard - "a query anyone can run
+# by hand" - favors a formula simple enough to state plainly over one
+# copied without being able to confirm it matches). The idea RITA
+# popularized, and the one implemented here: real malware C2 beacons
+# check in on a near-fixed timer with near-identical "I'm still here"
+# payloads, which is a MUCH more regular pattern than anything a human
+# browsing, streaming, or an app polling on its own irregular schedule
+# produces. Scored with the coefficient of variation (stdev / mean) of
+# the intervals BETWEEN connections and of the connection SIZES, to the
+# same (device, dest_ip, dest_port) - CV near 0 means "every gap and
+# every payload was almost identical", the beacon signature; CV near or
+# above 1 means "wildly irregular", ordinary traffic.
+#
+# ALLOWLIST_BEACON_PORTS covers NTP (123/udp) specifically - a
+# legitimate, extremely regular periodic check-in that would otherwise
+# score high on timing alone. A broader push-notification allowlist
+# (Apple APNs, Google FCM keep-alives, which are also fairly regular)
+# is NOT included: those need vendor-specific IP ranges this project has
+# no way to confirm live without an enrolled device actively using them,
+# and this project's own standard is to state that gap rather than guess
+# at ranges. In practice, real push payloads tend to vary enough in size
+# to keep their size_score down even when timing alone looks regular -
+# untested here, but worth recording as the reasoning, not a guess
+# presented as a verified mitigation.
+# --------------------------------------------------------------------------
+# Window, minimum connection count and score threshold all live in
+# app/settings.py - see port_scan_signal's own note above.
+
+ALLOWLIST_BEACON_PORTS = {123}  # NTP - see the header comment above
+
+
+def _coefficient_of_variation(values):
+    """stdev/mean, or 0.0 for a mean of zero or fewer than two values -
+    statistics.stdev needs at least two data points, and a CV against a
+    zero mean is undefined, not "maximally regular"."""
+    if len(values) < 2:
+        return 0.0
+    mean = statistics.mean(values)
+    if mean == 0:
+        return 0.0
+    return statistics.stdev(values) / mean
+
+
+def _beacon_score(timestamps, sizes):
+    """0.0 (no pattern at all) to 1.0 (perfectly regular timing AND
+    perfectly uniform size). Timing weighted higher (0.7) than size
+    (0.3): a C2 channel's payload size can legitimately vary a little
+    more than its check-in timer does, so size alone shouldn't be able
+    to sink an otherwise clearly-periodic pattern's score, but it still
+    corroborates."""
+    intervals = [b - a for a, b in zip(sorted(timestamps), sorted(timestamps)[1:])]
+    timing_score = max(0.0, 1.0 - _coefficient_of_variation(intervals))
+    size_score = max(0.0, 1.0 - _coefficient_of_variation(sizes))
+    return 0.7 * timing_score + 0.3 * size_score
+
+
+def beacon_signal(conn):
+    now = time.time()
+    window = settings.get(conn, "beacon_window_seconds")
+    since = now - window
+    min_connections = settings.get(conn, "beacon_min_connections")
+    threshold = settings.get(conn, "beacon_score_threshold")
+
+    rows = conn.execute(
+        """SELECT id, device_id, dest_ip, dest_port, ts,
+                  COALESCE(bytes_toserver, 0) + COALESCE(bytes_toclient, 0) total_bytes
+             FROM events
+            WHERE event_type='flow' AND device_id IS NOT NULL AND ts > ?""",
+        (since,),
+    ).fetchall()
+
+    groups = defaultdict(list)
+    for r in rows:
+        if r["dest_port"] in ALLOWLIST_BEACON_PORTS:
+            continue
+        groups[(r["device_id"], r["dest_ip"], r["dest_port"])].append(r)
+
+    fired = 0
+    for (device_id, dest_ip, dest_port), group in groups.items():
+        if len(group) < min_connections:
+            continue
+        timestamps = [r["ts"] for r in group]
+        sizes = [r["total_bytes"] for r in group]
+        score = _beacon_score(timestamps, sizes)
+        if score < threshold:
+            continue
+
+        event_ids = [r["id"] for r in group]
+        raise_incident(
+            conn, device_id, "beacon", "high",
+            title="Possible C2 beacon to %s:%d" % (dest_ip, dest_port),
+            description=(
+                "%d connections to %s:%d over %d seconds with a regularity score of %.2f "
+                "(0=no pattern, 1=perfectly regular timing and size) - consistent with malware "
+                "checking in with a command-and-control server on a fixed timer."
+                % (len(group), dest_ip, dest_port, window, score)
+            ),
+            first_seen=min(timestamps), last_seen=max(timestamps),
+            event_ids=event_ids,
+        )
+        fired += 1
+
+    set_window_start(conn, "beacon", now)
+    return fired
+
+
+# --------------------------------------------------------------------------
 # Signal 2: brute force
 #
 # Many short connections from one device to one auth-service port on one
@@ -1237,9 +1349,9 @@ def behavioral_baseline_signal(conn):
 
 
 SIGNALS = [port_scan_signal, network_sweep_signal, slow_scan_signal, dns_bypass_signal,
-           ids_alert_signal, threat_intel_signal, dns_tunneling_signal, brute_force_signal,
-           malicious_domain_signal, new_device_signal, adblock_effectiveness_signal,
-           behavioral_baseline_signal]
+           ids_alert_signal, threat_intel_signal, dns_tunneling_signal, beacon_signal,
+           brute_force_signal, malicious_domain_signal, new_device_signal,
+           adblock_effectiveness_signal, behavioral_baseline_signal]
 
 
 def run_all(conn):

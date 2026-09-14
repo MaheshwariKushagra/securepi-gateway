@@ -184,6 +184,24 @@ SETTINGS_SCHEMA = {
                 "algorithmically generated domain names look random, unlike a typo or a "
                 "decommissioned real service.",
     },
+    "beacon_window_seconds": {
+        "default": 3600, "type": int, "min": 300, "max": 86400,
+        "label": "C2 beacon window",
+        "help": "How far back (seconds) the beacon signal looks when scoring connection timing "
+                "and size regularity to one destination.",
+    },
+    "beacon_min_connections": {
+        "default": 8, "type": int, "min": 3, "max": 1000,
+        "label": "C2 beacon: minimum connections",
+        "help": "Connections to one destination, in the window, before a regularity score is "
+                "even computed - too few data points make timing/size variation meaningless.",
+    },
+    "beacon_score_threshold": {
+        "default": 0.8, "type": float, "min": 0.0, "max": 1.0,
+        "label": "C2 beacon: regularity score threshold",
+        "help": "Combined timing+size regularity score (0=no pattern, 1=perfectly regular) "
+                "above which a destination is flagged as a possible beacon.",
+    },
     "dedup_window_seconds": {
         "default": 600, "type": int, "min": 60, "max": 86400,
         "label": "Incident dedup window",

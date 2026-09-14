@@ -89,6 +89,11 @@ The signals that DO get a tag:
   Generation Algorithms. Also an exact match by definition, not an
   inference - a burst of genuine NXDOMAIN lookups with high-entropy
   labels under one domain IS what this technique describes.
+- beacon (ENHANCEMENT-PLAN.md step 2.6) -> Command and Control / T1071
+  Application Layer Protocol (base technique, no sub-technique - the
+  RITA-style timing/size regularity score this signal computes doesn't
+  identify WHICH application protocol carries the beacon, only that the
+  channel's own behaviour looks like a fixed-timer C2 check-in).
   have identified a technique.
 """
 
@@ -188,6 +193,11 @@ ATTACK_MAPPING = {
         "tactic": "Command and Control", "tactic_id": "TA0011",
         "technique": "Dynamic Resolution: Domain Generation Algorithms", "technique_id": "T1568.002",
         "url": "https://attack.mitre.org/techniques/T1568/002/",
+    },
+    "beacon": {
+        "tactic": "Command and Control", "tactic_id": "TA0011",
+        "technique": "Application Layer Protocol", "technique_id": "T1071",
+        "url": "https://attack.mitre.org/techniques/T1071/",
     },
 }
 
@@ -389,6 +399,19 @@ PLAYBOOKS = {
             "burst of high-entropy names in a short window.",
         "recommended_action": "Quarantine and investigate promptly - unlike most signals in "
             "this project, this pattern has few ordinary explanations.",
+    },
+    "beacon": {
+        "what_it_means": "This device made repeated connections to one destination with "
+            "unusually regular timing AND size - a RITA-style pattern strongly associated with "
+            "malware checking in with a command-and-control server on a fixed timer, rather "
+            "than a human or an app polling on its own irregular schedule.",
+        "how_to_check": "Open the evidence chain for the exact destination, the regularity "
+            "score, and the connection timestamps/sizes. A few legitimate services also beacon "
+            "regularly (some telemetry/heartbeat services, some IoT check-ins) - check whether "
+            "this device or destination is expected to do that.",
+        "recommended_action": "If it's an expected periodic service, mark false positive. "
+            "Otherwise quarantine and investigate the destination - this pattern has few "
+            "innocent explanations once the connection count and regularity are both this high.",
     },
     "adblock_ineffective": {
         "what_it_means": "SecurePi's own YouTube ad-removal (the Tier 2 mitmproxy-based DPI "

@@ -600,6 +600,99 @@ class BaseDomainTests(unittest.TestCase):
         self.assertEqual(correlation._subdomain_part("example.com", "example.com"), "")
 
 
+class BeaconSignalTests(unittest.TestCase):
+    """ENHANCEMENT-PLAN.md step 2.6. Matches the exit criterion's own
+    wording: 'harness beacon (60s, 10% jitter) >= 0.8'."""
+
+    @staticmethod
+    def _insert_beacon(conn, device_id, dest_ip, dest_port, n, now,
+                        rng, interval=60, jitter=0.10, size=500, size_jitter=5):
+        ts = now - n * interval
+        for _ in range(n):
+            ts += interval * (1 + rng.uniform(-jitter, jitter))
+            total = size + rng.randint(-size_jitter, size_jitter)
+            fixtures.insert_flow(conn, device_id, dest_ip, dest_port, ts,
+                                  bytes_toserver=total // 2, bytes_toclient=total - total // 2)
+
+    def test_fires_on_a_60s_10pct_jitter_beacon_with_score_at_least_0_8(self):
+        import random
+        rng = random.Random(42)
+        conn = fixtures.temp_db()
+        fixtures.insert_device(conn, 1)
+        now = time.time()
+        self._insert_beacon(conn, 1, "203.0.113.50", 8443, 30, now, rng)
+        fired = correlation.beacon_signal(conn)
+        self.assertEqual(fired, 1)
+        row = conn.execute("SELECT * FROM incidents WHERE signal_type='beacon'").fetchone()
+        self.assertIsNotNone(row)
+        self.assertEqual(row["severity"], "high")
+        score = float(row["description"].split("regularity score of ")[1].split(" ")[0])
+        self.assertGreaterEqual(score, 0.8, "the exit criterion's own numeric target")
+
+    def test_does_not_fire_on_irregular_human_like_traffic(self):
+        import random
+        rng = random.Random(7)
+        conn = fixtures.temp_db()
+        fixtures.insert_device(conn, 1)
+        now = time.time()
+        ts = now - 3000
+        for _ in range(30):
+            ts += rng.expovariate(1 / 120) + 1  # bursty, irregular gaps
+            total = rng.randint(200, 50000)  # wildly varying page/asset sizes
+            fixtures.insert_flow(conn, 1, "203.0.113.51", 443, ts,
+                                  bytes_toserver=total // 2, bytes_toclient=total - total // 2)
+        self.assertEqual(correlation.beacon_signal(conn), 0)
+
+    def test_does_not_fire_below_the_minimum_connection_count(self):
+        import random
+        rng = random.Random(1)
+        conn = fixtures.temp_db()
+        fixtures.insert_device(conn, 1)
+        now = time.time()
+        self._insert_beacon(conn, 1, "203.0.113.52", 443, 4, now, rng)  # below default min of 8
+        self.assertEqual(correlation.beacon_signal(conn), 0)
+
+    def test_ntp_is_allowlisted_even_though_perfectly_regular(self):
+        import random
+        rng = random.Random(2)
+        conn = fixtures.temp_db()
+        fixtures.insert_device(conn, 1)
+        now = time.time()
+        self._insert_beacon(conn, 1, "203.0.113.53", 123, 30, now, rng, jitter=0.0, size_jitter=0)
+        self.assertEqual(correlation.beacon_signal(conn), 0)
+
+    def test_repeated_firing_merges_into_one_incident(self):
+        import random
+        rng = random.Random(9)
+        conn = fixtures.temp_db()
+        fixtures.insert_device(conn, 1)
+        now = time.time()
+        self._insert_beacon(conn, 1, "203.0.113.54", 8443, 30, now, rng)
+        correlation.beacon_signal(conn)
+        rows_before = conn.execute("SELECT * FROM incidents WHERE signal_type='beacon'").fetchall()
+        self._insert_beacon(conn, 1, "203.0.113.54", 8443, 10, now + 200, rng)
+        correlation.beacon_signal(conn)
+        rows_after = conn.execute("SELECT * FROM incidents WHERE signal_type='beacon'").fetchall()
+        self.assertEqual(len(rows_before), len(rows_after))
+
+
+class CoefficientOfVariationTests(unittest.TestCase):
+    def test_identical_values_have_zero_variation(self):
+        self.assertEqual(correlation._coefficient_of_variation([60, 60, 60, 60]), 0.0)
+
+    def test_fewer_than_two_values_is_zero_not_an_error(self):
+        self.assertEqual(correlation._coefficient_of_variation([60]), 0.0)
+        self.assertEqual(correlation._coefficient_of_variation([]), 0.0)
+
+    def test_a_zero_mean_is_zero_not_a_division_error(self):
+        self.assertEqual(correlation._coefficient_of_variation([0, 0, 0]), 0.0)
+
+    def test_more_varied_values_have_higher_variation(self):
+        low = correlation._coefficient_of_variation([60, 61, 59, 60])
+        high = correlation._coefficient_of_variation([10, 200, 5, 300])
+        self.assertGreater(high, low)
+
+
 class MaliciousDomainSignalTests(unittest.TestCase):
     """Tests the FIXED behaviour: the threshold applies to distinct
     blocked domains, not raw blocked-lookup count (ENHANCEMENT-PLAN.md
@@ -891,6 +984,9 @@ class WindowSettingsTests(unittest.TestCase):
         self.assertEqual(settings.get(conn, "dns_tunneling_min_txt_ratio"), 0.3)
         self.assertEqual(settings.get(conn, "dga_min_nxdomain_count"), 10)
         self.assertEqual(settings.get(conn, "dga_min_entropy"), 3.3)
+        self.assertEqual(settings.get(conn, "beacon_window_seconds"), 3600)
+        self.assertEqual(settings.get(conn, "beacon_min_connections"), 8)
+        self.assertEqual(settings.get(conn, "beacon_score_threshold"), 0.8)
         self.assertEqual(settings.get(conn, "brute_force_window_seconds"), 120)
         self.assertEqual(settings.get(conn, "malicious_domain_window_seconds"), 600)
         self.assertEqual(settings.get(conn, "new_device_lookback_seconds"), 3600)

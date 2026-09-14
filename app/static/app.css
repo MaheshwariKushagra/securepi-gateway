@@ -1145,10 +1145,31 @@ a.barlabel:hover { color: var(--accent); }
 /* ---------------------------------------------------------- theme toggle */
 
 /* The icon shows the mode a click switches to: a sun while dark, a moon
-   while light - matching the button's "Switch to … mode" label. */
-.theme-toggle .icon-moon { display: none; }
-:root[data-theme="light"] .theme-toggle .icon-moon { display: inline-block; }
-:root[data-theme="light"] .theme-toggle .icon-sun { display: none; }
+   while light - matching the button's "Switch to … mode" label. Both icons
+   are stacked; the outgoing one spins away as the incoming one spins in. */
+.theme-toggle { overflow: hidden; }
+.theme-toggle .icon {
+    position: absolute; inset: 0; margin: auto;
+    transition: transform .55s cubic-bezier(.34, 1.4, .64, 1), opacity .3s ease;
+}
+.theme-toggle .icon-moon { opacity: 0; transform: rotate(-90deg) scale(.4); }
+:root[data-theme="light"] .theme-toggle .icon-moon { opacity: 1; transform: none; }
+:root[data-theme="light"] .theme-toggle .icon-sun { opacity: 0; transform: rotate(90deg) scale(.4); }
+
+/* Theme switch reveal (View Transitions). The browser's default crossfade
+   is replaced by the circular clip-path animation started in app.js, so
+   both snapshots are shown as-is: the old theme underneath, the new theme
+   expanding over it from the toggle. Works identically in both directions. */
+::view-transition-old(root),
+::view-transition-new(root) { animation: none; mix-blend-mode: normal; }
+::view-transition-old(root) { z-index: 1; }
+::view-transition-new(root) { z-index: 2; }
+
+/* Suspends ordinary hover/focus transitions while the new theme is being
+   revealed, so every surface inside the circle is already in its final
+   color. The toggle's own icon swap is the one transition kept. */
+.theme-instant, .theme-instant *, .theme-instant *::before, .theme-instant *::after { transition: none !important; }
+.theme-instant .theme-toggle .icon { transition: transform .55s cubic-bezier(.34, 1.4, .64, 1), opacity .3s ease !important; }
 
 /* A color change on every surface at once should crossfade, not snap. The
    class is only present for the moment of the switch, so ordinary hover

@@ -98,17 +98,95 @@ function toast(title, message, tone) {
 
 /* ---------------------------------------------------------------- theme */
 
-function setTheme(theme) {
+let themeTransitionId = 0;
+let activeThemeTransition = null;
+
+function applyTheme(theme) {
     const root = document.documentElement;
-    // Crossfade every surface for the moment of the switch only.
-    root.classList.add("theme-switching");
     if (theme === "light") root.dataset.theme = "light";
     else delete root.dataset.theme;
     try { localStorage.setItem("sp.theme", theme); } catch (e) { /* private mode: not remembered */ }
     updateThemeToggle();
     restyleCharts();
-    setTimeout(() => root.classList.remove("theme-switching"), 300);
 }
+
+/* The point the new theme radiates out from: the centre of the topbar
+   toggle, whichever way the switch was triggered (click, keyboard, or the
+   command palette). Keyboard clicks carry no pointer coordinates, so the
+   button's own box is used rather than the event. */
+function themeOrigin() {
+    const btn = $("#themeToggle");
+    const r = btn && btn.getBoundingClientRect();
+    if (r && r.width) return { x: r.left + r.width / 2, y: r.top + r.height / 2 };
+    return { x: window.innerWidth / 2, y: 0 };
+}
+
+function setTheme(theme) {
+    const root = document.documentElement;
+    const reduceMotion = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+    // Fallback (no View Transitions support, or reduced motion requested):
+    // a short crossfade of every surface.
+    if (!document.startViewTransition || reduceMotion) {
+        root.classList.add("theme-switching");
+        applyTheme(theme);
+        setTimeout(() => root.classList.remove("theme-switching"), 300);
+        return;
+    }
+
+    /* View Transitions: the browser snapshots the page in the old theme,
+       the theme is applied, and the new page is revealed through a circle
+       growing from the toggle until it covers the farthest corner. Ordinary
+       hover transitions are suspended for the moment of the switch
+       (theme-instant), otherwise buttons would still be fading between
+       colors inside the revealed area. */
+    const { x, y } = themeOrigin();
+    const radius = Math.hypot(Math.max(x, window.innerWidth - x), Math.max(y, window.innerHeight - y));
+    const id = ++themeTransitionId;
+    root.classList.add("theme-instant");
+
+    const transition = document.startViewTransition(() => applyTheme(theme));
+    activeThemeTransition = transition;
+    transition.ready.then(() => {
+        root.animate(
+            { clipPath: [`circle(0px at ${x}px ${y}px)`, `circle(${radius}px at ${x}px ${y}px)`] },
+            // Scaled to the distance covered so the sweep feels equally quick
+            // on a phone (~0.4s) and a wide monitor (~0.7s).
+            { duration: Math.min(720, Math.max(420, radius * 0.45)), easing: "cubic-bezier(.45, .05, .25, 1)",
+              pseudoElement: "::view-transition-new(root)" },
+        );
+    }).catch(() => { /* skipped by a newer switch - that one animates instead */ });
+    transition.finished.finally(() => {
+        // A rapid second click starts a new transition; only the latest one
+        // may lift the suspension.
+        if (id === themeTransitionId) {
+            root.classList.remove("theme-instant");
+            activeThemeTransition = null;
+        }
+    });
+}
+
+/* While a view transition runs, the browser hit-tests every click to <html>
+   (CSS pointer-events can't change that), so a click during the ~0.6s
+   reveal would silently do nothing. Instead: finish the reveal at once,
+   then hand the click to whatever is actually under the pointer - a quick
+   second press of the toggle switches back, a nav link still navigates. */
+document.addEventListener("click", (e) => {
+    const transition = activeThemeTransition;
+    if (!transition || e.target !== document.documentElement) return;
+    e.preventDefault();
+    e.stopImmediatePropagation();
+    const { clientX: x, clientY: y } = e;
+    transition.skipTransition();
+    transition.finished.finally(() => {
+        const el = document.elementFromPoint(x, y);
+        if (el && el !== document.documentElement) {
+            // A bubbling event rather than el.click(): the hit may be an SVG
+            // icon inside a button, which has no click() of its own.
+            el.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true, view: window, clientX: x, clientY: y }));
+        }
+    });
+}, true);
 
 function toggleTheme() {
     setTheme(currentTheme() === "light" ? "dark" : "light");
@@ -168,7 +246,14 @@ function restyleCharts() {
         const canvas = chart.canvas;
         const config = chart.config._config;
         chart.destroy();
-        SP.charts[key] = new Chart(canvas, config);
+        // Rebuild without the grow-in animation: the chart should already be
+        // fully drawn when the new theme is revealed, not replay from zero.
+        const opts = config.options || (config.options = {});
+        const animation = opts.animation;
+        opts.animation = false;
+        const rebuilt = new Chart(canvas, config);
+        rebuilt.options.animation = animation;
+        SP.charts[key] = rebuilt;
     });
 }
 

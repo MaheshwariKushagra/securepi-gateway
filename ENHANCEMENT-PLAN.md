@@ -122,6 +122,42 @@ the code as built, and decides whether it comes back.
 | **DNS "block page" for HTTPS sites** | Causes certificate errors on every blocked HTTPS domain |
 | Host agents, HA, multi-site, compliance, mobile app, React rewrite | Feasibility §13.4 reasoning |
 | Full IPv6 policy, Encrypted Client Hello handling, captive portal, WireGuard | Future scope (1.8 still adds an IPv6 bypass guard) |
+| **Embedding a terminal system monitor (btop++, htop, Glances) in the console** | See decision below (§1.6) |
+
+### 1.6 Decision: host system monitoring (btop++ and similar), 14 September 2026
+
+Evaluated whether to integrate an open-source system-activity monitor such as
+btop++. **Decision: don't integrate it. Install it on the gateway as an
+operator tool if useful, and build host health as data instead, inside
+step 3.5.**
+
+- **btop++ has nothing to integrate with.** It's a terminal UI for a person
+  watching a screen — no API, no JSON output, no history, no alerting. The
+  only two ways to put it "in" the console would be scraping its screen text
+  (fragile, no real gain over reading `/proc` directly) or embedding a web
+  terminal (ttyd, Cockpit) so the browser can reach it.
+- **A web terminal is the wrong shape for this project specifically.** The
+  console still runs on Basic Auth with no TLS (steps 3.1/3.2 not built),
+  and step 3.3 exists to *take root reach away* from the web process. A
+  browser terminal on the gateway would hand shell access to anyone who gets
+  the console password — the opposite of 3.3's goal, in a project whose
+  whole premise is "built to be defended."
+- **What's actually missing** — live CPU/memory/disk, stored and alerted on
+  — is already step 3.5 (health supervisor), which restores the F§5.5/F§8.4
+  "sensor-silence alerts, drop counters, disk watchdog" cut. That's better
+  served by reading Linux's own per-process/per-service counters (optionally
+  via `psutil`) into SQLite than by any TUI tool: no extra always-on
+  service, numbers land on the dashboard next to everything else, and they
+  can raise a platform incident the way every other signal does.
+- **Netdata/Glances/Prometheus** were considered and rejected for the same
+  reason as Zeek/ELK/Wazuh in §1.5: each is another always-on process with
+  its own RAM cost (Netdata typically 100+ MB) and, for Netdata, an
+  optional cloud-linked component this project's "everything local" rule
+  doesn't want even switched off.
+- **Recommendation:** install btop on the gateway for ad hoc SSH
+  troubleshooting whenever convenient (`sudo apt install btop`) — it costs
+  nothing unless it's open — but treat it as an operator convenience, not a
+  plan item. Keep host health inside step 3.5.
 
 ---
 
@@ -274,7 +310,7 @@ New signals follow the `correlation.py` pattern (trailing-window SQL → `raise_
 | 3.2 | **TLS on the console** (console CA, separate from the DPI CA) | F§11.1 | HTTPS only | 0.5 |
 | 3.3 | **Privilege separation:** unprivileged web app + allowlisted root helper for quarantine, block, **enroll/unenroll** | F§11.1, G9 | Web process has no root. Helper rejects malformed input. Calls audited | 1 |
 | 3.4 | **Security self-review** (CSRF/XSS/injection, secrets in logs, `pip-audit`, WAN exposure) → `docs/SECURITY-REVIEW.md` | F§14 Ph9 | No unmitigated high findings | 0.5 |
-| 3.5 | **Health supervisor:** Suricata `stats` (drops), staleness alerts for Suricata / AdGuard / ingest / engine / **HTTPS proxy**, disk, DB growth, WAN probe → platform incidents | F§5.5, F§8.4 | Stopping any service raises a platform incident within 60 s | 1 |
+| 3.5 | **Health supervisor:** Suricata `stats` (drops), staleness alerts for Suricata / AdGuard / ingest / engine / **HTTPS proxy**, disk, DB growth, WAN probe, **per-service CPU/memory read from Linux directly** (§1.6 decision — no btop/Netdata/Glances) → platform incidents | F§5.5, F§8.4 | Stopping any service raises a platform incident within 60 s | 1 |
 | 3.6 | **Fail-open DNS** with a "protection degraded" banner and automatic recovery | F§8.4 | Kill AdGuard → clients still resolve within ~30 s. Filtering returns on recovery | 1 |
 
 ### Stage 4 — Response and policy orchestration (~7½ days)
@@ -519,7 +555,7 @@ Never cut Stage 2, steps 5.2, 5.3, 5.7, or evaluation items 7.2–7.5.
 
 | Stage | Steps | Status |
 |---|---|---|
-| 0 | 0.1 · 0.2 · 0.3 | Not started |
+| 0 | **0.1 done, 0.2 done (rsync target + restart order written, not yet run — gateway unreachable this session)**, 0.3 blocked | Blocked on 0.3 — needs the live gateway up to capture the baseline |
 | 1 | **1.1 done, 1.2 done, 1.3 done, 1.4 done, 1.5 done, 1.6 done, 1.7 done, 1.8 done** (1.8 out of order - see note below) | Stage 1 complete |
 | 2 | 2.1 · 2.2 · 2.3 · 2.4 · 2.5 · 2.6 · 2.7 · 2.8 | Not started |
 | 3 | 3.1 · 3.2 · 3.3 · 3.4 · 3.5 · 3.6 | Not started |
@@ -528,6 +564,25 @@ Never cut Stage 2, steps 5.2, 5.3, 5.7, or evaluation items 7.2–7.5.
 | 6 | **6.1 done, 6.2 done, 6.3 done, 6.4 done, 6.5 done, 6.6 done, 6.7 done** | Stage 6 complete |
 | 7 | 7.0 – 7.9 | Not started |
 | 8 | 8.1 · 8.2 · 8.3 · 8.4 | Not started |
+
+**Note on 14 September:** Stage 0 was picked up before Stage 2, since the
+plan says to work through stages in order and Stage 0 had never been
+started. 0.1 (archiving the feasibility study and Day 1 status into
+`docs/`, linked from the README) and 0.2 (`make deploy` / `make status`
+targets) are done. **0.3 (the baseline snapshot) is blocked**: it needs
+live numbers from the gateway — DB size, events/day, incidents/day,
+per-service memory, blocked-query % — and the gateway was unreachable over
+the management link for the whole session (`ssh` to it timed out; per
+`session-start.sh` this means either the Dell is off or the Mac's Internet
+Sharing is off). Rather than invent placeholder figures, 0.3 is left
+undone and the tracker says so honestly. `make deploy`'s rsync target and
+restart order (§0.2's Makefile comment) are written from the paths and
+service names documented elsewhere in this plan and in
+`GATEWAY-SETUP-RUNBOOK.md`, but were not run this session for the same
+reason — confirm both against a live run before trusting them. Also this
+session: the host-system-monitor question (§1.6) was evaluated and
+decided — no btop/Netdata/Glances integration; host health stays a
+step 3.5 item.
 
 **Note on 13 September:** at the user's request, 1.8 and Stage 5's telemetry
 foundation (5.1) and "why blocked / unbreak" tools (5.2) were implemented

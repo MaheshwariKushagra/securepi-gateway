@@ -588,7 +588,7 @@ is in [`ENHANCEMENT-PLAN.md`](ENHANCEMENT-PLAN.md).
 
 | Stage | Focus | Status |
 |:---:|---|---|
-| **0** | Housekeeping | ![Not started](https://img.shields.io/badge/-not_started-5a6679?style=flat-square) |
+| **0** | Housekeeping | ![In progress](https://img.shields.io/badge/-in_progress-4f9cf9?style=flat-square) |
 | **1** | **Foundation and correctness**: test suite, retention, real-time ingest, audit coverage, detection-accuracy fixes, AP client isolation | ![Complete](https://img.shields.io/badge/-complete-2fbf71?style=flat-square) |
 | **2** | Detection breadth: network sweep, DNS tunnelling/DGA, C2 beaconing, threat intel, campaigns | ![Next](https://img.shields.io/badge/-next-4f9cf9?style=flat-square) |
 | **3** | Hardening and reliability: session auth, TLS, health supervision | ![Not started](https://img.shields.io/badge/-not_started-5a6679?style=flat-square) |
@@ -702,6 +702,8 @@ Power-on and reboot notes: [`NEXT-SESSION.md`](NEXT-SESSION.md) and [`gateway/RE
 | [`SECUREPI-15-DAY-PLAN.md`](SECUREPI-15-DAY-PLAN.md) | Original build plan, hardware constraints, confirmed topology, scope decisions |
 | [`GATEWAY-SETUP-RUNBOOK.md`](GATEWAY-SETUP-RUNBOOK.md) · [`STEP-1-INSTALL-UBUNTU.md`](STEP-1-INSTALL-UBUNTU.md) | Host and network setup |
 | [`NEXT-SESSION.md`](NEXT-SESSION.md) | Handoff notes: bringing the gateway back up, current status, what comes next |
+| [`docs/feasibility-study.md`](docs/feasibility-study.md) | Original pre-implementation study: the full 38-week scope, architecture reasoning and technology selection behind every "why" in this README |
+| [`docs/day1-status.md`](docs/day1-status.md) | Point-in-time status snapshot from the end of Day 1 of the original build |
 
 ---
 

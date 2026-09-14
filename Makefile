@@ -31,10 +31,23 @@
 # logged in ENHANCEMENT-PLAN.md - ingest owns schema-adjacent state the
 # other two read.
 #
-# Not yet verified against a live run: the gateway was unreachable
-# (management link down) when this target was written. Confirm the
-# rsync destination and restart order the next time the gateway is up,
-# per this step's own exit criterion.
+# No --delete: a --dry-run against the live gateway (14 September 2026,
+# once it was reachable) showed the obvious destination and no surprises
+# in the file set, but also showed --delete would have wiped every
+# .bak-*-<step>-<timestamp> file on the gateway - the manual pre-change
+# backups this project's own deploy history (ENHANCEMENT-PLAN.md) relies
+# on before every step - plus a stray .DS_Store. Deploying here only ever
+# adds or updates files that exist in app/; removing a file that's
+# actually gone from app/ stays a deliberate, separate, manual step (an
+# explicit `ssh ... rm`), the same considered way gateway/ and dpi/ are
+# already handled above.
+#
+# --no-owner --no-group: the same dry-run showed every file would change
+# ownership from the gateway's existing root:root (every securepi-*
+# service unit has no User=, so it runs as root; there's no "staff" group
+# on the gateway anyway) to whatever the Mac's rsync would otherwise send
+# across - a quiet, pointless ownership change. `-t` (in `-a`) still keeps
+# timestamps in sync, which is all deploy actually needs.
 
 .PHONY: test deploy status
 
@@ -45,7 +58,7 @@ test:
 	python3 -m unittest discover -s tests -p 'test_*.py' -v
 
 deploy:
-	rsync -az --delete --exclude '__pycache__' --exclude '*.pyc' \
+	rsync -az --no-owner --no-group --exclude '__pycache__' --exclude '*.pyc' --exclude '.DS_Store' \
 		--rsync-path="sudo rsync" \
 		app/ $(GATEWAY_HOST):$(GATEWAY_APP)/
 	ssh $(GATEWAY_HOST) 'sudo systemctl restart securepi-ingest securepi-engine securepi-web'

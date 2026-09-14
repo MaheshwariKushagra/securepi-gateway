@@ -588,7 +588,7 @@ is in [`ENHANCEMENT-PLAN.md`](ENHANCEMENT-PLAN.md).
 
 | Stage | Focus | Status |
 |:---:|---|---|
-| **0** | Housekeeping | ![In progress](https://img.shields.io/badge/-in_progress-4f9cf9?style=flat-square) |
+| **0** | Housekeeping | ![Complete](https://img.shields.io/badge/-complete-2fbf71?style=flat-square) |
 | **1** | **Foundation and correctness**: test suite, retention, real-time ingest, audit coverage, detection-accuracy fixes, AP client isolation | ![Complete](https://img.shields.io/badge/-complete-2fbf71?style=flat-square) |
 | **2** | Detection breadth: network sweep, DNS tunnelling/DGA, C2 beaconing, threat intel, campaigns | ![Next](https://img.shields.io/badge/-next-4f9cf9?style=flat-square) |
 | **3** | Hardening and reliability: session auth, TLS, health supervision | ![Not started](https://img.shields.io/badge/-not_started-5a6679?style=flat-square) |
@@ -697,6 +697,7 @@ Power-on and reboot notes: [`NEXT-SESSION.md`](NEXT-SESSION.md) and [`gateway/RE
 |---|---|
 | [`ENHANCEMENT-PLAN.md`](ENHANCEMENT-PLAN.md) | **Active plan.** Market comparison, gap analysis, the stage-by-stage roadmap, and a log of how each step was implemented and verified |
 | [`EVALUATION-RESULTS.md`](EVALUATION-RESULTS.md) | Detection rate, reduction ratio, false positives, ad-block ratio, resources, throughput |
+| [`EVALUATION-RESULTS-2.md`](EVALUATION-RESULTS-2.md) | Results from Stage 1 onward — starts with the Stage 0 baseline snapshot |
 | [`REPORT-adblocking.md`](REPORT-adblocking.md) | Report material for the two-tier ad-blocking subsystem |
 | [`FIRST-PARTY-ADS-ANALYSIS.md`](FIRST-PARTY-ADS-ANALYSIS.md) | What network-level filtering can and cannot block |
 | [`SECUREPI-15-DAY-PLAN.md`](SECUREPI-15-DAY-PLAN.md) | Original build plan, hardware constraints, confirmed topology, scope decisions |

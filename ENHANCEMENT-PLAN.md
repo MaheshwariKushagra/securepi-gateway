@@ -555,7 +555,7 @@ Never cut Stage 2, steps 5.2, 5.3, 5.7, or evaluation items 7.2–7.5.
 
 | Stage | Steps | Status |
 |---|---|---|
-| 0 | **0.1 done, 0.2 done (rsync target + restart order written, not yet run — gateway unreachable this session)**, 0.3 blocked | Blocked on 0.3 — needs the live gateway up to capture the baseline |
+| 0 | **0.1 done, 0.2 done and verified live, 0.3 done** | Stage 0 complete |
 | 1 | **1.1 done, 1.2 done, 1.3 done, 1.4 done, 1.5 done, 1.6 done, 1.7 done, 1.8 done** (1.8 out of order - see note below) | Stage 1 complete |
 | 2 | 2.1 · 2.2 · 2.3 · 2.4 · 2.5 · 2.6 · 2.7 · 2.8 | Not started |
 | 3 | 3.1 · 3.2 · 3.3 · 3.4 · 3.5 · 3.6 | Not started |
@@ -568,20 +568,32 @@ Never cut Stage 2, steps 5.2, 5.3, 5.7, or evaluation items 7.2–7.5.
 **Note on 14 September:** Stage 0 was picked up before Stage 2, since the
 plan says to work through stages in order and Stage 0 had never been
 started. 0.1 (archiving the feasibility study and Day 1 status into
-`docs/`, linked from the README) and 0.2 (`make deploy` / `make status`
-targets) are done. **0.3 (the baseline snapshot) is blocked**: it needs
-live numbers from the gateway — DB size, events/day, incidents/day,
-per-service memory, blocked-query % — and the gateway was unreachable over
-the management link for the whole session (`ssh` to it timed out; per
-`session-start.sh` this means either the Dell is off or the Mac's Internet
-Sharing is off). Rather than invent placeholder figures, 0.3 is left
-undone and the tracker says so honestly. `make deploy`'s rsync target and
-restart order (§0.2's Makefile comment) are written from the paths and
-service names documented elsewhere in this plan and in
-`GATEWAY-SETUP-RUNBOOK.md`, but were not run this session for the same
-reason — confirm both against a live run before trusting them. Also this
-session: the host-system-monitor question (§1.6) was evaluated and
-decided — no btop/Netdata/Glances integration; host health stays a
+`docs/`, linked from the README) was done first, while the gateway was
+still unreachable over the management link (the Dell was off). Once the
+user brought it back up, the rest of Stage 0 followed:
+
+- **0.2:** `make deploy`'s first real run against the live gateway caught
+  two problems a dry run surfaced before anything was touched — `--delete`
+  would have wiped every `.bak-*` pre-change backup on the gateway (the
+  project's own manual safety net before each step), and `-a` would have
+  quietly changed `/opt/securepi`'s ownership from `root:root` to the
+  Mac's `maheshwari:staff`. Both fixed (dropped `--delete`; added
+  `--no-owner --no-group`) and re-verified with `--dry-run` before the
+  real deploy. The real deploy then ran clean: all three services restarted
+  in order, journal clean, `securepi status` all-active.
+- **0.3:** captured as `EVALUATION-RESULTS-2.md`'s "Before" section — DB
+  size (8.67 MiB live + ~68 MiB of old migration backups), event/incident
+  counts, per-service memory (idle, 1,349/3,683 MB), DNS block %. Recorded
+  honestly rather than smoothed over: zero devices were connected at
+  capture time, so the "last 24h" event/DNS figures are a system floor
+  (background traffic only), not a typical day, and mitmproxy's memory is
+  its idle figure, not "while enrolled" as the step's own wording asks for
+  (no device had a lease to enroll). Re-capture both once real devices are
+  back on the network — the 7-day run in step 7.0 will do this properly
+  regardless.
+
+Also this session: the host-system-monitor question (§1.6) was evaluated
+and decided — no btop/Netdata/Glances integration; host health stays a
 step 3.5 item.
 
 **Note on 13 September:** at the user's request, 1.8 and Stage 5's telemetry

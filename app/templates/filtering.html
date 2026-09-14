@@ -1,163 +1,192 @@
 {% extends "base.html" %}
 {% block content %}
 <div class="page-head">
-    <h1>Filtering</h1>
-    <span class="subtle">DNS filtering, blocklists and per-device policy</span>
-    <div class="spacer"></div>
-    <button class="btn" id="filteringMasterToggle">Loading…</button>
+    <div class="page-title">
+        <h1>Filtering</h1>
+        <p class="page-sub">DNS filtering, blocklists and per-device policy</p>
+    </div>
+    <div class="page-actions">
+        <button class="btn" id="filteringMasterToggle">Loading…</button>
+    </div>
 </div>
 
-<div class="card" style="margin-bottom:14px">
+<nav class="subnav" aria-label="Sections">
+    <a href="#sec-check">Domain check</a>
+    <a href="#sec-analytics">Analytics</a>
+    <a href="#sec-resolver">Resolver</a>
+    <a href="#sec-tier2">Tier 2</a>
+    <a href="#sec-rules">Tier 2 rules</a>
+    <a href="#sec-trackers">Trackers</a>
+    <a href="#sec-lists">Blocklists &amp; rules</a>
+    <a href="#sec-querylog">Query log</a>
+</nav>
+
+<div class="card" id="sec-check" style="margin-bottom:16px">
     <div class="card-head"><h2>Why is this blocked?</h2>
         <span class="spacer"></span><span class="subtle">test a domain, network-wide or for one device</span></div>
-    <div class="card-body" style="display:flex; gap:8px; flex-wrap:wrap">
-        <input class="input" id="checkDomain" placeholder="example.com" style="flex:2; min-width:180px">
-        <select class="input" id="checkDevice" style="flex:1; min-width:160px"><option value="">Network-wide</option></select>
-        <button class="btn" id="checkBtn">Check</button>
+    <div class="card-body">
+        <div class="toolbar">
+            <input class="input search" id="checkDomain" placeholder="example.com" style="flex:2; min-width:180px" aria-label="Domain to check">
+            <select class="input" id="checkDevice" style="flex:1; min-width:160px" aria-label="Scope"><option value="">Network-wide</option></select>
+            <button class="btn primary" id="checkBtn">Check domain</button>
+        </div>
     </div>
-    <div class="card-body tight" id="checkResult"></div>
+    <div class="card-body tight" id="checkResult" style="border-top:0"></div>
 </div>
 
-<div class="card" style="margin-bottom:14px">
+<div class="card" id="sec-analytics" style="margin-bottom:16px">
     <div class="card-head"><h2>Ad-blocking Analytics</h2>
+        <span class="subtle">share of DNS queries blocked</span>
         <span class="spacer"></span>
-        <div class="seg" id="analyticsRangeSel">
+        <div class="seg" id="analyticsRangeSel" role="group" aria-label="Time range">
             <button data-arange="24h" class="active">24H</button>
             <button data-arange="7d">7D</button>
         </div>
     </div>
-    <div class="card-body chart" style="height:180px"><canvas id="blockPctChart"></canvas></div>
-    <div class="card-body" style="display:flex; gap:24px; flex-wrap:wrap; border-top:1px solid var(--border)">
-        <div><div class="dim" style="font-size:11px">Requests blocked</div>
-            <div style="font-size:20px; font-weight:600" id="analyticsRequestsBlocked">—</div></div>
-        <div><div class="dim" style="font-size:11px">Estimated data + requests saved</div>
-            <div style="font-size:20px; font-weight:600" id="analyticsSavings">—</div></div>
-        <div style="flex:1; min-width:220px"><div class="dim" style="font-size:11px" id="analyticsSavingsMethod"></div></div>
+    <div class="card-body">
+        <div class="stats" style="align-items:flex-end">
+            <div class="stat"><div class="stat-label">Requests blocked</div>
+                <div class="stat-value" id="analyticsRequestsBlocked">—</div></div>
+            <div class="stat"><div class="stat-label">Estimated data + requests saved</div>
+                <div class="stat-value" id="analyticsSavings">—</div></div>
+            <div class="stat" style="flex:1; min-width:220px"><div class="note" id="analyticsSavingsMethod"></div></div>
+        </div>
     </div>
-    <div class="card-body tight" style="border-top:1px solid var(--border)">
-        <div class="subtle" style="margin:10px 0 6px">Tier 2 (HTTPS ad removal)</div>
+    <div class="card-body chart" style="height:200px; border-top:0; padding-top:0"><canvas id="blockPctChart"></canvas></div>
+    <div class="card-body">
+        <div class="section-label">Tier 2 (HTTPS ad removal)</div>
         <div id="analyticsTier2"><div class="empty">Loading…</div></div>
     </div>
 </div>
 
-<div class="grid c2">
+<div class="grid c2e">
     <div class="card">
         <div class="card-head"><h2>Top Blocked Domains</h2>
             <span class="spacer"></span><span class="subtle">selected range</span></div>
-        <div class="card-body tight" id="analyticsTopDomains"><div class="empty">Loading…</div></div>
+        <div class="card-body tight fill" id="analyticsTopDomains"><div class="empty">Loading…</div></div>
     </div>
     <div class="card">
-        <div class="card-head"><h2>Most Blocked-For Devices</h2></div>
-        <div class="card-body tight" id="analyticsTopClients"><div class="empty">Loading…</div></div>
+        <div class="card-head"><h2>Most Blocked-For Devices</h2>
+            <span class="spacer"></span><span class="subtle">selected range</span></div>
+        <div class="card-body tight fill" id="analyticsTopClients"><div class="empty">Loading…</div></div>
     </div>
 </div>
 
-<div class="card" style="margin-bottom:14px">
+<div class="card" id="sec-resolver" style="margin-bottom:16px">
     <div class="card-head"><h2>Resolver Quality</h2>
         <span class="spacer"></span><span class="subtle">cache, DNSSEC, upstream redundancy</span></div>
     <div class="card-body" id="resolverQuality"><div class="empty">Loading…</div></div>
 </div>
 
-<div class="card" style="margin-bottom:14px">
-    <div class="card-head"><h2>Tier 2: HTTPS Ad Removal</h2>
+<div class="card" id="sec-tier2" style="margin-bottom:16px">
+    <div class="card-head"><h2><svg class="icon" width="15" height="15"><use href="#i-lock"/></svg>Tier 2: HTTPS Ad Removal</h2>
+        <span class="subtle">opt-in per device, see the Controls card on a device page to enroll</span>
         <span class="spacer"></span>
         <span class="chip neutral" id="privacyScopeBadge" title="Checked automatically every 15 minutes by dpi/privacy_canary.py">Privacy scope: loading…</span>
-        <span class="chip neutral" id="dpiEffectivenessBadge" style="margin-left:6px" title="Watched by the correlation engine's adblock_effectiveness_signal">Effectiveness: loading…</span>
-        <span class="subtle" style="margin-left:8px">opt-in per device, see the Identity card on a device page to enroll</span></div>
-    <div class="card-body" id="dpiCaInfo"><div class="empty">Loading…</div></div>
-    <div class="card-body tight" style="border-top:1px solid var(--border)">
-        <div class="subtle" style="margin:10px 0 6px">Enrolled devices</div>
-        <div id="dpiEnrolledList"><div class="empty">Loading…</div></div>
+        <span class="chip neutral" id="dpiEffectivenessBadge" title="Watched by the correlation engine's adblock_effectiveness_signal">Effectiveness: loading…</span>
     </div>
-    <div class="card-body tight" style="border-top:1px solid var(--border)">
-        <div class="subtle" style="margin:10px 0 6px">Pinned apps (auto-bypassed)</div>
-        <div id="dpiPinnedList"><div class="empty">Loading…</div></div>
+    <div class="card-body" id="dpiCaInfo"><div class="empty">Loading…</div></div>
+    <div class="grid c2e" style="margin:0; gap:0">
+        <div class="card-body tight" style="border-top:1px solid var(--border)">
+            <div class="section-label">Enrolled devices</div>
+            <div id="dpiEnrolledList"><div class="empty">Loading…</div></div>
+        </div>
+        <div class="card-body tight" style="border-top:1px solid var(--border); border-left:1px solid var(--border)">
+            <div class="section-label">Pinned apps (auto-bypassed)</div>
+            <div id="dpiPinnedList"><div class="empty">Loading…</div></div>
+        </div>
     </div>
 </div>
 
-<div class="card" style="margin-bottom:14px">
+<div class="card" id="sec-rules" style="margin-bottom:16px">
     <div class="card-head"><h2>Tier 2 Rule Set</h2>
         <span class="spacer"></span>
-        <span class="dim" id="dpiRulesVersion">—</span></div>
-    <div class="card-body" style="display:flex; flex-direction:column; gap:12px" id="dpiRulesForm">
-        <div>
-            <div class="subtle" style="margin-bottom:4px">Decrypt suffixes - hostnames Tier 2 is allowed to decrypt at all</div>
-            <textarea class="input" id="dpiRuleDecryptSuffixes" style="width:100%; min-height:60px; font-family:monospace; font-size:12px"></textarea>
+        <span class="chip neutral nocap" id="dpiRulesVersion">—</span></div>
+    <div class="card-body" id="dpiRulesForm">
+        <div class="grid c2e" style="margin-bottom:14px">
+            <label class="field">
+                <span class="field-label">Decrypt suffixes <span class="dim">hostnames Tier 2 is allowed to decrypt at all</span></span>
+                <textarea class="input code" id="dpiRuleDecryptSuffixes"></textarea>
+            </label>
+            <label class="field">
+                <span class="field-label">Ad fields <span class="dim">JSON keys removed wherever they appear <span id="dpiRuleAdFieldsHits"></span></span></span>
+                <textarea class="input code" id="dpiRuleAdFields"></textarea>
+            </label>
+            <label class="field">
+                <span class="field-label">Ad renderers <span class="dim">feed item types dropped entirely <span id="dpiRuleAdRenderersHits"></span></span></span>
+                <textarea class="input code" id="dpiRuleAdRenderers" style="min-height:96px"></textarea>
+            </label>
+            <label class="field">
+                <span class="field-label">Blocked paths <span class="dim">endpoints refused with an empty response <span id="dpiRuleBlockedPathsHits"></span></span></span>
+                <textarea class="input code" id="dpiRuleBlockedPaths" style="min-height:96px"></textarea>
+            </label>
         </div>
-        <div>
-            <div class="subtle" style="margin-bottom:4px">Ad fields - JSON keys removed wherever they appear <span id="dpiRuleAdFieldsHits" class="dim"></span></div>
-            <textarea class="input" id="dpiRuleAdFields" style="width:100%; min-height:60px; font-family:monospace; font-size:12px"></textarea>
-        </div>
-        <div>
-            <div class="subtle" style="margin-bottom:4px">Ad renderers - feed item types dropped entirely <span id="dpiRuleAdRenderersHits" class="dim"></span></div>
-            <textarea class="input" id="dpiRuleAdRenderers" style="width:100%; min-height:80px; font-family:monospace; font-size:12px"></textarea>
-        </div>
-        <div>
-            <div class="subtle" style="margin-bottom:4px">Blocked paths - endpoints refused with an empty response <span id="dpiRuleBlockedPathsHits" class="dim"></span></div>
-            <textarea class="input" id="dpiRuleBlockedPaths" style="width:100%; min-height:60px; font-family:monospace; font-size:12px"></textarea>
-        </div>
-        <div style="border-top:1px solid var(--border); padding-top:12px">
-            <div style="display:flex; align-items:center; gap:10px; margin-bottom:6px">
-                <div class="subtle" style="flex:1">
-                    Cosmetic CSS injection (optional, off by default) - hide leftover ad-shaped
-                    containers on decrypted pages. CSS only, never JavaScript - see the card's
-                    tooltip for what that boundary means.
+        <div class="field" style="padding-top:14px; border-top:1px solid var(--border)">
+            <div style="display:flex; align-items:flex-start; gap:12px">
+                <div style="flex:1">
+                    <div class="field-label">Cosmetic CSS injection <span class="dim">optional, off by default</span></div>
+                    <div class="field-hint">
+                        Hide leftover ad-shaped containers on decrypted pages. CSS only, never JavaScript -
+                        see the button's tooltip for what that boundary means.
+                    </div>
                 </div>
                 <button class="btn" id="dpiCosmeticToggle" title="Injects a <style> block on allowlisted HTML pages; never executes JavaScript on the page">Loading…</button>
             </div>
-            <textarea class="input" id="dpiRuleCosmeticSelectors" style="width:100%; min-height:60px; font-family:monospace; font-size:12px" placeholder="One CSS selector per line, e.g. ytd-display-ad-renderer"></textarea>
+            <textarea class="input code" id="dpiRuleCosmeticSelectors" placeholder="One CSS selector per line, e.g. ytd-display-ad-renderer" aria-label="Cosmetic CSS selectors"></textarea>
         </div>
-        <div class="dim" style="font-size:11px">One rule per line. Hit counts are since the DPI service last restarted - a rule with zero hits for a while may be dead.</div>
-        <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap">
-            <input class="input" id="dpiRuleReason" placeholder="Reason for this change (required)" style="flex:1; min-width:220px">
-            <button class="btn" id="dpiRulesSave">Save rules</button>
+        <div class="field-hint" style="margin-top:10px">One rule per line. Hit counts are since the DPI service last restarted - a rule with zero hits for a while may be dead.</div>
+        <div class="toolbar" style="margin-top:14px; padding-top:14px; border-top:1px solid var(--border)">
+            <input class="input" id="dpiRuleReason" placeholder="Reason for this change (required)" style="min-width:220px" aria-label="Reason for this change">
+            <button class="btn primary" id="dpiRulesSave">Save rules</button>
         </div>
     </div>
 </div>
 
-<div class="card" style="margin-bottom:14px">
+<div class="card" id="sec-trackers" style="margin-bottom:16px">
     <div class="card-head"><h2>Tracker Companies</h2>
         <span class="spacer"></span><span class="subtle" id="analyticsTrackerCount">—</span></div>
     <div class="card-body tight" id="analyticsTrackers"><div class="empty">Loading…</div></div>
 </div>
 
-<div class="grid c2">
+<div class="grid c2" id="sec-lists">
     <div class="card">
         <div class="card-head"><h2>Blocklist Sources</h2>
-            <span class="spacer"></span><span class="subtle" id="filterListCount">—</span></div>
-        <div class="card-body tight" id="filterLists"><div class="empty">Loading…</div></div>
-        <form class="card-body" id="filterListAddForm" style="display:flex; gap:8px; border-top:1px solid var(--border)">
-            <input class="input" id="filterListName" placeholder="Name" style="flex:1">
-            <input class="input" id="filterListUrl" placeholder="https://…" style="flex:2">
-            <button class="btn" type="submit">Add list</button>
+            <span class="count-pill" id="filterListCount">—</span></div>
+        <div class="card-body tight fill" id="filterLists"><div class="empty">Loading…</div></div>
+        <form class="card-body toolbar" id="filterListAddForm">
+            <input class="input" id="filterListName" placeholder="List name" style="min-width:120px" aria-label="List name">
+            <input class="input" id="filterListUrl" placeholder="https://…" style="flex:2; min-width:160px" aria-label="List URL">
+            <button class="btn primary" type="submit">Add list</button>
         </form>
     </div>
 
     <div class="card">
         <div class="card-head"><h2>Custom Rules</h2>
             <span class="spacer"></span><span class="subtle">per-domain allow / block</span></div>
-        <div class="card-body tight" id="filterRules"><div class="empty">Loading…</div></div>
-        <div class="card-body" id="filterRuleAddRow" style="display:flex; gap:8px; border-top:1px solid var(--border)">
-            <input class="input" id="filterRuleDomain" placeholder="example.com" style="flex:1">
-            <button class="btn" type="button" id="filterRuleBlockBtn">Block</button>
-            <button class="btn" type="button" id="filterRuleAllowBtn">Allow</button>
+        <div class="card-body tight fill" id="filterRules"><div class="empty">Loading…</div></div>
+        <div class="card-body toolbar" id="filterRuleAddRow">
+            <input class="input" id="filterRuleDomain" placeholder="example.com" style="min-width:120px" aria-label="Domain">
+            <button class="btn danger" type="button" id="filterRuleBlockBtn">Block</button>
+            <button class="btn success" type="button" id="filterRuleAllowBtn">Allow</button>
         </div>
     </div>
 </div>
 
-<div class="card">
+<div class="card" id="sec-querylog">
     <div class="card-head"><h2>Query Log Search</h2>
         <span class="spacer"></span><span class="subtle">searches events already collected by this console</span></div>
-    <div class="card-body" style="display:flex; gap:8px; flex-wrap:wrap">
-        <input class="input" id="qlDomain" placeholder="Search domain…" style="flex:2; min-width:180px">
-        <select class="input" id="qlDevice" style="flex:1; min-width:160px"><option value="">All devices</option></select>
-        <select class="input" id="qlBlocked" style="flex:1; min-width:140px">
-            <option value="">Allowed + blocked</option>
-            <option value="blocked">Blocked only</option>
-            <option value="allowed">Allowed only</option>
-        </select>
-        <button class="btn" id="qlSearch">Search</button>
+    <div class="card-body">
+        <div class="toolbar">
+            <input class="input search" id="qlDomain" placeholder="Search domain…" style="flex:2; min-width:180px" aria-label="Domain">
+            <select class="input" id="qlDevice" style="flex:1; min-width:160px" aria-label="Device"><option value="">All devices</option></select>
+            <select class="input" id="qlBlocked" style="flex:1; min-width:140px" aria-label="Result">
+                <option value="">Allowed + blocked</option>
+                <option value="blocked">Blocked only</option>
+                <option value="allowed">Allowed only</option>
+            </select>
+            <button class="btn primary" id="qlSearch">Search</button>
+        </div>
     </div>
-    <div class="card-body tight feed" id="qlResults"><div class="empty">Search above to see matching DNS queries.</div></div>
+    <div class="card-body tight feed tall" id="qlResults"><div class="empty">Search above to see matching DNS queries.</div></div>
 </div>
 {% endblock %}

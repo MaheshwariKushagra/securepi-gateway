@@ -1,49 +1,55 @@
 {% extends "base.html" %}
 {% block content %}
-<div class="page-head">
-    <a class="link subtle" href="/devices"><svg class="icon" width="13" height="13"><use href="#i-arrow-left"/></svg> Devices</a>
-    <h1 style="margin-left:8px">
-        <span class="editable-name" id="deviceIdentity" data-device-id="{{ device.id }}">
-            <span id="deviceNameDisplay">{{ device.name }}</span>
-            <span class="edit-trigger" id="deviceNameEdit" title="Rename this device">
-                <svg class="icon" width="14" height="14"><use href="#i-pencil"/></svg>
-            </span>
-        </span>
-    </h1>
-    <span class="chip {{ 'ok' if device.online else 'neutral' }} dot">{{ 'online' if device.online else 'last seen ' + device.age + ' ago' }}</span>
-    {% if risk.score > 0 %}
-    <span class="chip {{ risk.band }}" title="Risk score: {{ risk.score }} / 100">risk: {{ risk.score }}</span>
-    {% endif %}
-    <span class="chip neutral" id="baselineBadge" data-device-id="{{ device.id }}" title="Behavioural baseline (step 6.1): compares each hour against this device's own history at that hour of day">Baseline: loading…</span>
-</div>
+<a class="back-link" href="/devices"><svg class="icon" width="13" height="13"><use href="#i-arrow-left"/></svg> All devices</a>
 
-<div class="kpis">
-    <div class="kpi"><span class="kpi-accent"></span>
-        <div class="kpi-label">Downloaded</div><div class="kpi-value">{{ device.down_h }}</div></div>
-    <div class="kpi"><span class="kpi-accent"></span>
-        <div class="kpi-label">Uploaded</div><div class="kpi-value">{{ device.up_h }}</div></div>
-    <div class="kpi"><span class="kpi-accent"></span>
-        <div class="kpi-label">DNS Queries</div><div class="kpi-value">{{ "{:,}".format(device.dns) }}</div></div>
-    <div class="kpi {{ 'alert' if device.blocked else '' }}"><span class="kpi-accent"></span>
-        <div class="kpi-label">Blocked</div><div class="kpi-value">{{ "{:,}".format(device.blocked) }}</div></div>
-    <div class="kpi"><span class="kpi-accent"></span>
-        <div class="kpi-label">Total Events</div><div class="kpi-value">{{ "{:,}".format(device.events) }}</div></div>
-</div>
+<section class="hero {{ 'sev-' + risk.band if risk.score > 0 else '' }}">
+    <div class="hero-top">
+        <div class="hero-main">
+            <div class="hero-eyebrow">
+                <span>Device #{{ device.id }}</span>
+                {% if device.hostname %}<span>·</span><span class="mono">{{ device.hostname }}</span>{% endif %}
+                {% if ips %}<span>·</span><span class="mono">{{ ips[0].ip }}</span>{% endif %}
+            </div>
+            <h1>
+                <span class="editable-name" id="deviceIdentity" data-device-id="{{ device.id }}">
+                    <span id="deviceNameDisplay">{{ device.name }}</span>
+                    <span class="edit-trigger" id="deviceNameEdit" title="Rename this device" role="button" aria-label="Rename this device">
+                        <svg class="icon" width="14" height="14"><use href="#i-pencil"/></svg>
+                    </span>
+                </span>
+            </h1>
+            <div class="hero-tags">
+                <span class="chip {{ 'ok' if device.online else 'neutral' }} dot">{{ 'Online' if device.online else 'Last seen ' + device.age + ' ago' }}</span>
+                {% if risk.score > 0 %}
+                <span class="chip {{ risk.band }}" title="Risk score: {{ risk.score }} / 100">Risk {{ risk.score }} / 100</span>
+                {% endif %}
+                <span class="chip neutral" id="baselineBadge" data-device-id="{{ device.id }}" title="Behavioural baseline (step 6.1): compares each hour against this device's own history at that hour of day">Baseline: loading…</span>
+            </div>
+        </div>
+    </div>
+    <div class="hero-stats">
+        <div class="hero-stat"><div class="label">Downloaded</div><div class="value">{{ device.down_h }}</div></div>
+        <div class="hero-stat"><div class="label">Uploaded</div><div class="value">{{ device.up_h }}</div></div>
+        <div class="hero-stat"><div class="label">DNS queries</div><div class="value">{{ "{:,}".format(device.dns) }}</div></div>
+        <div class="hero-stat"><div class="label">Blocked</div><div class="value {{ 'text-high' if device.blocked else '' }}">{{ "{:,}".format(device.blocked) }}</div></div>
+        <div class="hero-stat"><div class="label">Total events</div><div class="value">{{ "{:,}".format(device.events) }}</div></div>
+    </div>
+</section>
 
-<div class="card" style="margin-bottom:14px">
+<div class="card" style="margin-bottom:16px">
     <div class="card-head"><h2>Activity</h2>
         <span class="spacer"></span>
-        <div class="seg" id="deviceRangeSel">
+        <div class="seg" id="deviceRangeSel" role="group" aria-label="Time range">
             <button data-range="1h">1H</button>
             <button data-range="6h">6H</button>
             <button data-range="24h">24H</button>
             <button data-range="7d">7D</button>
         </div>
     </div>
-    <div class="card-body chart" style="height:220px"><canvas id="deviceActivityChart" data-device-id="{{ device.id }}"></canvas></div>
+    <div class="card-body chart" style="height:230px"><canvas id="deviceActivityChart" data-device-id="{{ device.id }}"></canvas></div>
 </div>
 
-<div class="grid c2">
+<div class="grid c3-1">
     <div class="card">
         <div class="card-head"><h2>Identity</h2>
             <span class="spacer"></span>
@@ -54,76 +60,71 @@
                 <dt>First seen</dt><dd>{{ device.first_seen }}</dd>
                 <dt>Last seen</dt><dd>{{ device.last_seen }}</dd>
             </dl>
-            <div style="margin-top:14px">
-                <div class="subtle" style="margin-bottom:6px">MAC addresses</div>
-                <table>
-                    {% for m in macs %}
-                    <tr><td class="mono">{{ m.mac }}</td>
-                        <td>{% if m.is_randomized %}<span class="chip neutral">randomized</span>{% else %}<span class="dim">hardware</span>{% endif %}</td>
-                        <td class="dim num">{{ m.last_seen_h }}</td></tr>
-                    {% endfor %}
-                </table>
-            </div>
-            <div style="margin-top:14px">
-                <div class="subtle" style="margin-bottom:6px">IP addresses held</div>
-                <table>
-                    {% for i in ips %}
-                    <tr><td class="mono">{{ i.ip }}</td>
-                        <td class="dim num">{{ i.first_seen_h }} → {{ i.last_seen_h }}</td></tr>
-                    {% endfor %}
-                </table>
-            </div>
+        </div>
+        <div class="card-body">
+            <div class="section-label">MAC addresses</div>
+            <table class="compact" style="margin:0 -16px; width:calc(100% + 32px)"><tbody>
+                {% for m in macs %}
+                <tr><td class="mono">{{ m.mac }}</td>
+                    <td>{% if m.is_randomized %}<span class="chip neutral">randomized</span>{% else %}<span class="dim">hardware</span>{% endif %}</td>
+                    <td class="dim num">{{ m.last_seen_h }}</td></tr>
+                {% endfor %}
+            </tbody></table>
+            <div class="section-label" style="margin-top:14px">IP addresses held</div>
+            <table class="compact" style="margin:0 -16px; width:calc(100% + 32px)"><tbody>
+                {% for i in ips %}
+                <tr><td class="mono">{{ i.ip }}</td>
+                    <td class="dim num">{{ i.first_seen_h }} → {{ i.last_seen_h }}</td></tr>
+                {% endfor %}
+            </tbody></table>
             {% if macs | selectattr('is_randomized') | list %}
             <div class="callout" style="margin-top:14px">
                 This device uses a randomized MAC address. Identity is anchored to its
                 DHCP hostname instead, so it stays the same device across rotations.
             </div>
             {% endif %}
-            <div style="margin-top:14px" id="deviceFingerprint" data-device-id="{{ device.id }}">
-                <div class="subtle" style="margin-bottom:6px">Fingerprint - a second identity anchor, display only</div>
-                <div class="empty">Loading…</div>
-            </div>
-            <div style="margin-top:14px; display:flex; align-items:center; gap:10px" id="deviceFiltering" data-device-id="{{ device.id }}">
-                <div class="subtle" style="flex:1">DNS filtering for this device</div>
-                <button class="btn" id="deviceFilterToggle">Loading…</button>
-            </div>
-            <div style="margin-top:10px; display:flex; align-items:center; gap:10px" id="deviceQuarantine" data-device-id="{{ device.id }}">
-                <div class="subtle" style="flex:1">Network access (quarantine)</div>
-                <button class="btn" id="deviceQuarantineToggle">Loading…</button>
-            </div>
-            <div style="margin-top:10px; display:flex; align-items:center; gap:10px" id="deviceDpi" data-device-id="{{ device.id }}">
-                <div class="subtle" style="flex:1">HTTPS ad removal (Tier 2) <span class="dim" id="deviceDpiExpiry"></span></div>
-                <button class="btn" id="deviceDpiToggle">Loading…</button>
-            </div>
-            <div style="margin-top:14px" id="deviceProfiles" data-device-id="{{ device.id }}">
-                <div class="subtle" style="margin-bottom:6px">Native telemetry profile</div>
-                <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap">
-                    <select class="input" id="deviceProfileSelect" style="flex:1; min-width:160px"><option value="">Loading…</option></select>
-                    <button class="btn" id="deviceProfileApply">Apply</button>
-                </div>
-                <div class="dim" style="font-size:11px; margin-top:4px">
-                    Blocks a vendor's own OS/app telemetry for this device only - a small, hand-checked starting list, not a full third-party blocklist.
-                </div>
-                <div id="deviceProfilesApplied" style="margin-top:8px"></div>
-            </div>
+        </div>
+        <div class="card-body fill" id="deviceFingerprint" data-device-id="{{ device.id }}">
+            <div class="section-label">Fingerprint - a second identity anchor, display only</div>
+            <div class="empty">Loading…</div>
         </div>
     </div>
 
-    <div style="display:flex; flex-direction:column; gap:14px">
+    <div class="stack">
         <div class="card">
-            <div class="card-head"><h2>Incidents</h2></div>
-            <div class="card-body tight">
-                {% if incidents %}
-                <table><tbody>
-                    {% for i in incidents %}
-                    <tr class="clickable" onclick="location.href='/incidents/{{ i.id }}'">
-                        <td style="width:1%"><span class="chip {{ i.severity }} dot">{{ i.severity }}</span></td>
-                        <td>{{ i.title }}<div class="dim" style="font-size:11px">{{ i.evidence_count }} events</div></td>
-                        <td class="num dim">{{ i.age }} ago</td>
-                    </tr>
-                    {% endfor %}
-                </tbody></table>
-                {% else %}<div class="empty"><span class="empty-icon">✓</span>No incidents for this device</div>{% endif %}
+            <div class="card-head"><h2>Controls</h2>
+                <span class="spacer"></span><span class="subtle">applied at the gateway</span></div>
+            <div class="control-row" id="deviceFiltering" data-device-id="{{ device.id }}">
+                <div class="control-text">
+                    <div class="control-title">DNS filtering</div>
+                    <div class="control-desc">Blocklists and custom rules for this device</div>
+                </div>
+                <button class="btn" id="deviceFilterToggle">Loading…</button>
+            </div>
+            <div class="control-row" id="deviceQuarantine" data-device-id="{{ device.id }}">
+                <div class="control-text">
+                    <div class="control-title">Network access</div>
+                    <div class="control-desc">Quarantine blocks all traffic from this device</div>
+                </div>
+                <button class="btn" id="deviceQuarantineToggle">Loading…</button>
+            </div>
+            <div class="control-row" id="deviceDpi" data-device-id="{{ device.id }}">
+                <div class="control-text">
+                    <div class="control-title">HTTPS ad removal (Tier 2)</div>
+                    <div class="control-desc">Opt-in, needs the SecurePi CA <span id="deviceDpiExpiry"></span></div>
+                </div>
+                <button class="btn" id="deviceDpiToggle">Loading…</button>
+            </div>
+            <div class="control-block" id="deviceProfiles" data-device-id="{{ device.id }}">
+                <div class="control-title" style="font-size:12.5px; font-weight:560; margin-bottom:8px">Native telemetry profile</div>
+                <div class="toolbar">
+                    <select class="input" id="deviceProfileSelect" style="min-width:160px" aria-label="Native telemetry profile"><option value="">Loading…</option></select>
+                    <button class="btn" id="deviceProfileApply">Apply</button>
+                </div>
+                <div class="field-hint" style="margin-top:6px">
+                    Blocks a vendor's own OS/app telemetry for this device only - a small, hand-checked starting list, not a full third-party blocklist.
+                </div>
+                <div id="deviceProfilesApplied" style="margin-top:8px"></div>
             </div>
         </div>
 
@@ -149,7 +150,7 @@
                     {% endif %}
                     {% endfor %}
                 </tbody></table>
-                <div class="dim" style="font-size:11px; margin-top:8px; line-height:1.5">
+                <div class="card-foot" style="margin-top:6px">
                     Each open incident contributes its severity weight, decayed on a
                     24-hour half-life since it was last active. An open campaign (step 2.8 -
                     several incidents recognized as one multi-stage attack) adds one more
@@ -158,35 +159,57 @@
                 {% else %}<div class="empty"><span class="empty-icon">✓</span>No open incidents contributing to risk</div>{% endif %}
             </div>
         </div>
+
+        <div class="card">
+            <div class="card-head"><h2>Incidents</h2>
+                {% if incidents %}<span class="count-pill">{{ incidents | length }}</span>{% endif %}</div>
+            <div class="card-body tight">
+                {% if incidents %}
+                {% for i in incidents %}
+                <a class="inc-row {{ i.severity }}" href="/incidents/{{ i.id }}">
+                    <span class="inc-body">
+                        <div class="inc-title" title="{{ i.title }}">{{ i.title }}</div>
+                        <div class="inc-meta">{{ i.evidence_count }} events · {{ i.status.replace('_', ' ') }}</div>
+                    </span>
+                    <span class="inc-age">{{ i.age }} ago</span>
+                </a>
+                {% endfor %}
+                {% else %}<div class="empty"><span class="empty-icon">✓</span>No incidents for this device</div>{% endif %}
+            </div>
+        </div>
     </div>
 </div>
 
-<div class="card" style="margin-bottom:14px">
-    <div class="card-head"><h2>Recently Blocked</h2>
-        <span class="spacer"></span><span class="subtle">DNS filtering for this device — test and allow below</span></div>
-    <div class="card-body" style="display:flex; gap:8px; flex-wrap:wrap; border-bottom:1px solid var(--border)">
-        <input class="input" id="deviceCheckDomain" placeholder="Test a domain, e.g. example.com" style="flex:2; min-width:180px">
-        <button class="btn" id="deviceCheckBtn">Check</button>
+<div class="grid c2e">
+    <div class="card">
+        <div class="card-head"><h2>Recently Blocked</h2>
+            <span class="spacer"></span><span class="subtle">test and allow for this device</span></div>
+        <div class="card-body">
+            <div class="toolbar">
+                <input class="input search" id="deviceCheckDomain" placeholder="Test a domain, e.g. example.com" style="min-width:180px">
+                <button class="btn primary" id="deviceCheckBtn">Check</button>
+            </div>
+        </div>
+        <div class="card-body tight feed fill" id="deviceBlocked" data-device-id="{{ device.id }}">
+            <div class="empty">Loading…</div>
+        </div>
     </div>
-    <div class="card-body tight" id="deviceBlocked" data-device-id="{{ device.id }}">
-        <div class="empty">Loading…</div>
-    </div>
-</div>
 
-<div class="card" style="margin-bottom:14px">
-    <div class="card-head"><h2>Privacy Report</h2>
-        <span class="spacer"></span><span class="subtle">trackers contacted by this device, all time</span></div>
-    <div class="card-body" id="devicePrivacy" data-device-id="{{ device.id }}">
-        <div class="empty">Loading…</div>
+    <div class="card">
+        <div class="card-head"><h2>Privacy Report</h2>
+            <span class="spacer"></span><span class="subtle">trackers contacted, all time</span></div>
+        <div class="card-body fill" id="devicePrivacy" data-device-id="{{ device.id }}">
+            <div class="empty">Loading…</div>
+        </div>
     </div>
 </div>
 
 <div class="grid c2e">
     <div class="card">
         <div class="card-head"><h2>Top Destinations</h2><span class="spacer"></span><span class="subtle">TLS SNI</span></div>
-        <div class="card-body tight">
+        <div class="card-body tight fill">
             {% if top_sni %}
-            <table><tbody>
+            <table class="compact"><tbody>
                 {% for s in top_sni %}
                 <tr><td class="mono truncate">{{ s.tls_sni }}</td><td class="num dim">{{ s.n }}</td></tr>
                 {% endfor %}
@@ -196,27 +219,27 @@
     </div>
     <div class="card">
         <div class="card-head"><h2>Most Blocked Domains</h2></div>
-        <div class="card-body tight">
+        <div class="card-body tight fill">
             {% if top_blocked %}
-            <table><tbody>
+            <table class="compact"><tbody>
                 {% for b in top_blocked %}
-                <tr><td class="mono truncate">{{ b.dns_rrname }}</td><td class="num" style="color:var(--high)">{{ b.n }}</td></tr>
+                <tr><td class="mono truncate">{{ b.dns_rrname }}</td><td class="num text-high">{{ b.n }}</td></tr>
                 {% endfor %}
             </tbody></table>
-            {% else %}<div class="empty">Nothing blocked for this device</div>{% endif %}
+            {% else %}<div class="empty"><span class="empty-icon">✓</span>Nothing blocked for this device</div>{% endif %}
         </div>
     </div>
 </div>
 
 <div class="card">
     <div class="card-head"><h2>Activity Timeline</h2><span class="spacer"></span><span class="subtle">most recent 60 events</span></div>
-    <div class="card-body tight feed">
+    <div class="card-body tight feed tall">
         {% for e in timeline %}
         <div class="feed-row">
             <span class="mono dim">{{ e.time }}</span>
-            <span class="type-tag {{ e.type }}">{{ e.type.replace('dns_query','dns') }}</span>
+            <span class="type-tag {{ e.type }}" title="{{ e.type }}">{{ e.type.replace('dns_query','dns').replace('_', ' ') }}</span>
             <span class="truncate mono" title="{{ e.detail }}">{{ e.detail }}</span>
-            <span class="dim" style="font-size:11px">{% if e.blocked %}<span class="chip high">blocked</span>{% else %}{{ e.extra }}{% endif %}</span>
+            <span class="dim">{% if e.blocked %}<span class="chip high">blocked</span>{% else %}{{ e.extra }}{% endif %}</span>
         </div>
         {% else %}
         <div class="empty">No events recorded</div>

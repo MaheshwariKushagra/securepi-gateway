@@ -1,142 +1,161 @@
 {% extends "base.html" %}
 {% block content %}
-<div class="page-head">
-    <a class="link subtle" href="/incidents"><svg class="icon" width="13" height="13"><use href="#i-arrow-left"/></svg> Incidents</a>
-    <h1 style="margin-left:8px">{{ incident.title }}</h1>
-    <span class="chip {{ incident.severity }} dot">{{ incident.severity }}</span>
-    <span class="status-pill {{ incident.status }}">{{ incident.status.replace('_', ' ') }}</span>
-    {% if attack %}
-    <span class="chip attack-badge" title="{{ attack.note if attack.note else '' }}">
-        {{ attack.tactic }} ({{ attack.tactic_id }}){% if attack.technique %} · {{ attack.technique }} ({{ attack.technique_id }}){% endif %}
-    </span>
-    {% endif %}
-    <div class="spacer"></div>
-    {% if device and device.has_ip %}
-    <div id="deviceQuarantine" data-device-id="{{ device.id }}">
-        <button class="btn" id="deviceQuarantineToggle">Loading…</button>
+<a class="back-link" href="/incidents"><svg class="icon" width="13" height="13"><use href="#i-arrow-left"/></svg> All incidents</a>
+
+<section class="hero sev-{{ incident.severity }}">
+    <div class="hero-top">
+        <div class="hero-main">
+            <div class="hero-eyebrow">
+                <span>Incident #{{ incident.id }}</span><span>·</span>
+                <span class="mono">{{ incident.signal_type }}</span>
+            </div>
+            <h1>{{ incident.title }}</h1>
+            <div class="hero-tags">
+                <span class="chip {{ incident.severity }} dot">{{ incident.severity | capitalize }} severity</span>
+                <span class="status-pill {{ incident.status }}">{{ incident.status.replace('_', ' ') | capitalize }}</span>
+                {% if attack %}
+                <span class="chip attack-badge" title="{{ attack.note if attack.note else '' }}">
+                    ATT&amp;CK · {{ attack.tactic }} ({{ attack.tactic_id }}){% if attack.technique %} · {{ attack.technique }} ({{ attack.technique_id }}){% endif %}
+                </span>
+                {% endif %}
+            </div>
+        </div>
+        <div class="hero-actions">
+            {% if device and device.has_ip %}
+            <div id="deviceQuarantine" data-device-id="{{ device.id }}">
+                <button class="btn" id="deviceQuarantineToggle">Loading…</button>
+            </div>
+            {% endif %}
+            <div id="incidentActions" data-incident-id="{{ incident.id }}">
+                {% if top_domain and device %}
+                <button class="btn" id="incidentBlockDomain" data-device-id="{{ device.id }}" data-domain="{{ top_domain }}">
+                    <svg class="icon" width="14" height="14"><use href="#i-ban"/></svg> Block {{ top_domain }}
+                </button>
+                {% endif %}
+                {% if incident.status != 'investigating' %}
+                <button class="btn" data-set-status="investigating" data-incident-id="{{ incident.id }}">Investigate</button>
+                {% endif %}
+                {% if incident.status != 'false_positive' %}
+                <button class="btn" data-set-status="false_positive" data-incident-id="{{ incident.id }}">False positive</button>
+                {% endif %}
+                {% if incident.status != 'new' %}
+                <button class="btn" data-set-status="new" data-incident-id="{{ incident.id }}">Reopen</button>
+                {% endif %}
+                {% if incident.status != 'resolved' %}
+                <button class="btn success" data-set-status="resolved" data-incident-id="{{ incident.id }}">
+                    <svg class="icon" width="14" height="14" style="color:currentColor"><use href="#i-check"/></svg> Resolve
+                </button>
+                {% endif %}
+            </div>
+        </div>
     </div>
-    {% endif %}
-    <div id="incidentActions" data-incident-id="{{ incident.id }}" style="display:flex; gap:8px; flex-wrap:wrap">
-        {% if top_domain and device %}
-        <button class="btn" id="incidentBlockDomain" data-device-id="{{ device.id }}" data-domain="{{ top_domain }}">
-            Block {{ top_domain }}
-        </button>
-        {% endif %}
-        {% if incident.status != 'investigating' %}
-        <button class="btn" data-set-status="investigating" data-incident-id="{{ incident.id }}">Investigate</button>
-        {% endif %}
-        {% if incident.status != 'resolved' %}
-        <button class="btn" data-set-status="resolved" data-incident-id="{{ incident.id }}">Resolve</button>
-        {% endif %}
-        {% if incident.status != 'false_positive' %}
-        <button class="btn" data-set-status="false_positive" data-incident-id="{{ incident.id }}">False positive</button>
-        {% endif %}
-        {% if incident.status != 'new' %}
-        <button class="btn" data-set-status="new" data-incident-id="{{ incident.id }}">Reopen</button>
-        {% endif %}
+    <div class="hero-stats">
+        <div class="hero-stat"><div class="label">Device</div>
+            <div class="value">{% if device %}<a class="link" href="/devices/{{ device.id }}">{{ device.name }}</a>{% else %}<span class="dim">—</span>{% endif %}</div></div>
+        <div class="hero-stat"><div class="label">First seen</div><div class="value">{{ incident.first_seen }}</div></div>
+        <div class="hero-stat"><div class="label">Last seen</div><div class="value">{{ incident.last_seen }} <span class="dim">· {{ incident.age }} ago</span></div></div>
+        <div class="hero-stat"><div class="label">Evidence</div><div class="value">{{ incident.evidence_count }} <span class="dim">linked events</span></div></div>
     </div>
-</div>
+</section>
 
 <div class="grid c2">
     <div class="card">
         <div class="card-head"><h2>What was detected</h2></div>
-        <div class="card-body">
+        <div class="card-body fill">
             <div class="callout {{ 'high' if incident.severity == 'high' else '' }}">
                 {{ incident.description }}
             </div>
-            <dl class="meta-grid" style="margin-top:16px">
-                <dt>Signal</dt><dd class="mono">{{ incident.signal_type.replace('_',' ') }}</dd>
-                <dt>Device</dt>
-                <dd>{% if device %}<a class="link" href="/devices/{{ device.id }}">{{ device.name }}</a>{% else %}—{% endif %}</dd>
-                <dt>First seen</dt><dd>{{ incident.first_seen }}</dd>
-                <dt>Last seen</dt><dd>{{ incident.last_seen }} <span class="dim">({{ incident.age }} ago)</span></dd>
-                <dt>Evidence</dt><dd>{{ incident.evidence_count }} linked events</dd>
-            </dl>
-        </div>
-    </div>
-    <div class="card">
-        <div class="card-head"><h2>Why this was raised</h2></div>
-        <div class="card-body">
-            <p class="subtle" style="line-height:1.6">
+            <div class="section-label" style="margin-top:18px">Why this was raised</div>
+            <p class="prose">
             This incident was produced by the <strong>{{ incident.signal_type.replace('_',' ') }}</strong>
             signal, which examines a trailing window of stored events rather than
             individual packets. Every event listed below contributed to the detection —
             the incident is not a verdict on its own, it is a claim backed by the
             evidence chain.
             </p>
-            <p class="subtle" style="line-height:1.6; margin-top:10px">
+            <p class="prose">
             Repeated detections of the same ongoing pattern extend this incident rather
             than creating new ones, which is why one scan produces a single entry
             instead of one per engine cycle.
             </p>
         </div>
     </div>
-</div>
-
-<div class="grid c2">
-    <div class="card">
-        <div class="card-head"><h2>Playbook</h2>
-            <span class="spacer"></span>
-            <span class="subtle">what to check and what to do about this signal</span></div>
-        <div class="card-body">
-            {% if playbook %}
-            <dl class="meta-grid">
-                <dt>What it means</dt><dd style="line-height:1.6">{{ playbook.what_it_means }}</dd>
-                <dt>How to check</dt><dd style="line-height:1.6">{{ playbook.how_to_check }}</dd>
-                <dt>Recommended action</dt><dd style="line-height:1.6">{{ playbook.recommended_action }}</dd>
-            </dl>
-            {% if attack and attack.note %}
-            <p class="dim" style="font-size:11px; margin-top:12px">{{ attack.note }}</p>
-            {% endif %}
-            {% if not attack %}
-            <p class="dim" style="font-size:11px; margin-top:12px">
-                Not tagged with a MITRE ATT&amp;CK technique - this signal type doesn't map
-                cleanly to one specific attack technique (see app/playbooks.py for why).
-            </p>
-            {% endif %}
-            {% else %}
-            <div class="empty">No playbook is defined for this signal type.</div>
-            {% endif %}
-        </div>
-    </div>
     <div class="card">
         <div class="card-head"><h2>Related Incidents</h2>
             <span class="spacer"></span>
             <span class="subtle">other open incidents on this device</span></div>
-        <div class="card-body tight feed">
+        <div class="card-body tight feed fill">
             {% if not device %}
             <div class="empty">This incident has no associated device.</div>
             {% elif related %}
             {% for r in related %}
-            <a class="feed-row" href="/incidents/{{ r.id }}" style="text-decoration:none; color:inherit">
-                <span class="chip {{ r.severity }} dot">{{ r.severity }}</span>
-                <span class="truncate">{{ r.title }}</span>
-                <span class="dim" style="font-size:11px">{{ r.last_seen }} ago</span>
+            <a class="inc-row {{ r.severity }}" href="/incidents/{{ r.id }}">
+                <span class="inc-body">
+                    <div class="inc-title" title="{{ r.title }}">{{ r.title }}</div>
+                    <div class="inc-meta">{{ r.severity | capitalize }} severity</div>
+                </span>
+                <span class="inc-age">{{ r.last_seen }} ago</span>
             </a>
             {% endfor %}
             {% else %}
-            <div class="empty">No other open incidents on this device right now.</div>
+            <div class="empty"><span class="empty-icon">✓</span>No other open incidents on this device right now.</div>
             {% endif %}
-            <p class="dim" style="font-size:11px; margin-top:8px">
-                This lists other still-open incidents on the same device - it is not a
-                cross-signal campaign correlation (that's a separate, not-yet-built piece
-                of the plan).
-            </p>
+        </div>
+        <div class="card-foot">
+            This lists other still-open incidents on the same device - it is not a
+            cross-signal campaign correlation (that's a separate, not-yet-built piece
+            of the plan).
         </div>
     </div>
 </div>
 
-<div class="card">
-    <div class="card-head"><h2>Evidence Chain</h2>
+<div class="card" style="margin-bottom:16px">
+    <div class="card-head"><h2>Playbook</h2>
         <span class="spacer"></span>
-        <span class="subtle">{{ evidence | length }} contributing events, in order</span></div>
-    <div class="card-body tight feed" style="max-height:560px">
+        <span class="subtle">what to check and what to do about this signal</span></div>
+    <div class="card-body">
+        {% if playbook %}
+        <div class="steps">
+            <div class="step">
+                <div class="step-head"><span class="step-num">1</span>What it means</div>
+                <p>{{ playbook.what_it_means }}</p>
+            </div>
+            <div class="step">
+                <div class="step-head"><span class="step-num">2</span>How to check</div>
+                <p>{{ playbook.how_to_check }}</p>
+            </div>
+            <div class="step">
+                <div class="step-head"><span class="step-num">3</span>Recommended action</div>
+                <p>{{ playbook.recommended_action }}</p>
+            </div>
+        </div>
+        {% if attack and attack.note %}
+        <p class="note" style="margin-top:12px">{{ attack.note }}</p>
+        {% endif %}
+        {% if not attack %}
+        <p class="note" style="margin-top:12px">
+            Not tagged with a MITRE ATT&amp;CK technique - this signal type doesn't map
+            cleanly to one specific attack technique (see app/playbooks.py for why).
+        </p>
+        {% endif %}
+        {% else %}
+        <div class="empty">No playbook is defined for this signal type.</div>
+        {% endif %}
+    </div>
+</div>
+
+<div class="card" style="margin-bottom:16px">
+    <div class="card-head"><h2>Evidence Chain</h2>
+        <span class="count-pill">{{ evidence | length }}</span>
+        <span class="spacer"></span>
+        <span class="subtle">contributing events, in order</span></div>
+    <div class="card-body tight feed tall">
         {% for e in evidence %}
         <div class="feed-row">
             <span class="mono dim">{{ e.time }}</span>
             <span class="type-tag {{ e.type }}">{{ e.type.replace('dns_query','dns') }}</span>
             <span class="truncate mono" title="{{ e.detail }}">{{ e.detail }}</span>
-            <span class="dim" style="font-size:11px">{% if e.blocked %}<span class="chip high">blocked</span>{% else %}{{ e.extra }}{% endif %}</span>
+            <span class="dim">{% if e.blocked %}<span class="chip high">blocked</span>{% else %}{{ e.extra }}{% endif %}</span>
         </div>
         {% else %}
         <div class="empty">
@@ -147,32 +166,33 @@
     </div>
 </div>
 
-<div class="grid c2" style="margin-top:14px">
+<div class="grid c2e">
     <div class="card">
-        <div class="card-head"><h2>Analyst Notes</h2></div>
-        <div class="card-body">
-            <div style="display:flex; gap:8px; margin-bottom:12px; flex-wrap:wrap">
-                <input class="input" type="text" id="incidentNoteInput" placeholder="Add a note…" style="flex:1; min-width:140px">
-                <button class="btn" id="incidentNoteSave" data-incident-id="{{ incident.id }}">Add</button>
+        <div class="card-head"><h2>Analyst Notes</h2>
+            {% if notes %}<span class="count-pill">{{ notes | length }}</span>{% endif %}</div>
+        <div class="card-body" style="padding-bottom:8px">
+            <div class="toolbar">
+                <input class="input" type="text" id="incidentNoteInput" placeholder="Add a note for the next analyst…" style="min-width:140px">
+                <button class="btn primary" id="incidentNoteSave" data-incident-id="{{ incident.id }}">Add note</button>
             </div>
-            <div class="feed tight">
-                {% for n in notes %}
-                <div class="feed-row">
-                    <span class="mono dim">{{ n.ts }}</span>
-                    <span>{{ n.note }}</span>
-                </div>
-                {% else %}
-                <div class="empty">No notes yet.</div>
-                {% endfor %}
+        </div>
+        <div class="card-body tight feed fill" style="border-top:0">
+            {% for n in notes %}
+            <div class="log-row">
+                <span class="mono dim">{{ n.ts }}</span>
+                <span>{{ n.note }}</span>
             </div>
+            {% else %}
+            <div class="empty">No notes yet.</div>
+            {% endfor %}
         </div>
     </div>
     <div class="card">
         <div class="card-head"><h2>Status Timeline</h2></div>
-        <div class="card-body">
-            <div class="feed tight">
+        <div class="card-body tight feed fill">
+            <div class="timeline">
                 {% for t in timeline %}
-                <div class="feed-row">
+                <div class="log-row">
                     <span class="mono dim">{{ t.ts }}</span>
                     <span>{{ t.detail }}</span>
                 </div>

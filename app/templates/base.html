@@ -30,6 +30,13 @@
         <path d="M6 2 H15 L19 6 V22 H6 Z"/><polyline points="15,2 15,6 19,6"/>
         <line x1="9" y1="12" x2="16" y2="12"/><line x1="9" y1="16" x2="16" y2="16"/>
     </symbol>
+    <symbol id="i-globe" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><line x1="3" y1="12" x2="21" y2="12"/><path d="M12 3 C15 6 15 18 12 21 C9 18 9 6 12 3 Z"/></symbol>
+    <symbol id="i-arrows" viewBox="0 0 24 24"><line x1="7" y1="20" x2="7" y2="4"/><polyline points="3,8 7,4 11,8"/><line x1="17" y1="4" x2="17" y2="20"/><polyline points="13,16 17,20 21,16"/></symbol>
+    <symbol id="i-ban" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><line x1="5.6" y1="5.6" x2="18.4" y2="18.4"/></symbol>
+    <symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><polyline points="12,7 12,12 15.5,14"/></symbol>
+    <symbol id="i-lock" viewBox="0 0 24 24"><rect x="4.5" y="10.5" width="15" height="10" rx="2"/><path d="M8 10.5 V7.5 a4 4 0 0 1 8 0 V10.5"/></symbol>
+    <symbol id="i-pause" viewBox="0 0 24 24"><line x1="9" y1="5" x2="9" y2="19"/><line x1="15" y1="5" x2="15" y2="19"/></symbol>
+    <symbol id="i-chevron-right" viewBox="0 0 24 24"><polyline points="9,6 15,12 9,18"/></symbol>
     <symbol id="i-sliders" viewBox="0 0 24 24">
         <line x1="4" y1="6" x2="20" y2="6"/><circle cx="9" cy="6" r="2" fill="currentColor" stroke="none"/>
         <line x1="4" y1="12" x2="20" y2="12"/><circle cx="15" cy="12" r="2" fill="currentColor" stroke="none"/>
@@ -40,27 +47,35 @@
 <div class="shell" id="shell">
     <aside class="sidebar" id="sidebar">
         <div class="sidebar-head">
-            <span class="brand-mark"><svg class="icon" width="16" height="16"><use href="#i-shield"/></svg></span>
-            <span class="brand-name">SecurePi</span>
+            <a class="brand" href="/">
+                <span class="brand-mark"><svg class="icon" width="16" height="16"><use href="#i-shield"/></svg></span>
+                <span class="brand-text">
+                    <span class="brand-name">SecurePi</span>
+                    <span class="brand-sub">Gateway console</span>
+                </span>
+            </a>
             <button class="icon-btn sidebar-collapse" id="sidebarCollapse" title="Collapse sidebar" aria-label="Collapse sidebar">
-                <svg class="icon" width="16" height="16"><use href="#i-arrow-left"/></svg>
+                <svg class="icon" width="15" height="15"><use href="#i-arrow-left"/></svg>
             </button>
         </div>
-        <nav class="sidebar-nav">
-            <a href="/" class="{{ 'active' if active=='dashboard' }}">
+        <nav class="sidebar-nav" aria-label="Main">
+            <div class="nav-section">Monitor</div>
+            <a href="/" class="{{ 'active' if active=='dashboard' }}" title="Dashboard">
                 <svg class="icon" width="17" height="17"><use href="#i-grid"/></svg><span>Dashboard</span></a>
-            <a href="/devices" class="{{ 'active' if active=='devices' }}">
+            <a href="/devices" class="{{ 'active' if active=='devices' }}" title="Devices">
                 <svg class="icon" width="17" height="17"><use href="#i-monitor"/></svg><span>Devices</span></a>
-            <a href="/incidents" class="{{ 'active' if active=='incidents' }}">
+            <a href="/incidents" class="{{ 'active' if active=='incidents' }}" title="Incidents">
                 <svg class="icon" width="17" height="17"><use href="#i-alert"/></svg><span>Incidents</span>
                 <span class="nav-badge" id="navIncidentBadge" hidden>0</span></a>
-            <a href="/filtering" class="{{ 'active' if active=='filtering' }}">
-                <svg class="icon" width="17" height="17"><use href="#i-filter"/></svg><span>Filtering</span></a>
-            <a href="/hunt" class="{{ 'active' if active=='hunt' }}">
+            <div class="nav-section">Investigate</div>
+            <a href="/hunt" class="{{ 'active' if active=='hunt' }}" title="Hunt">
                 <svg class="icon" width="17" height="17"><use href="#i-search"/></svg><span>Hunt</span></a>
-            <a href="/reports/weekly" class="{{ 'active' if active=='reports' }}">
+            <a href="/reports/weekly" class="{{ 'active' if active=='reports' }}" title="Reports">
                 <svg class="icon" width="17" height="17"><use href="#i-report"/></svg><span>Reports</span></a>
-            <a href="/settings" class="{{ 'active' if active=='settings' }}">
+            <div class="nav-section">Configure</div>
+            <a href="/filtering" class="{{ 'active' if active=='filtering' }}" title="Filtering">
+                <svg class="icon" width="17" height="17"><use href="#i-filter"/></svg><span>Filtering</span></a>
+            <a href="/settings" class="{{ 'active' if active=='settings' }}" title="Settings">
                 <svg class="icon" width="17" height="17"><use href="#i-sliders"/></svg><span>Settings</span></a>
         </nav>
         <div class="sidebar-foot">
@@ -74,14 +89,28 @@
         </div>
     </aside>
 
+    {% set sections = {
+        'dashboard': ('Dashboard', '/'), 'devices': ('Devices', '/devices'),
+        'incidents': ('Incidents', '/incidents'), 'filtering': ('Filtering', '/filtering'),
+        'hunt': ('Hunt', '/hunt'), 'reports': ('Reports', '/reports/weekly'),
+        'settings': ('Settings', '/settings') } %}
+    {% set section = sections.get(active) %}
     <div class="main">
         <header class="topbar">
             <button class="icon-btn only-collapsed" id="sidebarExpand" title="Expand sidebar" aria-label="Expand sidebar" hidden>
                 <svg class="icon" width="17" height="17"><use href="#i-menu"/></svg>
             </button>
-            <h1 class="topbar-title">{{ title or "SecurePi Gateway" }}</h1>
+            <nav class="crumbs" aria-label="Breadcrumb">
+                <a class="crumb-root" href="/">SecurePi</a>
+                <svg class="icon crumb-sep" width="13" height="13"><use href="#i-chevron-right"/></svg>
+                {% if section and title and title != section[0] %}
+                <a href="{{ section[1] }}">{{ section[0] }}</a>
+                <svg class="icon crumb-sep" width="13" height="13"><use href="#i-chevron-right"/></svg>
+                {% endif %}
+                <span class="topbar-title">{{ title or "SecurePi Gateway" }}</span>
+            </nav>
             <div class="spacer"></div>
-            <button class="cmdk-trigger" id="cmdkTrigger">
+            <button class="cmdk-trigger" id="cmdkTrigger" aria-label="Search">
                 <svg class="icon" width="14" height="14"><use href="#i-search"/></svg>
                 <span>Search devices, incidents…</span>
                 <kbd>⌘K</kbd>
@@ -92,17 +121,18 @@
                     <span class="badge" id="notifBadge" hidden>0</span>
                 </button>
                 <div class="notif-panel" id="notifPanel" hidden>
-                    <div class="notif-panel-head">Open incidents</div>
+                    <div class="notif-panel-head">New incidents <span class="count-pill" id="notifPanelCount">0</span></div>
                     <div class="notif-panel-body" id="notifPanelBody"><div class="empty">Loading…</div></div>
                     <a class="notif-panel-foot" href="/incidents">View all incidents →</a>
                 </div>
             </div>
+            <span class="topbar-divider"></span>
             <span class="live" id="liveIndicator">
                 <span class="live-dot"></span>
                 <span id="liveLabel">Live</span>
                 <span class="dim">· <span id="lastUpdated">—</span></span>
+                <button class="btn" id="liveToggle">Pause</button>
             </span>
-            <button class="btn" id="liveToggle">Pause</button>
         </header>
         <main>
         {% block content %}{% endblock %}
@@ -111,13 +141,18 @@
 </div>
 
 <div class="cmdk-overlay" id="cmdkOverlay" hidden>
-    <div class="cmdk-modal">
+    <div class="cmdk-modal" role="dialog" aria-label="Command palette">
         <div class="cmdk-input-row">
-            <svg class="icon" width="16" height="16"><use href="#i-search"/></svg>
+            <svg class="icon" width="17" height="17"><use href="#i-search"/></svg>
             <input id="cmdkInput" placeholder="Jump to a device, incident, or page…" autocomplete="off">
             <kbd>esc</kbd>
         </div>
         <div class="cmdk-results" id="cmdkResults"></div>
+        <div class="cmdk-foot">
+            <span><kbd>↑</kbd><kbd>↓</kbd> navigate</span>
+            <span><kbd>↵</kbd> open</span>
+            <span><kbd>esc</kbd> close</span>
+        </div>
     </div>
 </div>
 

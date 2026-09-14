@@ -1,62 +1,64 @@
 {% extends "base.html" %}
 {% block content %}
 <div class="page-head">
-    <h1>Settings</h1>
-    <span class="subtle">detection thresholds, audit log, password, attributions</span>
+    <div class="page-title">
+        <h1>Settings</h1>
+        <p class="page-sub">Detection thresholds, audit log, password, attributions</p>
+    </div>
 </div>
 
-<div class="card" style="margin-bottom:14px">
+<div class="card" style="margin-bottom:16px">
     <div class="card-head"><h2>Detection Thresholds</h2>
         <span class="spacer"></span><span class="subtle">step 6.3 - a small, honest subset of what's actually tunable</span></div>
     <div class="card-body tight" id="settingsThresholds"><div class="empty">Loading…</div></div>
-    <div class="card-body" style="border-top:1px solid var(--border)">
-        <div class="dim" style="font-size:11px">
-            Only these four thresholds are console-tunable today - every other constant in this
-            project (window durations, the Tier 2 addon's pinning/effectiveness thresholds) is
-            still hardcoded in its own file. Changing a threshold here takes effect on the
-            correlation engine's very next cycle, no restart needed.
-        </div>
+    <div class="card-foot">
+        Only these four thresholds are console-tunable today - every other constant in this
+        project (window durations, the Tier 2 addon's pinning/effectiveness thresholds) is
+        still hardcoded in its own file. Changing a threshold here takes effect on the
+        correlation engine's very next cycle, no restart needed.
     </div>
 </div>
 
-<div class="grid c2">
+<div class="grid c2e">
     <div class="card">
         <div class="card-head"><h2>Data Retention</h2></div>
-        <div class="card-body" id="settingsRetention"><div class="empty">Loading…</div></div>
+        <div class="card-body fill" id="settingsRetention"><div class="empty">Loading…</div></div>
     </div>
     <div class="card">
         <div class="card-head"><h2>Notification Channels</h2></div>
-        <div class="card-body" id="settingsChannels"><div class="empty">Loading…</div></div>
+        <div class="card-body fill" id="settingsChannels"><div class="empty">Loading…</div></div>
     </div>
 </div>
 
-<div class="card" style="margin-bottom:14px; margin-top:14px">
-    <div class="card-head"><h2>Console Password</h2></div>
-    <div class="card-body" style="display:flex; gap:8px; flex-wrap:wrap; align-items:flex-end">
-        <div style="flex:1; min-width:160px">
-            <div class="subtle" style="margin-bottom:4px">Current password</div>
-            <input class="input" type="password" id="settingsPwCurrent" style="width:100%">
+<div class="card" style="margin-bottom:16px">
+    <div class="card-head"><h2><svg class="icon" width="15" height="15"><use href="#i-lock"/></svg>Console Password</h2></div>
+    <div class="card-body">
+        <div class="toolbar" style="align-items:flex-end">
+            <label class="field" style="flex:1; min-width:180px">
+                <span class="field-label">Current password</span>
+                <input class="input" type="password" id="settingsPwCurrent" autocomplete="current-password" style="width:100%">
+            </label>
+            <label class="field" style="flex:1; min-width:180px">
+                <span class="field-label">New password <span class="dim">12+ characters</span></span>
+                <input class="input" type="password" id="settingsPwNew" autocomplete="new-password" style="width:100%">
+            </label>
+            <button class="btn primary" id="settingsPwSave">Change password</button>
         </div>
-        <div style="flex:1; min-width:160px">
-            <div class="subtle" style="margin-bottom:4px">New password (12+ characters)</div>
-            <input class="input" type="password" id="settingsPwNew" style="width:100%">
+        <div class="field-hint" style="margin-top:10px">
+            There is one shared console account today - this changes the password everyone uses.
         </div>
-        <button class="btn" id="settingsPwSave">Change password</button>
-    </div>
-    <div class="dim" style="font-size:11px; margin-top:8px">
-        There is one shared console account today - this changes the password everyone uses.
     </div>
 </div>
 
-<div class="card" style="margin-bottom:14px">
+<div class="card" style="margin-bottom:16px">
     <div class="card-head"><h2>Audit Log</h2>
         <span class="spacer"></span><span class="subtle">every recorded console action, newest first</span></div>
-    <div class="card-body tight feed" id="settingsAudit"><div class="empty">Loading…</div></div>
+    <div class="card-body tight feed tall" id="settingsAudit"><div class="empty">Loading…</div></div>
 </div>
 
 <div class="card">
     <div class="card-head"><h2>Attributions</h2>
         <span class="spacer"></span><span class="subtle">third-party components this project uses</span></div>
-    <div class="card-body tight" id="settingsAttributions"><div class="empty">Loading…</div></div>
+    <div class="table-scroll" id="settingsAttributions"><div class="empty">Loading…</div></div>
 </div>
 {% endblock %}

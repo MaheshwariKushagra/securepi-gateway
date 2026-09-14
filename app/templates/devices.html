@@ -1,14 +1,17 @@
 {% extends "base.html" %}
 {% block content %}
 <div class="page-head">
-    <h1>Devices</h1>
-    <span class="subtle" id="deviceCount">—</span>
-    <div class="spacer"></div>
-    <button class="btn" id="hideTest">Hide test devices</button>
-    <input class="input" id="deviceSearch" placeholder="Search name, IP, hostname…">
-    <button class="btn icon-label" id="devicesExport" title="Export visible devices as CSV">
-        <svg class="icon" width="14" height="14"><use href="#i-download"/></svg> Export
-    </button>
+    <div class="page-title">
+        <h1>Devices <span class="count-pill" id="deviceCount">—</span></h1>
+        <p class="page-sub">Every device the gateway has seen, anchored by MAC or DHCP hostname</p>
+    </div>
+    <div class="page-actions">
+        <input class="input search" id="deviceSearch" placeholder="Search name, IP, hostname…" aria-label="Search devices">
+        <button class="btn" id="hideTest">Hide test devices</button>
+        <button class="btn icon-label" id="devicesExport" title="Export visible devices as CSV">
+            <svg class="icon" width="14" height="14"><use href="#i-download"/></svg> Export
+        </button>
+    </div>
 </div>
 
 <div class="card">

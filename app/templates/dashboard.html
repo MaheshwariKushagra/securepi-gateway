@@ -1,50 +1,71 @@
 {% extends "base.html" %}
 {% block content %}
 <div class="page-head">
-    <h1>Network Overview</h1>
-    <div class="spacer"></div>
-    <div class="seg" id="rangeSel">
-        <button data-range="1h">1H</button>
-        <button data-range="6h">6H</button>
-        <button data-range="24h">24H</button>
-        <button data-range="7d">7D</button>
+    <div class="page-title">
+        <h1>Network Overview</h1>
+        <p class="page-sub">Live traffic, filtering and detections across every device on the gateway</p>
+    </div>
+    <div class="page-actions">
+        <div class="seg" id="rangeSel" role="group" aria-label="Time range">
+            <button data-range="1h">1H</button>
+            <button data-range="6h">6H</button>
+            <button data-range="24h">24H</button>
+            <button data-range="7d">7D</button>
+        </div>
     </div>
 </div>
 
 <div class="kpis">
-    <div class="kpi"><span class="kpi-accent"></span>
-        <div class="kpi-main">
+    <div class="kpi">
+        <div class="kpi-top">
+            <span class="kpi-icon green"><svg class="icon" width="14" height="14"><use href="#i-monitor"/></svg></span>
             <div class="kpi-label">Devices Online</div>
+        </div>
+        <div class="kpi-main">
             <div class="kpi-value" id="kpiDevices">0</div>
             <div class="kpi-sub" id="kpiDevicesSub">—</div>
         </div>
+        <div class="kpi-meter"><div class="meter" id="kpiDevicesMeter"></div></div>
     </div>
-    <div class="kpi"><span class="kpi-accent"></span>
-        <div class="kpi-main">
+    <div class="kpi">
+        <div class="kpi-top">
+            <span class="kpi-icon"><svg class="icon" width="14" height="14"><use href="#i-pulse"/></svg></span>
             <div class="kpi-label">Events / min</div>
+        </div>
+        <div class="kpi-main">
             <div class="kpi-value" id="kpiEvents">0</div>
             <div class="kpi-sub" id="kpiEventsSub">—</div>
         </div>
         <div class="kpi-spark-wrap"><canvas id="sparkEvents"></canvas></div>
     </div>
-    <div class="kpi" id="kpiIncidentsTile"><span class="kpi-accent"></span>
-        <div class="kpi-main">
+    <div class="kpi" id="kpiIncidentsTile">
+        <div class="kpi-top">
+            <span class="kpi-icon red"><svg class="icon" width="14" height="14"><use href="#i-alert"/></svg></span>
             <div class="kpi-label">Open Incidents</div>
+        </div>
+        <div class="kpi-main">
             <div class="kpi-value" id="kpiIncidents">0</div>
             <div class="kpi-sub" id="kpiIncidentsSub">—</div>
         </div>
+        <div class="kpi-meter"><div class="meter" id="kpiIncidentsMeter"></div></div>
     </div>
-    <div class="kpi"><span class="kpi-accent"></span>
-        <div class="kpi-main">
+    <div class="kpi">
+        <div class="kpi-top">
+            <span class="kpi-icon amber"><svg class="icon" width="14" height="14"><use href="#i-ban"/></svg></span>
             <div class="kpi-label">Queries Blocked</div>
+        </div>
+        <div class="kpi-main">
             <div class="kpi-value" id="kpiBlocked">0</div>
             <div class="kpi-sub" id="kpiBlockedSub">—</div>
         </div>
         <div class="kpi-spark-wrap"><canvas id="sparkBlocked"></canvas></div>
     </div>
-    <div class="kpi"><span class="kpi-accent"></span>
-        <div class="kpi-main">
+    <div class="kpi">
+        <div class="kpi-top">
+            <span class="kpi-icon violet"><svg class="icon" width="14" height="14"><use href="#i-arrows"/></svg></span>
             <div class="kpi-label">Traffic</div>
+        </div>
+        <div class="kpi-main">
             <div class="kpi-value" id="kpiTraffic">—</div>
             <div class="kpi-sub" id="kpiTrafficSub">—</div>
         </div>
@@ -56,11 +77,12 @@
     <div class="card">
         <div class="card-head"><h2>Throughput</h2>
             <span class="spacer"></span><span class="subtle">KB/s, by direction</span></div>
-        <div class="card-body chart" style="height:230px"><canvas id="throughputChart"></canvas></div>
+        <div class="card-body chart" style="height:250px"><canvas id="throughputChart"></canvas></div>
     </div>
     <div class="card">
-        <div class="card-head"><h2>Open Incidents by Severity</h2></div>
-        <div class="card-body chart" style="height:230px"><canvas id="severityChart"></canvas></div>
+        <div class="card-head"><h2>Open Incidents by Severity</h2>
+            <span class="spacer"></span><a class="link subtle" href="/incidents">Triage →</a></div>
+        <div class="card-body chart" style="height:250px"><canvas id="severityChart"></canvas></div>
     </div>
 </div>
 
@@ -68,59 +90,61 @@
     <div class="card">
         <div class="card-head"><h2>DNS Filtering</h2>
             <span class="spacer"></span><span class="subtle">allowed vs blocked</span></div>
-        <div class="card-body chart" style="height:210px"><canvas id="dnsChart"></canvas></div>
+        <div class="card-body chart" style="height:250px"><canvas id="dnsChart"></canvas></div>
     </div>
     <div class="card">
         <div class="card-head"><h2>Detections by Signal</h2></div>
-        <div class="card-body" id="signalMix"><div class="empty">Loading…</div></div>
+        <div class="card-body feed fill" id="signalMix" style="max-height:250px"><div class="empty">Loading…</div></div>
     </div>
 </div>
 
 <div class="grid c3">
     <div class="card">
-        <div class="card-head"><h2>Top Talkers</h2></div>
-        <div class="card-body" id="topTalkers"><div class="empty">Loading…</div></div>
+        <div class="card-head"><h2>Top Talkers</h2>
+            <span class="spacer"></span><span class="subtle">by bytes</span></div>
+        <div class="card-body fill" id="topTalkers"><div class="empty">Loading…</div></div>
     </div>
     <div class="card">
-        <div class="card-head"><h2>Most Blocked Domains</h2></div>
-        <div class="card-body" id="topBlocked"><div class="empty">Loading…</div></div>
+        <div class="card-head"><h2>Most Blocked Domains</h2>
+            <span class="spacer"></span><a class="link subtle" href="/filtering">Filtering →</a></div>
+        <div class="card-body fill" id="topBlocked"><div class="empty">Loading…</div></div>
     </div>
     <div class="card">
         <div class="card-head"><h2>Top Destinations</h2>
             <span class="spacer"></span><span class="subtle">TLS SNI</span></div>
-        <div class="card-body" id="topDest"><div class="empty">Loading…</div></div>
+        <div class="card-body fill" id="topDest"><div class="empty">Loading…</div></div>
     </div>
 </div>
 
-<div class="grid c2">
+<div class="grid c2e">
     <div class="card">
         <div class="card-head"><h2>Protocol Mix</h2></div>
-        <div class="card-body" id="protocolMix"><div class="empty">Loading…</div></div>
+        <div class="card-body fill" id="protocolMix"><div class="empty">Loading…</div></div>
     </div>
     <div class="card">
         <div class="card-head"><h2>Event Types</h2></div>
-        <div class="card-body" id="eventTypes"><div class="empty">Loading…</div></div>
+        <div class="card-body fill" id="eventTypes"><div class="empty">Loading…</div></div>
     </div>
 </div>
 
 <div class="grid c2">
     <div class="card">
-        <div class="card-head"><h2>Live Event Stream</h2>
+        <div class="card-head"><h2><span class="live-dot" style="width:6px;height:6px"></span>Live Event Stream</h2>
             <span class="spacer"></span><span class="subtle">most recent 25</span></div>
-        <div class="card-body tight feed" id="eventFeed"><div class="empty">Loading…</div></div>
+        <div class="card-body tight feed" id="eventFeed" style="height:440px; max-height:none"><div class="empty">Loading…</div></div>
     </div>
     <div class="card">
         <div class="card-head"><h2>Active Incidents</h2>
-            <span class="spacer"></span><a class="link" href="/incidents">View all →</a></div>
-        <div class="card-body tight" id="activeIncidents"><div class="empty">Loading…</div></div>
+            <span class="spacer"></span><a class="link subtle" href="/incidents">View all →</a></div>
+        <div class="card-body tight feed" id="activeIncidents" style="height:440px; max-height:none"><div class="empty">Loading…</div></div>
     </div>
 </div>
 
-<div class="grid c2">
+<div class="grid c2e">
     <div class="card">
         <div class="card-head"><h2>Weekly Activity</h2>
             <span class="spacer"></span><span class="subtle">events by hour, last 7 days</span></div>
-        <div class="card-body">
+        <div class="card-body fill">
             <div class="heatmap">
                 <div class="heatmap-days" id="heatmapDays"></div>
                 <div class="heatmap-grid">
@@ -135,18 +159,19 @@
             </div>
             <div class="heatmap-legend">
                 <span>Quiet</span>
-                <span class="heatmap-cell" style="background:rgba(79,156,249,.14)"></span>
-                <span class="heatmap-cell" style="background:rgba(79,156,249,.4)"></span>
-                <span class="heatmap-cell" style="background:rgba(79,156,249,.65)"></span>
-                <span class="heatmap-cell" style="background:rgba(79,156,249,.89)"></span>
+                <span class="heatmap-cell"></span>
+                <span class="heatmap-cell" style="background:rgba(90,162,255,.3)"></span>
+                <span class="heatmap-cell" style="background:rgba(90,162,255,.55)"></span>
+                <span class="heatmap-cell" style="background:rgba(90,162,255,.92)"></span>
                 <span>Busy</span>
             </div>
         </div>
     </div>
     <div class="card">
         <div class="card-head"><h2>Pipeline Health</h2>
-            <span class="spacer"></span><span class="subtle">ingest &amp; detection engine</span></div>
-        <div class="card-body health-grid" id="healthGrid">
+            <span class="subtle">ingest &amp; detection engine</span>
+            <span class="spacer"></span><span class="chip neutral" id="healthSummary">checking…</span></div>
+        <div class="card-body fill health-grid" id="healthGrid">
             <div class="skeleton-row"><div class="skeleton" style="width:70%"></div><div class="skeleton" style="width:40%"></div></div>
         </div>
     </div>

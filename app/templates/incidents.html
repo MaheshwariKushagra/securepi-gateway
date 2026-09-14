@@ -1,26 +1,32 @@
 {% extends "base.html" %}
 {% block content %}
 <div class="page-head">
-    <h1>Incidents</h1>
-    <span class="subtle" id="incidentCount">—</span>
-    <div class="spacer"></div>
-    <div class="seg" id="sevFilter">
-        <button data-sev="" class="active">All <span class="dim" id="cntAll">0</span></button>
-        <button data-sev="high">High <span class="dim" id="cntHigh">0</span></button>
-        <button data-sev="medium">Medium <span class="dim" id="cntMedium">0</span></button>
-        <button data-sev="low">Low <span class="dim" id="cntLow">0</span></button>
+    <div class="page-title">
+        <h1>Incidents <span class="count-pill" id="incidentCount">—</span></h1>
+        <p class="page-sub">Detections raised by the correlation engine, each backed by its evidence chain</p>
     </div>
-    <div class="seg" id="statusFilter">
+    <div class="page-actions">
+        <input class="input search" id="incidentSearch" placeholder="Search incidents…" aria-label="Search incidents">
+        <button class="btn icon-label" id="incidentsExport" title="Export visible incidents as CSV">
+            <svg class="icon" width="14" height="14"><use href="#i-download"/></svg> Export
+        </button>
+    </div>
+</div>
+
+<div class="toolbar" style="margin-bottom:14px">
+    <div class="seg" id="sevFilter" role="group" aria-label="Severity">
+        <button data-sev="" class="active">All <span class="dim" id="cntAll">0</span></button>
+        <button data-sev="high"><span class="sev-dot high" style="width:6px;height:6px;margin-right:6px;box-shadow:none"></span>High <span class="dim" id="cntHigh">0</span></button>
+        <button data-sev="medium"><span class="sev-dot medium" style="width:6px;height:6px;margin-right:6px;box-shadow:none"></span>Medium <span class="dim" id="cntMedium">0</span></button>
+        <button data-sev="low"><span class="sev-dot low" style="width:6px;height:6px;margin-right:6px;box-shadow:none"></span>Low <span class="dim" id="cntLow">0</span></button>
+    </div>
+    <div class="seg" id="statusFilter" role="group" aria-label="Status">
         <button data-status="" class="active">All statuses</button>
         <button data-status="new">New</button>
         <button data-status="investigating">Investigating</button>
         <button data-status="resolved">Resolved</button>
         <button data-status="false_positive">False positive</button>
     </div>
-    <input class="input" id="incidentSearch" placeholder="Search incidents…">
-    <button class="btn icon-label" id="incidentsExport" title="Export visible incidents as CSV">
-        <svg class="icon" width="14" height="14"><use href="#i-download"/></svg> Export
-    </button>
 </div>
 
 <div class="card">

@@ -1,62 +1,87 @@
 {% extends "base.html" %}
 {% block content %}
 <div class="page-head">
-    <h1>Hunt</h1>
-    <span class="subtle">search flows, DNS and TLS across everything this console has collected, with pivots</span>
-</div>
-
-<div class="card" style="margin-bottom:14px">
-    <div class="card-head"><h2>Search</h2></div>
-    <div class="card-body" style="display:flex; gap:8px; flex-wrap:wrap">
-        <select class="input" id="huntDevice" style="flex:1; min-width:170px">
-            <option value="">All devices</option>
-            {% for d in devices %}
-            <option value="{{ d.id }}">{{ d.name }}</option>
-            {% endfor %}
-        </select>
-        <input class="input" id="huntIp" placeholder="IP address…" style="flex:1; min-width:150px">
-        <input class="input" id="huntDomain" placeholder="Domain contains…" style="flex:1; min-width:150px">
-        <input class="input" id="huntPort" placeholder="Port…" type="number" style="flex:1; min-width:100px">
-        <select class="input" id="huntEventType" style="flex:1; min-width:130px">
-            <option value="">All types</option>
-            <option value="flow">flow</option>
-            <option value="dns_query">dns_query</option>
-            <option value="dns">dns</option>
-            <option value="tls">tls</option>
-            <option value="alert">alert</option>
-        </select>
-        <select class="input" id="huntRange" style="flex:1; min-width:110px">
-            <option value="1h">Last hour</option>
-            <option value="6h">Last 6 hours</option>
-            <option value="24h">Last 24 hours</option>
-            <option value="7d">Last 7 days</option>
-        </select>
-        <button class="btn" id="huntSearch">Search</button>
-        <button class="btn" id="huntSaveSearch">Save this search</button>
+    <div class="page-title">
+        <h1>Hunt</h1>
+        <p class="page-sub">Search flows, DNS and TLS across everything this console has collected - click any domain to pivot</p>
     </div>
 </div>
 
-<div class="grid c3" style="margin-bottom:14px">
+<div class="card" style="margin-bottom:16px">
+    <div class="card-body">
+        <div class="grid" style="grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap:12px; margin-bottom:14px">
+            <label class="field">
+                <span class="field-label">Device</span>
+                <select class="input" id="huntDevice" style="min-width:0">
+                    <option value="">All devices</option>
+                    {% for d in devices %}
+                    <option value="{{ d.id }}">{{ d.name }}</option>
+                    {% endfor %}
+                </select>
+            </label>
+            <label class="field">
+                <span class="field-label">IP address</span>
+                <input class="input" id="huntIp" placeholder="e.g. 10.0.0.5" style="min-width:0">
+            </label>
+            <label class="field">
+                <span class="field-label">Domain contains</span>
+                <input class="input" id="huntDomain" placeholder="e.g. doubleclick" style="min-width:0">
+            </label>
+            <label class="field">
+                <span class="field-label">Port</span>
+                <input class="input" id="huntPort" placeholder="e.g. 443" type="number" style="min-width:0">
+            </label>
+            <label class="field">
+                <span class="field-label">Event type</span>
+                <select class="input" id="huntEventType" style="min-width:0">
+                    <option value="">All types</option>
+                    <option value="flow">flow</option>
+                    <option value="dns_query">dns_query</option>
+                    <option value="dns">dns</option>
+                    <option value="tls">tls</option>
+                    <option value="alert">alert</option>
+                </select>
+            </label>
+            <label class="field">
+                <span class="field-label">Time range</span>
+                <select class="input" id="huntRange" style="min-width:0">
+                    <option value="1h">Last hour</option>
+                    <option value="6h">Last 6 hours</option>
+                    <option value="24h">Last 24 hours</option>
+                    <option value="7d">Last 7 days</option>
+                </select>
+            </label>
+        </div>
+        <div class="toolbar" style="justify-content:flex-end">
+            <button class="btn" id="huntSaveSearch">Save this search</button>
+            <button class="btn primary" id="huntSearch">
+                <svg class="icon" width="14" height="14"><use href="#i-search"/></svg> Run search
+            </button>
+        </div>
+    </div>
+</div>
+
+<div class="grid c3">
     <div class="card">
         <div class="card-head"><h2>Top Talkers</h2>
             <span class="spacer"></span><span class="subtle">by bytes, this search</span></div>
-        <div class="card-body tight feed" id="huntTalkers"><div class="empty">Search to see results.</div></div>
+        <div class="card-body tight feed fill" id="huntTalkers" style="max-height:300px"><div class="empty">Search to see results.</div></div>
     </div>
     <div class="card">
         <div class="card-head"><h2>Top Destinations</h2>
             <span class="spacer"></span><span class="subtle">domain if known, else IP</span></div>
-        <div class="card-body tight feed" id="huntDestinations"><div class="empty">Search to see results.</div></div>
+        <div class="card-body tight feed fill" id="huntDestinations" style="max-height:300px"><div class="empty">Search to see results.</div></div>
     </div>
     <div class="card">
         <div class="card-head"><h2>Protocol Breakdown</h2></div>
-        <div class="card-body tight feed" id="huntProtocols"><div class="empty">Search to see results.</div></div>
+        <div class="card-body tight feed fill" id="huntProtocols" style="max-height:300px"><div class="empty">Search to see results.</div></div>
     </div>
 </div>
 
-<div class="card" style="margin-bottom:14px">
+<div class="card" style="margin-bottom:16px">
     <div class="card-head"><h2>Results</h2>
-        <span class="spacer"></span><span class="subtle" id="huntResultsSummary"></span></div>
-    <div class="card-body tight feed" id="huntResults" style="max-height:560px">
+        <span class="spacer"></span><span class="chip neutral nocap" id="huntResultsSummary">—</span></div>
+    <div class="card-body tight feed tall" id="huntResults">
         <div class="empty">Search above - default is everything in the last hour.</div>
     </div>
 </div>

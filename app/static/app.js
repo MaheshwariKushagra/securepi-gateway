@@ -127,6 +127,8 @@ async function refreshNotifications() {
         if (badge) { badge.textContent = openCount; badge.hidden = openCount === 0; }
         const navBadge = $("#navIncidentBadge");
         if (navBadge) { navBadge.textContent = openCount; navBadge.hidden = openCount === 0; }
+        const panelCount = $("#notifPanelCount");
+        if (panelCount) panelCount.textContent = openCount;
 
         renderNotifPanel(items);
 
@@ -155,12 +157,12 @@ function renderNotifPanel(items) {
     const el = $("#notifPanelBody");
     if (!el) return;
     if (!items.length) {
-        el.innerHTML = `<div class="empty" style="padding:22px 14px">No open incidents. The network is quiet.</div>`;
+        el.innerHTML = `<div class="empty"><span class="empty-icon">✓</span>No new incidents. The network is quiet.</div>`;
         return;
     }
     el.innerHTML = items.map(i => `
         <a class="notif-row" href="/incidents/${i.id}">
-            <span class="chip ${esc(i.severity)} dot" style="margin-top:3px"></span>
+            <span class="sev-dot ${esc(i.severity)}"></span>
             <span>
                 <div class="title">${esc(i.title)}</div>
                 <div class="meta">${esc(i.device || "network-wide")} · ${esc(i.age)} ago</div>
@@ -198,18 +200,31 @@ async function refreshSystem() {
                 value: s.age ? `checked ${s.age} ago` : "never run",
             })));
             hc.innerHTML = items.map(i => `
-                <div class="health-item">
-                    <span class="label"><span class="dot ${i.healthy ? "" : "bad"}"></span>${esc(i.label)}</span>
-                    <span class="value">${esc(i.value)}</span>
+                <div class="health-item ${i.healthy ? "" : "bad"}" title="${esc(i.value)}">
+                    <span class="dot ${i.healthy ? "" : "bad"}"></span>
+                    <span class="label">${esc(i.label)}</span>
+                    <span class="value">${esc(i.value.replace(/^(last write|checked) /, ""))}</span>
                 </div>`).join("");
+            const summary = $("#healthSummary");
+            if (summary) {
+                const bad = items.filter(i => !i.healthy).length;
+                summary.textContent = bad ? `${bad} of ${items.length} stale` : `${items.length} of ${items.length} healthy`;
+                summary.className = "chip dot nocap " + (bad ? "high" : "ok");
+            }
         }
     } catch (err) { console.error("system refresh failed", err); }
 }
 
 /* --------------------------------------------------------------- charts */
 
-const CHART_GRID = "rgba(34,43,60,.7)";
-const CHART_TEXT = "#5a6679";
+const CHART_GRID = "rgba(29,37,51,.85)";
+const CHART_TEXT = "#69758a";
+
+if (window.Chart) {
+    Chart.defaults.font.family = getComputedStyle(document.documentElement).getPropertyValue("--sans").trim()
+        || "-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif";
+    Chart.defaults.color = CHART_TEXT;
+}
 
 function baseChartOpts(extra) {
     return Object.assign({
@@ -220,13 +235,16 @@ function baseChartOpts(extra) {
         plugins: {
             legend: { display: false },
             tooltip: {
-                backgroundColor: "#161d2b",
-                borderColor: "#2e3a50",
+                backgroundColor: "rgba(19,26,37,.96)",
+                borderColor: "#2a3446",
                 borderWidth: 1,
-                titleColor: "#e6ecf5",
-                bodyColor: "#8d99ad",
+                titleColor: "#e8edf5",
+                bodyColor: "#97a2b5",
+                titleFont: { weight: "600", size: 12 },
+                bodyFont: { size: 11.5 },
                 padding: 10,
-                cornerRadius: 6,
+                cornerRadius: 8,
+                caretSize: 5,
                 displayColors: true,
                 boxWidth: 8, boxHeight: 8, usePointStyle: true,
             },
@@ -246,6 +264,30 @@ function baseChartOpts(extra) {
         },
     }, extra || {});
 }
+
+/* Draws the total in the middle of a doughnut chart - the one number a
+   severity donut is actually read for. Reads live data at draw time, so it
+   stays correct when upsertChart swaps the data in place. */
+const donutCenterLabel = {
+    id: "donutCenterLabel",
+    afterDatasetsDraw(chart) {
+        const meta = chart.getDatasetMeta(0);
+        if (!meta || !meta.data.length) return;
+        const total = chart.data.datasets[0].data.reduce((a, b) => a + (b || 0), 0);
+        const { x, y } = meta.data[0];
+        const ctx = chart.ctx;
+        ctx.save();
+        ctx.textAlign = "center";
+        ctx.textBaseline = "middle";
+        ctx.fillStyle = "#e8edf5";
+        ctx.font = `700 26px ${Chart.defaults.font.family}`;
+        ctx.fillText(total.toLocaleString(), x, y - 7);
+        ctx.fillStyle = CHART_TEXT;
+        ctx.font = `600 10px ${Chart.defaults.font.family}`;
+        ctx.fillText("OPEN", x, y + 14);
+        ctx.restore();
+    },
+};
 
 function gradient(ctx, hex) {
     const g = ctx.createLinearGradient(0, 0, 0, 190);
@@ -310,12 +352,27 @@ async function refreshDashboard() {
     $("#kpiTraffic").textContent = d.kpis.traffic;
     $("#kpiTrafficSub").textContent = `over ${d.range_label}`;
 
+    // Meters for the two tiles that have no time series of their own.
+    const devMeter = $("#kpiDevicesMeter");
+    if (devMeter) {
+        const pct = d.kpis.devices_total ? (d.kpis.devices_active / d.kpis.devices_total) * 100 : 0;
+        devMeter.innerHTML = `<span class="m-ok" style="width:${pct}%"></span>`;
+        devMeter.title = `${d.kpis.devices_active} of ${d.kpis.devices_total} known devices online`;
+    }
+    const incMeter = $("#kpiIncidentsMeter");
+    if (incMeter) {
+        const sev = d.severity, total = sev.high + sev.medium + sev.low;
+        incMeter.innerHTML = total ? ["high", "medium", "low"].filter(k => sev[k])
+            .map(k => `<span class="m-${k}" style="width:${(sev[k] / total) * 100}%"></span>`).join("") : "";
+        incMeter.title = `${sev.high} high · ${sev.medium} medium · ${sev.low} low`;
+    }
+
     $("#lastUpdated").textContent = d.generated_at;
 
-    renderSparkline("sparkEvents", "sparkEvents", d.series.events, "#4f9cf9");
+    renderSparkline("sparkEvents", "sparkEvents", d.series.events, "#5aa2ff");
     renderSparkline("sparkBlocked", "sparkBlocked", d.series.blocked, "#f2545b");
     const traffic = d.series.down_kbps.map((v, i) => v + (d.series.up_kbps[i] || 0));
-    renderSparkline("sparkTraffic", "sparkTraffic", traffic, "#7b5cf0");
+    renderSparkline("sparkTraffic", "sparkTraffic", traffic, "#8b6cf6");
 
     // Throughput
     const tctx = document.getElementById("throughputChart").getContext("2d");
@@ -324,11 +381,11 @@ async function refreshDashboard() {
         data: {
             labels: d.series.labels,
             datasets: [
-                { label: "Download", data: d.series.down_kbps, borderColor: "#4f9cf9",
-                  backgroundColor: gradient(tctx, "#4f9cf9"), fill: true, tension: .35,
+                { label: "Download", data: d.series.down_kbps, borderColor: "#5aa2ff",
+                  backgroundColor: gradient(tctx, "#5aa2ff"), fill: true, tension: .35,
                   pointRadius: 0, borderWidth: 2 },
-                { label: "Upload", data: d.series.up_kbps, borderColor: "#7b5cf0",
-                  backgroundColor: gradient(tctx, "#7b5cf0"), fill: true, tension: .35,
+                { label: "Upload", data: d.series.up_kbps, borderColor: "#8b6cf6",
+                  backgroundColor: gradient(tctx, "#8b6cf6"), fill: true, tension: .35,
                   pointRadius: 0, borderWidth: 2 },
             ],
         },
@@ -354,10 +411,10 @@ async function refreshDashboard() {
         data: {
             labels: d.series.labels,
             datasets: [
-                { label: "Allowed", data: d.series.allowed, backgroundColor: "#2e3a50",
-                  borderRadius: 2, stack: "dns" },
+                { label: "Allowed", data: d.series.allowed, backgroundColor: "#2a3549",
+                  hoverBackgroundColor: "#35425a", borderRadius: 3, stack: "dns", maxBarThickness: 22 },
                 { label: "Blocked", data: d.series.blocked, backgroundColor: "#f2545b",
-                  borderRadius: 2, stack: "dns" },
+                  borderRadius: 3, stack: "dns", maxBarThickness: 22 },
             ],
         },
         options: baseChartOpts({
@@ -381,12 +438,13 @@ async function refreshDashboard() {
             labels: ["High", "Medium", "Low"],
             datasets: [{
                 data: [d.severity.high, d.severity.medium, d.severity.low],
-                backgroundColor: ["#f2545b", "#f5a524", "#4f9cf9"],
-                borderColor: "#111722", borderWidth: 3, hoverOffset: 6,
+                backgroundColor: ["#f2545b", "#f5a524", "#5aa2ff"],
+                borderColor: "#0e131c", borderWidth: 3, hoverOffset: 6, borderRadius: 3,
             }],
         },
+        plugins: [donutCenterLabel],
         options: {
-            responsive: true, maintainAspectRatio: false, cutout: "66%",
+            responsive: true, maintainAspectRatio: false, cutout: "72%",
             animation: { duration: 400 },
             plugins: {
                 legend: { position: "bottom",
@@ -412,7 +470,7 @@ async function refreshDashboard() {
 
     renderBarList("#signalMix", d.signal_mix.map(s => ({
         label: s.signal.replace(/_/g, " "), value: s.count, weight: s.count,
-        tone: s.severity === "high" ? "high" : "",
+        tone: s.severity === "high" ? "high" : s.severity === "medium" ? "medium" : "",
     })), "No detections yet");
 
     renderBarList("#protocolMix", d.protocols.map(p => ({
@@ -420,7 +478,7 @@ async function refreshDashboard() {
     })), "No protocol data in this window");
 
     renderBarList("#eventTypes", d.event_types.map(e => ({
-        label: e.name.replace(/_/g, " "), value: e.count, weight: e.count,
+        label: e.name.replace(/_/g, " "), value: e.count.toLocaleString(), weight: e.count, tone: "violet",
     })), "No events yet");
 
     renderFeed(d.recent_events);
@@ -436,9 +494,9 @@ function renderHeatmap(grid, days) {
     rowsEl.innerHTML = grid.map(row => `<div class="heatmap-row">` + row.map(v => {
         const pct = v / max;
         const style = pct > 0
-            ? `style="background:rgba(79,156,249,${(0.14 + pct * 0.75).toFixed(2)})"`
+            ? `style="background:rgba(90,162,255,${(0.14 + pct * 0.78).toFixed(2)})"`
             : "";
-        return `<div class="heatmap-cell" ${style} title="${v.toLocaleString()} events"></div>`;
+        return `<div class="heatmap-cell" ${style} title="${v.toLocaleString()} event${v === 1 ? "" : "s"}"></div>`;
     }).join("") + `</div>`).join("");
     if (daysEl) daysEl.innerHTML = days.map(d => `<span>${esc(d)}</span>`).join("");
 }
@@ -470,7 +528,7 @@ function renderFeed(events) {
             <span class="mono dim">${esc(e.time)}</span>
             <span class="type-tag ${esc(e.type)}">${esc(e.type.replace("dns_query", "dns"))}</span>
             <span class="truncate mono" title="${esc(e.detail)}">${esc(e.detail)}</span>
-            <span class="dim" style="font-size:11px">${e.blocked ? '<span class="chip high">blocked</span>' : esc(e.device || e.src || "")}</span>
+            <span class="dim">${e.blocked ? '<span class="chip high">blocked</span>' : esc(e.device || e.src || "")}</span>
         </div>`).join("");
 }
 
@@ -481,13 +539,14 @@ function renderActiveIncidents(items) {
         el.innerHTML = `<div class="empty"><span class="empty-icon">✓</span>No open incidents. The network is quiet.</div>`;
         return;
     }
-    el.innerHTML = `<table><tbody>` + items.map(i => `
-        <tr class="clickable" onclick="location.href='/incidents/${i.id}'">
-            <td style="width:1%"><span class="chip ${esc(i.severity)} dot">${esc(i.severity)}</span></td>
-            <td><div>${esc(i.title)}</div>
-                <div class="dim" style="font-size:11px">${esc(i.device || "—")} · ${esc(i.evidence_count)} events</div></td>
-            <td class="num dim" style="width:1%; white-space:nowrap">${esc(i.age)} ago</td>
-        </tr>`).join("") + `</tbody></table>`;
+    el.innerHTML = items.map(i => `
+        <a class="inc-row ${esc(i.severity)}" href="/incidents/${i.id}">
+            <span class="inc-body">
+                <div class="inc-title" title="${esc(i.title)}">${esc(i.title)}</div>
+                <div class="inc-meta"><span class="sev-label ${esc(i.severity)}">${esc(i.severity)}</span> · ${esc(i.device || "network-wide")} · ${esc(i.evidence_count)} events</div>
+            </span>
+            <span class="inc-age">${esc(i.age)} ago</span>
+        </a>`).join("");
 }
 
 /* -------------------------------------------------------------- devices */
@@ -529,14 +588,15 @@ function renderDevices() {
     }
     tbody.innerHTML = rows.map(d => `
         <tr class="clickable" onclick="location.href='/devices/${d.id}'">
-            <td><span class="status-dot ${d.online ? "online" : "offline"}"></span>${esc(d.name)}
-                ${d.is_test ? '<span class="chip neutral" style="margin-left:6px">test</span>' : ""}</td>
+            <td style="white-space:nowrap"><span class="status-dot ${d.online ? "online" : "offline"}" title="${d.online ? "online" : "offline"}"></span><span class="row-title">${esc(d.name)}</span>
+                ${d.is_test ? '<span class="chip neutral" style="margin-left:6px">test</span>' : ""}
+                ${d.hostname && d.hostname !== d.name ? `<div class="row-sub mono" style="padding-left:16px">${esc(d.hostname)}</div>` : ""}</td>
             <td class="mono dim">${esc(d.ip || "—")}</td>
             <td>${d.randomized ? '<span class="chip neutral" title="Uses a randomized MAC">randomized</span>' : '<span class="dim">hardware</span>'}${d.mac_count > 1 ? `<span class="dim"> ·${d.mac_count} MACs</span>` : ""}</td>
             <td class="num">${esc(d.down_h)}</td>
             <td class="num">${esc(d.up_h)}</td>
             <td class="num">${d.dns.toLocaleString()}</td>
-            <td class="num">${d.blocked ? `<span style="color:var(--high)">${d.blocked.toLocaleString()}</span>` : '<span class="dim">0</span>'}</td>
+            <td class="num">${d.blocked ? `<span class="text-high">${d.blocked.toLocaleString()}</span>` : '<span class="dim">0</span>'}</td>
             <td class="num">${d.incidents ? `<span class="chip ${d.incidents_high ? "high" : "low"}">${d.incidents}</span>` : '<span class="dim">0</span>'}</td>
             <td class="num dim" style="white-space:nowrap">${esc(d.age)}</td>
         </tr>`).join("");
@@ -587,10 +647,10 @@ function renderIncidents() {
         return `
         <tr class="clickable" onclick="location.href='/incidents/${i.id}'">
             <td><span class="chip ${esc(i.severity)} dot">${esc(i.severity)}</span></td>
-            <td><div>${esc(i.title)}</div>
-                <div class="dim truncate" style="font-size:11px; max-width:460px">${esc(i.description || "")}</div></td>
-            <td class="mono dim">${esc(i.signal_type.replace(/_/g, " "))}</td>
-            <td>${i.device ? `<a class="link" href="/devices/${i.device_id}" onclick="event.stopPropagation()">${esc(i.device)}</a>` : '<span class="dim">—</span>'}</td>
+            <td><div class="row-title">${esc(i.title)}</div>
+                <div class="row-sub truncate incident-desc" title="${esc(i.description || "")}">${esc(i.description || "")}</div></td>
+            <td class="dim" style="white-space:nowrap"><span class="type-tag">${esc(i.signal_type.replace(/_/g, " "))}</span></td>
+            <td style="white-space:nowrap">${i.device ? `<a class="link" href="/devices/${i.device_id}" onclick="event.stopPropagation()">${esc(i.device)}</a>` : '<span class="dim">—</span>'}</td>
             <td><span class="status-pill ${meta.cls}">${esc(meta.label)}</span></td>
             <td class="num">${i.evidence_count}</td>
             <td class="num dim" style="white-space:nowrap">${esc(i.age)} ago</td>
@@ -781,24 +841,25 @@ function initDeviceFingerprint() {
                 d.category ? `<span class="chip neutral">${esc(d.category)}</span>` : "",
                 d.vendor ? `<span class="chip neutral">${esc(d.vendor)}</span>` : "",
                 d.os ? `<span class="chip neutral">${esc(d.os)}</span>` : "",
-                `<span class="chip ${d.confidence === "unknown" ? "neutral" : "ok"}">confidence: ${esc(d.confidence)}</span>`,
+                `<span class="chip dot ${d.confidence === "unknown" ? "neutral" : "ok"}">confidence: ${esc(d.confidence)}</span>`,
             ].join(" ");
 
             const evidenceRows = d.evidence.length
                 ? d.evidence.map(e => `
-                    <tr><td class="dim" style="width:1%; white-space:nowrap">${esc(e.source)}</td>
-                        <td class="truncate">${esc(e.detail)}</td></tr>`).join("")
+                    <tr><td><span class="type-tag">${esc(e.source.replace(/_/g, " "))}</span></td>
+                        <td class="truncate" title="${esc(e.detail)}">${esc(e.detail)}</td></tr>`).join("")
                 : `<tr><td class="empty">No fingerprinting evidence yet</td></tr>`;
 
             const suggestion = d.suggested_profile ? `
-                <div class="callout" style="margin-top:10px; display:flex; align-items:center; gap:10px">
-                    <div style="flex:1">Looks like a ${esc(d.suggested_profile.label)} device - apply that native-tracker profile?</div>
-                    <button class="btn" id="deviceFingerprintApplySuggestion">Apply</button>
+                <div class="callout row" style="margin-top:12px">
+                    <div>Looks like a ${esc(d.suggested_profile.label)} device - apply that native-tracker profile?</div>
+                    <button class="btn primary sm" id="deviceFingerprintApplySuggestion">Apply profile</button>
                 </div>` : "";
 
             wrap.innerHTML = `
-                <div style="margin-bottom:8px">${chips}</div>
-                <table><tbody>${evidenceRows}</tbody></table>
+                <div class="section-label">Fingerprint <span class="dim" style="text-transform:none; letter-spacing:0; font-weight:400">a second identity anchor, display only</span></div>
+                <div class="hero-tags" style="margin:0 0 8px">${chips}</div>
+                <table class="kv compact" style="margin:0 -16px; width:calc(100% + 32px)"><tbody>${evidenceRows}</tbody></table>
                 ${suggestion}`;
 
             const applyBtn = $("#deviceFingerprintApplySuggestion");
@@ -846,11 +907,11 @@ function initDeviceActivity() {
             data: {
                 labels: d.labels,
                 datasets: [
-                    { label: "Download", data: d.down_kbps, borderColor: "#4f9cf9",
-                      backgroundColor: gradient(ctx, "#4f9cf9"), fill: true, tension: .35,
+                    { label: "Download", data: d.down_kbps, borderColor: "#5aa2ff",
+                      backgroundColor: gradient(ctx, "#5aa2ff"), fill: true, tension: .35,
                       pointRadius: 0, borderWidth: 2 },
-                    { label: "Upload", data: d.up_kbps, borderColor: "#7b5cf0",
-                      backgroundColor: gradient(ctx, "#7b5cf0"), fill: true, tension: .35,
+                    { label: "Upload", data: d.up_kbps, borderColor: "#8b6cf6",
+                      backgroundColor: gradient(ctx, "#8b6cf6"), fill: true, tension: .35,
                       pointRadius: 0, borderWidth: 2 },
                 ],
             },
@@ -888,7 +949,7 @@ function initDeviceFiltering() {
             const res = await fetch(`/api/devices/${deviceId}/filtering`);
             if (!res.ok) throw new Error("request failed");
             const data = await res.json();
-            btn.textContent = data.filtering_enabled ? "On" : "Off";
+            btn.textContent = data.filtering_enabled ? "Enabled" : "Disabled";
             btn.classList.toggle("on", data.filtering_enabled);
             btn.dataset.enabled = data.filtering_enabled ? "1" : "0";
         } catch (err) {
@@ -926,7 +987,7 @@ function initDeviceQuarantine() {
             const res = await fetch(`/api/devices/${deviceId}/quarantine`);
             if (!res.ok) throw new Error("request failed");
             const data = await res.json();
-            btn.textContent = data.quarantined ? "Quarantined — click to release" : "Quarantine this device";
+            btn.textContent = data.quarantined ? "Quarantined · Release" : "Quarantine device";
             btn.classList.toggle("danger", data.quarantined);
             btn.dataset.quarantined = data.quarantined ? "1" : "0";
         } catch (err) {
@@ -975,11 +1036,11 @@ function initDeviceDpi() {
             const res = await fetch(`/api/devices/${deviceId}/dpi`);
             if (!res.ok) throw new Error("request failed");
             const data = await res.json();
-            btn.textContent = data.enrolled ? "Enrolled — click to unenroll" : "Enroll this device";
+            btn.textContent = data.enrolled ? "Enrolled · Unenroll" : "Enroll device";
             btn.classList.toggle("on", data.enrolled);
             btn.dataset.enrolled = data.enrolled ? "1" : "0";
             expiryEl.textContent = (data.enrolled && data.expires_in_s != null)
-                ? `— auto-unenrolls in ${humanizeSeconds(data.expires_in_s)}` : "";
+                ? `· auto-unenrolls in ${humanizeSeconds(data.expires_in_s)}` : "";
         } catch (err) {
             btn.textContent = "Unavailable";
         }
@@ -1041,9 +1102,10 @@ function initDeviceBlocked() {
                 return;
             }
             wrap.innerHTML = data.results.map(r => `
-                <div class="filter-row">
-                    <span class="mono truncate" title="${esc(r.reason || '')}">${esc(r.domain)}</span>
-                    <span class="dim" style="font-size:11px">${r.count}x · ${esc(r.age)} ago</span>
+                <div class="list-row">
+                    <span class="sev-dot high"></span>
+                    <span class="mono grow" title="${esc(r.reason || '')}">${esc(r.domain)}</span>
+                    <span class="dim">${r.count}× · ${esc(r.age)} ago</span>
                     <button class="btn" data-allow-1h="${esc(r.domain)}" title="Allow for this device for 1 hour">Allow 1h</button>
                     <button class="btn" data-allow="${esc(r.domain)}" title="Allow for this device from now on">Allow</button>
                 </div>`).join("");
@@ -1095,15 +1157,16 @@ function initDevicePrivacy() {
 
     function tier2Html(t2) {
         if (!t2.active) {
-            return `<div class="dim" style="font-size:12px; margin-top:10px">No HTTPS-inspected traffic for this device</div>`;
+            return `<div class="note" style="margin-top:12px">No HTTPS-inspected traffic for this device</div>`;
         }
         return `
-            <div style="display:flex; gap:20px; flex-wrap:wrap; margin-top:10px">
-                <div><span class="dim">Decrypted</span> <b>${t2.decrypt}</b></div>
-                <div><span class="dim">Passed through</span> <b>${t2.passthrough}</b></div>
-                <div><span class="dim">Ads stripped from</span> <b>${t2.ads_stripped}</b></div>
-                <div><span class="dim">Ad objects removed</span> <b>${t2.ads_removed}</b></div>
-                <div><span class="dim">Pinning bypasses</span> <b>${t2.pin_bypass}</b></div>
+            <div class="section-label" style="margin-top:16px">Tier 2 · HTTPS ad removal</div>
+            <div class="metrics">
+                <span class="metric"><span class="dim">Decrypted</span> <b>${t2.decrypt}</b></span>
+                <span class="metric"><span class="dim">Passed through</span> <b>${t2.passthrough}</b></span>
+                <span class="metric"><span class="dim">Ads stripped from</span> <b>${t2.ads_stripped}</b></span>
+                <span class="metric"><span class="dim">Ad objects removed</span> <b>${t2.ads_removed}</b></span>
+                <span class="metric"><span class="dim">Pinning bypasses</span> <b>${t2.pin_bypass}</b></span>
             </div>`;
     }
 
@@ -1116,19 +1179,18 @@ function initDevicePrivacy() {
             const topRows = t.top.length ? t.top.map(c => `
                 <tr><td class="truncate">${esc(c.company)}</td>
                     <td class="num dim">${c.contacted} contacted</td>
-                    <td class="num" style="color:${c.blocked ? "var(--high)" : "inherit"}">${c.blocked} blocked</td></tr>`).join("")
+                    <td class="num ${c.blocked ? "text-high" : ""}">${c.blocked} blocked</td></tr>`).join("")
                 : `<tr><td colspan="3" class="empty">No known tracker companies contacted</td></tr>`;
             wrap.innerHTML = `
-                <div style="display:flex; gap:24px; flex-wrap:wrap; margin-bottom:10px">
-                    <div><div class="dim" style="font-size:11px">Blocked</div>
-                        <div style="font-size:20px; font-weight:600">${d.dns_blocked.toLocaleString()} / ${d.dns_total.toLocaleString()}
-                            <span class="dim" style="font-size:13px">(${d.block_pct}%)</span></div></div>
-                    <div><div class="dim" style="font-size:11px">Tracking companies</div>
-                        <div style="font-size:20px; font-weight:600">${t.companies_blocked} blocked of ${t.companies_contacted}</div></div>
-                    <div><div class="dim" style="font-size:11px">Estimated data saved</div>
-                        <div style="font-size:20px; font-weight:600">${d.savings.estimated_bytes_h}</div></div>
+                <div class="stats boxed" style="margin-bottom:14px">
+                    <div class="stat"><div class="stat-label">Queries blocked</div>
+                        <div class="stat-value">${d.dns_blocked.toLocaleString()} <span class="dim">/ ${d.dns_total.toLocaleString()} · ${d.block_pct}%</span></div></div>
+                    <div class="stat"><div class="stat-label">Tracking companies</div>
+                        <div class="stat-value">${t.companies_blocked} <span class="dim">blocked of ${t.companies_contacted}</span></div></div>
+                    <div class="stat"><div class="stat-label">Estimated data saved</div>
+                        <div class="stat-value">${d.savings.estimated_bytes_h}</div></div>
                 </div>
-                <table><tbody>${topRows}</tbody></table>
+                <table class="compact" style="margin:0 -16px; width:calc(100% + 32px)"><tbody>${topRows}</tbody></table>
                 ${tier2Html(d.tier2)}`;
         } catch (err) {
             wrap.innerHTML = `<div class="empty">Could not load privacy report</div>`;
@@ -1146,13 +1208,13 @@ function initDeviceProfiles() {
 
     function renderApplied(applied) {
         if (!applied.length) {
-            appliedEl.innerHTML = `<div class="dim" style="font-size:11px">No native-tracker profile applied</div>`;
+            appliedEl.innerHTML = `<div class="note">No native-tracker profile applied</div>`;
             return;
         }
         appliedEl.innerHTML = applied.map(a => `
-            <div class="filter-row">
-                <span class="chip ok">${esc(a.label)}</span>
-                <span class="dim">${a.rule_count} domain${a.rule_count === 1 ? "" : "s"} blocked</span>
+            <div class="list-row" style="padding:6px 0">
+                <span class="chip ok dot nocap">${esc(a.label)}</span>
+                <span class="dim grow">${a.rule_count} domain${a.rule_count === 1 ? "" : "s"} blocked</span>
                 <button class="btn danger" data-remove-profile="${esc(a.vendor)}">Remove</button>
             </div>`).join("");
     }
@@ -1238,14 +1300,15 @@ function initDpiOnboarding() {
                 return;
             }
             caEl.innerHTML = `
-                <div style="display:flex; gap:24px; flex-wrap:wrap; margin-bottom:10px">
-                    <div><div class="dim" style="font-size:11px">Valid until</div>
-                        <div style="font-size:14px">${esc(d.not_after || "unknown")}</div></div>
-                    <div><div class="dim" style="font-size:11px">Fingerprint (SHA-256)</div>
-                        <div class="mono truncate" style="font-size:11px; max-width:280px">${esc(d.fingerprint_sha256 || "unknown")}</div></div>
-                    <div><a class="btn" href="${esc(d.download_url)}" target="_blank" rel="noopener">Download CA certificate</a></div>
+                <div class="stats" style="margin-bottom:14px; align-items:center">
+                    <div class="stat"><div class="stat-label">Valid until</div>
+                        <div class="stat-value sm">${esc(d.not_after || "unknown")}</div></div>
+                    <div class="stat" style="min-width:0"><div class="stat-label">Fingerprint (SHA-256)</div>
+                        <div class="stat-value sm mono truncate" style="max-width:320px" title="${esc(d.fingerprint_sha256 || "")}">${esc(d.fingerprint_sha256 || "unknown")}</div></div>
+                    <div style="margin-left:auto"><a class="btn primary" href="${esc(d.download_url)}" target="_blank" rel="noopener">
+                        <svg class="icon" width="14" height="14"><use href="#i-download"/></svg> Download CA certificate</a></div>
                 </div>
-                <div class="dim" style="font-size:12px; line-height:1.6">
+                <div class="prose">
                     Install this certificate as a trusted root on a device before enrolling it, or its HTTPS
                     traffic will fail to load once enrolled: iOS/macOS - open the link, Install in Settings ›
                     General › VPN & Device Management, then enable full trust under Certificate Trust Settings.
@@ -1253,7 +1316,7 @@ function initDpiOnboarding() {
                     Encryption. Windows - open the .crt file, install into "Trusted Root Certification
                     Authorities" for the local machine.
                 </div>
-                <div class="callout" style="margin-top:10px">
+                <div class="callout warn" style="margin-top:12px">
                     Remove this certificate from any device that is no longer enrolled below - the gateway
                     can't see or remind you of this itself, since it has no visibility into a device's own
                     certificate store.
@@ -1276,8 +1339,8 @@ function initDpiOnboarding() {
                 const t = DPI_TRUST_META[e.trust] || DPI_TRUST_META.unverified;
                 return `
                 <div class="filter-row">
-                    <span class="chip ${t.cls}">${t.label}</span>
-                    <span class="truncate">${e.device_id ? `<a href="/devices/${e.device_id}">${esc(e.name)}</a>` : esc(e.name)}</span>
+                    <span class="chip dot ${t.cls}">${t.label}</span>
+                    <span class="grow">${e.device_id ? `<a href="/devices/${e.device_id}">${esc(e.name)}</a>` : esc(e.name)}</span>
                     <span class="dim mono">${esc(e.ip)}</span>
                     <span class="dim">${e.expires_in_s != null ? `expires in ${humanizeSeconds(e.expires_in_s)}` : ""}</span>
                 </div>`;
@@ -1302,7 +1365,7 @@ function initDpiOnboarding() {
                 <div class="filter-row">
                     <span class="chip neutral">bypassed</span>
                     <span class="truncate">${p.device_id ? `<a href="/devices/${p.device_id}">${esc(p.name)}</a>` : esc(p.name)}</span>
-                    <span class="dim mono truncate">${esc(p.sni)}</span>
+                    <span class="dim mono grow">${esc(p.sni)}</span>
                     <span class="dim">expires in ${humanizeSeconds(p.expires_in_s)}</span>
                 </div>`).join("");
         } catch (err) {
@@ -1319,14 +1382,14 @@ function initDpiOnboarding() {
             const d = await res.json();
             if (d.failing) {
                 badge.textContent = "Privacy scope: check failed - Tier 2 disabled";
-                badge.className = "chip high";
+                badge.className = "chip dot high";
                 if (d.incident_id) badge.onclick = () => location.href = `/incidents/${d.incident_id}`;
             } else if (d.stale) {
                 badge.textContent = d.last_checked ? `Privacy scope: stale (last checked ${d.age} ago)` : "Privacy scope: not yet checked";
-                badge.className = "chip neutral";
+                badge.className = "chip dot neutral";
             } else {
                 badge.textContent = `Privacy scope verified ${d.age} ago`;
-                badge.className = "chip ok";
+                badge.className = "chip dot ok";
             }
         } catch (err) {
             $("#privacyScopeBadge").textContent = "Privacy scope: unknown";
@@ -1342,12 +1405,12 @@ function initDpiOnboarding() {
             const d = await res.json();
             if (d.healthy) {
                 badge.textContent = "Effectiveness: OK";
-                badge.className = "chip ok";
+                badge.className = "chip dot ok";
             } else {
                 const first = d.affected[0];
                 badge.textContent = `Effectiveness: check ${esc(first.name)}` +
                     (d.affected.length > 1 ? ` (+${d.affected.length - 1} more)` : "");
-                badge.className = "chip high";
+                badge.className = "chip dot high";
                 badge.onclick = () => location.href = `/incidents/${first.incident_id}`;
             }
         } catch (err) {
@@ -1387,15 +1450,15 @@ function initWeeklyReport() {
             $("#reportWeekRange").textContent = `${d.week_start} to ${d.week_end}`;
             $("#reportIncidentTotal").textContent = `${d.incident_count} incidents this week`;
 
-            $("#reportTactics").innerHTML = d.incidents_by_tactic.length ? d.incidents_by_tactic.map(t => `
-                <div class="feed-row"><span class="truncate">${esc(t.tactic)}</span><span class="dim">${t.count}</span></div>
-            `).join("") : `<div class="empty">No incidents this week.</div>`;
+            renderBarList("#reportTactics", d.incidents_by_tactic.map(t => ({
+                label: t.tactic, value: t.count, weight: t.count, tone: "violet",
+            })), "No incidents this week.");
 
             $("#reportRiskiest").innerHTML = d.riskiest_devices.length ? d.riskiest_devices.map(r => `
-                <div class="feed-row">
+                <div class="list-row">
                     <span class="chip ${r.band} dot">${esc(r.band)}</span>
-                    <span class="truncate">${esc(r.name)}</span>
-                    <span class="dim">score ${r.score}</span>
+                    <span class="grow row-title">${esc(r.name)}</span>
+                    <span class="dim">score <b>${r.score}</b></span>
                 </div>`).join("") : `<div class="empty">No devices carried risk this week.</div>`;
 
             const a = d.adblock;
@@ -1406,16 +1469,16 @@ function initWeeklyReport() {
                 <dt>Estimated savings</dt><dd>${esc(a.savings.estimated_bytes_h)} <span class="dim">(${esc(a.savings.method)})</span></dd>`;
 
             $("#reportTrackers").innerHTML = a.trackers.top.length ? `
-                <div class="feed-row"><span><strong>Top tracker companies</strong></span></div>
+                <div class="list-row head"><span class="grow">Top tracker companies</span><span class="dim">contacted · blocked</span></div>
                 ${a.trackers.top.map(t => `
-                <div class="feed-row"><span class="truncate">${esc(t.company)}</span><span class="dim">${t.contacted}x contacted, ${t.blocked}x blocked</span></div>
+                <div class="list-row"><span class="grow">${esc(t.company)}</span><span class="dim">${t.contacted}× contacted · <span class="${t.blocked ? "text-high" : ""}">${t.blocked}× blocked</span></span></div>
                 `).join("")}` : "";
 
             $("#reportTier2").innerHTML = a.tier2.active ? `
-                <div class="feed-row"><span><strong>Tier 2 (HTTPS ad removal)</strong></span></div>
-                <div class="feed-row"><span>Ads removed</span><span class="dim">${a.tier2.ads_removed}</span></div>
-                <div class="feed-row"><span>Decrypted / passthrough / path-blocked</span><span class="dim">${a.tier2.decrypt} / ${a.tier2.passthrough} / ${a.tier2.path_blocked}</span></div>
-            ` : `<div class="feed-row"><span class="dim">No Tier 2 activity this week.</span></div>`;
+                <div class="list-row head"><span class="grow">Tier 2 (HTTPS ad removal)</span></div>
+                <div class="list-row"><span class="grow">Ads removed</span><b>${a.tier2.ads_removed}</b></div>
+                <div class="list-row"><span class="grow">Decrypted / passthrough / path-blocked</span><b>${a.tier2.decrypt} / ${a.tier2.passthrough} / ${a.tier2.path_blocked}</b></div>
+            ` : `<div class="list-row"><span class="dim">No Tier 2 activity this week.</span></div>`;
 
             $("#reportPlatform").innerHTML = `
                 <dt>Events ingested</dt><dd>${d.platform.events_ingested.toLocaleString()}</dd>
@@ -1476,24 +1539,24 @@ function initHunt() {
                 `${d.events.length} shown - ${d.range_label}`;
 
             wrap.innerHTML = d.events.length ? d.events.map(e => `
-                <div class="feed-row">
+                <div class="feed-row with-device">
                     <span class="mono dim">${esc(e.time)}</span>
                     <span class="type-tag ${esc(e.type)}">${esc(e.type.replace('dns_query', 'dns'))}</span>
-                    ${e.device ? `<span class="dim" style="font-size:11px">${esc(e.device)}</span>` : ""}
+                    <span class="device" title="${esc(e.device || "")}">${esc(e.device || "—")}</span>
                     <span class="truncate mono" data-pivot-domain="${esc(e.detail)}" title="click to pivot">${esc(e.detail)}</span>
-                    <span class="dim" style="font-size:11px">${e.blocked ? `<span class="chip high">blocked</span>` : esc(e.extra || "")}</span>
+                    <span class="dim">${e.blocked ? `<span class="chip high">blocked</span>` : esc(e.extra || "")}</span>
                 </div>`).join("") : `<div class="empty">No events matched this search.</div>`;
 
             $("#huntTalkers").innerHTML = d.top_talkers.length ? d.top_talkers.map(t => `
-                <div class="feed-row"><span class="truncate">${esc(t.device)}</span><span class="dim">${esc(t.bytes_label)}</span></div>
+                <div class="list-row"><span class="grow">${esc(t.device)}</span><span class="dim">${esc(t.bytes_label)}</span></div>
             `).join("") : `<div class="empty">No device-attributed traffic in this search.</div>`;
 
             $("#huntDestinations").innerHTML = d.top_destinations.length ? d.top_destinations.map(x => `
-                <div class="feed-row"><span class="truncate mono" data-pivot-domain="${esc(x.name)}" title="click to pivot">${esc(x.name)}</span><span class="dim">${x.count}x</span></div>
+                <div class="list-row"><span class="grow mono" data-pivot-domain="${esc(x.name)}" title="click to pivot">${esc(x.name)}</span><span class="dim">${x.count}×</span></div>
             `).join("") : `<div class="empty">No destinations in this search.</div>`;
 
             $("#huntProtocols").innerHTML = d.protocol_breakdown.length ? d.protocol_breakdown.map(p => `
-                <div class="feed-row"><span class="truncate">${esc(p.type)}</span><span class="dim">${p.count}x</span></div>
+                <div class="list-row"><span class="type-tag ${esc(p.type)}">${esc(p.type.replace('dns_query', 'dns').replace(/_/g, ' '))}</span><span class="grow"></span><span class="dim">${p.count}×</span></div>
             `).join("") : `<div class="empty">No events in this search.</div>`;
         } catch (err) {
             wrap.innerHTML = `<div class="empty">Search failed.</div>`;
@@ -1508,9 +1571,10 @@ function initHunt() {
             if (!res.ok) throw new Error("request failed");
             const d = await res.json();
             box.innerHTML = d.searches.length ? d.searches.map(s => `
-                <div class="feed-row" data-search-id="${s.id}">
-                    <span class="truncate">${esc(s.name)}</span>
-                    <span class="dim" style="font-size:11px">${esc(s.created_at)}</span>
+                <div class="list-row" data-search-id="${s.id}">
+                    <svg class="icon dim" width="14" height="14"><use href="#i-search"/></svg>
+                    <span class="grow row-title" title="${esc(s.name)}">${esc(s.name)}</span>
+                    <span class="dim">${esc(s.created_at)}</span>
                     <button class="btn" data-load-search>Load</button>
                     <button class="btn danger" data-delete-search>Delete</button>
                 </div>`).join("") : `<div class="empty">No saved searches yet.</div>`;
@@ -1594,13 +1658,18 @@ function initSettings() {
             if (!res.ok) throw new Error("request failed");
             const d = await res.json();
             wrap.innerHTML = Object.entries(d.settings).map(([key, s]) => `
-                <div class="filter-row" data-key="${esc(key)}">
-                    <span class="truncate" title="${esc(s.help)}">${esc(s.label)}</span>
+                <div class="filter-row setting-row" data-key="${esc(key)}">
+                    <div class="setting-label">
+                        <div class="row-title">${esc(s.label)}</div>
+                        <div class="row-sub" title="${esc(s.help)}">${esc(s.help || key)}</div>
+                    </div>
                     <input class="input" type="number" step="any" value="${s.value}"
-                           min="${s.min ?? ''}" max="${s.max ?? ''}" style="width:100px" data-setting-input>
-                    ${s.overridden ? `<span class="chip neutral" title="default: ${s.default}">custom</span>` : `<span class="dim">default</span>`}
-                    <button class="btn" data-setting-save>Save</button>
-                    ${s.overridden ? `<button class="btn danger" data-setting-reset>Reset</button>` : ""}
+                           min="${s.min ?? ''}" max="${s.max ?? ''}" data-setting-input aria-label="${esc(s.label)}">
+                    <span class="setting-status">${s.overridden ? `<span class="chip low" title="default: ${s.default}">custom</span>` : `<span class="dim">default</span>`}</span>
+                    <span class="setting-actions">
+                        ${s.overridden ? `<button class="btn ghost" data-setting-reset>Reset</button>` : ""}
+                        <button class="btn" data-setting-save>Save</button>
+                    </span>
                 </div>`).join("");
         } catch (err) {
             wrap.innerHTML = `<div class="empty">Could not load settings</div>`;
@@ -1652,7 +1721,7 @@ function initSettings() {
         try {
             const res = await fetch("/api/settings/retention");
             const d = await res.json();
-            el.innerHTML = `<div class="callout">${esc(d.note)}</div>`;
+            el.innerHTML = `<div class="callout warn">${esc(d.note)}</div>`;
         } catch (err) {
             el.innerHTML = `<div class="empty">Could not load</div>`;
         }
@@ -1664,7 +1733,7 @@ function initSettings() {
         try {
             const res = await fetch("/api/settings/channels");
             const d = await res.json();
-            el.innerHTML = `<div class="callout">${esc(d.note)}</div>`;
+            el.innerHTML = `<div class="callout warn">${esc(d.note)}</div>`;
         } catch (err) {
             el.innerHTML = `<div class="empty">Could not load</div>`;
         }
@@ -1678,11 +1747,11 @@ function initSettings() {
             const d = await res.json();
             if (!d.entries.length) { el.innerHTML = `<div class="empty">No audited actions yet</div>`; return; }
             el.innerHTML = d.entries.map(e => `
-                <div class="feed-row">
+                <div class="audit-row">
                     <span class="mono dim">${esc(e.ts)}</span>
-                    <span class="type-tag">${esc(e.action)}</span>
-                    <span class="truncate mono" title="${esc(e.detail || '')}">${esc(e.target || '')}</span>
-                    <span class="dim" style="font-size:11px">${esc(e.detail || '')}</span>
+                    <span class="type-tag" title="${esc(e.action)}">${esc(e.action)}</span>
+                    <span class="truncate mono" style="max-width:100%" title="${esc(e.target || '')}">${esc(e.target || '')}</span>
+                    <span class="detail" title="${esc(e.detail || '')}">${esc(e.detail || '')}</span>
                 </div>`).join("");
         } catch (err) {
             el.innerHTML = `<div class="empty">Could not load audit log</div>`;
@@ -1695,12 +1764,12 @@ function initSettings() {
         try {
             const res = await fetch("/api/attributions");
             const d = await res.json();
-            el.innerHTML = `<table><tbody>${d.attributions.map(a => `
+            el.innerHTML = `<table><thead><tr><th>Component</th><th>Version</th><th>License</th><th>Role in this project</th></tr></thead><tbody>${d.attributions.map(a => `
                 <tr>
-                    <td><a class="link" href="${esc(a.url)}" target="_blank" rel="noopener">${esc(a.name)}</a></td>
-                    <td class="dim">${esc(a.version)}</td>
-                    <td><span class="chip neutral">${esc(a.license)}</span></td>
-                    <td class="dim truncate">${esc(a.role)}</td>
+                    <td style="white-space:nowrap"><a class="link" href="${esc(a.url)}" target="_blank" rel="noopener">${esc(a.name)}</a></td>
+                    <td class="dim mono" style="white-space:nowrap">${esc(a.version)}</td>
+                    <td><span class="chip neutral nocap">${esc(a.license)}</span></td>
+                    <td class="dim">${esc(a.role)}</td>
                 </tr>`).join("")}</tbody></table>`;
         } catch (err) {
             el.innerHTML = `<div class="empty">Could not load attributions</div>`;
@@ -1842,25 +1911,25 @@ function initResolverQuality() {
             const cur = d.current, lat = d.latency;
             const needsTuning = !cur.cache_optimistic || !cur.dnssec_enabled || cur.upstream_dns.length < 2;
             wrap.innerHTML = `
-                <div style="display:flex; gap:24px; flex-wrap:wrap; margin-bottom:10px">
-                    <div><div class="dim" style="font-size:11px">DNS latency (uncached), p50 / p95</div>
-                        <div style="font-size:18px; font-weight:600">${lat.p50_ms ?? "—"} ms / ${lat.p95_ms ?? "—"} ms</div>
-                        <div class="dim" style="font-size:11px">${lat.sample_size} samples, ${esc(d.range_label)}</div></div>
-                    <div><div class="dim" style="font-size:11px">Upstream resolvers</div>
-                        <div class="mono" style="font-size:13px">${cur.upstream_dns.map(esc).join(", ") || "none configured"}</div>
-                        <div class="dim" style="font-size:11px">mode: ${esc(cur.upstream_mode)}</div></div>
-                    <div><div class="dim" style="font-size:11px">Cache</div>
-                        <div style="font-size:13px">${cur.cache_enabled ? "on" : "off"}${cur.cache_optimistic ? ", optimistic" : ""}</div></div>
-                    <div><div class="dim" style="font-size:11px">DNSSEC</div>
-                        <div style="font-size:13px">${cur.dnssec_enabled ? "on" : "off"}</div></div>
+                <div class="stats boxed" style="margin-bottom:12px">
+                    <div class="stat"><div class="stat-label">Latency p50 / p95</div>
+                        <div class="stat-value">${lat.p50_ms ?? "—"} <span class="dim">ms</span> / ${lat.p95_ms ?? "—"} <span class="dim">ms</span></div>
+                        <div class="stat-sub">uncached · ${lat.sample_size} samples, ${esc(d.range_label)}</div></div>
+                    <div class="stat"><div class="stat-label">Upstream resolvers</div>
+                        <div class="stat-value sm mono" style="font-size:12px; overflow-wrap:anywhere">${cur.upstream_dns.map(esc).join(", ") || "none configured"}</div>
+                        <div class="stat-sub">mode: ${esc(cur.upstream_mode)}</div></div>
+                    <div class="stat"><div class="stat-label">Cache</div>
+                        <div class="stat-value sm"><span class="chip dot ${cur.cache_enabled ? "ok" : "neutral"}">${cur.cache_enabled ? "on" : "off"}</span>${cur.cache_optimistic ? ` <span class="dim">optimistic</span>` : ""}</div></div>
+                    <div class="stat"><div class="stat-label">DNSSEC</div>
+                        <div class="stat-value sm"><span class="chip dot ${cur.dnssec_enabled ? "ok" : "neutral"}">${cur.dnssec_enabled ? "on" : "off"}</span></div></div>
                 </div>
                 ${needsTuning ? `
-                    <div class="callout" style="display:flex; align-items:center; gap:10px; flex-wrap:wrap">
-                        <div style="flex:1">Recommended: optimistic caching, DNSSEC, and at least two independent
+                    <div class="callout row warn">
+                        <div>Recommended: optimistic caching, DNSSEC, and at least two independent
                             upstream resolvers queried in parallel. This changes DNS resolution for every device
                             on the network at once.</div>
-                        <button class="btn" id="applyResolverTuning">Apply recommended tuning</button>
-                    </div>` : `<div class="dim" style="font-size:12px">Resolver is already tuned.</div>`}`;
+                        <button class="btn primary" id="applyResolverTuning">Apply recommended tuning</button>
+                    </div>` : `<div class="note" style="display:flex; align-items:center; gap:6px"><span class="sev-dot" style="background:var(--ok)"></span>Resolver is already tuned.</div>`}`;
             const applyBtn = $("#applyResolverTuning");
             if (applyBtn) applyBtn.addEventListener("click", async () => {
                 if (!confirm("This changes DNS resolution for every device on the network right now. Continue?")) return;
@@ -1893,7 +1962,7 @@ function initFilteringAnalytics() {
         if (!domains.length) { wrap.innerHTML = `<div class="empty">Nothing blocked in this range</div>`; return; }
         wrap.innerHTML = `<table><tbody>${domains.map(d => `
             <tr><td class="mono truncate">${esc(d.domain)}</td>
-                <td class="num" style="color:var(--high)">${d.count}</td></tr>`).join("")}</tbody></table>`;
+                <td class="num text-high">${d.count}</td></tr>`).join("")}</tbody></table>`;
     }
 
     function renderTopClients(clients) {
@@ -1903,7 +1972,7 @@ function initFilteringAnalytics() {
             <tr class="clickable" onclick="location.href='/devices/${c.id}'">
                 <td class="truncate">${esc(c.name)}</td>
                 <td class="num dim">${c.blocked} / ${c.dns_total}</td>
-                <td class="num" style="color:var(--high)">${c.block_pct}%</td>
+                <td class="num text-high">${c.block_pct}%</td>
             </tr>`).join("")}</tbody></table>`;
     }
 
@@ -1914,7 +1983,7 @@ function initFilteringAnalytics() {
         wrap.innerHTML = `<table><tbody>${t.top.map(c => `
             <tr><td class="truncate">${esc(c.company)}</td>
                 <td class="num dim">${c.contacted} contacted</td>
-                <td class="num" style="color:${c.blocked ? "var(--high)" : "inherit"}">${c.blocked} blocked</td></tr>`).join("")}</tbody></table>`;
+                <td class="num ${c.blocked ? "text-high" : ""}">${c.blocked} blocked</td></tr>`).join("")}</tbody></table>`;
     }
 
     function renderTier2(t2) {
@@ -1924,14 +1993,14 @@ function initFilteringAnalytics() {
             return;
         }
         wrap.innerHTML = `
-            <div style="display:flex; gap:20px; flex-wrap:wrap">
-                <div><span class="dim">Decrypted</span> <b>${t2.decrypt}</b></div>
-                <div><span class="dim">Passed through</span> <b>${t2.passthrough}</b></div>
-                <div><span class="dim">Ads stripped from</span> <b>${t2.ads_stripped}</b> <span class="dim">responses</span></div>
-                <div><span class="dim">Blocked paths</span> <b>${t2.path_blocked}</b></div>
-                <div><span class="dim">Ad objects removed</span> <b>${t2.ads_removed}</b></div>
-                <div><span class="dim">TLS handshake failures</span> <b>${t2.tls_failed}</b></div>
-                <div><span class="dim">Pinning bypasses</span> <b>${t2.pin_bypass}</b></div>
+            <div class="metrics">
+                <span class="metric"><span class="dim">Decrypted</span> <b>${t2.decrypt}</b></span>
+                <span class="metric"><span class="dim">Passed through</span> <b>${t2.passthrough}</b></span>
+                <span class="metric"><span class="dim">Ads stripped from</span> <b>${t2.ads_stripped}</b> <span class="dim">responses</span></span>
+                <span class="metric"><span class="dim">Blocked paths</span> <b>${t2.path_blocked}</b></span>
+                <span class="metric"><span class="dim">Ad objects removed</span> <b>${t2.ads_removed}</b></span>
+                <span class="metric"><span class="dim">TLS handshake failures</span> <b>${t2.tls_failed}</b></span>
+                <span class="metric"><span class="dim">Pinning bypasses</span> <b>${t2.pin_bypass}</b></span>
             </div>`;
     }
 
@@ -1946,7 +2015,7 @@ function initFilteringAnalytics() {
                     labels: d.series.labels,
                     datasets: [
                         { label: "Block %", data: d.series.block_pct, borderColor: "#f2545b",
-                          backgroundColor: "rgba(242,84,91,.12)", fill: true, tension: .35,
+                          backgroundColor: gradient(el.getContext("2d"), "#f2545b"), fill: true, tension: .35,
                           pointRadius: 0, borderWidth: 2 },
                     ],
                 },
@@ -1996,13 +2065,13 @@ function initFiltering() {
         $("#filterListCount").textContent = filters.length + " list" + (filters.length === 1 ? "" : "s");
         if (!filters.length) { listsEl.innerHTML = `<div class="empty">No blocklists configured</div>`; return; }
         const anyStale = filters.some(f => (healthByUrl[f.url] || {}).stale);
-        const callout = anyStale ? `<div class="callout" style="margin-bottom:8px">
+        const callout = anyStale ? `<div class="callout warn" style="margin:8px 16px">
             One or more blocklists haven't synced in over ${LIST_STALE_AFTER_H}h - check their source URL.</div>` : "";
         listsEl.innerHTML = callout + filters.map(f => {
             const h = healthByUrl[f.url];
             const badges = h ? `
                 <span class="dim" title="share of all blocks we've matched back to a list">${h.share_pct}% of blocks</span>
-                <span class="${h.stale ? "chip high" : "dim"}" title="${h.age_h != null ? h.age_h + "h since last sync" : "sync age unknown"}">${h.age_h != null ? Math.round(h.age_h) + "h old" : "sync age unknown"}</span>
+                <span class="${h.stale ? "chip high nocap" : "dim"}" title="${h.age_h != null ? h.age_h + "h since last sync" : "sync age unknown"}">${h.age_h != null ? Math.round(h.age_h) + "h old" : "sync age unknown"}</span>
                 ${h.low_contribution ? `<span class="chip neutral" title="Blocked very little of what we've actually seen">low contribution</span>` : ""}` : "";
             return `
             <div class="filter-row">
@@ -2020,8 +2089,8 @@ function initFiltering() {
         if (!rules.length) { rulesEl.innerHTML = `<div class="empty">No custom rules yet</div>`; return; }
         rulesEl.innerHTML = rules.map(r => `
             <div class="filter-row">
-                <span class="chip ${r.action === "block" ? "high" : "ok"}">${r.action}</span>
-                <span class="url truncate" title="${esc(r.rule)}">${esc(r.domain || r.rule)}</span>
+                <span class="chip dot ${r.action === "block" ? "high" : "ok"}">${r.action}</span>
+                <span class="url mono grow" style="color:var(--text)" title="${esc(r.rule)}">${esc(r.domain || r.rule)}</span>
                 <button class="btn danger" data-rule-remove="${esc(r.rule)}">Remove</button>
             </div>`).join("");
     }
@@ -2032,7 +2101,7 @@ function initFiltering() {
             if (!res.ok) throw new Error("request failed");
             const data = await res.json();
             renderRules(data.rules);
-            masterBtn.textContent = data.enabled ? "Filtering: on" : "Filtering: off";
+            masterBtn.textContent = data.enabled ? "Filtering is on" : "Filtering is off";
             masterBtn.classList.toggle("on", data.enabled);
             masterBtn.dataset.enabled = data.enabled ? "1" : "0";
 
@@ -2168,12 +2237,12 @@ function initFiltering() {
             const r = await res.json();
             const scope = deviceId ? checkDevSel.options[checkDevSel.selectedIndex].text : "the whole network";
             resultEl.innerHTML = `
-                <div class="filter-row">
-                    <span class="chip ${r.blocked ? "high" : "ok"}">${r.blocked ? "Blocked" : "Allowed"}</span>
-                    <span class="mono truncate">${esc(r.domain || domain)}</span>
-                    <span class="dim">for ${esc(scope)}</span>
-                </div>
-                <div class="dim" style="font-size:12px; margin-top:6px; padding-left:2px">
+                <div class="callout ${r.blocked ? "high" : ""}" style="margin:4px 16px 10px; ${r.blocked ? "" : "border-color:var(--ok-line); border-left-color:var(--ok); background:linear-gradient(90deg, rgba(47,191,113,.08), rgba(47,191,113,.02))"}">
+                    <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin-bottom:4px">
+                        <span class="chip dot ${r.blocked ? "high" : "ok"}">${r.blocked ? "Blocked" : "Allowed"}</span>
+                        <span class="mono" style="color:var(--text)">${esc(r.domain || domain)}</span>
+                        <span class="dim">for ${esc(scope)}</span>
+                    </div>
                     ${esc(r.reason)}${r.rule ? ` — <span class="mono">${esc(r.rule)}</span>` : ""}
                     ${r.cname ? ` — via CNAME to <span class="mono">${esc(r.cname)}</span>` : ""}
                 </div>`;
@@ -2206,7 +2275,7 @@ function initFiltering() {
                     <span class="mono dim">${r.time}</span>
                     <span class="type-tag ${r.type}">dns</span>
                     <span class="truncate mono" title="${esc(r.detail)}">${esc(r.detail)}</span>
-                    <span class="dim" style="font-size:11px">${r.blocked ? '<span class="chip high">blocked</span>' : esc(r.device || "")}</span>
+                    <span class="dim">${r.blocked ? '<span class="chip high">blocked</span>' : esc(r.device || "")}</span>
                 </div>`).join("");
         } catch (err) {
             results.innerHTML = `<div class="empty">Search failed</div>`;
@@ -2216,6 +2285,24 @@ function initFiltering() {
     $("#qlDomain").addEventListener("keydown", (e) => { if (e.key === "Enter") runQuerylogSearch(); });
 
     loadStatus();
+}
+
+/* ------------------------------------------------------- section subnav */
+
+/* Highlights the jump link for whichever section is currently at the top
+   of the viewport on long pages (Filtering). Purely presentational. */
+function initSubnav() {
+    const nav = $(".subnav");
+    if (!nav || !("IntersectionObserver" in window)) return;
+    const links = $$("a[href^='#']", nav);
+    const targets = links.map(a => document.getElementById(a.getAttribute("href").slice(1))).filter(Boolean);
+    const visible = new Map();
+    const obs = new IntersectionObserver(entries => {
+        entries.forEach(en => visible.set(en.target.id, en.isIntersecting));
+        const current = targets.find(t => visible.get(t.id));
+        if (current) links.forEach(a => a.classList.toggle("active", a.getAttribute("href") === "#" + current.id));
+    }, { rootMargin: "-120px 0px -55% 0px" });
+    targets.forEach(t => obs.observe(t));
 }
 
 /* ------------------------------------------------------- command palette */
@@ -2323,6 +2410,7 @@ function refresh() {
 
 document.addEventListener("DOMContentLoaded", () => {
     initSidebar();
+    initSubnav();
     initDeviceRename();
     initDeviceBaseline();
     initDeviceFingerprint();

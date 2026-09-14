@@ -120,6 +120,18 @@ SETTINGS_SCHEMA = {
         "label": "DNS-bypass window",
         "help": "How far back (seconds) the DNS-bypass signal looks when counting bypass attempts.",
     },
+    "ids_alert_threshold": {
+        "default": 3, "type": int, "min": 1, "max": 1000,
+        "label": "IDS-alert threshold",
+        "help": "Suricata/ET alerts of the same category from one device, in the signal's "
+                "window, before it's flagged. Keeps a single stray alert from becoming an "
+                "incident on its own; a sustained pattern still gets one, per category.",
+    },
+    "ids_alert_window_seconds": {
+        "default": 300, "type": int, "min": 30, "max": 3600,
+        "label": "IDS-alert window",
+        "help": "How far back (seconds) the IDS-alert signal looks when counting alerts of one category.",
+    },
     "dedup_window_seconds": {
         "default": 600, "type": int, "min": 60, "max": 86400,
         "label": "Incident dedup window",

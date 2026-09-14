@@ -80,6 +80,17 @@ def insert_dns_query(conn, device_id, dns_rrname, ts, blocked=0, src_ip="10.10.0
     conn.commit()
 
 
+def insert_alert(conn, device_id, alert_category, ts, alert_signature="ET TEST signature",
+                  alert_severity=2, src_ip="10.10.0.50", dest_ip="203.0.113.5"):
+    conn.execute(
+        "INSERT INTO events (ts, ts_iso, source, event_type, src_ip, dest_ip, device_id,"
+        " alert_signature, alert_category, alert_severity)"
+        " VALUES (?, 'test', 'suricata', 'alert', ?, ?, ?, ?, ?, ?)",
+        (ts, src_ip, dest_ip, device_id, alert_signature, alert_category, alert_severity),
+    )
+    conn.commit()
+
+
 def insert_tls(conn, device_id, tls_sni, ts, src_ip="10.10.0.50"):
     conn.execute(
         "INSERT INTO events (ts, ts_iso, source, event_type, src_ip, device_id, tls_sni)"

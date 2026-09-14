@@ -30,11 +30,16 @@ rather than a guessed technique:
   TA0005), the same treatment volume_anomaly gets for the same reason:
   real evidence of evaded filtering, not reliable evidence of intent.
 - new_device is an informational registry event, not an attack pattern.
+- ids_other (ENHANCEMENT-PLAN.md step 2.3's fallback bucket for every
+  Suricata/ET alert category not in signature_taxonomy.py's curated set -
+  overwhelmingly "Misc activity"-style informational alerts on this
+  gateway's own real traffic) gets no technique tag, for the same
+  distinct-hit-volume-isn't-intent reasoning as malicious_domain.
 - adblock_ineffective is about this project's OWN ad-removal degrading,
   not about anything the network did - it has no attacker-side technique
   at all.
 
-The three signals that DO get a tag:
+The signals that DO get a tag:
 
 - port_scan -> Discovery / T1046 Network Service Discovery. A clean,
   well-established match: many distinct ports touched on one host in a
@@ -55,6 +60,21 @@ The three signals that DO get a tag:
   bytes doesn't match one specific exfiltration technique - it is one of
   the few externally observable signs that tactic can leave, which is
   why NDR products flag it at the tactic level rather than pretending to
+  have identified a technique.
+- The seven curated ids_* signal types (ENHANCEMENT-PLAN.md step 2.3,
+  full mapping in app/signature_taxonomy.py, confirmed against this
+  gateway's own real `/etc/suricata/classification.config`): ids_trojan,
+  ids_c2 and ids_c2_domain all map to Command and Control / TA0011 (the
+  latter two tactic-level only - "malware C2 traffic" and "contacted a
+  known C2 domain" don't each pin down one specific technique the way
+  trojan-activity's T1071 Application Layer Protocol does).
+  ids_exploit_kit -> Initial Access / T1189 Drive-by Compromise.
+  ids_shellcode -> Execution / T1203 Exploitation for Client Execution.
+  ids_privilege_gain -> Privilege Escalation / TA0004 (tactic-level -
+  Suricata's admin/user, attempted/successful classtypes all collapse
+  into this one signal_type, and don't share one specific technique).
+  ids_credential_theft -> Credential Access / TA0006 (tactic-level - many
+  distinct techniques could produce this classtype).
   have identified a technique.
 """
 
@@ -100,6 +120,43 @@ ATTACK_MAPPING = {
                 "default for privacy reasons unrelated to evading this network's own "
                 "filtering, so a specific technique tag would overstate a single device's intent.",
     },
+    "ids_trojan": {
+        "tactic": "Command and Control", "tactic_id": "TA0011",
+        "technique": "Application Layer Protocol", "technique_id": "T1071",
+        "url": "https://attack.mitre.org/techniques/T1071/",
+    },
+    "ids_c2": {
+        "tactic": "Command and Control", "tactic_id": "TA0011",
+        "technique": None, "technique_id": None,
+        "url": "https://attack.mitre.org/tactics/TA0011/",
+    },
+    "ids_c2_domain": {
+        "tactic": "Command and Control", "tactic_id": "TA0011",
+        "technique": None, "technique_id": None,
+        "url": "https://attack.mitre.org/tactics/TA0011/",
+    },
+    "ids_exploit_kit": {
+        "tactic": "Initial Access", "tactic_id": "TA0001",
+        "technique": "Drive-by Compromise", "technique_id": "T1189",
+        "url": "https://attack.mitre.org/techniques/T1189/",
+    },
+    "ids_shellcode": {
+        "tactic": "Execution", "tactic_id": "TA0002",
+        "technique": "Exploitation for Client Execution", "technique_id": "T1203",
+        "url": "https://attack.mitre.org/techniques/T1203/",
+    },
+    "ids_privilege_gain": {
+        "tactic": "Privilege Escalation", "tactic_id": "TA0004",
+        "technique": None, "technique_id": None,
+        "url": "https://attack.mitre.org/tactics/TA0004/",
+    },
+    "ids_credential_theft": {
+        "tactic": "Credential Access", "tactic_id": "TA0006",
+        "technique": None, "technique_id": None,
+        "url": "https://attack.mitre.org/tactics/TA0006/",
+    },
+    # ids_other deliberately absent - see the module docstring's "does NOT
+    # get a tag" section.
 }
 
 PLAYBOOKS = {
@@ -189,6 +246,82 @@ PLAYBOOKS = {
             "other device regardless. If this is unexpected for the device (e.g. a device that "
             "should have no reason to seek out a specific third-party DoH provider), investigate "
             "further before deciding.",
+    },
+    "ids_trojan": {
+        "what_it_means": "Suricata/ET Open flagged network traffic matching a known trojan "
+            "signature from this device - a signature-based match against published rules, "
+            "not this project's own correlation logic.",
+        "how_to_check": "Open the evidence chain and read the specific signature name(s) in "
+            "the description. Search the signature text online (most ET signature names are "
+            "self-describing or documented) to understand exactly what pattern matched.",
+        "recommended_action": "Treat as a real finding until ruled out - quarantine the device "
+            "and investigate. If it turns out to be a known-benign match against this specific "
+            "signature (some are broad), mark false positive.",
+    },
+    "ids_c2": {
+        "what_it_means": "Suricata/ET Open flagged traffic matching known malware command-and-"
+            "control patterns from this device.",
+        "how_to_check": "Open the evidence chain for the destination and the specific "
+            "signature(s) matched.",
+        "recommended_action": "Quarantine and investigate - this classtype has no common "
+            "benign explanation the way an INFO-level alert might.",
+    },
+    "ids_c2_domain": {
+        "what_it_means": "This device contacted a domain Suricata/ET Open's threat intelligence "
+            "identifies as known command-and-control infrastructure.",
+        "how_to_check": "Open the evidence chain for the exact domain and destination IP.",
+        "recommended_action": "Quarantine and investigate. Also consider blocking the domain "
+            "network-wide from the Filtering page.",
+    },
+    "ids_exploit_kit": {
+        "what_it_means": "Suricata/ET Open flagged traffic matching a known exploit-kit "
+            "delivery pattern - typically a compromised or malicious website attempting to "
+            "silently exploit a browser vulnerability.",
+        "how_to_check": "Open the evidence chain for the destination and what the device was "
+            "doing just before this fired (recent browsing history in Hunt/explorer).",
+        "recommended_action": "Quarantine and investigate, especially if the device's browser "
+            "or OS is out of date.",
+    },
+    "ids_shellcode": {
+        "what_it_means": "Suricata/ET Open detected a byte pattern in traffic consistent with "
+            "executable shellcode - often a sign of an exploit attempt in progress.",
+        "how_to_check": "Open the evidence chain for the destination and protocol involved.",
+        "recommended_action": "Quarantine and investigate. Shellcode-pattern matches can "
+            "occasionally be triggered by legitimate binary data (e.g. some file transfers) - "
+            "check what was actually being transferred before concluding it's malicious.",
+    },
+    "ids_privilege_gain": {
+        "what_it_means": "Suricata/ET Open flagged an attempted or successful privilege-"
+            "escalation pattern involving this device, either as source or target.",
+        "how_to_check": "Open the evidence chain for the destination, port and specific "
+            "signature(s) - this covers several related classtypes (attempted/successful, "
+            "user/admin), and which one matters for how urgent this is.",
+        "recommended_action": "Investigate promptly, especially for a 'successful' classtype. "
+            "Check whether the device or destination is one you administer directly.",
+    },
+    "ids_credential_theft": {
+        "what_it_means": "Suricata/ET Open flagged a pattern consistent with successful "
+            "credential theft involving this device.",
+        "how_to_check": "Open the evidence chain for the destination and specific signature.",
+        "recommended_action": "Treat as urgent - quarantine and change any credentials that "
+            "may have been exposed, independent of this console.",
+    },
+    "ids_other": {
+        "what_it_means": "Suricata/ET Open raised enough alerts of the same category from this "
+            "device, in a short window, to cross the threshold - but this category isn't one of "
+            "the specific patterns this project curates a plain name and ATT&CK tag for (see "
+            "app/signature_taxonomy.py). On this gateway's own real traffic, the overwhelming "
+            "majority of alerts are ET's own INFO-priority categories like \"Misc activity\" "
+            "(e.g. STUN/WebRTC traffic, or a TLS SNI matching a known DNS-over-HTTPS provider) - "
+            "genuinely low-value on their own, which is exactly why they're grouped and "
+            "thresholded rather than raised one-by-one.",
+        "how_to_check": "Open the evidence chain and read the raw category name and specific "
+            "signature(s) in the description - the severity shown reflects Suricata's own "
+            "priority for this category, not a per-incident judgment.",
+        "recommended_action": "For a recognized low-value pattern, mark false positive - "
+            "step 2.7's suppression rules (once built) will let a verdict like this apply "
+            "automatically going forward instead of needing to be repeated. For anything "
+            "unfamiliar, investigate before deciding.",
     },
     "adblock_ineffective": {
         "what_it_means": "SecurePi's own YouTube ad-removal (the Tier 2 mitmproxy-based DPI "

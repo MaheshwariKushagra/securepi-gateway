@@ -37,6 +37,7 @@ import sqlite3
 import time
 
 import settings
+import signature_taxonomy
 
 DB_PATH = "/opt/securepi/securepi.db"
 
@@ -535,6 +536,98 @@ def dns_bypass_signal(conn):
 
 
 # --------------------------------------------------------------------------
+# Signal 1e: IDS alerts -> incidents (ENHANCEMENT-PLAN.md step 2.3)
+#
+# Suricata/ET Open alerts have been ingested since day one (source=
+# 'suricata', event_type='alert') but never turned into anything the
+# console shows - the exact gap ENHANCEMENT-PLAN.md §1.1 names ("Alerts
+# ingested but never used"). This signal closes it, using
+# signature_taxonomy.classify() to turn alert_category into a plain name,
+# our own severity, and (only where genuinely warranted) an ATT&CK tag.
+#
+# Grouped by (device_id, alert_category), NOT just device_id: a device
+# with an ongoing burst of low-value "Misc activity" alerts (confirmed
+# live on this gateway's own real traffic - see signature_taxonomy.py's
+# docstring) must not have a genuinely severe, unrelated trojan alert
+# quietly merged into that same incident thread by raise_incident's own
+# dedup (which merges on device_id + signal_type only). Each curated
+# category in signature_taxonomy.TAXONOMY gets its own signal_type for
+# exactly this reason - the same reasoning slow_scan_signal above already
+# uses to keep its two shapes as separate incident types, just applied to
+# a larger, still bounded and fully known set (signature_taxonomy.
+# ALL_SIGNAL_TYPES) rather than two.
+# --------------------------------------------------------------------------
+# Window and threshold both live in app/settings.py - see port_scan_signal's
+# own note above.
+
+
+def ids_alert_signal(conn):
+    now = time.time()
+    window = settings.get(conn, "ids_alert_window_seconds")
+    since = now - window
+    threshold = settings.get(conn, "ids_alert_threshold")
+
+    rows = conn.execute(
+        """
+        SELECT device_id, alert_category, count(*) n,
+               min(ts) first_seen, max(ts) last_seen,
+               max(alert_severity) alert_severity
+          FROM events
+         WHERE event_type = 'alert'
+           AND device_id IS NOT NULL
+           AND ts > ?
+         GROUP BY device_id, alert_category
+        HAVING n >= ?
+        """,
+        (since, threshold),
+    ).fetchall()
+
+    fired = 0
+    for r in rows:
+        # max() only because alert_severity is 1:1 with alert_category in
+        # Suricata's own classification.config - it never actually varies
+        # within a group, so which aggregate wins doesn't matter (the same
+        # reasoning app/webapp.py's signal_mix query already documents for
+        # incidents.severity).
+        signal_type, plain_name, severity, attack = signature_taxonomy.classify(
+            r["alert_category"], r["alert_severity"])
+        top = conn.execute(
+            """SELECT alert_signature, count(*) n FROM events
+                WHERE event_type='alert' AND device_id=? AND alert_category=? AND ts > ?
+                GROUP BY alert_signature ORDER BY n DESC LIMIT 5""",
+            (r["device_id"], r["alert_category"], since),
+        ).fetchall()
+        event_ids = [
+            e["id"] for e in conn.execute(
+                """SELECT id FROM events WHERE event_type='alert' AND device_id=?
+                     AND alert_category=? AND ts > ? ORDER BY ts""",
+                (r["device_id"], r["alert_category"], since),
+            )
+        ]
+        attack_note = ""
+        if attack:
+            tactic, tactic_id, technique, technique_id, _url = attack
+            attack_note = " ATT&CK: %s (%s)%s." % (
+                tactic, tactic_id, " / %s (%s)" % (technique, technique_id) if technique else "")
+        raise_incident(
+            conn, r["device_id"], signal_type, severity,
+            title="%s (%d alerts)" % (plain_name, r["n"]),
+            description=(
+                "%d Suricata alerts in category \"%s\" over %d seconds. Top signatures: %s.%s"
+                % (r["n"], r["alert_category"], window,
+                   ", ".join("%s (x%d)" % (t["alert_signature"], t["n"]) for t in top),
+                   attack_note)
+            ),
+            first_seen=r["first_seen"], last_seen=r["last_seen"],
+            event_ids=event_ids,
+        )
+        fired += 1
+
+    set_window_start(conn, "ids_alert", now)
+    return fired
+
+
+# --------------------------------------------------------------------------
 # Signal 2: brute force
 #
 # Many short connections from one device to one auth-service port on one
@@ -896,7 +989,7 @@ def behavioral_baseline_signal(conn):
 
 
 SIGNALS = [port_scan_signal, network_sweep_signal, slow_scan_signal, dns_bypass_signal,
-           brute_force_signal, malicious_domain_signal, new_device_signal,
+           ids_alert_signal, brute_force_signal, malicious_domain_signal, new_device_signal,
            adblock_effectiveness_signal, behavioral_baseline_signal]
 
 

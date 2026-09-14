@@ -235,3 +235,25 @@ ran.
 8 new unit tests for `dns_bypass_signal` (nftables-only, canary-only, SNI-only, and all three combined toward one threshold), 10 new unit tests for `flatten_nft_log`/`read_nft_log`/the watermark helpers (subprocess mocked, the same pattern `ReadAghApiTests` already uses for AdGuard's API). 2 new settings (`dns_bypass_threshold`, `dns_bypass_window_seconds`). ATT&CK: tagged at the tactic level only (Defense Evasion, TA0005) - full reasoning in `app/playbooks.py`, the same caution `malicious_domain`'s own docstring already applies to a signal with a real benign-majority risk.
 
 `make deploy` (app code) and manual `rsync` (the firewall config and refresh script, deliberately kept out of the automated `make deploy` target - see the Makefile's own comment) both used. All three app services restarted clean; journal clear throughout every step above.
+
+### 2.3 — IDS alerts → taxonomy → incidents
+
+Closes the exact gap `ENHANCEMENT-PLAN.md` §1.1 names: "Suricata metadata only. Alerts ingested but never used." New `app/signature_taxonomy.py` maps Suricata's own `alert_category` text - confirmed against this gateway's real `/etc/suricata/classification.config`, not guessed - to a plain name, our severity, and (for 7 curated, genuinely specific categories) an ATT&CK tag. Everything else falls to a generic `ids_other` bucket, severity taken from Suricata's own numeric priority.
+
+**A real finding from the live data, before writing any code:** the gateway's own accumulated alert history (2.5 days) is almost entirely `Misc activity` (86 events) and `Generic Protocol Command Decode` (43) - both ET's own lowest-priority ("INFO") classification, mostly STUN/WebRTC observations and one recurring "ET INFO Observed Cloudflare DNS over HTTPS Domain" signature (interesting: an existing ET rule already does some of what step 2.2's `dns_bypass_signal` does independently, via TLS SNI). This is the same shape of problem `malicious_domain`'s own G3 finding describes for blocklist-hit volume - which is why `ids_alert_signal` groups by **(device, alert_category)**, not just device: a burst of low-value `Misc activity` alerts must never let a genuinely severe, unrelated trojan alert get silently merged into that same incident thread by `raise_incident`'s dedup (keyed on device + signal_type). Each curated category gets its own `signal_type` for exactly this reason - the same pattern `slow_scan_signal` (step 2.1) already established with two variants, extended here to a larger but still bounded, fully known set.
+
+**A second real finding, also from the live data:** 5 real alerts in category `Potential Corporate Privacy Violation` (priority 1) turned out, on inspection, to be `ET INFO DNS Query for TOR Hidden Domain .onion Accessible Via TOR` - a genuinely interesting, specific, actionable finding despite ET's own "INFO" naming, and priority 1 (→ our "high" severity) is the right call for it. This wasn't added as its own curated category (the `policy-violation` classtype covers many unrelated signatures, not just this one), but it's exactly the kind of case the generic fallback's "use Suricata's own priority, don't invent a name" design is meant to get right without needing to be anticipated in advance - confirmed here against a real example, not just reasoned about.
+
+**Live verification:**
+
+| Check | Result |
+|---|---|
+| `make deploy` | Clean; journal clear across all three services |
+| `ids_alert_signal` run against the real database | No crash. Correctly did **not** fire on the real historical alert data (73/10/5 alerts across three categories for a real past device) - all of it is 36+ hours old, far outside the signal's window (300s default, 3600s max) |
+| Settings validation | Attempting to widen the window past its own schema max (3600s) to force-test against that old data correctly raised `SettingsError` - the validator did its job; no override was left behind (confirmed unchanged afterward) |
+| Fresh live-fire attempt | A port scan and a `.onion` DNS query were run through the isolated `ns_attacker` harness (the same safe mechanism used all session) to try to trigger a **new** real alert. Neither did, given this gateway's currently-enabled Suricata ruleset and the harness's limited reachability - recorded honestly as not achieved this session, rather than claimed |
+| Unit tests | 8 curated-category tests, fallback tests, dedup-by-category test, `classify()` tests, and a regression test confirming every `signature_taxonomy.ALL_SIGNAL_TYPES` entry has a `playbooks.py` entry |
+
+The signal is correctly wired, deployed, and will pick up any qualifying activity going forward - the specific gap is a fresh, real, *security-relevant* trigger within this session's environment, the same class of limitation already recorded for steps 2.1's live namespace constraints and 2.2's `ap0` reachability gap.
+
+11 new unit tests (`tests/test_signature_taxonomy.py` + additions to `tests/test_correlation.py`). 2 new settings (`ids_alert_threshold`, `ids_alert_window_seconds`). 8 new signal_types (7 curated + `ids_other`), each with a `playbooks.py` entry.

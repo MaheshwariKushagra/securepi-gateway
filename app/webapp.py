@@ -152,7 +152,7 @@ RANGES = {
 # be before the console calls it unhealthy rather than just "hasn't found
 # anything lately". Engine cycles every 15s (see engine.py); 4 missed cycles
 # is a real problem, not noise.
-SIGNALS = ["port_scan", "network_sweep", "slow_scan", "dns_bypass", "brute_force",
+SIGNALS = ["port_scan", "network_sweep", "slow_scan", "dns_bypass", "ids_alert", "brute_force",
            "malicious_domain", "new_device", "adblock_ineffective", "volume_anomaly"]
 
 # Step 6.1's own exit criterion calls this "the learning badge until 7

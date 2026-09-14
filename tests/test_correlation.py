@@ -318,6 +318,77 @@ class DnsBypassSignalTests(unittest.TestCase):
         self.assertEqual(rows[0]["evidence_count"], 5)
 
 
+class IdsAlertSignalTests(unittest.TestCase):
+    """ENHANCEMENT-PLAN.md step 2.3: turns Suricata/ET alerts into
+    incidents via signature_taxonomy.classify()."""
+
+    def test_fires_on_enough_curated_category_alerts(self):
+        conn = fixtures.temp_db()
+        fixtures.insert_device(conn, 1)
+        now = time.time()
+        for _ in range(3):
+            fixtures.insert_alert(conn, 1, "A Network Trojan was detected",
+                                   now - 10, alert_signature="ET TROJAN Test", alert_severity=1)
+        fired = correlation.ids_alert_signal(conn)
+        self.assertEqual(fired, 1)
+        row = conn.execute("SELECT * FROM incidents WHERE signal_type='ids_trojan'").fetchone()
+        self.assertIsNotNone(row)
+        self.assertEqual(row["severity"], "high")
+        self.assertIn("Network trojan", row["title"])
+        self.assertIn("ET TROJAN Test", row["description"])
+
+    def test_fires_on_an_uncurated_category_using_the_generic_fallback(self):
+        conn = fixtures.temp_db()
+        fixtures.insert_device(conn, 1)
+        now = time.time()
+        for _ in range(3):
+            fixtures.insert_alert(conn, 1, "Misc activity", now - 10, alert_severity=3)
+        fired = correlation.ids_alert_signal(conn)
+        self.assertEqual(fired, 1)
+        row = conn.execute("SELECT * FROM incidents WHERE signal_type='ids_other'").fetchone()
+        self.assertIsNotNone(row)
+        self.assertEqual(row["severity"], "low", "priority 3 in classification.config maps to low")
+
+    def test_does_not_fire_below_threshold(self):
+        conn = fixtures.temp_db()
+        fixtures.insert_device(conn, 1)
+        now = time.time()
+        fixtures.insert_alert(conn, 1, "Misc activity", now - 10)
+        self.assertEqual(correlation.ids_alert_signal(conn), 0)
+
+    def test_different_categories_from_the_same_device_stay_separate_incidents(self):
+        # A device with an ongoing burst of low-value "Misc activity"
+        # alerts must not have a genuinely severe, unrelated trojan alert
+        # quietly merged into that same incident thread.
+        conn = fixtures.temp_db()
+        fixtures.insert_device(conn, 1)
+        now = time.time()
+        for _ in range(3):
+            fixtures.insert_alert(conn, 1, "Misc activity", now - 10, alert_severity=3)
+            fixtures.insert_alert(conn, 1, "A Network Trojan was detected", now - 10, alert_severity=1)
+        correlation.ids_alert_signal(conn)
+        rows = conn.execute("SELECT signal_type, severity FROM incidents WHERE device_id=1").fetchall()
+        signal_types = {r["signal_type"] for r in rows}
+        self.assertEqual(signal_types, {"ids_other", "ids_trojan"})
+        severities = {r["signal_type"]: r["severity"] for r in rows}
+        self.assertEqual(severities["ids_trojan"], "high")
+        self.assertEqual(severities["ids_other"], "low")
+
+    def test_repeated_firing_merges_into_one_incident(self):
+        conn = fixtures.temp_db()
+        fixtures.insert_device(conn, 1)
+        now = time.time()
+        for _ in range(3):
+            fixtures.insert_alert(conn, 1, "A Network Trojan was detected", now - 10, alert_severity=1)
+        correlation.ids_alert_signal(conn)
+        for _ in range(2):
+            fixtures.insert_alert(conn, 1, "A Network Trojan was detected", now - 5, alert_severity=1)
+        correlation.ids_alert_signal(conn)
+        rows = conn.execute("SELECT * FROM incidents WHERE signal_type='ids_trojan'").fetchall()
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]["evidence_count"], 5)
+
+
 class MaliciousDomainSignalTests(unittest.TestCase):
     """Tests the FIXED behaviour: the threshold applies to distinct
     blocked domains, not raw blocked-lookup count (ENHANCEMENT-PLAN.md
@@ -599,6 +670,8 @@ class WindowSettingsTests(unittest.TestCase):
         self.assertEqual(settings.get(conn, "slow_scan_window_seconds"), 7200)
         self.assertEqual(settings.get(conn, "dns_bypass_window_seconds"), 300)
         self.assertEqual(settings.get(conn, "dns_bypass_threshold"), 3)
+        self.assertEqual(settings.get(conn, "ids_alert_window_seconds"), 300)
+        self.assertEqual(settings.get(conn, "ids_alert_threshold"), 3)
         self.assertEqual(settings.get(conn, "brute_force_window_seconds"), 120)
         self.assertEqual(settings.get(conn, "malicious_domain_window_seconds"), 600)
         self.assertEqual(settings.get(conn, "new_device_lookback_seconds"), 3600)

@@ -155,6 +155,26 @@ class PruneDeviceHourlyTests(unittest.TestCase):
         self.assertEqual(conn.execute("SELECT count(*) FROM device_hourly").fetchone()[0], 1)
 
 
+class PruneExpiredSuppressionsTests(unittest.TestCase):
+    """ENHANCEMENT-PLAN.md step 2.7: housekeeping only - an expired rule
+    is already inert (app/suppression.py's is_suppressed() checks the
+    same condition), so this just keeps the table tidy."""
+
+    def test_expired_rules_are_removed_active_ones_kept(self):
+        import suppression
+        conn = fixtures.temp_db()
+        now = time.time()
+        suppression.add_suppression(conn, "port_scan", 1, "expired", "operator",
+                                     expires_at=now - 10)
+        suppression.add_suppression(conn, "port_scan", 1, "still active", "operator",
+                                     expires_at=now + 3600)
+        suppression.add_suppression(conn, "port_scan", 1, "never expires", "operator")
+        removed = retention.prune_expired_suppressions(conn, now)
+        self.assertEqual(removed, 1)
+        remaining = {r["reason"] for r in conn.execute("SELECT reason FROM suppressions")}
+        self.assertEqual(remaining, {"still active", "never expires"})
+
+
 class RunRetentionIfDueTests(unittest.TestCase):
     def test_does_not_run_twice_in_the_same_day(self):
         conn = fixtures.temp_db()

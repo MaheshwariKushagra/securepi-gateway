@@ -41,6 +41,7 @@ from collections import Counter, defaultdict
 
 import settings
 import signature_taxonomy
+import suppression
 
 DB_PATH = "/opt/securepi/securepi.db"
 
@@ -102,7 +103,23 @@ def raise_incident(conn, device_id, signal_type, severity, title, description,
     reopening one by merging a new detection into it would undermine that
     decision; a fresh detection after a real resolution correctly starts
     a new incident instead.
+
+    Step 2.7: checked against app/suppression.py FIRST, before any of the
+    above - an operator's false-positive verdict, turned into a
+    suppression rule, means this signal/device (or this signal
+    network-wide) writes NOTHING here at all, not even a merged-and-
+    ignored incident. Returns None in that case. Every caller's own
+    `fired += 1` still runs regardless (this function's return value
+    isn't checked at any of the 13 call sites) - a deliberate, honest
+    trade-off: `fired` counts "this signal's pattern was detected this
+    cycle", not "an incident row was written", and touching all 13 call
+    sites just to keep a debug log line's count exact wasn't worth the
+    diff. The one thing that actually matters for this step - no
+    incident is created or extended while suppressed - is real.
     """
+    if suppression.is_suppressed(conn, signal_type, device_id):
+        return None
+
     dedup_window = settings.get(conn, "dedup_window_seconds")
     existing = conn.execute(
         """SELECT id, evidence_count FROM incidents

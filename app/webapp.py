@@ -91,6 +91,7 @@ import playbooks
 import quarantine
 import risk
 import settings
+import suppression
 import tracker_entities
 
 DB_PATH = "/opt/securepi/securepi.db"
@@ -208,6 +209,15 @@ class IncidentUpdate(BaseModel):
 
 class IncidentNote(BaseModel):
     note: str
+
+
+class SuppressionCreate(BaseModel):
+    # device_id omitted (None) means network-wide for this signal_type -
+    # see suppression.py's own module docstring.
+    signal_type: str
+    device_id: Optional[int] = None
+    reason: str
+    expires_in_days: Optional[float] = None
 
 
 class DeviceUpdate(BaseModel):
@@ -1112,6 +1122,53 @@ def api_add_incident_note(incident_id: int, body: IncidentNote):
               (incident_id, now, CONSOLE_USERNAME, note))
     c.commit()
     audit.log(c, CONSOLE_USERNAME, "incident.note_added", target=str(incident_id), detail=note)
+    return {"ok": True}
+
+
+@app.get("/api/suppressions")
+def api_list_suppressions():
+    return suppression.list_suppressions(db())
+
+
+@app.post("/api/incidents/{incident_id}/suppress")
+def api_suppress_from_incident(incident_id: int, body: SuppressionCreate):
+    """ENHANCEMENT-PLAN.md step 2.7: the only way a suppression rule
+    comes into being - starting from a real incident this operator has
+    already marked false_positive, never pre-emptively. body.signal_type
+    is required to match the incident's own signal_type (not taken on
+    faith from the request) so a client can't suppress a different
+    signal by passing an arbitrary type here."""
+    reason = body.reason.strip()
+    if not reason:
+        raise HTTPException(400, "reason must not be empty")
+    c = db()
+    row = c.execute("SELECT status, signal_type, device_id FROM incidents WHERE id=?",
+                     (incident_id,)).fetchone()
+    if row is None:
+        raise HTTPException(404, "incident not found")
+    if row["status"] != "false_positive":
+        raise HTTPException(400, "a suppression can only be created from an incident "
+                                  "already marked false_positive")
+    if body.signal_type != row["signal_type"]:
+        raise HTTPException(400, "signal_type must match the incident's own signal_type")
+    device_id = row["device_id"] if body.device_id is None else body.device_id
+    expires_at = (time.time() + body.expires_in_days * 86400) if body.expires_in_days else None
+    suppression_id = suppression.add_suppression(
+        c, body.signal_type, device_id, reason, CONSOLE_USERNAME, expires_at)
+    audit.log(c, CONSOLE_USERNAME, "suppression.create", target=str(suppression_id),
+              detail="signal=%s device=%s reason=%s%s" % (
+                  body.signal_type, device_id, reason,
+                  " expires_in_days=%s" % body.expires_in_days if body.expires_in_days else ""))
+    return {"id": suppression_id, "signal_type": body.signal_type, "device_id": device_id,
+            "expires_at": expires_at}
+
+
+@app.delete("/api/suppressions/{suppression_id}")
+def api_remove_suppression(suppression_id: int):
+    c = db()
+    if not suppression.remove_suppression(c, suppression_id):
+        raise HTTPException(404, "suppression not found")
+    audit.log(c, CONSOLE_USERNAME, "suppression.remove", target=str(suppression_id))
     return {"ok": True}
 
 

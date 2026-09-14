@@ -36,6 +36,7 @@ import fixtures  # noqa: E402
 
 import correlation  # noqa: E402
 import settings  # noqa: E402
+import suppression  # noqa: E402
 
 
 class PortScanNamingTests(unittest.TestCase):
@@ -870,6 +871,61 @@ class BehavioralBaselineSignalTests(unittest.TestCase):
         fixtures.insert_flow(conn, 1, "1.1.1.1", 443, current_hour_start + 60,
                               bytes_toclient=6 * 1024 * 1024, bytes_toserver=1024)
         self.assertEqual(correlation.behavioral_baseline_signal(conn), 0)
+
+
+class RaiseIncidentSuppressionTests(unittest.TestCase):
+    """ENHANCEMENT-PLAN.md step 2.7: raise_incident() checks
+    app/suppression.py before writing anything at all."""
+
+    def test_a_suppressed_device_signal_writes_no_incident(self):
+        conn = fixtures.temp_db()
+        fixtures.insert_device(conn, 1)
+        suppression.add_suppression(conn, "port_scan", 1, "known appliance", "operator")
+        result = correlation.raise_incident(
+            conn, 1, "port_scan", "high", "t", "d", time.time(), time.time(), [])
+        self.assertIsNone(result)
+        self.assertEqual(conn.execute("SELECT count(*) FROM incidents").fetchone()[0], 0)
+
+    def test_a_network_wide_suppression_blocks_every_device(self):
+        conn = fixtures.temp_db()
+        fixtures.insert_device(conn, 1)
+        fixtures.insert_device(conn, 2)
+        suppression.add_suppression(conn, "malicious_domain", None, "miscalibrated", "operator")
+        correlation.raise_incident(conn, 1, "malicious_domain", "medium", "t", "d",
+                                    time.time(), time.time(), [])
+        correlation.raise_incident(conn, 2, "malicious_domain", "medium", "t", "d",
+                                    time.time(), time.time(), [])
+        self.assertEqual(conn.execute("SELECT count(*) FROM incidents").fetchone()[0], 0)
+
+    def test_an_unrelated_device_is_not_suppressed(self):
+        conn = fixtures.temp_db()
+        fixtures.insert_device(conn, 1)
+        fixtures.insert_device(conn, 2)
+        suppression.add_suppression(conn, "port_scan", 1, "test", "operator")
+        result = correlation.raise_incident(
+            conn, 2, "port_scan", "high", "t", "d", time.time(), time.time(), [])
+        self.assertIsNotNone(result)
+        self.assertEqual(conn.execute("SELECT count(*) FROM incidents").fetchone()[0], 1)
+
+    def test_a_live_signal_stops_writing_incidents_once_suppressed(self):
+        # End-to-end through an actual signal, not just raise_incident
+        # directly - confirms the check is wired into the real path every
+        # one of this file's 13 signals uses.
+        conn = fixtures.temp_db()
+        fixtures.insert_device(conn, 1)
+        now = time.time()
+        for port in range(1, 9):
+            fixtures.insert_flow(conn, 1, "203.0.113.10", port, now - 10)
+        correlation.port_scan_signal(conn)
+        self.assertEqual(conn.execute("SELECT count(*) FROM incidents").fetchone()[0], 1,
+                          "normal firing before any suppression rule exists")
+
+        suppression.add_suppression(conn, "port_scan", 1, "test", "operator")
+        for port in range(1, 9):
+            fixtures.insert_flow(conn, 1, "203.0.113.99", port, now - 5)  # a NEW, different host
+        correlation.port_scan_signal(conn)
+        self.assertEqual(conn.execute("SELECT count(*) FROM incidents").fetchone()[0], 1,
+                          "a new scan pattern must not create a second incident once suppressed")
 
 
 class RaiseIncidentDedupAndEvidenceTests(unittest.TestCase):

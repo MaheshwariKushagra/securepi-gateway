@@ -320,3 +320,21 @@ New `beacon_signal` in `app/correlation.py`: a RITA-style regularity score, not 
 | "Harness beacon (60s, 10% jitter) ≥ 0.8" | A synthetic 60-second/10%-jitter beacon (30 connections) was inserted for the isolated test-attacker device (id 4, no real traffic) and the signal run live: fired with **regularity score 0.95** - "Possible C2 beacon to 203.0.113.199:8443", evidence_count 30. Cleaned up afterward |
 
 8 new unit tests (`BeaconSignalTests`, `CoefficientOfVariationTests`) - including a direct check that the exit criterion's own 60s/10%-jitter shape scores ≥ 0.8 under the real formula, not just an assertion that *some* incident was raised. 3 new settings (`beacon_window_seconds`, `beacon_min_connections`, `beacon_score_threshold`). ATT&CK: `beacon` → Command and Control / T1071 Application Layer Protocol (base technique - the score doesn't identify which protocol carries the beacon, only that the channel behaves like one).
+
+### 2.7 — Suppression rules
+
+New `app/suppression.py` + a `suppressions` table: an operator's false-positive verdict on a real incident is the *only* way a rule comes into being here - `POST /api/incidents/{id}/suppress` refuses unless the incident's own status is already `false_positive`, so there's no way to pre-emptively suppress a signal that hasn't fired yet. Scoped to **(signal_type, device_id)** - `device_id=None` means network-wide for that signal_type. This is coarser than per-destination suppression (e.g. "stop `threat_intel` for this one IP on this one device"): each of this project's 13 signals varies its own "what's the specific recurring thing" differently (a destination for `port_scan`/`beacon`, a domain for `malicious_domain`, a category for `ids_alert`, ...), and a genuinely generic per-signal match key would need its own small schema per signal type. Documented as a real, stated scope boundary rather than an oversight - an operator who wants one destination allowed through already has the Filtering page's "unbreak" tools (step 5.2) for DNS-level cases; this is for "this signal doesn't apply to this device (or network) at all."
+
+`correlation.py`'s `raise_incident()` - the single function all 13 signals funnel through - checks `suppression.is_suppressed()` first and writes nothing at all while a rule is active, not even a merged-and-ignored incident. Rules can expire (`expires_at`, checked live on every call) or never expire; `app/retention.py`'s daily run physically removes already-expired rows as pure housekeeping (an expired rule is already inert either way).
+
+**Live verification, 14 September 2026, against the real gateway and the real HTTP API (not just unit tests or direct function calls):**
+
+1. Inserted a synthetic `false_positive` incident (device 4, `port_scan`).
+2. `POST /api/incidents/35/suppress` over real HTTP (Basic Auth, the real console credentials) - **succeeded**, created suppression id 1, 1-day expiry.
+3. Ran a **real** `nmap` scan through the isolated test-attacker harness against `ns_victim` (21 new ports, comfortably over the port-scan threshold) - **zero new incidents** were created for device 4 after the suppression rule's timestamp, confirmed by querying the real database directly.
+4. `DELETE /api/suppressions/1` over real HTTP - succeeded, `GET /api/suppressions` confirmed empty.
+5. Ran a **second** real scan (a different port range) - **fired normally this time**: incident id 36, "Port scan detected against 10.10.0.221", evidence_count 21, confirming the signal genuinely resumes once the rule is gone rather than staying stuck off.
+
+All synthetic incidents, suppression rows and test flow events were deleted afterward.
+
+12 new unit tests (`tests/test_suppression.py`'s `IsSuppressedTests`/`ListSuppressionsTests`, plus `RaiseIncidentSuppressionTests` in `tests/test_correlation.py` - including one that goes through a real signal function end-to-end, not just `raise_incident()` directly - and one retention test for the expired-rule cleanup). No new settings (suppression rules are created through the API with an explicit reason and optional expiry, not tuned via thresholds).

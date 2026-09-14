@@ -118,6 +118,16 @@ SCHEMA_MIGRATIONS = [
            last_error      TEXT,
            indicator_count INTEGER
        )""",
+    """CREATE TABLE IF NOT EXISTS suppressions (
+           id          INTEGER PRIMARY KEY,
+           signal_type TEXT NOT NULL,
+           device_id   INTEGER REFERENCES devices(id),
+           reason      TEXT NOT NULL,
+           created_by  TEXT NOT NULL,
+           created_at  REAL NOT NULL,
+           expires_at  REAL
+       )""",
+    "CREATE INDEX IF NOT EXISTS idx_suppressions_signal_device ON suppressions(signal_type, device_id)",
 ]
 
 # How long to wait between passes over the log files. Two seconds keeps the

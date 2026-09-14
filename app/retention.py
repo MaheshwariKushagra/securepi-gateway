@@ -98,6 +98,19 @@ def prune_device_hourly(conn, now=None):
     return cur.rowcount
 
 
+def prune_expired_suppressions(conn, now=None):
+    """ENHANCEMENT-PLAN.md step 2.7: a suppression past its own expires_at
+    is already inert (app/suppression.py's is_suppressed() checks the
+    same condition), so this is pure housekeeping, not a correctness
+    fix - deleting it a day late changes nothing about whether it was
+    still being honored."""
+    now = now if now is not None else time.time()
+    cur = conn.execute(
+        "DELETE FROM suppressions WHERE expires_at IS NOT NULL AND expires_at < ?", (now,)
+    )
+    return cur.rowcount
+
+
 def run_retention(conn, now=None):
     """Prune incidents, then events, then old device_hourly rollups -
     that order matters, see the module docstring. Returns what was
@@ -108,6 +121,7 @@ def run_retention(conn, now=None):
         "incidents": prune_incidents(conn, now),
         "events": prune_events(conn, now),
         "device_hourly": prune_device_hourly(conn, now),
+        "suppressions": prune_expired_suppressions(conn, now),
     }
     conn.commit()
     return removed
@@ -140,8 +154,10 @@ def run_retention_if_due(conn, now=None):
     removed = run_retention(conn, now)
     size = db_size_bytes(conn)
     print(
-        "retention: removed %d incidents, %d events, %d device_hourly rows - db size %.1f MB"
-        % (removed["incidents"], removed["events"], removed["device_hourly"], size / 1e6),
+        "retention: removed %d incidents, %d events, %d device_hourly rows, %d expired "
+        "suppressions - db size %.1f MB"
+        % (removed["incidents"], removed["events"], removed["device_hourly"],
+           removed["suppressions"], size / 1e6),
         flush=True,
     )
     conn.execute(

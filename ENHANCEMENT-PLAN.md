@@ -297,7 +297,7 @@ New signals follow the `correlation.py` pattern (trailing-window SQL → `raise_
 | 2.4 | **Offline threat intel — done, 14 September 2026.** Daily abuse.ch Feodo/URLhaus/ThreatFox into an `ioc` table, matched on IP/domain/SNI. The same domains are pushed to AdGuard as a **security blocklist**, so they're both blocked and turned into incidents (see `EVALUATION-RESULTS-2.md` §2.4 for a real `file://`-URL bug found and fixed live, and each feed's real confirmed format) | F§19, Mkt | Seeded test IOC is blocked **and** raises an incident. Feed age visible | 1 |
 | 2.5 | **DNS tunnelling + DGA — done, 14 September 2026** (subdomain entropy, label length, unique subdomains, TXT ratio; NXDOMAIN burst + entropy — see `EVALUATION-RESULTS-2.md` §2.5 for a real `dns_rcode` capture gap found and fixed, and both exit-criterion checks run against real data) | F§12.3 | Harness generators detected. No firing on 24 h of phone traffic | 1.5 |
 | 2.6 | **C2 beaconing — done, 14 September 2026** (RITA-style timing and size regularity score, allowlist for NTP/push — a from-scratch formula calibrated against this step's own exit-criterion numbers before being written into the signal; push-notification allowlisting deliberately left as a named gap, see `EVALUATION-RESULTS-2.md` §2.6) | F§12.3, 15d cut | Harness beacon (60 s, 10% jitter) ≥ 0.8. No real-phone incidents | 2 |
-| 2.7 | **Suppression rules** (from false-positive verdicts, audited, expiring) | F§11.2 | Suppressed pattern stops raising incidents | 1 |
+| 2.7 | **Suppression rules — done, 14 September 2026** (from false-positive verdicts, audited, expiring — scoped to (signal_type, device_id), a stated boundary narrower than per-destination; see `EVALUATION-RESULTS-2.md` §2.7 for the live create→suppress→remove→resume test through the real HTTP API) | F§11.2 | Suppressed pattern stops raising incidents | 1 |
 | 2.8 | **Campaign correlation + MITRE ATT&CK kill chain**, weighted into risk | F§12.3 | Scan → brute force → beacon → one campaign linking three incidents | 1.5 |
 
 > **Cut line A** (~3¾ weeks). Original signal set restored, campaigns built, and DNS filtering can no longer be quietly bypassed.
@@ -557,7 +557,7 @@ Never cut Stage 2, steps 5.2, 5.3, 5.7, or evaluation items 7.2–7.5.
 |---|---|---|
 | 0 | **0.1 done, 0.2 done and verified live, 0.3 done** | Stage 0 complete |
 | 1 | **1.1 done, 1.2 done, 1.3 done, 1.4 done, 1.5 done, 1.6 done, 1.7 done, 1.8 done** (1.8 out of order - see note below) | Stage 1 complete |
-| 2 | **2.1 done, 2.2 done, 2.3 done, 2.4 done, 2.5 done, 2.6 done**, 2.7 · 2.8 | In progress |
+| 2 | **2.1 done, 2.2 done, 2.3 done, 2.4 done, 2.5 done, 2.6 done, 2.7 done**, 2.8 | In progress |
 | 3 | 3.1 · 3.2 · 3.3 · 3.4 · 3.5 · 3.6 | Not started |
 | 4 | 4.1 · 4.2 · 4.3 · 4.4 · 4.5 | Not started |
 | 5 | **5.1 done, 5.2 done, 5.3 done, 5.4 done, 5.5 done, 5.6 done, 5.7 done, 5.8 done, 5.9 done, 5.10 done, 5.11 done (Path 1 only)** (out of order) | 5.1–5.11 done - 5.11 scoped to Path 1 (cosmetic CSS), Path 2 (scriptlets) deferred and recorded |
@@ -728,6 +728,23 @@ device's 2.5-day history (405 destination pairs) found **zero false
 positives** (highest real score: 0.30), and a synthetic 60s/10%-jitter
 beacon for the isolated test-attacker device scored **0.95** live.
 Full detail: `EVALUATION-RESULTS-2.md` §2.6.
+
+**2.7 (suppression rules) is also done.** New `app/suppression.py` +
+`suppressions` table, scoped to (signal_type, device_id) -
+`device_id=None` means network-wide - a stated boundary coarser than
+per-destination suppression, since each signal varies its own "what's
+the recurring thing" differently and a fully generic match key would
+need its own schema per signal type. The only way a rule comes into
+being is `POST /api/incidents/{id}/suppress`, which refuses unless the
+incident is already marked `false_positive` - no pre-emptive
+suppression. `raise_incident()`, the one function all 13 signals funnel
+through, checks it first and writes nothing while active. Verified live
+through the real HTTP API, not just unit tests: created a suppression
+from a real (synthetic) false-positive incident, ran a genuine nmap scan
+through the isolated harness - zero incidents while suppressed - then
+deleted the rule and ran a second scan, which fired normally (a new
+incident, correct evidence), proving the signal actually resumes rather
+than staying stuck off. Full detail: `EVALUATION-RESULTS-2.md` §2.7.
 
 **Note on 13 September:** at the user's request, 1.8 and Stage 5's telemetry
 foundation (5.1) and "why blocked / unbreak" tools (5.2) were implemented

@@ -354,6 +354,42 @@ CREATE TABLE IF NOT EXISTS ioc (
 
 CREATE INDEX IF NOT EXISTS idx_ioc_indicator ON ioc(indicator, ioc_type);
 
+-- --------------------------------------------------------------- suppressions --
+-- Operator-created "stop raising this" rules (ENHANCEMENT-PLAN.md step
+-- 2.7), always starting from a real false-positive verdict on a real
+-- incident rather than guessed at in advance. Scoped to (signal_type,
+-- device_id) - device_id NULL means network-wide for that signal_type.
+-- This is deliberately coarser than per-destination suppression (e.g.
+-- "stop threat_intel for THIS ip on THIS device" specifically): each of
+-- this project's signals varies its own "what's the specific recurring
+-- thing" differently (a destination for port_scan/beacon, a domain for
+-- malicious_domain, an alert category for ids_alert, ...), and a truly
+-- generic per-signal match key would need its own small schema per
+-- signal type - a real, stated scope boundary, not an oversight. An
+-- operator who wants THIS destination allowed can already use the
+-- Filtering page's "unbreak" tools (step 5.2) for DNS-level cases;
+-- suppression here is for "this signal doesn't apply to this device (or
+-- this network) at all", the coarser and more common real need.
+--
+-- `expires_at` NULL means the rule never expires on its own - an
+-- operator can still delete it explicitly. correlation.py's
+-- raise_incident() checks this table's live (non-expired) rows before
+-- ever inserting or extending an incident; app/retention.py's daily run
+-- physically removes rows whose expiry has already passed, purely as
+-- housekeeping (an expired rule is already inert - see suppression.py's
+-- own is_suppressed()).
+CREATE TABLE IF NOT EXISTS suppressions (
+    id          INTEGER PRIMARY KEY,
+    signal_type TEXT NOT NULL,
+    device_id   INTEGER REFERENCES devices(id),
+    reason      TEXT NOT NULL,
+    created_by  TEXT NOT NULL,
+    created_at  REAL NOT NULL,
+    expires_at  REAL
+);
+
+CREATE INDEX IF NOT EXISTS idx_suppressions_signal_device ON suppressions(signal_type, device_id);
+
 -- One row per feed: when it last successfully refreshed, and what went
 -- wrong the last time it didn't - the "feed age visible" half of this
 -- step's own exit criterion. A failed fetch is recorded here but never

@@ -96,6 +96,82 @@ function toast(title, message, tone) {
     }, 4800);
 }
 
+/* ---------------------------------------------------------------- theme */
+
+function setTheme(theme) {
+    const root = document.documentElement;
+    // Crossfade every surface for the moment of the switch only.
+    root.classList.add("theme-switching");
+    if (theme === "light") root.dataset.theme = "light";
+    else delete root.dataset.theme;
+    try { localStorage.setItem("sp.theme", theme); } catch (e) { /* private mode: not remembered */ }
+    updateThemeToggle();
+    restyleCharts();
+    setTimeout(() => root.classList.remove("theme-switching"), 300);
+}
+
+function toggleTheme() {
+    setTheme(currentTheme() === "light" ? "dark" : "light");
+}
+
+function updateThemeToggle() {
+    const btn = $("#themeToggle");
+    if (!btn) return;
+    const label = currentTheme() === "light" ? "Switch to dark mode" : "Switch to light mode";
+    btn.title = label;
+    btn.setAttribute("aria-label", label);
+}
+
+/* Re-colors every chart already on the page without re-fetching its data:
+   any color from the old palette is swapped for the same role in the new
+   one, then each chart is rebuilt from its own (now recolored) config.
+   Rebuilding rather than chart.update() matters - Chart.js caches the
+   resolved colors of bar and doughnut segments, so an in-place update
+   leaves those drawn in the old theme. */
+function restyleCharts() {
+    if (!window.Chart) return;
+    const next = PAL();
+    const prev = CHART_PALETTES[currentTheme() === "light" ? "dark" : "light"];
+    const swap = {};
+    Object.keys(prev).forEach(k => { swap[prev[k]] = next[k]; });
+    const recolor = v => Array.isArray(v) ? v.map(recolor) : (typeof v === "string" && swap[v]) ? swap[v] : v;
+
+    CHART_GRID = next.grid;
+    CHART_TEXT = next.text;
+    Chart.defaults.color = next.text;
+
+    Object.entries(SP.charts).forEach(([key, chart]) => {
+        const o = chart.options;
+        Object.values(o.scales || {}).forEach(sc => {
+            if (sc.grid) sc.grid.color = recolor(sc.grid.color);
+            if (sc.border) sc.border.color = recolor(sc.border.color);
+            if (sc.ticks) sc.ticks.color = recolor(sc.ticks.color);
+        });
+        const p = o.plugins || {};
+        if (p.legend && p.legend.labels) p.legend.labels.color = next.text;
+        if (p.tooltip) {
+            p.tooltip.backgroundColor = next.tooltipBg;
+            p.tooltip.borderColor = next.tooltipBorder;
+            p.tooltip.titleColor = next.tooltipTitle;
+            p.tooltip.bodyColor = next.tooltipBody;
+        }
+        chart.data.datasets.forEach(ds => {
+            ds.borderColor = recolor(ds.borderColor);
+            ds.hoverBackgroundColor = recolor(ds.hoverBackgroundColor);
+            // Area fills are canvas gradients built from the line color.
+            if (ds.backgroundColor && typeof ds.backgroundColor === "object" && !Array.isArray(ds.backgroundColor)) {
+                ds.backgroundColor = gradient(chart.ctx, ds.borderColor);
+            } else {
+                ds.backgroundColor = recolor(ds.backgroundColor);
+            }
+        });
+        const canvas = chart.canvas;
+        const config = chart.config._config;
+        chart.destroy();
+        SP.charts[key] = new Chart(canvas, config);
+    });
+}
+
 /* ------------------------------------------------------------- sidebar */
 
 function initSidebar() {
@@ -217,8 +293,31 @@ async function refreshSystem() {
 
 /* --------------------------------------------------------------- charts */
 
-const CHART_GRID = "rgba(29,37,51,.85)";
-const CHART_TEXT = "#69758a";
+/* Chart.js draws on a canvas, so it can't read CSS variables - each theme's
+   chart colors live here instead. Keep these in step with the matching
+   tokens in app.css (:root and :root[data-theme="light"]). */
+const CHART_PALETTES = {
+    dark: {
+        accent: "#5aa2ff", violet: "#8b6cf6", high: "#f2545b", medium: "#f5a524",
+        grid: "rgba(29,37,51,.85)", text: "#69758a", strong: "#e8edf5", surface: "#0e131c",
+        muted: "#2a3549", mutedHover: "#35425a",
+        tooltipBg: "rgba(19,26,37,.96)", tooltipBorder: "#2a3446", tooltipTitle: "#e8edf5", tooltipBody: "#97a2b5",
+    },
+    light: {
+        accent: "#2563eb", violet: "#7c3aed", high: "#dc2626", medium: "#d97706",
+        grid: "rgba(225,230,238,1)", text: "#64748b", strong: "#0f172a", surface: "#ffffff",
+        muted: "#cbd5e1", mutedHover: "#b6c2d2",
+        tooltipBg: "rgba(255,255,255,.98)", tooltipBorder: "#cdd5e1", tooltipTitle: "#0f172a", tooltipBody: "#475569",
+    },
+};
+
+function currentTheme() {
+    return document.documentElement.dataset.theme === "light" ? "light" : "dark";
+}
+function PAL() { return CHART_PALETTES[currentTheme()]; }
+
+let CHART_GRID = PAL().grid;
+let CHART_TEXT = PAL().text;
 
 if (window.Chart) {
     Chart.defaults.font.family = getComputedStyle(document.documentElement).getPropertyValue("--sans").trim()
@@ -235,11 +334,11 @@ function baseChartOpts(extra) {
         plugins: {
             legend: { display: false },
             tooltip: {
-                backgroundColor: "rgba(19,26,37,.96)",
-                borderColor: "#2a3446",
+                backgroundColor: PAL().tooltipBg,
+                borderColor: PAL().tooltipBorder,
                 borderWidth: 1,
-                titleColor: "#e8edf5",
-                bodyColor: "#97a2b5",
+                titleColor: PAL().tooltipTitle,
+                bodyColor: PAL().tooltipBody,
                 titleFont: { weight: "600", size: 12 },
                 bodyFont: { size: 11.5 },
                 padding: 10,
@@ -279,7 +378,7 @@ const donutCenterLabel = {
         ctx.save();
         ctx.textAlign = "center";
         ctx.textBaseline = "middle";
-        ctx.fillStyle = "#e8edf5";
+        ctx.fillStyle = PAL().strong;
         ctx.font = `700 26px ${Chart.defaults.font.family}`;
         ctx.fillText(total.toLocaleString(), x, y - 7);
         ctx.fillStyle = CHART_TEXT;
@@ -369,10 +468,10 @@ async function refreshDashboard() {
 
     $("#lastUpdated").textContent = d.generated_at;
 
-    renderSparkline("sparkEvents", "sparkEvents", d.series.events, "#5aa2ff");
-    renderSparkline("sparkBlocked", "sparkBlocked", d.series.blocked, "#f2545b");
+    renderSparkline("sparkEvents", "sparkEvents", d.series.events, PAL().accent);
+    renderSparkline("sparkBlocked", "sparkBlocked", d.series.blocked, PAL().high);
     const traffic = d.series.down_kbps.map((v, i) => v + (d.series.up_kbps[i] || 0));
-    renderSparkline("sparkTraffic", "sparkTraffic", traffic, "#8b6cf6");
+    renderSparkline("sparkTraffic", "sparkTraffic", traffic, PAL().violet);
 
     // Throughput
     const tctx = document.getElementById("throughputChart").getContext("2d");
@@ -381,11 +480,11 @@ async function refreshDashboard() {
         data: {
             labels: d.series.labels,
             datasets: [
-                { label: "Download", data: d.series.down_kbps, borderColor: "#5aa2ff",
-                  backgroundColor: gradient(tctx, "#5aa2ff"), fill: true, tension: .35,
+                { label: "Download", data: d.series.down_kbps, borderColor: PAL().accent,
+                  backgroundColor: gradient(tctx, PAL().accent), fill: true, tension: .35,
                   pointRadius: 0, borderWidth: 2 },
-                { label: "Upload", data: d.series.up_kbps, borderColor: "#8b6cf6",
-                  backgroundColor: gradient(tctx, "#8b6cf6"), fill: true, tension: .35,
+                { label: "Upload", data: d.series.up_kbps, borderColor: PAL().violet,
+                  backgroundColor: gradient(tctx, PAL().violet), fill: true, tension: .35,
                   pointRadius: 0, borderWidth: 2 },
             ],
         },
@@ -411,9 +510,9 @@ async function refreshDashboard() {
         data: {
             labels: d.series.labels,
             datasets: [
-                { label: "Allowed", data: d.series.allowed, backgroundColor: "#2a3549",
-                  hoverBackgroundColor: "#35425a", borderRadius: 3, stack: "dns", maxBarThickness: 22 },
-                { label: "Blocked", data: d.series.blocked, backgroundColor: "#f2545b",
+                { label: "Allowed", data: d.series.allowed, backgroundColor: PAL().muted,
+                  hoverBackgroundColor: PAL().mutedHover, borderRadius: 3, stack: "dns", maxBarThickness: 22 },
+                { label: "Blocked", data: d.series.blocked, backgroundColor: PAL().high,
                   borderRadius: 3, stack: "dns", maxBarThickness: 22 },
             ],
         },
@@ -438,8 +537,8 @@ async function refreshDashboard() {
             labels: ["High", "Medium", "Low"],
             datasets: [{
                 data: [d.severity.high, d.severity.medium, d.severity.low],
-                backgroundColor: ["#f2545b", "#f5a524", "#5aa2ff"],
-                borderColor: "#0e131c", borderWidth: 3, hoverOffset: 6, borderRadius: 3,
+                backgroundColor: [PAL().high, PAL().medium, PAL().accent],
+                borderColor: PAL().surface, borderWidth: 3, hoverOffset: 6, borderRadius: 3,
             }],
         },
         plugins: [donutCenterLabel],
@@ -494,7 +593,7 @@ function renderHeatmap(grid, days) {
     rowsEl.innerHTML = grid.map(row => `<div class="heatmap-row">` + row.map(v => {
         const pct = v / max;
         const style = pct > 0
-            ? `style="background:rgba(90,162,255,${(0.14 + pct * 0.78).toFixed(2)})"`
+            ? `style="background:rgba(var(--accent-rgb),${(0.14 + pct * 0.78).toFixed(2)})"`
             : "";
         return `<div class="heatmap-cell" ${style} title="${v.toLocaleString()} event${v === 1 ? "" : "s"}"></div>`;
     }).join("") + `</div>`).join("");
@@ -907,11 +1006,11 @@ function initDeviceActivity() {
             data: {
                 labels: d.labels,
                 datasets: [
-                    { label: "Download", data: d.down_kbps, borderColor: "#5aa2ff",
-                      backgroundColor: gradient(ctx, "#5aa2ff"), fill: true, tension: .35,
+                    { label: "Download", data: d.down_kbps, borderColor: PAL().accent,
+                      backgroundColor: gradient(ctx, PAL().accent), fill: true, tension: .35,
                       pointRadius: 0, borderWidth: 2 },
-                    { label: "Upload", data: d.up_kbps, borderColor: "#8b6cf6",
-                      backgroundColor: gradient(ctx, "#8b6cf6"), fill: true, tension: .35,
+                    { label: "Upload", data: d.up_kbps, borderColor: PAL().violet,
+                      backgroundColor: gradient(ctx, PAL().violet), fill: true, tension: .35,
                       pointRadius: 0, borderWidth: 2 },
                 ],
             },
@@ -2014,8 +2113,8 @@ function initFilteringAnalytics() {
                 data: {
                     labels: d.series.labels,
                     datasets: [
-                        { label: "Block %", data: d.series.block_pct, borderColor: "#f2545b",
-                          backgroundColor: gradient(el.getContext("2d"), "#f2545b"), fill: true, tension: .35,
+                        { label: "Block %", data: d.series.block_pct, borderColor: PAL().high,
+                          backgroundColor: gradient(el.getContext("2d"), PAL().high), fill: true, tension: .35,
                           pointRadius: 0, borderWidth: 2 },
                     ],
                 },
@@ -2316,6 +2415,7 @@ const CMDK_PAGES = [
     { label: "Weekly Report", href: "/reports/weekly", icon: "i-report" },
     { label: "Settings", href: "/settings", icon: "i-sliders" },
 ];
+const CMDK_THEME_HREF = "#toggle-theme";
 
 let cmdkItems = [];
 let cmdkActive = 0;
@@ -2369,6 +2469,14 @@ function cmdkFilter(q) {
         items: incidents.map(i => ({ label: i.title, hint: i.severity, icon: "i-alert", href: `/incidents/${i.id}` })),
     });
 
+    const themeLabel = currentTheme() === "light" ? "Switch to dark mode" : "Switch to light mode";
+    if (!q || themeLabel.toLowerCase().includes(q) || "theme appearance".includes(q)) {
+        groups.push({ label: "Preferences", items: [{
+            label: themeLabel, hint: "theme", href: CMDK_THEME_HREF,
+            icon: currentTheme() === "light" ? "i-moon" : "i-sun",
+        }] });
+    }
+
     cmdkItems = groups.flatMap(g => g.items);
     cmdkActive = 0;
 
@@ -2397,7 +2505,9 @@ function cmdkHighlight() {
 
 function cmdkGo(idx) {
     const el = $(`.cmdk-item[data-idx="${idx}"]`);
-    if (el) location.href = el.dataset.href;
+    if (!el) return;
+    if (el.dataset.href === CMDK_THEME_HREF) { cmdkClose(); toggleTheme(); return; }
+    location.href = el.dataset.href;
 }
 
 /* ----------------------------------------------------------------- boot */
@@ -2411,6 +2521,9 @@ function refresh() {
 document.addEventListener("DOMContentLoaded", () => {
     initSidebar();
     initSubnav();
+    updateThemeToggle();
+    const themeBtn = $("#themeToggle");
+    if (themeBtn) themeBtn.addEventListener("click", toggleTheme);
     initDeviceRename();
     initDeviceBaseline();
     initDeviceFingerprint();
@@ -2489,7 +2602,7 @@ document.addEventListener("DOMContentLoaded", () => {
     }
     if (cmdkResults) cmdkResults.addEventListener("click", (e) => {
         const item = e.target.closest(".cmdk-item");
-        if (item) location.href = item.dataset.href;
+        if (item) cmdkGo(Number(item.dataset.idx));
     });
     document.addEventListener("keydown", (e) => {
         if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {

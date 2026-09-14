@@ -143,6 +143,8 @@ audit trail.
 
 ## Architecture
 
+<p align="center"><img alt="Sensors and devices" src="https://img.shields.io/badge/-sensors_%26_devices-0f2a1f?style=flat-square&labelColor=2fbf71"> <img alt="Pipeline and console" src="https://img.shields.io/badge/-pipeline_%26_console-0f2240?style=flat-square&labelColor=4f9cf9"> <img alt="Storage and analysis" src="https://img.shields.io/badge/-storage_%26_analysis-231b45?style=flat-square&labelColor=7b5cf0"> <img alt="Detection and decisions" src="https://img.shields.io/badge/-detection_%26_decisions-2e2210?style=flat-square&labelColor=f5a524"> <img alt="Enforcement" src="https://img.shields.io/badge/-enforcement-3a1519?style=flat-square&labelColor=f2545b"><br><sub>Colour key used in every diagram below, matching the console's palette</sub></p>
+
 ### Deployment topology
 
 The existing home router is only the upstream link and needs no configuration changes. The gateway
@@ -150,6 +152,7 @@ gets its internet over Wi-Fi and serves the project network from an access point
 same radio. A separate wired link is used only for management.
 
 ```mermaid
+%%{init: {'theme':'base','themeVariables':{'primaryColor':'#161d2b','primaryTextColor':'#e6ecf5','primaryBorderColor':'#2e3a50','secondaryColor':'#111722','tertiaryColor':'#0d121b','lineColor':'#4f9cf9','clusterBkg':'#0d121b','clusterBorder':'#2e3a50','titleColor':'#aab6c8','edgeLabelBackground':'#1d2534','textColor':'#8d99ad'},'flowchart':{'curve':'basis','padding':14,'nodeSpacing':38,'rankSpacing':46}}}%%
 flowchart LR
     Internet(("Internet"))
     Router["Home router<br/><i>untouched uplink</i>"]
@@ -169,11 +172,26 @@ flowchart LR
         D3["IoT / TV"]
     end
 
-    Mac["MacBook<br/>development and console via SSH tunnel"]
+    Mac["MacBook<br/>development · console via SSH tunnel"]
 
     Internet <--> Router <-->|"Wi-Fi"| WAN
     LAN <-->|"WPA2"| D1 & D2 & D3
     Mac <-->|"Cat7 / USB-C"| MGMT
+
+    classDef ext fill:#161d2b,stroke:#5a6679,stroke-width:1.5px,color:#e6ecf5
+    classDef sensor fill:#0f2a1f,stroke:#2fbf71,stroke-width:1.5px,color:#d5f5e3
+    classDef pipe fill:#0f2240,stroke:#4f9cf9,stroke-width:1.5px,color:#dbe9ff
+    classDef store fill:#231b45,stroke:#7b5cf0,stroke-width:1.5px,color:#e4dcff
+    classDef detect fill:#2e2210,stroke:#f5a524,stroke-width:1.5px,color:#ffe9c2
+    classDef danger fill:#3a1519,stroke:#f2545b,stroke-width:1.5px,color:#ffd9db
+    class Internet,Router ext
+    class WAN,LAN pipe
+    class FW danger
+    class D1,D2,D3 sensor
+    class MGMT,Mac store
+    style GW fill:#0d121b,stroke:#4f9cf9,stroke-width:1.5px,color:#aab6c8
+    style NET fill:#0b1a14,stroke:#2fbf71,stroke-width:1.5px,color:#aab6c8
+    linkStyle default stroke:#4f9cf9,stroke-width:1.6px
 ```
 
 ### Data pipeline
@@ -184,6 +202,7 @@ also writes back: quarantine and enrollment go to nftables sets, and filtering r
 per-device policy go to AdGuard Home's API.
 
 ```mermaid
+%%{init: {'theme':'base','themeVariables':{'primaryColor':'#161d2b','primaryTextColor':'#e6ecf5','primaryBorderColor':'#2e3a50','secondaryColor':'#111722','tertiaryColor':'#0d121b','lineColor':'#4f9cf9','clusterBkg':'#0d121b','clusterBorder':'#2e3a50','titleColor':'#aab6c8','edgeLabelBackground':'#1d2534','textColor':'#8d99ad'},'flowchart':{'curve':'basis','padding':14,'nodeSpacing':38,'rankSpacing':46}}}%%
 flowchart LR
     subgraph S["Sensors"]
         direction TB
@@ -208,6 +227,20 @@ flowchart LR
     ENG <-->|"read events<br/>write incidents"| DB
     DB --> UI
     UI -->|"quarantine · enroll"| NFT
+
+    classDef ext fill:#161d2b,stroke:#5a6679,stroke-width:1.5px,color:#e6ecf5
+    classDef sensor fill:#0f2a1f,stroke:#2fbf71,stroke-width:1.5px,color:#d5f5e3
+    classDef pipe fill:#0f2240,stroke:#4f9cf9,stroke-width:1.5px,color:#dbe9ff
+    classDef store fill:#231b45,stroke:#7b5cf0,stroke-width:1.5px,color:#e4dcff
+    classDef detect fill:#2e2210,stroke:#f5a524,stroke-width:1.5px,color:#ffe9c2
+    classDef danger fill:#3a1519,stroke:#f2545b,stroke-width:1.5px,color:#ffd9db
+    class SUR,AGH,DPI,LEASE sensor
+    class ING,REG,UI pipe
+    class DB store
+    class ENG detect
+    class NFT danger
+    style S fill:#0b1a14,stroke:#2fbf71,stroke-width:1.5px,color:#aab6c8
+    linkStyle default stroke:#4f9cf9,stroke-width:1.6px
 ```
 
 ### Technology
@@ -251,17 +284,21 @@ produces the reduction ratio.
 <br>
 
 ```mermaid
+%%{init: {'theme':'base','themeVariables':{'actorBkg':'#161d2b','actorBorder':'#4f9cf9','actorTextColor':'#e6ecf5','actorLineColor':'#3a4760','signalColor':'#4f9cf9','signalTextColor':'#e6ecf5','sequenceNumberColor':'#0a0e15','labelBoxBkgColor':'#f5a524','labelBoxBorderColor':'#f5a524','labelTextColor':'#0a0e15','loopTextColor':'#ffd58a','noteBkgColor':'#2e2210','noteTextColor':'#ffe9c2','noteBorderColor':'#f5a524','primaryColor':'#161d2b','primaryTextColor':'#e6ecf5','lineColor':'#4f9cf9'},'sequence':{'mirrorActors':false,'messageMargin':34,'boxMargin':8}}}%%
 sequenceDiagram
     autonumber
-    actor A as Unknown device
+    participant A as Unknown device
     participant S as Suricata + ingest
     participant D as SQLite
     participant E as Engine
-    actor O as Operator
+    participant O as Operator
     participant N as nftables
 
+    rect rgb(11, 32, 24)
     A->>S: 24 short TCP connections to NAS :22
     S->>D: flow events, attributed by IP history
+    end
+    rect rgb(12, 26, 48)
     loop every 15 s
         E->>D: brute_force query, trailing 120 s
         alt no open incident for device + signal
@@ -270,10 +307,13 @@ sequenceDiagram
             E->>D: extend last_seen, recount evidence
         end
     end
+    end
+    rect rgb(46, 17, 21)
     O->>D: review evidence chain + T1110 playbook
     O->>N: Quarantine (add IP to set)
     N-->>A: forward chain drops all traffic
     O->>D: status investigating, note, audit_log
+    end
 ```
 
 </details>
@@ -284,11 +324,12 @@ sequenceDiagram
 <br>
 
 ```mermaid
+%%{init: {'theme':'base','themeVariables':{'primaryColor':'#161d2b','primaryTextColor':'#e6ecf5','primaryBorderColor':'#4f9cf9','lineColor':'#4f9cf9','transitionColor':'#4f9cf9','transitionLabelColor':'#e6ecf5','stateLabelColor':'#e6ecf5','labelBackgroundColor':'#1d2534','edgeLabelBackground':'#1d2534','textColor':'#8d99ad','specialStateColor':'#4f9cf9','innerEndBackground':'#4f9cf9','noteBkgColor':'#2e2210','noteTextColor':'#ffe9c2','noteBorderColor':'#f5a524'}}}%%
 stateDiagram-v2
-    [*] --> new: signal fires, no open match
-    new --> new: same signal and device within dedup window (merged)
+    [*] --> new: signal fires
+    new --> new: merged within dedup window
     new --> investigating: operator triage
-    investigating --> investigating: still firing (merged, not duplicated)
+    investigating --> investigating: still firing, merged
     investigating --> resolved
     investigating --> false_positive
     new --> resolved
@@ -297,9 +338,18 @@ stateDiagram-v2
     false_positive --> [*]
     note right of resolved
         Operator decisions are final.
-        A later detection opens a new
-        incident instead of reopening this one.
+        A later detection opens a
+        new incident instead.
     end note
+
+    classDef newc fill:#0f2240,stroke:#4f9cf9,stroke-width:1.5px,color:#dbe9ff
+    classDef inv fill:#2e2210,stroke:#f5a524,stroke-width:1.5px,color:#ffe9c2
+    classDef res fill:#0f2a1f,stroke:#2fbf71,stroke-width:1.5px,color:#d5f5e3
+    classDef fp fill:#1d2534,stroke:#8d99ad,stroke-width:1.5px,color:#e6ecf5
+    class new newc
+    class investigating inv
+    class resolved res
+    class false_positive fp
 ```
 
 </details>
@@ -312,6 +362,7 @@ The registry anchors identity on the DHCP hostname and records every MAC and IP 
 not to whoever holds it now.
 
 ```mermaid
+%%{init: {'theme':'base','themeVariables':{'primaryColor':'#161d2b','primaryTextColor':'#e6ecf5','primaryBorderColor':'#2e3a50','secondaryColor':'#111722','tertiaryColor':'#0d121b','lineColor':'#4f9cf9','clusterBkg':'#0d121b','clusterBorder':'#2e3a50','titleColor':'#aab6c8','edgeLabelBackground':'#1d2534','textColor':'#8d99ad'},'flowchart':{'curve':'basis','padding':14,'nodeSpacing':38,'rankSpacing':46}}}%%
 flowchart TD
     L["DHCP lease observed<br/>(mac, ip, hostname)"] --> K{"MAC already<br/>known?"}
     K -->|yes| SAME["Same device<br/>extend MAC and IP intervals"]
@@ -320,6 +371,19 @@ flowchart TD
     H -->|no| NEW["New device<br/>new_device signal after 30 s grace"]
     SAME & ROT & NEW --> ATTR["Attribute events by<br/>device_ips time intervals"]
     NEW -.-> FP["fingerprint.py: hostname patterns,<br/>connectivity-check domains, OUI, DHCP opt 55<br/>→ type, OS, confidence, evidence"]
+
+    classDef ext fill:#161d2b,stroke:#5a6679,stroke-width:1.5px,color:#e6ecf5
+    classDef sensor fill:#0f2a1f,stroke:#2fbf71,stroke-width:1.5px,color:#d5f5e3
+    classDef pipe fill:#0f2240,stroke:#4f9cf9,stroke-width:1.5px,color:#dbe9ff
+    classDef store fill:#231b45,stroke:#7b5cf0,stroke-width:1.5px,color:#e4dcff
+    classDef detect fill:#2e2210,stroke:#f5a524,stroke-width:1.5px,color:#ffe9c2
+    classDef danger fill:#3a1519,stroke:#f2545b,stroke-width:1.5px,color:#ffd9db
+    class L sensor
+    class K,H detect
+    class SAME,ROT pipe
+    class NEW danger
+    class ATTR,FP store
+    linkStyle default stroke:#4f9cf9,stroke-width:1.6px
 ```
 
 ### Two-tier ad blocking
@@ -331,6 +395,7 @@ redirected, and **only allowlisted hostnames** are decrypted. The proxy sees the
 and no certificate is ever presented for them.
 
 ```mermaid
+%%{init: {'theme':'base','themeVariables':{'primaryColor':'#161d2b','primaryTextColor':'#e6ecf5','primaryBorderColor':'#2e3a50','secondaryColor':'#111722','tertiaryColor':'#0d121b','lineColor':'#4f9cf9','clusterBkg':'#0d121b','clusterBorder':'#2e3a50','titleColor':'#aab6c8','edgeLabelBackground':'#1d2534','textColor':'#8d99ad'},'flowchart':{'curve':'basis','padding':14,'nodeSpacing':38,'rankSpacing':46}}}%%
 flowchart TD
     Q["Device traffic"] --> DNS{"DNS query"}
     DNS -->|"any resolver, port 53"| DNAT["nftables DNAT<br/>forced to 10.10.0.1"]
@@ -348,6 +413,20 @@ flowchart TD
     SNI -->|no| PASS["passthrough, never decrypted"]
     SNI -->|"yes, but 3 TLS failures<br/>(app pins its certificate)"| PIN["auto-passthrough for 24 h"]
     SNI -->|yes| STRIP["remove adPlacements, playerAds, adSlots<br/>block ad-tracking paths<br/><b>Tier 2</b>: enrolled devices only"]
+
+    classDef ext fill:#161d2b,stroke:#5a6679,stroke-width:1.5px,color:#e6ecf5
+    classDef sensor fill:#0f2a1f,stroke:#2fbf71,stroke-width:1.5px,color:#d5f5e3
+    classDef pipe fill:#0f2240,stroke:#4f9cf9,stroke-width:1.5px,color:#dbe9ff
+    classDef store fill:#231b45,stroke:#7b5cf0,stroke-width:1.5px,color:#e4dcff
+    classDef detect fill:#2e2210,stroke:#f5a524,stroke-width:1.5px,color:#ffe9c2
+    classDef danger fill:#3a1519,stroke:#f2545b,stroke-width:1.5px,color:#ffd9db
+    class Q ext
+    class DNS,BYP,TLS,SNI detect
+    class DNAT,AGH,BLK sensor
+    class OK,FWD,PASS,PIN pipe
+    class REJ danger
+    class MITM,STRIP store
+    linkStyle default stroke:#4f9cf9,stroke-width:1.6px
 ```
 
 <details>
@@ -385,6 +464,7 @@ $$
 <br>
 
 ```mermaid
+%%{init: {'theme':'base','themeVariables':{'primaryColor':'#231b45','primaryTextColor':'#e6ecf5','primaryBorderColor':'#7b5cf0','secondaryColor':'#161d2b','tertiaryColor':'#111722','lineColor':'#7b5cf0','attributeBackgroundColorOdd':'#111722','attributeBackgroundColorEven':'#161d2b','rowOdd':'#111722','rowEven':'#1a2232','relationLabelBackground':'#1d2534','relationLabelColor':'#e6ecf5','nodeBorder':'#7b5cf0','mainBkg':'#231b45','edgeLabelBackground':'#1d2534','labelBackgroundColor':'#1d2534','textColor':'#aab6c8'}}}%%
 erDiagram
     devices ||--o{ device_macs : "has used"
     devices ||--o{ device_ips : "held (intervals)"

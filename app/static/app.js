@@ -55,6 +55,52 @@ function fmtNum(n) {
     return (Math.round(n * 10) / 10).toLocaleString(undefined, { minimumFractionDigits: 1 });
 }
 
+/* Replays a one-shot CSS animation class (e.g. the badge pop). */
+function bump(el) {
+    el.classList.remove("bump");
+    void el.offsetWidth;  // restart the animation if it's already applied
+    el.classList.add("bump");
+}
+
+/* Marks rows that weren't in this container's previous render, so only
+   genuinely new rows animate - a 5-second live refresh that re-renders the
+   same rows moves nothing. `live` picks the treatment: a brief accent wash
+   for rows that arrived on their own, a plain fade-in for rows revealed by
+   the user's own filter or search. The first render never animates. */
+function markNewRows(container, rowSelector, live) {
+    if (!container) return;
+    const prev = container.__rowKeys;
+    const keys = new Set();
+    $$(rowSelector, container).forEach(row => {
+        const key = row.dataset.key;
+        if (key == null) return;
+        keys.add(key);
+        if (prev && !prev.has(key)) row.classList.add(live ? "row-fresh" : "row-enter");
+    });
+    container.__rowKeys = keys;
+}
+
+/* Updates a stacked meter's segments in place so width changes glide
+   (app.css transitions .meter > span) instead of being rebuilt each tick. */
+function setMeter(el, segments) {
+    if (!el) return;
+    const wanted = segments.filter(sg => sg.pct > 0);
+    const byClass = new Map($$(":scope > span", el).map(sp => [sp.className, sp]));
+    wanted.forEach((sg, i) => {
+        let span = byClass.get(sg.cls);
+        if (!span) {
+            span = document.createElement("span");
+            span.className = sg.cls;
+            span.style.width = "0%";
+        }
+        byClass.delete(sg.cls);
+        if (el.children[i] !== span) el.insertBefore(span, el.children[i] || null);
+    });
+    byClass.forEach(sp => sp.remove());
+    void el.offsetWidth;  // commit the 0% start of any new segment before growing it
+    wanted.forEach(sg => { el.querySelector(`:scope > .${sg.cls}`).style.width = sg.pct + "%"; });
+}
+
 function setLive(on) {
     SP.live = on;
     localStorage.setItem("sp.live", on ? "1" : "0");
@@ -266,6 +312,10 @@ function initSidebar() {
     shell.classList.toggle("collapsed", collapsed);
 
     const setCollapsed = (v) => {
+        // Lets the labels fade back in as the sidebar widens (app.css).
+        shell.classList.add("sidebar-animating");
+        clearTimeout(shell.__animTimer);
+        shell.__animTimer = setTimeout(() => shell.classList.remove("sidebar-animating"), 450);
         shell.classList.toggle("collapsed", v);
         localStorage.setItem("sp.sidebarCollapsed", v ? "1" : "0");
     };
@@ -285,9 +335,11 @@ async function refreshNotifications() {
         const openCount = d.incidents.length;
 
         const badge = $("#notifBadge");
-        if (badge) { badge.textContent = openCount; badge.hidden = openCount === 0; }
+        const grew = SP.lastOpenCount != null && openCount > SP.lastOpenCount;
+        SP.lastOpenCount = openCount;
+        if (badge) { badge.textContent = openCount; badge.hidden = openCount === 0; if (grew) bump(badge); }
         const navBadge = $("#navIncidentBadge");
-        if (navBadge) { navBadge.textContent = openCount; navBadge.hidden = openCount === 0; }
+        if (navBadge) { navBadge.textContent = openCount; navBadge.hidden = openCount === 0; if (grew) bump(navBadge); }
         const panelCount = $("#notifPanelCount");
         if (panelCount) panelCount.textContent = openCount;
 
@@ -540,14 +592,13 @@ async function refreshDashboard() {
     const devMeter = $("#kpiDevicesMeter");
     if (devMeter) {
         const pct = d.kpis.devices_total ? (d.kpis.devices_active / d.kpis.devices_total) * 100 : 0;
-        devMeter.innerHTML = `<span class="m-ok" style="width:${pct}%"></span>`;
+        setMeter(devMeter, [{ cls: "m-ok", pct }]);
         devMeter.title = `${d.kpis.devices_active} of ${d.kpis.devices_total} known devices online`;
     }
     const incMeter = $("#kpiIncidentsMeter");
     if (incMeter) {
         const sev = d.severity, total = sev.high + sev.medium + sev.low;
-        incMeter.innerHTML = total ? ["high", "medium", "low"].filter(k => sev[k])
-            .map(k => `<span class="m-${k}" style="width:${(sev[k] / total) * 100}%"></span>`).join("") : "";
+        setMeter(incMeter, ["high", "medium", "low"].map(k => ({ cls: `m-${k}`, pct: total ? (sev[k] / total) * 100 : 0 })));
         incMeter.title = `${sev.high} high · ${sev.medium} medium · ${sev.low} low`;
     }
 
@@ -685,22 +736,43 @@ function renderHeatmap(grid, days) {
     if (daysEl) daysEl.innerHTML = days.map(d => `<span>${esc(d)}</span>`).join("");
 }
 
+/* Rows are keyed by label and reused across refreshes, so on a live update
+   existing bars glide to their new length and a newly ranked item grows in
+   from zero - rather than the whole list being rebuilt every tick. */
 function renderBarList(sel, items, emptyMsg) {
     const el = $(sel);
     if (!el) return;
     if (!items.length) { el.innerHTML = `<div class="empty">${esc(emptyMsg)}</div>`; return; }
     const max = Math.max(...items.map(i => i.weight)) || 1;
-    el.innerHTML = `<div class="barlist">` + items.map(i => {
-        const pct = Math.max(2, (i.weight / max) * 100);
-        const label = i.href
-            ? `<a class="link barlabel" href="${i.href}">${esc(i.label)}</a>`
-            : `<span class="barlabel" title="${esc(i.label)}">${esc(i.label)}</span>`;
-        return `<div class="barrow">
-            ${label}
-            <span class="num dim">${esc(i.value)}</span>
-            <span class="bartrack"><span class="barfill ${i.tone || ""}" style="width:${pct}%"></span></span>
-        </div>`;
-    }).join("") + `</div>`;
+    let list = el.querySelector(":scope > .barlist");
+    if (!list) {
+        el.innerHTML = `<div class="barlist"></div>`;
+        list = el.firstElementChild;
+    }
+    const existing = new Map($$(":scope > .barrow", list).map(r => [r.dataset.key, r]));
+    const placed = items.map((i, idx) => {
+        const key = `${i.label}|${i.href || ""}`;
+        let row = existing.get(key);
+        if (!row) {
+            row = document.createElement("div");
+            row.className = "barrow";
+            row.dataset.key = key;
+            const label = i.href
+                ? `<a class="link barlabel" href="${esc(i.href)}">${esc(i.label)}</a>`
+                : `<span class="barlabel" title="${esc(i.label)}">${esc(i.label)}</span>`;
+            row.innerHTML = `${label}<span class="num dim"></span>
+                <span class="bartrack"><span class="barfill" style="width:0%"></span></span>`;
+        }
+        existing.delete(key);
+        row.querySelector(".num").textContent = i.value;
+        const fill = row.querySelector(".barfill");
+        fill.className = `barfill ${i.tone || ""}`;
+        if (list.children[idx] !== row) list.insertBefore(row, list.children[idx] || null);
+        return { fill, pct: Math.max(2, (i.weight / max) * 100) };
+    });
+    existing.forEach(r => r.remove());
+    void list.offsetWidth;  // commit new bars at 0% so they visibly grow
+    placed.forEach(({ fill, pct }) => { fill.style.width = `${pct}%`; });
 }
 
 function renderFeed(events) {
@@ -708,12 +780,15 @@ function renderFeed(events) {
     if (!el) return;
     if (!events.length) { el.innerHTML = `<div class="empty">No events yet</div>`; return; }
     el.innerHTML = events.map(e => `
-        <div class="feed-row">
+        <div class="feed-row" data-key="${esc(`${e.time}|${e.type}|${e.detail}|${e.device || e.src || ""}`)}">
             <span class="mono dim">${esc(e.time)}</span>
             <span class="type-tag ${esc(e.type)}">${esc(e.type.replace("dns_query", "dns"))}</span>
             <span class="truncate mono" title="${esc(e.detail)}">${esc(e.detail)}</span>
             <span class="dim">${e.blocked ? '<span class="chip high">blocked</span>' : esc(e.device || e.src || "")}</span>
         </div>`).join("");
+    // Plain fade-in, not the accent wash: events arrive on almost every
+    // refresh, and a wash that often would just be flicker.
+    markNewRows(el, ".feed-row", false);
 }
 
 function renderActiveIncidents(items) {
@@ -724,13 +799,14 @@ function renderActiveIncidents(items) {
         return;
     }
     el.innerHTML = items.map(i => `
-        <a class="inc-row ${esc(i.severity)}" href="/incidents/${i.id}">
+        <a class="inc-row ${esc(i.severity)}" href="/incidents/${i.id}" data-key="${i.id}">
             <span class="inc-body">
                 <div class="inc-title" title="${esc(i.title)}">${esc(i.title)}</div>
                 <div class="inc-meta"><span class="sev-label ${esc(i.severity)}">${esc(i.severity)}</span> · ${esc(i.device || "network-wide")} · ${esc(i.evidence_count)} events</div>
             </span>
             <span class="inc-age">${esc(i.age)} ago</span>
         </a>`).join("");
+    markNewRows(el, ".inc-row", true);
 }
 
 /* -------------------------------------------------------------- devices */
@@ -741,11 +817,11 @@ async function refreshDevices() {
     const res = await fetch("/api/devices");
     const d = await res.json();
     window.__devices = d.devices;
-    renderDevices();
+    renderDevices(true);
     $("#lastUpdated").textContent = new Date().toLocaleTimeString();
 }
 
-function renderDevices() {
+function renderDevices(live) {
     const tbody = $("#deviceRows");
     if (!tbody) return;
     const q = ($("#deviceSearch") && $("#deviceSearch").value || "").toLowerCase();
@@ -771,7 +847,7 @@ function renderDevices() {
         return;
     }
     tbody.innerHTML = rows.map(d => `
-        <tr class="clickable" onclick="location.href='/devices/${d.id}'">
+        <tr class="clickable" onclick="location.href='/devices/${d.id}'" data-key="${d.id}">
             <td style="white-space:nowrap"><span class="status-dot ${d.online ? "online" : "offline"}" title="${d.online ? "online" : "offline"}"></span><span class="row-title">${esc(d.name)}</span>
                 ${d.is_test ? '<span class="chip neutral" style="margin-left:6px">test</span>' : ""}
                 ${d.hostname && d.hostname !== d.name ? `<div class="row-sub mono" style="padding-left:16px">${esc(d.hostname)}</div>` : ""}</td>
@@ -784,6 +860,7 @@ function renderDevices() {
             <td class="num">${d.incidents ? `<span class="chip ${d.incidents_high ? "high" : "low"}">${d.incidents}</span>` : '<span class="dim">0</span>'}</td>
             <td class="num dim" style="white-space:nowrap">${esc(d.age)}</td>
         </tr>`).join("");
+    markNewRows(tbody, "tr[data-key]", live === true);
 }
 
 /* ------------------------------------------------------------ incidents */
@@ -796,7 +873,7 @@ function statusMenuHtml(current, id) {
     ).join("");
 }
 
-async function refreshIncidents() {
+async function refreshIncidents(source) {
     const p = new URLSearchParams();
     if (incidentFilter.severity) p.set("severity", incidentFilter.severity);
     if (incidentFilter.status) p.set("status", incidentFilter.status);
@@ -809,11 +886,11 @@ async function refreshIncidents() {
     $("#cntMedium") && ($("#cntMedium").textContent = d.counts.medium);
     $("#cntLow") && ($("#cntLow").textContent = d.counts.low);
 
-    renderIncidents();
+    renderIncidents(source !== "user");
     $("#lastUpdated").textContent = new Date().toLocaleTimeString();
 }
 
-function renderIncidents() {
+function renderIncidents(live) {
     const tbody = $("#incidentRows");
     if (!tbody) return;
     const q = ($("#incidentSearch") && $("#incidentSearch").value || "").toLowerCase();
@@ -829,7 +906,7 @@ function renderIncidents() {
     tbody.innerHTML = rows.map(i => {
         const meta = STATUS_META[i.status] || STATUS_META.new;
         return `
-        <tr class="clickable" onclick="location.href='/incidents/${i.id}'">
+        <tr class="clickable" onclick="location.href='/incidents/${i.id}'" data-key="${i.id}">
             <td><span class="chip ${esc(i.severity)} dot">${esc(i.severity)}</span></td>
             <td><div class="row-title">${esc(i.title)}</div>
                 <div class="row-sub truncate incident-desc" title="${esc(i.description || "")}">${esc(i.description || "")}</div></td>
@@ -848,6 +925,7 @@ function renderIncidents() {
             </td>
         </tr>`;
     }).join("");
+    markNewRows(tbody, "tr[data-key]", live === true);
 }
 
 function initIncidentBlockDomain() {
@@ -2471,6 +2549,56 @@ function initFiltering() {
     loadStatus();
 }
 
+/* ---------------------------------------------------- segmented controls */
+
+/* One indicator per segmented control that glides to whichever option is
+   active. Every existing handler just toggles .active on a button as
+   before; a MutationObserver notices and moves the indicator, so no
+   handler needs to know this exists. */
+function initSegIndicators() {
+    $$(".seg").forEach(seg => {
+        const buttons = $$("button", seg);
+        if (!buttons.length || seg.querySelector(".seg-indicator")) return;
+        const ind = document.createElement("span");
+        ind.className = "seg-indicator";
+        seg.prepend(ind);
+        seg.classList.add("has-indicator");
+
+        const place = (animate) => {
+            const active = buttons.find(b => b.classList.contains("active"));
+            if (!active) { ind.style.opacity = "0"; return; }
+            if (!animate) ind.classList.add("no-anim");
+            ind.style.opacity = "1";
+            ind.style.width = `${active.offsetWidth}px`;
+            ind.style.height = `${active.offsetHeight}px`;
+            ind.style.transform = `translate(${active.offsetLeft}px, ${active.offsetTop}px)`;
+            if (!animate) { void ind.offsetWidth; ind.classList.remove("no-anim"); }
+        };
+        const mo = new MutationObserver(() => place(true));
+        buttons.forEach(b => mo.observe(b, { attributes: true, attributeFilter: ["class"] }));
+        // Counts inside a button (e.g. "High 7") and wrapping on narrow
+        // screens change geometry without a class change.
+        if ("ResizeObserver" in window) {
+            const ro = new ResizeObserver(() => place(false));
+            ro.observe(seg);
+            buttons.forEach(b => ro.observe(b));
+        }
+        place(false);
+    });
+}
+
+/* Gives the topbar its shadow only once content has scrolled beneath it. */
+function initTopbarElevation() {
+    const bar = $(".topbar");
+    if (!bar) return;
+    let ticking = false;
+    const update = () => { bar.classList.toggle("scrolled", window.scrollY > 4); ticking = false; };
+    window.addEventListener("scroll", () => {
+        if (!ticking) { ticking = true; requestAnimationFrame(update); }
+    }, { passive: true });
+    update();
+}
+
 /* ------------------------------------------------------- section subnav */
 
 /* Highlights the jump link for whichever section is currently at the top
@@ -2739,12 +2867,12 @@ document.addEventListener("DOMContentLoaded", () => {
     $$("#sevFilter button").forEach(b => b.addEventListener("click", () => {
         $$("#sevFilter button").forEach(x => x.classList.toggle("active", x === b));
         incidentFilter.severity = b.dataset.sev || "";
-        refreshIncidents();
+        refreshIncidents("user");
     }));
     $$("#statusFilter button").forEach(b => b.addEventListener("click", () => {
         $$("#statusFilter button").forEach(x => x.classList.toggle("active", x === b));
         incidentFilter.status = b.dataset.status || "";
-        refreshIncidents();
+        refreshIncidents("user");
     }));
 
     const incExport = $("#incidentsExport");
@@ -2753,6 +2881,9 @@ document.addEventListener("DOMContentLoaded", () => {
         { key: "device", label: "Device" }, { key: "status", label: "Status" },
         { key: "evidence_count", label: "Evidence" }, { key: "age", label: "Last Seen" },
     ]));
+
+    initSegIndicators();
+    initTopbarElevation();
 
     setLive(SP.live);
     tick();

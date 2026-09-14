@@ -89,7 +89,14 @@
     --shadow:    inset 0 1px 0 rgba(255,255,255,.025), 0 1px 2px rgba(0,0,0,.35), 0 8px 24px -12px rgba(0,0,0,.5);
     --shadow-lg: 0 24px 64px -12px rgba(0,0,0,.65), 0 0 0 1px rgba(255,255,255,.02);
 
-    --ease: cubic-bezier(.4, 0, .2, 1);
+    /* Motion. Three durations and two curves cover every animation in the
+       console, so everything moves with the same character: quick, eased
+       out, never bouncy except the theme icon. */
+    --ease:      cubic-bezier(.4, 0, .2, 1);
+    --ease-out:  cubic-bezier(.2, .8, .2, 1);
+    --dur-fast:  120ms;
+    --dur:       200ms;
+    --dur-slow:  320ms;
 
     --sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Inter, Roboto, "Helvetica Neue", sans-serif;
     --mono: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, Consolas, monospace;
@@ -210,6 +217,8 @@ strong, b { font-weight: 600; color: var(--text); }
     cursor: pointer; position: relative; transition: background .14s, color .14s, border-color .14s;
 }
 .icon-btn:hover { background: var(--surface-3); color: var(--text); border-color: var(--border); }
+.icon-btn:active { transform: scale(.94); }
+.icon-btn { transition: background .14s, color .14s, border-color .14s, transform var(--dur-fast) var(--ease); }
 
 /* ------------------------------------------------------------- shell */
 
@@ -308,7 +317,11 @@ strong, b { font-weight: 600; color: var(--text); }
     backdrop-filter: saturate(140%) blur(14px);
     -webkit-backdrop-filter: saturate(140%) blur(14px);
     border-bottom: 1px solid var(--border);
+    transition: box-shadow var(--dur-slow) var(--ease);
 }
+/* Lifts the bar off the content only once something has scrolled under it. */
+.topbar.scrolled { box-shadow: 0 10px 30px -18px rgba(0, 0, 0, .55); }
+:root[data-theme="light"] .topbar.scrolled { box-shadow: 0 10px 30px -18px rgba(15, 23, 42, .22); }
 
 .crumbs { display: flex; align-items: center; gap: 8px; min-width: 0; font-size: 13px; white-space: nowrap; }
 .crumbs a { color: var(--text-3); text-decoration: none; transition: color .14s; }
@@ -345,13 +358,26 @@ kbd, .cmdk-trigger kbd {
     border-radius: 20px; min-width: 16px; height: 16px; line-height: 16px; text-align: center;
     padding: 0 4px; box-shadow: 0 0 0 2px var(--badge-ring);
 }
+/* A single soft pop when the open-incident count goes up. */
+.badge.bump, .nav-badge.bump { animation: badge-bump .45s var(--ease-out); }
+@keyframes badge-bump { 0% { transform: scale(1); } 35% { transform: scale(1.28); } 100% { transform: scale(1); } }
 .notif-panel {
     position: absolute; top: 44px; right: 0; width: 360px; z-index: 60;
     background: var(--surface-2); border: 1px solid var(--border-strong); border-radius: var(--r);
     box-shadow: var(--shadow-lg); overflow: hidden;
-    animation: pop-in .16s var(--ease);
+    transform-origin: top right;
 }
 @keyframes pop-in { from { opacity: 0; transform: translateY(-4px) scale(.98); } to { opacity: 1; transform: none; } }
+
+/* Popovers open and close with the same short fade-and-settle. The closing
+   half uses allow-discrete so display:none waits for the fade; browsers
+   without it simply show and hide instantly. */
+.notif-panel, .row-menu-list {
+    transition: opacity var(--dur) var(--ease-out), transform var(--dur) var(--ease-out),
+                display var(--dur) allow-discrete;
+}
+.notif-panel[hidden] { display: none; opacity: 0; transform: translateY(-4px) scale(.98); }
+@starting-style { .notif-panel:not([hidden]) { opacity: 0; transform: translateY(-4px) scale(.98); } }
 .notif-panel-head { display: flex; align-items: center; justify-content: space-between; padding: 12px 14px; font-size: 12.5px; font-weight: 650; border-bottom: 1px solid var(--border); }
 .notif-panel-body { max-height: 340px; overflow-y: auto; }
 .notif-row { display: flex; gap: 11px; align-items: flex-start; padding: 11px 14px; border-bottom: 1px solid var(--border-soft); text-decoration: none; color: inherit; transition: background .12s; }
@@ -387,8 +413,11 @@ kbd, .cmdk-trigger kbd {
 
 main {
     padding: 26px 28px 64px; max-width: 1600px; margin: 0 auto; width: 100%;
-    animation: page-in .28s var(--ease);
+    animation: page-in .28s var(--ease-out);
 }
+/* When the browser animated the navigation itself (see "page transitions"),
+   the content is already fading in - don't fade it a second time. */
+.vt-nav main { animation: none; }
 @keyframes page-in { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
 
 /* A faint glow behind the top of every page - gives the dark canvas depth
@@ -402,14 +431,18 @@ main {
     background: var(--overlay-bg); backdrop-filter: blur(4px);
     align-items: flex-start; justify-content: center; padding-top: 12vh;
 }
-.cmdk-overlay:not([hidden]) { display: flex; animation: fade-in .14s ease-out; }
+.cmdk-overlay { display: flex; transition: opacity var(--dur) var(--ease-out), display var(--dur) allow-discrete; }
+.cmdk-overlay[hidden] { display: none; opacity: 0; }
+@starting-style { .cmdk-overlay:not([hidden]) { opacity: 0; } }
 @keyframes fade-in { from { opacity: 0; } to { opacity: 1; } }
 .cmdk-modal {
     width: min(600px, 92vw); background: var(--surface-2);
     border: 1px solid var(--border-strong); border-radius: var(--r-lg);
     box-shadow: var(--shadow-lg); overflow: hidden;
-    animation: pop-in .18s var(--ease);
+    transition: transform var(--dur-slow) var(--ease-out), opacity var(--dur) var(--ease-out);
 }
+.cmdk-overlay[hidden] .cmdk-modal { transform: translateY(-6px) scale(.985); opacity: 0; }
+@starting-style { .cmdk-overlay:not([hidden]) .cmdk-modal { transform: translateY(-6px) scale(.985); opacity: 0; } }
 .cmdk-input-row { display: flex; align-items: center; gap: 11px; padding: 15px 18px; border-bottom: 1px solid var(--border); color: var(--text-3); }
 .cmdk-input-row input {
     flex: 1; background: none; border: 0; outline: 0; color: var(--text); font: inherit; font-size: 15px;
@@ -420,6 +453,7 @@ main {
 .cmdk-item {
     display: flex; align-items: center; gap: 11px; padding: 9px 11px; border-radius: var(--r-sm);
     cursor: pointer; font-size: 13px; color: var(--text-2);
+    transition: background-color var(--dur-fast) var(--ease), box-shadow var(--dur-fast) var(--ease);
 }
 .cmdk-item .icon { color: var(--text-3); }
 .cmdk-item .label { color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -801,6 +835,17 @@ a.barlabel:hover { color: var(--accent); }
 .feed-row:last-child { border-bottom: 0; }
 .feed-row:hover { background: var(--row-hover); }
 .feed-row.new { animation: slidein .35s ease-out; }
+
+/* Rows that weren't in the previous render. row-enter: shown because the
+   user filtered or searched. row-fresh: arrived on a live refresh, so it
+   also carries a brief accent wash that fades out - enough to notice a new
+   incident or event without drawing the eye repeatedly. Fill mode is
+   backwards only: a lingering transform would give each row its own
+   stacking context and trap the row action menu beneath the next row. */
+.row-enter { animation: row-enter var(--dur) var(--ease-out) backwards; }
+.row-fresh { animation: row-enter var(--dur-slow) var(--ease-out) backwards, row-fresh 1.8s ease-out backwards; }
+@keyframes row-enter { from { opacity: 0; transform: translateY(-3px); } }
+@keyframes row-fresh { from { background-color: rgba(var(--accent-rgb), .13); } to { background-color: transparent; } }
 .feed-row > .dim:last-child { font-size: 11px; text-align: right; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 260px; }
 .feed-row .truncate { max-width: 100%; display: block; }
 .feed-row.with-device { grid-template-columns: 64px 86px 120px minmax(0, 1fr) auto; }
@@ -977,12 +1022,14 @@ a.barlabel:hover { color: var(--accent); }
 
 .row-menu { position: relative; display: inline-block; }
 .row-menu-btn { color: var(--text-3); width: 28px; height: 28px; }
+.row-menu:not(.open) .row-menu-list { display: none; opacity: 0; transform: translateY(-4px) scale(.98); }
+@starting-style { .row-menu.open .row-menu-list { opacity: 0; transform: translateY(-4px) scale(.98); } }
 .row-menu-list {
     position: absolute; right: 0; top: 32px; z-index: 30; min-width: 184px;
     background: var(--surface-3); border: 1px solid var(--border-strong); border-radius: var(--r-sm);
-    box-shadow: var(--shadow-lg); padding: 4px; display: none;
+    box-shadow: var(--shadow-lg); padding: 4px;
 }
-.row-menu.open .row-menu-list { display: block; animation: pop-in .14s var(--ease); }
+.row-menu.open .row-menu-list { display: block; opacity: 1; transform: none; transform-origin: top right; }
 .row-menu.open .row-menu-btn { background: var(--surface-3); color: var(--text); border-color: var(--border); }
 .row-menu-list button {
     display: flex; align-items: center; gap: 8px; width: 100%; text-align: left;
@@ -1160,10 +1207,13 @@ a.barlabel:hover { color: var(--accent); }
    is replaced by the circular clip-path animation started in app.js, so
    both snapshots are shown as-is: the old theme underneath, the new theme
    expanding over it from the toggle. Works identically in both directions. */
-::view-transition-old(root),
-::view-transition-new(root) { animation: none; mix-blend-mode: normal; }
-::view-transition-old(root) { z-index: 1; }
-::view-transition-new(root) { z-index: 2; }
+:root.theme-instant::view-transition-old(root),
+:root.theme-instant::view-transition-new(root) { animation: none; mix-blend-mode: normal; }
+:root.theme-instant::view-transition-old(root) { z-index: 1; }
+:root.theme-instant::view-transition-new(root) { z-index: 2; }
+/* The sidebar and topbar are captured separately for page navigation (below);
+   during a theme switch they must be part of the page being revealed. */
+.theme-instant .sidebar, .theme-instant .topbar { view-transition-name: none; }
 
 /* Suspends ordinary hover/focus transitions while the new theme is being
    revealed, so every surface inside the circle is already in its final
@@ -1183,6 +1233,63 @@ a.barlabel:hover { color: var(--accent); }
 :root[data-theme="light"] .kpi { background: var(--surface); }
 :root[data-theme="light"] .hero { background: var(--surface); }
 :root[data-theme="light"] .toast::before { color: #fff; }
+
+/* ------------------------------------------------------- page transitions */
+
+/* Same-origin navigations crossfade instead of flashing between pages. The
+   sidebar and topbar are captured as their own layers so they stay put
+   while only the page content changes beneath them (the active nav item
+   and the breadcrumb crossfade in place). Unsupported browsers navigate
+   normally and get main's own page-in fade instead. */
+@media (prefers-reduced-motion: no-preference) {
+    @view-transition { navigation: auto; }
+    html { scroll-behavior: smooth; }
+}
+.sidebar { view-transition-name: sidebar; }
+.topbar  { view-transition-name: topbar; }
+::view-transition-group(sidebar), ::view-transition-group(topbar) { animation-duration: var(--dur); }
+::view-transition-old(root) { animation: vt-out var(--dur-fast) var(--ease) both; }
+::view-transition-new(root) { animation: vt-in var(--dur-slow) var(--ease-out) 40ms both; }
+@keyframes vt-out { to { opacity: 0; } }
+@keyframes vt-in  { from { opacity: 0; transform: translateY(5px); } }
+
+/* ------------------------------------------------ segmented control slider */
+
+/* The active background is one element that glides to the chosen option,
+   so a range or filter change reads as a movement rather than two buttons
+   swapping color. Positioned by initSegIndicators() in app.js; without JS
+   the plain .active background still applies. */
+.seg { position: relative; }
+.seg-indicator {
+    position: absolute; left: 0; top: 0; z-index: 0; pointer-events: none;
+    border-radius: 5px; background: var(--surface-4);
+    box-shadow: var(--seg-active-shadow), inset 0 0 0 1px var(--border-strong);
+    transition: transform var(--dur-slow) var(--ease-out), width var(--dur-slow) var(--ease-out),
+                height var(--dur-slow) var(--ease-out), opacity var(--dur) var(--ease);
+}
+.seg-indicator.no-anim { transition: none; }
+.seg.has-indicator button { position: relative; z-index: 1; }
+.seg.has-indicator button.active,
+.seg.has-indicator button.active:hover { background: transparent; box-shadow: none; }
+
+/* ------------------------------------------------------ sidebar collapse */
+
+/* Labels fade back in as the sidebar widens, instead of popping in at full
+   opacity while it is still narrow. Scoped to the moment of the toggle so
+   ordinary page loads don't replay it. */
+.shell.sidebar-animating .sidebar-nav a span,
+.shell.sidebar-animating .brand-text,
+.shell.sidebar-animating .pipeline-text,
+.shell.sidebar-animating .nav-section { transition: opacity var(--dur) var(--ease) 90ms; }
+@starting-style {
+    .shell.sidebar-animating .sidebar-nav a span,
+    .shell.sidebar-animating .brand-text,
+    .shell.sidebar-animating .pipeline-text,
+    .shell.sidebar-animating .nav-section { opacity: 0; }
+}
+
+/* Bar-list values change smoothly on live refresh rather than jumping. */
+.barrow .barfill { transition: width .6s var(--ease-out); }
 
 /* ------------------------------------------------------------- print (6.6) */
 /* The weekly report (step 6.6) is meant to be saved as a PDF straight from

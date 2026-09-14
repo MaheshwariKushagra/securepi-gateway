@@ -8,6 +8,11 @@
         /* Apply the saved theme before first paint, so a light-mode user never
            sees a flash of the dark console while the page loads. */
         try { if (localStorage.getItem("sp.theme") === "light") document.documentElement.dataset.theme = "light"; } catch (e) {}
+        /* If the browser is animating this navigation (app.css "page
+           transitions"), skip main's own fade-in so it doesn't play twice. */
+        window.addEventListener("pagereveal", function (e) {
+            if (e.viewTransition) document.documentElement.classList.add("vt-nav");
+        });
     </script>
     <link rel="stylesheet" href="/static/app.css?v={{ asset_v }}">
     <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🛡️</text></svg>">

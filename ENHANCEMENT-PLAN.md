@@ -291,7 +291,7 @@ New signals follow the `correlation.py` pattern (trailing-window SQL → `raise_
 
 | Step | Work | Origin | Exit criteria | Days |
 |---|---|---|---|---|
-| 2.1 | **Scan family:** network sweep (one port across many hosts) + slow-scan variants | F§12.3 | `nmap -T0` from `ns_attacker` detected | 1 |
+| 2.1 | **Scan family:** network sweep (one port across many hosts) + slow-scan variants — **done, 14 September 2026** | F§12.3 | `nmap -T0` from `ns_attacker` detected — verified live: see `EVALUATION-RESULTS-2.md` §2.1 | 1 |
 | 2.2 | **DNS-bypass hardening + detection.** *Hardening:* (a) DNS-level blocking of DoH hostnames (HaGeZi DoH/VPN/proxy bypass list, DoH part on by default; VPN/proxy part available as a profile option in 4.3). (b) Firefox canary `use-application-dns.net` → NXDOMAIN, which disables Firefox's automatic DoH. (c) iCloud Private Relay opt-out: `mask.icloud.com` / `mask-h2.icloud.com` → NXDOMAIN, Apple's documented network signal. (d) The `doh_resolvers` nft set refreshes daily from resolved DoH hostnames instead of 14 static IPs. *Detection:* `log prefix` on the dot/doh/quic reject rules, those log lines ingested as events (the restored nftables source), plus Suricata TLS SNI matches on DoH hostnames. Incident: "Device X tried to bypass DNS filtering N times via DoH/DoT/Private Relay" | F§11.3, 15d cut, A5, Mkt (NextDNS) | Firefox with DoH on, Chrome Secure DNS with a custom provider, and Android Private DNS each end up resolving through AdGuard (or failing closed). One incident per device with evidence | 2 |
 | 2.3 | **IDS alerts → taxonomy → incidents** (mapping table: ET category/SID → plain name, severity, ATT&CK) | F§9.6 | Test signature → plain-language incident | 1 |
 | 2.4 | **Offline threat intel.** Daily abuse.ch Feodo/URLhaus/ThreatFox into an `ioc` table, matched on IP/domain/SNI. The same domains are pushed to AdGuard as a **security blocklist**, so they're both blocked and turned into incidents | F§19, Mkt | Seeded test IOC is blocked **and** raises an incident. Feed age visible | 1 |
@@ -557,7 +557,7 @@ Never cut Stage 2, steps 5.2, 5.3, 5.7, or evaluation items 7.2–7.5.
 |---|---|---|
 | 0 | **0.1 done, 0.2 done and verified live, 0.3 done** | Stage 0 complete |
 | 1 | **1.1 done, 1.2 done, 1.3 done, 1.4 done, 1.5 done, 1.6 done, 1.7 done, 1.8 done** (1.8 out of order - see note below) | Stage 1 complete |
-| 2 | 2.1 · 2.2 · 2.3 · 2.4 · 2.5 · 2.6 · 2.7 · 2.8 | Not started |
+| 2 | **2.1 done**, 2.2 · 2.3 · 2.4 · 2.5 · 2.6 · 2.7 · 2.8 | In progress |
 | 3 | 3.1 · 3.2 · 3.3 · 3.4 · 3.5 · 3.6 | Not started |
 | 4 | 4.1 · 4.2 · 4.3 · 4.4 · 4.5 | Not started |
 | 5 | **5.1 done, 5.2 done, 5.3 done, 5.4 done, 5.5 done, 5.6 done, 5.7 done, 5.8 done, 5.9 done, 5.10 done, 5.11 done (Path 1 only)** (out of order) | 5.1–5.11 done - 5.11 scoped to Path 1 (cosmetic CSS), Path 2 (scriptlets) deferred and recorded |
@@ -595,6 +595,23 @@ user brought it back up, the rest of Stage 0 followed:
 Also this session: the host-system-monitor question (§1.6) was evaluated
 and decided — no btop/Netdata/Glances integration; host health stays a
 step 3.5 item.
+
+With Stage 0 complete, Stage 2 was picked up next, as the plan itself
+recommends (§5's schedule summary calls it "never cut", and it's the
+project's detection-breadth core). **2.1 (scan family) is done:** two new
+signal functions (`network_sweep_signal`, `slow_scan_signal`, the latter
+covering both the vertical and horizontal shape over a long window),
+3 new incident signal_types, 4 new settings, ATT&CK/playbook entries, 8
+new unit tests, and 2 new `gateway/evaluate.py` harness scenarios. The
+harness itself needed extending first — a network-sweep test needs real
+distinct hosts to scan, so `setup-test-harness.sh` now gives `ns_victim`
+ten addresses instead of one — applied live by tearing down and
+recreating the isolated `br-test`/`ns_attacker`/`ns_victim` harness (never
+touching `ap0` or the two real devices) and restarting Suricata to rebind
+its capture socket to the recreated interface. Both live scenarios were
+run against the real gateway, not just asserted in unit tests: full
+results in `EVALUATION-RESULTS-2.md` §2.1. `make deploy` (0.2) was used
+for the code side and ran clean.
 
 **Note on 13 September:** at the user's request, 1.8 and Stage 5's telemetry
 foundation (5.1) and "why blocked / unbreak" tools (5.2) were implemented

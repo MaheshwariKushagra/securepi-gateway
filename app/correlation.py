@@ -228,6 +228,186 @@ def port_scan_signal(conn):
 
 
 # --------------------------------------------------------------------------
+# Signal 1b: network sweep (ENHANCEMENT-PLAN.md step 2.1, F§12.3)
+#
+# One device touching one PORT across many distinct HOSTS - a horizontal
+# scan by standard convention, the mirror image of port_scan_signal's
+# vertical one. This is the discovery step that typically comes BEFORE a
+# vertical scan in a real reconnaissance sequence (find which hosts are
+# alive, then probe one interesting host's ports) - Stage 2.8's campaign
+# correlation is what will eventually link the two into one story; this
+# signal only needs to raise the sweep on its own.
+#
+# Same trailing-window-every-cycle design as every other signal in this
+# file - see port_scan_signal's own comment for why a persisted watermark
+# would silently break this the same way it did for new_device_signal.
+# --------------------------------------------------------------------------
+# Window and threshold both live in app/settings.py - see port_scan_signal's
+# own note above.
+
+
+def network_sweep_signal(conn):
+    now = time.time()
+    window = settings.get(conn, "network_sweep_window_seconds")
+    since = now - window
+    threshold = settings.get(conn, "network_sweep_threshold")
+
+    rows = conn.execute(
+        """
+        SELECT device_id, dest_port,
+               count(DISTINCT dest_ip) n_hosts,
+               min(ts) first_seen, max(ts) last_seen,
+               group_concat(DISTINCT dest_ip) hosts
+          FROM events
+         WHERE event_type = 'flow'
+           AND device_id IS NOT NULL
+           AND ts > ?
+         GROUP BY device_id, dest_port
+        HAVING n_hosts >= ?
+        """,
+        (since, threshold),
+    ).fetchall()
+
+    fired = 0
+    for r in rows:
+        event_ids = [
+            e["id"] for e in conn.execute(
+                """SELECT id FROM events WHERE event_type='flow' AND device_id=?
+                     AND dest_port=? AND ts > ? ORDER BY ts""",
+                (r["device_id"], r["dest_port"], since),
+            )
+        ]
+        raise_incident(
+            conn, r["device_id"], "network_sweep", "high",
+            title="Network sweep detected on port %d" % r["dest_port"],
+            description=(
+                "%d distinct hosts contacted on port %d within %d seconds "
+                "(hosts: %s)." % (r["n_hosts"], r["dest_port"], window, r["hosts"])
+            ),
+            first_seen=r["first_seen"], last_seen=r["last_seen"],
+            event_ids=event_ids,
+        )
+        fired += 1
+
+    set_window_start(conn, "network_sweep", now)
+    return fired
+
+
+# --------------------------------------------------------------------------
+# Signal 1c: slow scan - the vertical and horizontal scan patterns above,
+# re-checked over a much longer window (ENHANCEMENT-PLAN.md step 2.1's
+# "slow-scan variants").
+#
+# port_scan_signal's own comment already explains its 8-ports/300s
+# threshold is deliberately low to catch scans a per-packet IDS signature
+# misses. But because both signals above use a genuine SLIDING window
+# (re-evaluated in full every cycle, not "since we last looked"), a scan
+# paced slower than window/threshold - for port_scan_signal, slower than
+# one new port every 300/8 = 37.5s - can cross the distinct-count
+# threshold at EVERY cycle's check and still never have 8 of them fall
+# inside any single trailing 300-second slice. nmap's slower timing
+# templates (-T0 "paranoid", -T1 "sneaky") are built to pace exactly like
+# this, specifically to stay under fast-window detection thresholds. This
+# signal re-runs both queries with a much longer window so a scan that
+# outlasts the fast signals' window still gets caught, just later -
+# "detected eventually" beats "never detected" for a pattern this
+# deliberate.
+#
+# Reuses port_scan_signal/network_sweep_signal's own SQL shape rather than
+# introducing a third query style - only the window/threshold differ, and
+# duplicating the query here (instead of calling those functions with a
+# parameter) keeps each signal's incident bookkeeping and signal_type
+# independent, exactly as raise_incident's own dedup-by-(device,
+# signal_type) design expects.
+# --------------------------------------------------------------------------
+# Window and threshold both live in app/settings.py - see port_scan_signal's
+# own note above.
+
+
+def slow_scan_signal(conn):
+    now = time.time()
+    window = settings.get(conn, "slow_scan_window_seconds")
+    since = now - window
+    threshold = settings.get(conn, "slow_scan_threshold")
+    fired = 0
+
+    vertical = conn.execute(
+        """
+        SELECT device_id, dest_ip,
+               count(DISTINCT dest_port) n_ports,
+               min(ts) first_seen, max(ts) last_seen,
+               group_concat(DISTINCT dest_port) ports
+          FROM events
+         WHERE event_type = 'flow'
+           AND device_id IS NOT NULL
+           AND ts > ?
+         GROUP BY device_id, dest_ip
+        HAVING n_ports >= ?
+        """,
+        (since, threshold),
+    ).fetchall()
+    for r in vertical:
+        event_ids = [
+            e["id"] for e in conn.execute(
+                """SELECT id FROM events WHERE event_type='flow' AND device_id=?
+                     AND dest_ip=? AND ts > ? ORDER BY ts""",
+                (r["device_id"], r["dest_ip"], since),
+            )
+        ]
+        raise_incident(
+            conn, r["device_id"], "slow_port_scan", "high",
+            title="Slow port scan detected against %s" % r["dest_ip"],
+            description=(
+                "%d distinct ports contacted on %s over %d minutes (ports: %s) - too "
+                "slowly paced for the fast port-scan signal's shorter window to catch."
+                % (r["n_ports"], r["dest_ip"], window // 60, r["ports"])
+            ),
+            first_seen=r["first_seen"], last_seen=r["last_seen"],
+            event_ids=event_ids,
+        )
+        fired += 1
+
+    horizontal = conn.execute(
+        """
+        SELECT device_id, dest_port,
+               count(DISTINCT dest_ip) n_hosts,
+               min(ts) first_seen, max(ts) last_seen,
+               group_concat(DISTINCT dest_ip) hosts
+          FROM events
+         WHERE event_type = 'flow'
+           AND device_id IS NOT NULL
+           AND ts > ?
+         GROUP BY device_id, dest_port
+        HAVING n_hosts >= ?
+        """,
+        (since, threshold),
+    ).fetchall()
+    for r in horizontal:
+        event_ids = [
+            e["id"] for e in conn.execute(
+                """SELECT id FROM events WHERE event_type='flow' AND device_id=?
+                     AND dest_port=? AND ts > ? ORDER BY ts""",
+                (r["device_id"], r["dest_port"], since),
+            )
+        ]
+        raise_incident(
+            conn, r["device_id"], "slow_network_sweep", "high",
+            title="Slow network sweep detected on port %d" % r["dest_port"],
+            description=(
+                "%d distinct hosts contacted on port %d over %d minutes (hosts: %s) - too "
+                "slowly paced for the fast network-sweep signal's shorter window to catch."
+                % (r["n_hosts"], r["dest_port"], window // 60, r["hosts"])
+            ),
+            first_seen=r["first_seen"], last_seen=r["last_seen"],
+            event_ids=event_ids,
+        )
+        fired += 1
+
+    set_window_start(conn, "slow_scan", now)
+    return fired
+
+
+# --------------------------------------------------------------------------
 # Signal 2: brute force
 #
 # Many short connections from one device to one auth-service port on one
@@ -588,8 +768,9 @@ def behavioral_baseline_signal(conn):
     return fired
 
 
-SIGNALS = [port_scan_signal, brute_force_signal, malicious_domain_signal, new_device_signal,
-           adblock_effectiveness_signal, behavioral_baseline_signal]
+SIGNALS = [port_scan_signal, network_sweep_signal, slow_scan_signal, brute_force_signal,
+           malicious_domain_signal, new_device_signal, adblock_effectiveness_signal,
+           behavioral_baseline_signal]
 
 
 def run_all(conn):

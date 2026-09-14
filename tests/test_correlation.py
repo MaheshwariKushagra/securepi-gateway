@@ -106,6 +106,111 @@ class PortScanSignalTests(unittest.TestCase):
         self.assertEqual(rows[0]["evidence_count"], 10)
 
 
+class NetworkSweepSignalTests(unittest.TestCase):
+    """ENHANCEMENT-PLAN.md step 2.1: the horizontal mirror of port_scan -
+    one port touched on many distinct HOSTS, not many ports on one host."""
+
+    def test_fires_on_enough_distinct_hosts_on_one_port(self):
+        conn = fixtures.temp_db()
+        fixtures.insert_device(conn, 1, hostname="attacker")
+        now = time.time()
+        for i in range(8):  # 8 distinct hosts - meets the default threshold
+            fixtures.insert_flow(conn, 1, "203.0.113.%d" % i, 443, now - 10)
+        fired = correlation.network_sweep_signal(conn)
+        self.assertEqual(fired, 1)
+        row = conn.execute("SELECT * FROM incidents WHERE signal_type='network_sweep'").fetchone()
+        self.assertIsNotNone(row)
+        self.assertEqual(row["severity"], "high")
+        self.assertIn("443", row["title"])
+
+    def test_does_not_fire_below_threshold(self):
+        conn = fixtures.temp_db()
+        fixtures.insert_device(conn, 1)
+        now = time.time()
+        for i in range(4):  # only 4 distinct hosts
+            fixtures.insert_flow(conn, 1, "203.0.113.%d" % i, 443, now - 10)
+        self.assertEqual(correlation.network_sweep_signal(conn), 0)
+
+    def test_does_not_fire_when_ports_spread_across_one_host(self):
+        # 8 total touches, but all to the SAME host on different ports -
+        # that's port_scan's pattern (vertical), not network_sweep's
+        # (horizontal), and must not double-fire this signal.
+        conn = fixtures.temp_db()
+        fixtures.insert_device(conn, 1)
+        now = time.time()
+        for port in range(1, 9):
+            fixtures.insert_flow(conn, 1, "203.0.113.10", port, now - 10)
+        self.assertEqual(correlation.network_sweep_signal(conn), 0)
+
+    def test_repeated_firing_merges_into_one_incident(self):
+        conn = fixtures.temp_db()
+        fixtures.insert_device(conn, 1)
+        now = time.time()
+        for i in range(8):
+            fixtures.insert_flow(conn, 1, "203.0.113.%d" % i, 443, now - 10)
+        correlation.network_sweep_signal(conn)
+        for i in range(8, 10):  # sweep continues, two more hosts
+            fixtures.insert_flow(conn, 1, "203.0.113.%d" % i, 443, now - 5)
+        correlation.network_sweep_signal(conn)
+        rows = conn.execute("SELECT * FROM incidents WHERE signal_type='network_sweep'").fetchall()
+        self.assertEqual(len(rows), 1, "a continuing sweep must extend one incident, not create a second")
+        self.assertEqual(rows[0]["evidence_count"], 10)
+
+
+class SlowScanSignalTests(unittest.TestCase):
+    """ENHANCEMENT-PLAN.md step 2.1's 'slow-scan variants': the same two
+    shapes as port_scan/network_sweep, but over a much longer window - so
+    a scan paced too slowly for the fast signals' short window (e.g. an
+    nmap -T0/-T1 timing template) still gets caught eventually."""
+
+    def test_fires_on_a_vertical_scan_spread_across_the_long_window(self):
+        conn = fixtures.temp_db()
+        fixtures.insert_device(conn, 1)
+        now = time.time()
+        # 8 ports, each 800s apart - 5600s total span. Comfortably outside
+        # the FAST port_scan_signal's default 300s window (no single 300s
+        # slice ever contains more than one of these), but well inside the
+        # slow-scan signal's default 7200s window.
+        for port in range(1, 9):
+            fixtures.insert_flow(conn, 1, "203.0.113.10", port, now - (8 - port) * 800)
+        self.assertEqual(correlation.port_scan_signal(conn), 0,
+                          "paced this slowly, the FAST signal must not fire")
+        fired = correlation.slow_scan_signal(conn)
+        self.assertEqual(fired, 1)
+        row = conn.execute("SELECT * FROM incidents WHERE signal_type='slow_port_scan'").fetchone()
+        self.assertIsNotNone(row)
+        self.assertIn("203.0.113.10", row["title"])
+
+    def test_fires_on_a_horizontal_sweep_spread_across_the_long_window(self):
+        conn = fixtures.temp_db()
+        fixtures.insert_device(conn, 1)
+        now = time.time()
+        for i in range(8):
+            fixtures.insert_flow(conn, 1, "203.0.113.%d" % i, 443, now - (8 - i) * 800)
+        self.assertEqual(correlation.network_sweep_signal(conn), 0,
+                          "paced this slowly, the FAST signal must not fire")
+        fired = correlation.slow_scan_signal(conn)
+        self.assertEqual(fired, 1)
+        row = conn.execute("SELECT * FROM incidents WHERE signal_type='slow_network_sweep'").fetchone()
+        self.assertIsNotNone(row)
+
+    def test_does_not_fire_below_threshold(self):
+        conn = fixtures.temp_db()
+        fixtures.insert_device(conn, 1)
+        now = time.time()
+        for port in range(1, 5):  # only 4 distinct ports, still spread out
+            fixtures.insert_flow(conn, 1, "203.0.113.10", port, now - (4 - port) * 800)
+        self.assertEqual(correlation.slow_scan_signal(conn), 0)
+
+    def test_does_not_fire_on_activity_older_than_the_slow_window(self):
+        conn = fixtures.temp_db()
+        fixtures.insert_device(conn, 1)
+        now = time.time()
+        for port in range(1, 9):
+            fixtures.insert_flow(conn, 1, "203.0.113.10", port, now - 100000)  # far outside 7200s
+        self.assertEqual(correlation.slow_scan_signal(conn), 0)
+
+
 class BruteForceSignalTests(unittest.TestCase):
     def test_fires_on_enough_attempts_to_an_auth_port(self):
         conn = fixtures.temp_db()
@@ -409,9 +514,11 @@ class WindowSettingsTests(unittest.TestCase):
     changed setting genuinely changes what a signal sees - not just that
     the schema entry exists (settings.py's own tests cover that)."""
 
-    def test_all_five_window_settings_have_the_real_hardcoded_defaults(self):
+    def test_all_window_settings_have_the_real_hardcoded_defaults(self):
         conn = fixtures.temp_db()
         self.assertEqual(settings.get(conn, "port_scan_window_seconds"), 300)
+        self.assertEqual(settings.get(conn, "network_sweep_window_seconds"), 300)
+        self.assertEqual(settings.get(conn, "slow_scan_window_seconds"), 7200)
         self.assertEqual(settings.get(conn, "brute_force_window_seconds"), 120)
         self.assertEqual(settings.get(conn, "malicious_domain_window_seconds"), 600)
         self.assertEqual(settings.get(conn, "new_device_lookback_seconds"), 3600)

@@ -42,5 +42,16 @@ ip netns exec ns_victim ip link set lo up
 ip netns exec ns_victim ip link set veth-vic-p name eth0
 ip netns exec ns_victim ip link set eth0 up
 ip netns exec ns_victim ip addr add 10.10.0.221/24 dev eth0
+# Nine extra addresses on the SAME interface (ENHANCEMENT-PLAN.md step 2.1),
+# purely so a network-sweep test has real distinct hosts to find. A scan
+# against an address with no host behind it never produces a Suricata flow
+# event at all - the kernel can't ARP-resolve it, so no IP packet ever
+# leaves ns_attacker's interface for that address. These are IP aliases on
+# ns_victim's own single interface, not new namespaces: still fully
+# isolated from ap0/hostapd and the two real devices, same as the existing
+# .221 address.
+for i in $(seq 222 230); do
+    ip netns exec ns_victim ip addr add 10.10.0.$i/24 dev eth0
+done
 
-echo "test harness created: ns_attacker=10.10.0.220, ns_victim=10.10.0.221"
+echo "test harness created: ns_attacker=10.10.0.220, ns_victim=10.10.0.221-230"

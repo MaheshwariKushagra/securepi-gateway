@@ -412,7 +412,7 @@ async function refreshDashboard() {
 
     renderBarList("#signalMix", d.signal_mix.map(s => ({
         label: s.signal.replace(/_/g, " "), value: s.count, weight: s.count,
-        tone: s.signal === "port_scan" || s.signal === "brute_force" ? "high" : "",
+        tone: s.severity === "high" ? "high" : "",
     })), "No detections yet");
 
     renderBarList("#protocolMix", d.protocols.map(p => ({

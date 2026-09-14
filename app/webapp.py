@@ -152,8 +152,8 @@ RANGES = {
 # be before the console calls it unhealthy rather than just "hasn't found
 # anything lately". Engine cycles every 15s (see engine.py); 4 missed cycles
 # is a real problem, not noise.
-SIGNALS = ["port_scan", "brute_force", "malicious_domain", "new_device", "adblock_ineffective",
-           "volume_anomaly"]
+SIGNALS = ["port_scan", "network_sweep", "slow_scan", "brute_force", "malicious_domain",
+           "new_device", "adblock_ineffective", "volume_anomaly"]
 
 # Step 6.1's own exit criterion calls this "the learning badge until 7
 # days of data exist" - matches BASELINE_MIN_SAMPLES in correlation.py.
@@ -571,9 +571,18 @@ def api_overview(range: str = Query("6h")):
             severity[r["severity"]] = r["n"]
 
     signal_mix = [
-        {"signal": r["signal_type"], "count": r["n"]}
+        # severity is picked with max() only because every incident of a
+        # given signal_type is always raised with the SAME literal severity
+        # (see correlation.py's raise_incident() calls) - it never actually
+        # varies within a group, so which aggregate wins doesn't matter.
+        # Added in step 2.1 so the console tints new signals (network_sweep,
+        # slow_port_scan, slow_network_sweep) correctly without needing
+        # their names hardcoded in app.js the way the old two-signal check
+        # did (see that file's git history).
+        {"signal": r["signal_type"], "count": r["n"], "severity": r["sev"]}
         for r in c.execute(
-            "SELECT signal_type, count(*) n FROM incidents GROUP BY signal_type ORDER BY n DESC")
+            "SELECT signal_type, count(*) n, max(severity) sev FROM incidents"
+            " GROUP BY signal_type ORDER BY n DESC")
     ]
 
     top_blocked = [

@@ -68,6 +68,30 @@ SETTINGS_SCHEMA = {
         "label": "Port scan window",
         "help": "How far back (seconds) the port-scan signal looks when counting distinct ports touched.",
     },
+    "network_sweep_threshold": {
+        "default": 8, "type": int, "min": 2, "max": 100,
+        "label": "Network sweep threshold",
+        "help": "Distinct hosts touched on one port, in the signal's window, before it's flagged.",
+    },
+    "network_sweep_window_seconds": {
+        "default": 300, "type": int, "min": 30, "max": 3600,
+        "label": "Network sweep window",
+        "help": "How far back (seconds) the network-sweep signal looks when counting distinct hosts touched.",
+    },
+    "slow_scan_threshold": {
+        "default": 8, "type": int, "min": 2, "max": 100,
+        "label": "Slow-scan threshold",
+        "help": "Same distinct-count threshold as the fast port-scan/network-sweep signals, "
+                "applied over the slow-scan window instead - catches a scan paced too slowly "
+                "for the fast signals' shorter window to ever contain enough of it at once.",
+    },
+    "slow_scan_window_seconds": {
+        "default": 7200, "type": int, "min": 600, "max": 86400,
+        "label": "Slow-scan window",
+        "help": "How far back (seconds) the slow-scan signal looks - deliberately much longer "
+                "than the fast port-scan/network-sweep windows, to catch nmap-style paranoid/"
+                "sneaky timing templates built to stay under a short window's threshold.",
+    },
     "brute_force_window_seconds": {
         "default": 120, "type": int, "min": 30, "max": 3600,
         "label": "Brute-force window",

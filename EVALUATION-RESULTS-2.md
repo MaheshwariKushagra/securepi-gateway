@@ -144,3 +144,62 @@ tunnelling/DGA (subdomain entropy over every DNS event) and C2 beaconing
 memory and the correlation-engine cycle time before and after Stage 2 lands
 is the honest way to check those signals stay inside the 3.6 GiB budget,
 per §7's "budget check after every stage."
+
+---
+
+## Stage 2
+
+### 2.1 — Scan family: network sweep + slow-scan variants
+
+Three new signals, all following `correlation.py`'s existing trailing-window
+pattern: `network_sweep_signal` (horizontal — one port, many distinct hosts,
+300 s window, mirrors `port_scan_signal`'s vertical shape) and
+`slow_scan_signal` (re-runs both the vertical and horizontal check over a
+7200 s window, so a scan paced slower than a fast window's
+window/threshold ratio — the deliberate pacing nmap's `-T0`/`-T1` timing
+templates use — still gets caught, just later). 8 new unit tests (positive,
+negative, dedup, and the two "fast signal must NOT fire, slow one must"
+cases), plus 2 harness scenarios added to `gateway/evaluate.py`. Full
+reasoning and the ATT&CK mapping decision (`network_sweep` → T1018 Remote
+System Discovery, distinct from `port_scan`'s T1046) are in
+`app/correlation.py` and `app/playbooks.py`.
+
+The harness (`gateway/setup-test-harness.sh`) needed extending first: a
+sweep test needs real distinct hosts to find, and scanning an address with
+no host behind it produces no Suricata flow event at all (no ARP
+resolution, so no IP packet is ever sent). Added nine more IP aliases
+(`10.10.0.222`–`230`) to `ns_victim`'s single interface — still fully
+isolated from `ap0`/hostapd and the two real devices. Applying this live
+required tearing down and recreating `br-test`/`ns_attacker`/`ns_victim`
+(the running harness was created at this boot, before the script changed)
+and restarting Suricata afterward, since its AF_PACKET capture socket binds
+to `veth-atk`'s interface index at startup and would otherwise keep
+listening on the now-deleted old interface. Both confirmed clean
+(`securepi status` all-active immediately after).
+
+**Live verification, 14 September 2026, against the real gateway (not just
+unit tests):**
+
+| Test | Result |
+|---|---|
+| `nmap -sT -Pn -p 443 --min-rate 500` against 10 distinct hosts (`test_network_sweep`) | **Detected in 74.1 s.** Incident: "Network sweep detected on port 443", evidence_count 10, all 10 host IPs named in the description |
+| Fast `port_scan_signal` while the sweep ran | Correctly did **not** fire (the traffic was one port across many hosts, not many ports on one host — the two signals' shapes are genuinely distinct, not just relabeled) |
+| `nmap -sT -Pn -p <8 ports> --scan-delay 45000ms --max-parallelism 1` against one host (`test_slow_scan`), ~6 minutes wall-clock | **Fast `port_scan_signal` correctly did NOT fire** (`fast_fired=False`) — paced at 45s/port, no single 300s slice ever contained more than ~6 of the 8 ports. **`slow_scan_signal` detected it 22.0 s** after the scan finished (well inside its 7200s window). Incident: "Slow port scan detected against 10.10.0.221", evidence_count 8 |
+
+The slow-scan incident's evidence actually lists 9 port values in the raw
+query result but 8 distinct ports counted (`443,20006,20004,20007,20002,
+20000,20001,20005`) — port 443 is real evidence too, left over from the
+`test_network_sweep` run minutes earlier in the same session, which also
+touched `10.10.0.221:443`. Both events are genuinely inside the slow-scan
+signal's 7200s window, so this isn't a bug: it's the honest trade-off a
+long window makes; two unrelated test runs against the same host, close
+enough together, can legitimately merge into one incident's evidence. In
+production this would read as "worth a second look, not two separate
+incidents" rather than as noise.
+
+`make deploy` used for this step (see §0.2): all three services restarted
+clean, journal clear, both new settings keys (`network_sweep_threshold`,
+`network_sweep_window_seconds`, `slow_scan_threshold`,
+`slow_scan_window_seconds`) confirmed resolving their real hardcoded
+defaults via `settings.get()` on the live database before either live test
+ran.

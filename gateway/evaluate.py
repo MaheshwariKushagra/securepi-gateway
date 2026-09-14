@@ -30,6 +30,12 @@ DB_PATH = "/opt/securepi/securepi.db"
 ATTACKER_NS = "ns_attacker"
 ATTACKER_DEVICE_ID = 4    # [TEST HARNESS] test-attacker
 VICTIM_IP = "10.10.0.221"
+# Nine more addresses on ns_victim's own interface (ENHANCEMENT-PLAN.md step
+# 2.1 / setup-test-harness.sh) - real distinct hosts for a network-sweep
+# test to find. A sweep against an address with no host behind it produces
+# no Suricata flow event at all (the kernel never resolves an ARP entry to
+# send the packet on), so this needs actual hosts, not just addresses.
+SWEEP_IPS = ["10.10.0.%d" % i for i in range(221, 231)]
 RUNS_PER_SIGNAL = 3
 POLL_INTERVAL = 1
 DETECT_TIMEOUT = 90
@@ -176,6 +182,47 @@ def test_malicious_domain(run_no):
 
 
 MALICIOUS_DOMAIN_QUERIES = 15  # matches MALICIOUS_DOMAIN_THRESHOLD in correlation.py
+
+
+def test_network_sweep(run_no):
+    """ENHANCEMENT-PLAN.md step 2.1's harness scenario for network_sweep_signal
+    (the horizontal mirror of test_port_scan): one port, many distinct hosts."""
+    baseline = last_touch_now(ATTACKER_DEVICE_ID, "network_sweep")
+    run_in_ns(ATTACKER_NS, ["nmap", "-sT", "-Pn", "-p", "443", "--min-rate", "500"]
+              + SWEEP_IPS, timeout=30)
+    return wait_for_touch_after(ATTACKER_DEVICE_ID, "network_sweep", baseline)
+
+
+# Slower than SLOW_SCAN_WINDOW_SECONDS/SLOW_SCAN_THRESHOLD (7200/8 = 900s/port)
+# would be a genuinely faithful nmap -T0 reproduction, but that's 2 real
+# hours per run - impractical to actually execute here. What this DOES need
+# to prove is the one thing that matters: paced slower than
+# PORT_SCAN_WINDOW_SECONDS/PORT_SCAN_THRESHOLD (300/8 = 37.5s/port), the fast
+# signal structurally cannot fire (see correlation.py's slow_scan_signal
+# docstring for why), while the slow signal's own window is wide enough to
+# still catch it. 45s/port clears that bar with margin either way.
+SLOW_SCAN_DELAY_MS = 45000
+SLOW_SCAN_PORTS = 8
+
+
+def test_slow_scan(run_no):
+    """ENHANCEMENT-PLAN.md step 2.1's harness scenario for slow_scan_signal.
+    Real wall-clock time: ~6 minutes (8 ports x 45s scan-delay, one at a
+    time - see SLOW_SCAN_PORTS/SLOW_SCAN_DELAY_MS above). Returns
+    (fast_signal_fired, slow_signal_latency_seconds) - the fast
+    port_scan_signal firing here would be the actual failure case, since
+    it would mean this pacing wasn't slow enough to be a fair test."""
+    baseline_fast = last_touch_now(ATTACKER_DEVICE_ID, "port_scan")
+    baseline_slow = last_touch_now(ATTACKER_DEVICE_ID, "slow_port_scan")
+    ports = ",".join(str(20000 + i) for i in range(SLOW_SCAN_PORTS))
+    total_scan_seconds = SLOW_SCAN_PORTS * SLOW_SCAN_DELAY_MS // 1000
+    run_in_ns(ATTACKER_NS, ["nmap", "-sT", "-Pn", "-p", ports,
+                            "--scan-delay", "%dms" % SLOW_SCAN_DELAY_MS,
+                            "--max-parallelism", "1", VICTIM_IP],
+              timeout=total_scan_seconds + 60)
+    fast_fired = last_touch_now(ATTACKER_DEVICE_ID, "port_scan") > baseline_fast
+    slow_latency = wait_for_touch_after(ATTACKER_DEVICE_ID, "slow_port_scan", baseline_slow, timeout=60)
+    return fast_fired, slow_latency
 
 
 def test_new_device(run_no):

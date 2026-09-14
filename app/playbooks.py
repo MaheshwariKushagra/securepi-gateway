@@ -32,6 +32,15 @@ The three signals that DO get a tag:
 - port_scan -> Discovery / T1046 Network Service Discovery. A clean,
   well-established match: many distinct ports touched on one host in a
   short window IS the behaviour that technique describes.
+- network_sweep -> Discovery / T1018 Remote System Discovery. The mirror
+  case of port_scan: one port touched across many hosts is "which
+  machines exist on this network", not "what does this one machine run" -
+  a different, equally well-established technique (ENHANCEMENT-PLAN.md
+  step 2.1).
+- slow_port_scan / slow_network_sweep -> the SAME two techniques as
+  port_scan / network_sweep above. Pacing (fast vs. slow enough to evade
+  a short window) changes which SIGNAL notices the behaviour, not what
+  the behaviour IS in ATT&CK's terms.
 - brute_force -> Credential Access / T1110 Brute Force. Equally clean:
   repeated failed connections against an auth port.
 - volume_anomaly -> tagged at the TACTIC level only (Exfiltration,
@@ -47,6 +56,21 @@ ATTACK_MAPPING = {
         "tactic": "Discovery", "tactic_id": "TA0007",
         "technique": "Network Service Discovery", "technique_id": "T1046",
         "url": "https://attack.mitre.org/techniques/T1046/",
+    },
+    "network_sweep": {
+        "tactic": "Discovery", "tactic_id": "TA0007",
+        "technique": "Remote System Discovery", "technique_id": "T1018",
+        "url": "https://attack.mitre.org/techniques/T1018/",
+    },
+    "slow_port_scan": {
+        "tactic": "Discovery", "tactic_id": "TA0007",
+        "technique": "Network Service Discovery", "technique_id": "T1046",
+        "url": "https://attack.mitre.org/techniques/T1046/",
+    },
+    "slow_network_sweep": {
+        "tactic": "Discovery", "tactic_id": "TA0007",
+        "technique": "Remote System Discovery", "technique_id": "T1018",
+        "url": "https://attack.mitre.org/techniques/T1018/",
     },
     "brute_force": {
         "tactic": "Credential Access", "tactic_id": "TA0006",
@@ -74,6 +98,33 @@ PLAYBOOKS = {
         "recommended_action": "If the behaviour is expected, mark this false positive rather "
             "than resolving it, so it doesn't get re-investigated next time. If it isn't, "
             "quarantine the device from its own page and find out what's actually running on it.",
+    },
+    "network_sweep": {
+        "what_it_means": "A device touched the same port on enough distinct hosts, within a "
+            "short window, to look like host discovery rather than normal browsing - checking "
+            "which machines on the network are alive, typically the step before a targeted scan.",
+        "how_to_check": "Open the evidence chain for the port and the exact hosts touched. Some "
+            "legitimate software does this too - a network-discovery/media-server app, a backup "
+            "tool checking for other backup targets, a router's own LAN health check.",
+        "recommended_action": "If the behaviour is expected, mark this false positive. If it "
+            "isn't, quarantine the device and find out what's actually running on it - and check "
+            "whether a related port_scan incident against one of the swept hosts followed.",
+    },
+    "slow_port_scan": {
+        "what_it_means": "The same pattern as a port scan (many distinct ports on one host), "
+            "but paced too slowly for the fast port-scan signal's short window to ever catch "
+            "enough of it at once - the deliberate pacing nmap's slower timing templates "
+            "(-T0/-T1) use specifically to stay under quick detection thresholds.",
+        "how_to_check": "Same as port_scan: open the evidence chain for the destination and "
+            "exact ports, spread out over a much longer window this time.",
+        "recommended_action": "Same as port_scan. The slow pacing itself is worth noting in an "
+            "incident note - it suggests a more deliberate actor than an accidental trigger.",
+    },
+    "slow_network_sweep": {
+        "what_it_means": "The same pattern as a network sweep (one port across many hosts), but "
+            "paced too slowly for the fast network-sweep signal's short window to catch.",
+        "how_to_check": "Same as network_sweep, over a much longer window.",
+        "recommended_action": "Same as network_sweep.",
     },
     "brute_force": {
         "what_it_means": "A device made enough failed connection attempts against an "

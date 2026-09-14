@@ -39,6 +39,7 @@ import statistics
 import time
 from collections import Counter, defaultdict
 
+import playbooks
 import settings
 import signature_taxonomy
 import suppression
@@ -1005,6 +1006,122 @@ def beacon_signal(conn):
 
 
 # --------------------------------------------------------------------------
+# Campaign correlation + MITRE ATT&CK kill chain (ENHANCEMENT-PLAN.md
+# step 2.8) - the closing piece of Stage 2, the "never cut" detection
+# core.
+#
+# Different in kind from every signal above: it reads INCIDENTS, not raw
+# events, and doesn't go through raise_incident() at all - a campaign is
+# a different sort of object (it tracks which of a device's incidents
+# belong to one unfolding multi-stage attack, not a fresh detection),
+# with its own table and its own status lifecycle (mirroring incidents'
+# new/investigating/resolved/false_positive so it triages the same way).
+#
+# A device's OPEN incidents (status new/investigating, within a much
+# longer window than any individual signal's own - a real multi-stage
+# attack can unfold over hours) are grouped by device, then filtered to
+# just the ones with a RECOGNIZED ATT&CK tactic (app/playbooks.py's own
+# mapping - malicious_domain, new_device, ids_other and
+# adblock_ineffective have none, on purpose, and can't be a kill-chain
+# stage). If the DISTINCT tactic count meets the threshold (default 2 -
+# two incidents of the SAME tactic, like two scan variants, are one
+# stage, not a multi-stage pattern), they're linked into one campaign.
+# `tactics` records the kill chain itself: the distinct tactics in the
+# order their first incident actually started - "Discovery -> Credential
+# Access -> Command and Control" for the plan's own scan -> brute-force
+# -> beacon example.
+#
+# Re-evaluated in full every cycle, the same trailing-window philosophy
+# as every signal above: an existing open campaign for a device is
+# extended (not duplicated) when a later incident adds a new tactic,
+# recomputing the whole tactic sequence from every qualifying incident
+# currently in the window rather than trying to patch it incrementally.
+# --------------------------------------------------------------------------
+# Window and minimum-tactic-count both live in app/settings.py - see
+# port_scan_signal's own note above.
+
+CAMPAIGN_LIVE_STATUSES = ("new", "investigating")
+
+
+def campaign_signal(conn):
+    now = time.time()
+    window = settings.get(conn, "campaign_window_seconds")
+    since = now - window
+    min_tactics = settings.get(conn, "campaign_min_distinct_tactics")
+
+    device_ids = [r["device_id"] for r in conn.execute(
+        """SELECT DISTINCT device_id FROM incidents
+            WHERE status IN ('new','investigating') AND last_seen > ? AND device_id IS NOT NULL""",
+        (since,)).fetchall()]
+
+    fired = 0
+    for device_id in device_ids:
+        incidents = conn.execute(
+            """SELECT id, signal_type, first_seen, last_seen, campaign_id FROM incidents
+                WHERE device_id=? AND status IN ('new','investigating') AND last_seen > ?""",
+            (device_id, since)).fetchall()
+
+        tagged = []
+        for inc in incidents:
+            attack = playbooks.get_attack(inc["signal_type"])
+            if attack:
+                tagged.append((inc, attack["tactic"]))
+
+        distinct_tactics = {tactic for _, tactic in tagged}
+        already_has_campaign = any(inc["campaign_id"] is not None for inc in incidents)
+        if len(distinct_tactics) < min_tactics and not already_has_campaign:
+            continue  # not enough for a new campaign, and none exists to extend
+
+        # The kill chain: distinct tactics in the order their first
+        # incident actually started, collapsing immediate repeats (two
+        # incidents of the same tactic back to back stay one entry, not
+        # two) so it reads as a sequence of STAGES, not a raw incident list.
+        tagged.sort(key=lambda pair: pair[0]["first_seen"])
+        tactic_sequence = []
+        for _, tactic in tagged:
+            if not tactic_sequence or tactic_sequence[-1] != tactic:
+                tactic_sequence.append(tactic)
+        tactics_str = " -> ".join(tactic_sequence)
+
+        first_seen = min(inc["first_seen"] for inc, _ in tagged)
+        last_seen = max(inc["last_seen"] for inc, _ in tagged)
+        unattached_ids = [inc["id"] for inc, _ in tagged if inc["campaign_id"] is None]
+
+        existing = conn.execute(
+            """SELECT id FROM campaigns WHERE device_id=? AND status IN ('new','investigating')
+                ORDER BY last_seen DESC LIMIT 1""",
+            (device_id,)).fetchone()
+
+        if existing:
+            campaign_id = existing["id"]
+            conn.execute(
+                "UPDATE campaigns SET tactics=?, last_seen=?, updated_at=? WHERE id=?",
+                (tactics_str, last_seen, now, campaign_id))
+        else:
+            device = conn.execute(
+                "SELECT hostname, friendly_name FROM devices WHERE id=?", (device_id,)).fetchone()
+            name = (device["friendly_name"] or device["hostname"]) if device else None
+            name = name or ("device %d" % device_id)
+            cur = conn.execute(
+                """INSERT INTO campaigns
+                       (device_id, title, status, tactics, first_seen, last_seen, created_at, updated_at)
+                   VALUES (?, ?, 'new', ?, ?, ?, ?, ?)""",
+                (device_id, "Multi-stage attack pattern on %s" % name, tactics_str,
+                 first_seen, last_seen, now, now))
+            campaign_id = cur.lastrowid
+
+        if unattached_ids:
+            conn.executemany(
+                "UPDATE incidents SET campaign_id=? WHERE id=?",
+                [(campaign_id, iid) for iid in unattached_ids])
+        fired += 1
+
+    conn.commit()
+    set_window_start(conn, "campaign", now)
+    return fired
+
+
+# --------------------------------------------------------------------------
 # Signal 2: brute force
 #
 # Many short connections from one device to one auth-service port on one
@@ -1368,7 +1485,7 @@ def behavioral_baseline_signal(conn):
 SIGNALS = [port_scan_signal, network_sweep_signal, slow_scan_signal, dns_bypass_signal,
            ids_alert_signal, threat_intel_signal, dns_tunneling_signal, beacon_signal,
            brute_force_signal, malicious_domain_signal, new_device_signal,
-           adblock_effectiveness_signal, behavioral_baseline_signal]
+           adblock_effectiveness_signal, behavioral_baseline_signal, campaign_signal]
 
 
 def run_all(conn):

@@ -32,6 +32,17 @@ SEVERITY_WEIGHT = {"high": 40, "medium": 20, "low": 8}
 HALF_LIFE_SECONDS = 24 * 3600
 LIVE_STATUSES = ("new", "investigating")
 
+# ENHANCEMENT-PLAN.md step 2.8: "weighted into risk" - an open campaign
+# (several incidents recognized as one multi-stage attack, app/
+# correlation.py's campaign_signal) adds ONE additional named term, on
+# top of whatever its own linked incidents already contribute. Comparable
+# to, but deliberately smaller than, a single high-severity incident's
+# peak contribution (40): the correlation itself is real extra evidence
+# of intent - a scan followed by a beacon is more concerning than either
+# alone - but the underlying incidents are already counted; this isn't
+# meant to dominate the score.
+CAMPAIGN_BONUS = 25
+
 
 def _decay(age_seconds):
     return 0.5 ** (age_seconds / HALF_LIFE_SECONDS)
@@ -57,6 +68,21 @@ def device_risk(conn, device_id, now=None):
             "incident_id": r["id"], "title": r["title"], "severity": r["severity"],
             "weight": weight, "decay": round(decay, 2), "contribution": round(contribution, 1),
         })
+
+    campaign = conn.execute(
+        "SELECT id, title, tactics, last_seen FROM campaigns"
+        " WHERE device_id=? AND status IN (%s) ORDER BY last_seen DESC LIMIT 1" % placeholders,
+        (device_id, *LIVE_STATUSES)).fetchone()
+    if campaign is not None:
+        decay = _decay(max(0.0, now - campaign["last_seen"]))
+        contribution = CAMPAIGN_BONUS * decay
+        total += contribution
+        breakdown.append({
+            "campaign_id": campaign["id"], "title": "%s (%s)" % (campaign["title"], campaign["tactics"]),
+            "severity": "campaign", "weight": CAMPAIGN_BONUS, "decay": round(decay, 2),
+            "contribution": round(contribution, 1),
+        })
+
     breakdown.sort(key=lambda b: -b["contribution"])
     score = min(100, round(total))
     return {"score": score, "band": risk_band(score), "breakdown": breakdown}

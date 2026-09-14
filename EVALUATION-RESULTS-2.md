@@ -338,3 +338,30 @@ New `app/suppression.py` + a `suppressions` table: an operator's false-positive 
 All synthetic incidents, suppression rows and test flow events were deleted afterward.
 
 12 new unit tests (`tests/test_suppression.py`'s `IsSuppressedTests`/`ListSuppressionsTests`, plus `RaiseIncidentSuppressionTests` in `tests/test_correlation.py` - including one that goes through a real signal function end-to-end, not just `raise_incident()` directly - and one retention test for the expired-rule cleanup). No new settings (suppression rules are created through the API with an explicit reason and optional expiry, not tuned via thresholds).
+
+### 2.8 — Campaign correlation + MITRE ATT&CK kill chain
+
+The closing piece of Stage 2 - the plan's own "never cut" detection core is now complete. New `campaign_signal` in `app/correlation.py` is different in kind from the twelve signals above it: it reads **incidents**, not raw events, and doesn't go through `raise_incident()` - a campaign is a different sort of object, with its own table and its own status lifecycle (mirroring incidents' `new`/`investigating`/`resolved`/`false_positive` so it triages the same way).
+
+A device's open incidents (within a much longer 24-hour window than any individual signal's own) are filtered to just the ones with a **recognized ATT&CK tactic** (`app/playbooks.py`'s existing mapping - `malicious_domain`, `new_device`, `ids_other` and `adblock_ineffective` have none, on purpose, and can't be a kill-chain stage). If they span at least 2 **distinct** tactics - two incidents of the *same* tactic (two scan variants, say) are one stage, not a multi-stage pattern - they're linked into one campaign. `tactics` records the kill chain itself: the distinct tactics in the order their first incident actually started. Re-evaluated every cycle: an existing open campaign is extended (not duplicated) as later incidents add new tactics.
+
+**"Weighted into risk"** (the plan's own wording): `app/risk.py` adds one new named term, `CAMPAIGN_BONUS = 25`, for a device with an open campaign - decaying on the same 24-hour half-life as every other term, and deliberately smaller than a single high-severity incident's peak contribution (40): real extra evidence the correlation itself matters, not enough to dominate the score.
+
+**Live verification, 14 September 2026, of the exit criterion's own literal example** ("scan → brute force → beacon → one campaign linking three incidents"), on a fresh, isolated temporary device to get an unambiguous result (the real test-attacker device, having generated genuine detections across every step of this session's live testing, already had a legitimately messy real incident history that a clean demo would have obscured - see the note below):
+
+| Check | Result |
+|---|---|
+| Three incidents raised (`port_scan` → Discovery, `brute_force` → Credential Access, `beacon` → Command and Control) | `campaign_signal` linked all three into **one** campaign: `tactics = "Discovery -> Credential Access -> Command and Control"` - the exit criterion's exact wording, produced by the real code, not written by hand |
+| `GET /api/campaigns` over real HTTP | Returned the campaign with its 3 linked `incident_ids` |
+| `risk.device_risk()` for that device | **Score 100** (capped): 40 + 40 + 40 from the three incidents, **+ 25 from the campaign bonus** - each term visible and named in the breakdown, nothing opaque |
+| Schema migration on the live database | `campaigns` table and `incidents.campaign_id` column both confirmed present after `make deploy`; journal clean throughout |
+
+All synthetic incidents, the campaign row, and the temporary device were deleted afterward.
+
+**A real, useful observation, not a bug:** running `campaign_signal` against the actual test-attacker device (id 4) - which has genuinely triggered `network_sweep`, `slow_port_scan`, `port_scan`, `brute_force` and `beacon` incidents across this session's real, harness-driven verification for steps 2.1, 2.2 and 2.7 - correctly produced a campaign linking *all* of them, with a longer, messier tactic sequence than the clean three-stage example. That's the mechanism working as designed on real (if session-generated) accumulated history, not a defect - it's the reason the clean demonstration above deliberately used an isolated device instead of reusing that noisier one.
+
+9 new unit tests (`CampaignSignalTests` in `tests/test_correlation.py`, `tests/test_risk.py`'s `CampaignRiskBonusTests` - the first test coverage `app/risk.py` has had at all, scoped honestly to just the campaign-bonus addition step 2.8 made, not a full backfill of its pre-existing severity-weighting logic). 2 new settings (`campaign_window_seconds`, `campaign_min_distinct_tactics`). New `GET /api/campaigns` endpoint. `app/templates/device_detail.html`'s risk breakdown updated to degrade gracefully for a campaign row (no `incident_id` to link to).
+
+---
+
+**Stage 2 is now complete** (2.1–2.8, all eight steps) - the project's original signal set is fully restored and exceeded, every new signal has an ATT&CK tag where one genuinely applies, and incidents now correlate into campaigns. `make test`: 206/206 passing.

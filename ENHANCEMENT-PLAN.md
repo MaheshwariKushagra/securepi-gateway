@@ -182,7 +182,7 @@ step 3.5.**
 | Threat-intel IOC matching | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | **✓** Feodo/URLhaus/ThreatFox, daily | 2.4 |
 | Device type fingerprinting | ✓ | ✓ | ✓ | ✗ | ◐ | ✗ | **◐** | 6.2 |
 | New-device approval | ✓ | ◐ | ✓ | ✗ | ✗ | ✗ | **◐** | 4.4 |
-| Incident correlation + evidence | ◐ | ✗ | ✗ | ✓ | ◐ | ✗ | **✓ ahead** | 2.8 |
+| Incident correlation + evidence | ◐ | ✗ | ✗ | ✓ | ◐ | ✗ | **✓ ahead** — campaigns + kill chain now built | 2.8 |
 | Explainable risk score | ✗ | ✗ | ✗ | ◐ | ✓ | ✓ | **✓ ahead** | — |
 | Timed / automated response | ✓ | ✓ | ✓ | ✗ | ✗ | ✗ | **◐** | 4.2 |
 | Notifications | ✓ | ✓ | ◐ | ◐ | ✓ | ✗ | **✗** | 4.5 |
@@ -298,9 +298,9 @@ New signals follow the `correlation.py` pattern (trailing-window SQL → `raise_
 | 2.5 | **DNS tunnelling + DGA — done, 14 September 2026** (subdomain entropy, label length, unique subdomains, TXT ratio; NXDOMAIN burst + entropy — see `EVALUATION-RESULTS-2.md` §2.5 for a real `dns_rcode` capture gap found and fixed, and both exit-criterion checks run against real data) | F§12.3 | Harness generators detected. No firing on 24 h of phone traffic | 1.5 |
 | 2.6 | **C2 beaconing — done, 14 September 2026** (RITA-style timing and size regularity score, allowlist for NTP/push — a from-scratch formula calibrated against this step's own exit-criterion numbers before being written into the signal; push-notification allowlisting deliberately left as a named gap, see `EVALUATION-RESULTS-2.md` §2.6) | F§12.3, 15d cut | Harness beacon (60 s, 10% jitter) ≥ 0.8. No real-phone incidents | 2 |
 | 2.7 | **Suppression rules — done, 14 September 2026** (from false-positive verdicts, audited, expiring — scoped to (signal_type, device_id), a stated boundary narrower than per-destination; see `EVALUATION-RESULTS-2.md` §2.7 for the live create→suppress→remove→resume test through the real HTTP API) | F§11.2 | Suppressed pattern stops raising incidents | 1 |
-| 2.8 | **Campaign correlation + MITRE ATT&CK kill chain**, weighted into risk | F§12.3 | Scan → brute force → beacon → one campaign linking three incidents | 1.5 |
+| 2.8 | **Campaign correlation + MITRE ATT&CK kill chain, weighted into risk — done, 14 September 2026** (live-verified on an isolated test device to get the exit criterion's exact example cleanly; see `EVALUATION-RESULTS-2.md` §2.8, including a real observation about the noisier campaign the actual test-attacker device's own session history produces) | F§12.3 | Scan → brute force → beacon → one campaign linking three incidents | 1.5 |
 
-> **Cut line A** (~3¾ weeks). Original signal set restored, campaigns built, and DNS filtering can no longer be quietly bypassed.
+> **Cut line A** (~3¾ weeks) — **reached, 14 September 2026.** Original signal set restored, campaigns built, and DNS filtering can no longer be quietly bypassed.
 
 ### Stage 3 — Hardening and platform reliability (~5 days)
 
@@ -557,7 +557,7 @@ Never cut Stage 2, steps 5.2, 5.3, 5.7, or evaluation items 7.2–7.5.
 |---|---|---|
 | 0 | **0.1 done, 0.2 done and verified live, 0.3 done** | Stage 0 complete |
 | 1 | **1.1 done, 1.2 done, 1.3 done, 1.4 done, 1.5 done, 1.6 done, 1.7 done, 1.8 done** (1.8 out of order - see note below) | Stage 1 complete |
-| 2 | **2.1 done, 2.2 done, 2.3 done, 2.4 done, 2.5 done, 2.6 done, 2.7 done**, 2.8 | In progress |
+| 2 | **2.1–2.8 all done** | **Stage 2 complete** |
 | 3 | 3.1 · 3.2 · 3.3 · 3.4 · 3.5 · 3.6 | Not started |
 | 4 | 4.1 · 4.2 · 4.3 · 4.4 · 4.5 | Not started |
 | 5 | **5.1 done, 5.2 done, 5.3 done, 5.4 done, 5.5 done, 5.6 done, 5.7 done, 5.8 done, 5.9 done, 5.10 done, 5.11 done (Path 1 only)** (out of order) | 5.1–5.11 done - 5.11 scoped to Path 1 (cosmetic CSS), Path 2 (scriptlets) deferred and recorded |
@@ -745,6 +745,33 @@ through the isolated harness - zero incidents while suppressed - then
 deleted the rule and ran a second scan, which fired normally (a new
 incident, correct evidence), proving the signal actually resumes rather
 than staying stuck off. Full detail: `EVALUATION-RESULTS-2.md` §2.7.
+
+**2.8 (campaign correlation + MITRE ATT&CK kill chain) closes Stage 2.**
+`campaign_signal` links a device's open incidents into one campaign once
+they span 2+ *distinct* recognized ATT&CK tactics (two incidents of the
+same tactic are one stage, not a pattern), recording the kill chain
+itself as the ordered sequence of distinct tactics. `app/risk.py` adds
+one new named term (`CAMPAIGN_BONUS = 25`, decaying like everything
+else) for a device with an open campaign - "weighted into risk," the
+plan's own wording. Live-verified against the exit criterion's exact
+example (scan → brute force → beacon → one campaign) on an isolated
+temporary device, chosen deliberately: the real test-attacker device
+already had a genuinely messy real incident history from this whole
+session's own live testing (steps 2.1, 2.2, 2.7 all drove real detections
+against it), and running the signal against it for real correctly linked
+*all* of that history into one longer, noisier campaign - the mechanism
+working exactly as designed on real accumulated data, not a bug, but not
+the clean three-incident picture the exit criterion asks to see
+demonstrated. On the isolated device: `tactics = "Discovery -> Credential
+Access -> Command and Control"` (the exit criterion's literal wording,
+produced by the real code), risk score 100 (three ×40 incidents + the
+25-point campaign bonus, each term named in the breakdown), confirmed
+over the real `GET /api/campaigns` HTTP endpoint. Schema migration
+(`campaigns` table, `incidents.campaign_id` column) applied clean.
+
+**Stage 2 is now complete - all eight steps done**, closing the plan's
+own "never cut" detection core. Full detail on every step:
+`EVALUATION-RESULTS-2.md` §2.1–§2.8.
 
 **Note on 13 September:** at the user's request, 1.8 and Stage 5's telemetry
 foundation (5.1) and "why blocked / unbreak" tools (5.2) were implemented

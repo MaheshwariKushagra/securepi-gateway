@@ -202,6 +202,22 @@ SETTINGS_SCHEMA = {
         "help": "Combined timing+size regularity score (0=no pattern, 1=perfectly regular) "
                 "above which a destination is flagged as a possible beacon.",
     },
+    "campaign_window_seconds": {
+        "default": 86400, "type": int, "min": 300, "max": 604800,
+        "label": "Campaign correlation window",
+        "help": "How far back (seconds) the campaign signal looks when linking one device's "
+                "open incidents into a multi-stage attack pattern - deliberately much longer "
+                "than any individual signal's own window, since a real multi-stage attack can "
+                "unfold over hours, not minutes.",
+    },
+    "campaign_min_distinct_tactics": {
+        "default": 2, "type": int, "min": 2, "max": 5,
+        "label": "Campaign: minimum distinct ATT&CK tactics",
+        "help": "Distinct MITRE ATT&CK tactics (not just distinct incidents) one device's open "
+                "incidents must span, in the window, before they're linked into one campaign - "
+                "two incidents of the SAME tactic (e.g. two scan variants) are one stage, not a "
+                "multi-stage pattern.",
+    },
     "dedup_window_seconds": {
         "default": 600, "type": int, "min": 60, "max": 86400,
         "label": "Incident dedup window",

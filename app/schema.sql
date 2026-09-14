@@ -212,7 +212,8 @@ CREATE TABLE IF NOT EXISTS incidents (
     last_seen       REAL NOT NULL,       -- most recent contributing event
     created_at     REAL NOT NULL,       -- when the engine raised it
     updated_at     REAL NOT NULL,
-    evidence_count INTEGER NOT NULL DEFAULT 0
+    evidence_count INTEGER NOT NULL DEFAULT 0,
+    campaign_id    INTEGER REFERENCES campaigns(id)  -- ENHANCEMENT-PLAN.md step 2.8
 );
 
 CREATE INDEX IF NOT EXISTS idx_incidents_device   ON incidents(device_id);
@@ -324,6 +325,31 @@ CREATE TABLE IF NOT EXISTS saved_searches (
     filters    TEXT NOT NULL,
     created_at REAL NOT NULL
 );
+
+-- -------------------------------------------------------------- campaigns --
+-- Multi-stage attack correlation (ENHANCEMENT-PLAN.md step 2.8): links
+-- several of one device's OPEN incidents, spanning at least two DISTINCT
+-- MITRE ATT&CK tactics (app/playbooks.py's own mapping - an incident
+-- with no recognized tactic, like malicious_domain or new_device, can't
+-- be a kill-chain stage), into one campaign. `tactics` is the
+-- kill-chain itself: the distinct tactics seen, in the order their
+-- first incident actually started - "Discovery -> Credential Access ->
+-- Command and Control" for the plan's own scan -> brute-force -> beacon
+-- example. Mirrors incidents' own status lifecycle (new/investigating/
+-- resolved/false_positive) so a campaign can be triaged the same way.
+CREATE TABLE IF NOT EXISTS campaigns (
+    id         INTEGER PRIMARY KEY,
+    device_id  INTEGER NOT NULL REFERENCES devices(id),
+    title      TEXT NOT NULL,
+    status     TEXT NOT NULL DEFAULT 'new',
+    tactics    TEXT NOT NULL,
+    first_seen REAL NOT NULL,
+    last_seen  REAL NOT NULL,
+    created_at REAL NOT NULL,
+    updated_at REAL NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_campaigns_device ON campaigns(device_id);
 
 -- ------------------------------------------------------------------- ioc --
 -- Offline threat intelligence (ENHANCEMENT-PLAN.md step 2.4): confirmed-

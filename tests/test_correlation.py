@@ -694,6 +694,83 @@ class CoefficientOfVariationTests(unittest.TestCase):
         self.assertGreater(high, low)
 
 
+class CampaignSignalTests(unittest.TestCase):
+    """ENHANCEMENT-PLAN.md step 2.8. Matches the exit criterion's own
+    example: scan -> brute force -> beacon -> one campaign linking three
+    incidents."""
+
+    @staticmethod
+    def _raise(conn, device_id, signal_type, severity, ts):
+        return correlation.raise_incident(
+            conn, device_id, signal_type, severity, "t-%s" % signal_type, "d",
+            ts, ts, [])
+
+    def test_scan_brute_force_beacon_links_into_one_campaign(self):
+        conn = fixtures.temp_db()
+        fixtures.insert_device(conn, 1, hostname="test-device")
+        now = time.time()
+        self._raise(conn, 1, "port_scan", "high", now - 300)       # Discovery
+        self._raise(conn, 1, "brute_force", "high", now - 200)     # Credential Access
+        self._raise(conn, 1, "beacon", "high", now - 100)          # Command and Control
+
+        fired = correlation.campaign_signal(conn)
+        self.assertEqual(fired, 1)
+
+        campaigns = conn.execute("SELECT * FROM campaigns WHERE device_id=1").fetchall()
+        self.assertEqual(len(campaigns), 1, "three incidents must link into ONE campaign")
+        campaign = campaigns[0]
+        self.assertEqual(campaign["tactics"], "Discovery -> Credential Access -> Command and Control")
+        self.assertIn("test-device", campaign["title"])
+
+        linked = conn.execute("SELECT signal_type FROM incidents WHERE campaign_id=?",
+                               (campaign["id"],)).fetchall()
+        self.assertEqual({r["signal_type"] for r in linked},
+                          {"port_scan", "brute_force", "beacon"})
+
+    def test_two_incidents_of_the_same_tactic_do_not_form_a_campaign(self):
+        conn = fixtures.temp_db()
+        fixtures.insert_device(conn, 1)
+        now = time.time()
+        self._raise(conn, 1, "port_scan", "high", now - 100)      # Discovery
+        self._raise(conn, 1, "network_sweep", "high", now - 50)   # ALSO Discovery
+        self.assertEqual(correlation.campaign_signal(conn), 0)
+        self.assertEqual(conn.execute("SELECT count(*) FROM campaigns").fetchone()[0], 0)
+
+    def test_incidents_with_no_recognized_tactic_are_not_counted(self):
+        conn = fixtures.temp_db()
+        fixtures.insert_device(conn, 1)
+        now = time.time()
+        self._raise(conn, 1, "port_scan", "high", now - 100)         # Discovery
+        self._raise(conn, 1, "malicious_domain", "medium", now - 50)  # no tactic tag at all
+        self.assertEqual(correlation.campaign_signal(conn), 0)
+
+    def test_a_later_incident_extends_the_existing_campaign_not_a_new_one(self):
+        conn = fixtures.temp_db()
+        fixtures.insert_device(conn, 1)
+        now = time.time()
+        self._raise(conn, 1, "port_scan", "high", now - 300)
+        self._raise(conn, 1, "brute_force", "high", now - 200)
+        correlation.campaign_signal(conn)
+        campaign_id_before = conn.execute("SELECT id FROM campaigns WHERE device_id=1").fetchone()["id"]
+
+        self._raise(conn, 1, "beacon", "high", now - 100)  # a third, later stage
+        correlation.campaign_signal(conn)
+
+        campaigns = conn.execute("SELECT * FROM campaigns WHERE device_id=1").fetchall()
+        self.assertEqual(len(campaigns), 1, "must extend the existing campaign, not create a second")
+        self.assertEqual(campaigns[0]["id"], campaign_id_before)
+        self.assertIn("Command and Control", campaigns[0]["tactics"])
+
+    def test_resolved_incidents_do_not_count_toward_a_campaign(self):
+        conn = fixtures.temp_db()
+        fixtures.insert_device(conn, 1)
+        now = time.time()
+        id1 = self._raise(conn, 1, "port_scan", "high", now - 200)
+        conn.execute("UPDATE incidents SET status='resolved' WHERE id=?", (id1,))
+        self._raise(conn, 1, "brute_force", "high", now - 100)
+        self.assertEqual(correlation.campaign_signal(conn), 0)
+
+
 class MaliciousDomainSignalTests(unittest.TestCase):
     """Tests the FIXED behaviour: the threshold applies to distinct
     blocked domains, not raw blocked-lookup count (ENHANCEMENT-PLAN.md
@@ -1043,6 +1120,8 @@ class WindowSettingsTests(unittest.TestCase):
         self.assertEqual(settings.get(conn, "beacon_window_seconds"), 3600)
         self.assertEqual(settings.get(conn, "beacon_min_connections"), 8)
         self.assertEqual(settings.get(conn, "beacon_score_threshold"), 0.8)
+        self.assertEqual(settings.get(conn, "campaign_window_seconds"), 86400)
+        self.assertEqual(settings.get(conn, "campaign_min_distinct_tactics"), 2)
         self.assertEqual(settings.get(conn, "brute_force_window_seconds"), 120)
         self.assertEqual(settings.get(conn, "malicious_domain_window_seconds"), 600)
         self.assertEqual(settings.get(conn, "new_device_lookback_seconds"), 3600)

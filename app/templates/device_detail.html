@@ -134,17 +134,26 @@
                 {% if risk.breakdown %}
                 <table><tbody>
                     {% for b in risk.breakdown %}
+                    {% if b.incident_id is defined %}
                     <tr class="clickable" onclick="location.href='/incidents/{{ b.incident_id }}'">
                         <td style="width:1%"><span class="chip {{ b.severity }} dot">{{ b.severity }}</span></td>
                         <td class="truncate">{{ b.title }}</td>
                         <td class="num dim" title="base weight {{ b.weight }} x decay {{ b.decay }}">+{{ b.contribution }}</td>
                     </tr>
+                    {% else %}
+                    <tr>
+                        <td style="width:1%"><span class="chip dot" title="Campaign: several incidents recognized as one multi-stage attack (step 2.8)">chain</span></td>
+                        <td class="truncate">{{ b.title }}</td>
+                        <td class="num dim" title="base weight {{ b.weight }} x decay {{ b.decay }}">+{{ b.contribution }}</td>
+                    </tr>
+                    {% endif %}
                     {% endfor %}
                 </tbody></table>
                 <div class="dim" style="font-size:11px; margin-top:8px; line-height:1.5">
                     Each open incident contributes its severity weight, decayed on a
-                    24-hour half-life since it was last active. Resolved and false-positive
-                    incidents contribute nothing.
+                    24-hour half-life since it was last active. An open campaign (step 2.8 -
+                    several incidents recognized as one multi-stage attack) adds one more
+                    term on top. Resolved and false-positive incidents contribute nothing.
                 </div>
                 {% else %}<div class="empty"><span class="empty-icon">✓</span>No open incidents contributing to risk</div>{% endif %}
             </div>

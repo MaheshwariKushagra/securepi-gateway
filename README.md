@@ -11,7 +11,7 @@ Built as a final-year engineering project, deployed on real hardware, and measur
 
 ![Python](https://img.shields.io/badge/Python-3.12-3776AB?style=for-the-badge&logo=python&logoColor=white) ![FastAPI](https://img.shields.io/badge/FastAPI-console-009688?style=for-the-badge&logo=fastapi&logoColor=white) ![Suricata](https://img.shields.io/badge/Suricata-IDS-EF3B2D?style=for-the-badge) ![AdGuard Home](https://img.shields.io/badge/AdGuard_Home-DNS-68BC71?style=for-the-badge&logo=adguard&logoColor=white) ![mitmproxy](https://img.shields.io/badge/mitmproxy-selective_DPI-2B6CB0?style=for-the-badge) ![Ubuntu](https://img.shields.io/badge/Ubuntu-24.04_LTS-E95420?style=for-the-badge&logo=ubuntu&logoColor=white)
 
-![Tests](https://img.shields.io/badge/tests-197_passing-2fbf71?style=flat-square) ![Detection signals](https://img.shields.io/badge/detection_signals-13-4f9cf9?style=flat-square) ![ATT&CK](https://img.shields.io/badge/MITRE_ATT%26CK-mapped-7b5cf0?style=flat-square) ![Stages complete](https://img.shields.io/badge/roadmap-stages_0%C2%B71%C2%B75%C2%B76_complete-2fbf71?style=flat-square) ![No Docker](https://img.shields.io/badge/footprint-3.6_GiB_RAM,_no_Docker-8d99ad?style=flat-square)
+![Tests](https://img.shields.io/badge/tests-206_passing-2fbf71?style=flat-square) ![Detection signals](https://img.shields.io/badge/detection_signals-14-4f9cf9?style=flat-square) ![ATT&CK](https://img.shields.io/badge/MITRE_ATT%26CK-mapped-7b5cf0?style=flat-square) ![Stages complete](https://img.shields.io/badge/roadmap-stages_0%C2%B71%C2%B72%C2%B75%C2%B76_complete-2fbf71?style=flat-square) ![No Docker](https://img.shields.io/badge/footprint-3.6_GiB_RAM,_no_Docker-8d99ad?style=flat-square)
 
 <br>
 
@@ -41,8 +41,9 @@ It decrypts nothing else.
 
 ### Detect
 **Suricata IDS**, the DNS resolver and the inspection proxy all write into one event
-store. A **correlation engine** runs thirteen signal checks over that data every 15 seconds and
-merges repeat detections, so **15,884 raw events became 10 incidents** over a real
+store. A **correlation engine** runs fourteen signal checks over that data every 15 seconds,
+merges repeat detections, and links related incidents into **campaigns** mapped to a MITRE
+ATT&CK kill chain, so **15,884 raw events became 10 incidents** over a real
 24-hour window.
 
 </td>
@@ -74,7 +75,7 @@ audit trail.
 | **DNS rules enforced** | **656,735** across 5 curated lists | Live AdGuard Home |
 | **Memory under attack load** | **40%** of 3.6 GiB used, over 2 GiB free | [Evaluation §5](EVALUATION-RESULTS.md) |
 | **Throughput headroom** | Limited by the WAN (~30 Mbps). The inspection path itself ran at **39.9 Gbps** on virtual links | [Evaluation §6](EVALUATION-RESULTS.md) |
-| **Automated tests** | **197** unit tests (`make test`), all on synthetic data | [`tests/`](tests) |
+| **Automated tests** | **206** unit tests (`make test`), all on synthetic data | [`tests/`](tests) |
 
 ---
 
@@ -362,6 +363,12 @@ stateDiagram-v2
 
 </details>
 
+### Campaign correlation and the MITRE ATT&CK kill chain
+
+A single signal firing is one data point. Several signals firing for the *same device*, each mapping to a *different* MITRE ATT&CK tactic, is a story: a device that gets scanned, then brute-forced, then starts beaconing out isn't three unrelated events — it's one attack moving through recognizable stages. `campaign_signal` links a device's open incidents into a campaign once they span **two or more distinct tactics** (two scan variants are one stage, not a pattern), and records the kill chain itself as the ordered sequence of tactics — `Discovery → Credential Access → Command and Control` for exactly that example. An open campaign adds one more named, decaying term to the device's risk score, on top of what its linked incidents already contribute — real evidence the *correlation* itself matters, not just the individual pieces.
+
+An operator's **false-positive verdict** on an incident can also become a **suppression rule** — scoped to one signal for one device, or network-wide, with an optional expiry — so a recognized non-issue doesn't need re-dismissing every time it recurs. `raise_incident()`, the single function every signal funnels through, checks active suppressions first and writes nothing at all while one applies.
+
 ### Device identity under MAC randomization
 
 Modern phones randomize their MAC per network and rotate it, so neither a MAC nor an IP is a stable identity.
@@ -598,7 +605,7 @@ is in [`ENHANCEMENT-PLAN.md`](ENHANCEMENT-PLAN.md).
 |:---:|---|---|
 | **0** | Housekeeping | ![Complete](https://img.shields.io/badge/-complete-2fbf71?style=flat-square) |
 | **1** | **Foundation and correctness**: test suite, retention, real-time ingest, audit coverage, detection-accuracy fixes, AP client isolation | ![Complete](https://img.shields.io/badge/-complete-2fbf71?style=flat-square) |
-| **2** | Detection breadth: network sweep, DNS tunnelling/DGA, C2 beaconing, threat intel, campaigns | ![Next](https://img.shields.io/badge/-next-4f9cf9?style=flat-square) |
+| **2** | **Detection breadth**: network sweep, DNS bypass hardening, IDS alerts, threat intel, DNS tunnelling/DGA, C2 beaconing, suppression rules, campaigns | ![Complete](https://img.shields.io/badge/-complete-2fbf71?style=flat-square) |
 | **3** | Hardening and reliability: session auth, TLS, health supervision | ![Not started](https://img.shields.io/badge/-not_started-5a6679?style=flat-square) |
 | **4** | Response and orchestration: policy profiles, timed quarantine, notifications | ![Not started](https://img.shields.io/badge/-not_started-5a6679?style=flat-square) |
 | **5** | **Ad blocking and privacy filtering**: telemetry, unbreak workflow, analytics, list health, Tier 2 lifecycle, privacy canary, pinning bypass, watchdog | ![Complete](https://img.shields.io/badge/-complete-2fbf71?style=flat-square) |
@@ -627,7 +634,7 @@ securepi-gateway/
 │   ├── templates/  static/   Jinja2 pages, vanilla JS, one stylesheet
 ├── dpi/                      Selective HTTPS inspection (mitmproxy addon, rules, canary)
 ├── gateway/                  nftables, hostapd, `securepi` CLI, evaluation harness
-├── tests/                    197 unit tests on synthetic fixtures (`make test`)
+├── tests/                    206 unit tests on synthetic fixtures (`make test`)
 └── docs/
     ├── assets/               Banner, social preview, screenshots
     └── demo/                 Synthetic-data console used for the screenshots

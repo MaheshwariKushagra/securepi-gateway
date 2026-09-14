@@ -128,6 +128,19 @@ SCHEMA_MIGRATIONS = [
            expires_at  REAL
        )""",
     "CREATE INDEX IF NOT EXISTS idx_suppressions_signal_device ON suppressions(signal_type, device_id)",
+    """CREATE TABLE IF NOT EXISTS campaigns (
+           id         INTEGER PRIMARY KEY,
+           device_id  INTEGER NOT NULL REFERENCES devices(id),
+           title      TEXT NOT NULL,
+           status     TEXT NOT NULL DEFAULT 'new',
+           tactics    TEXT NOT NULL,
+           first_seen REAL NOT NULL,
+           last_seen  REAL NOT NULL,
+           created_at REAL NOT NULL,
+           updated_at REAL NOT NULL
+       )""",
+    "CREATE INDEX IF NOT EXISTS idx_campaigns_device ON campaigns(device_id)",
+    "ALTER TABLE incidents ADD COLUMN campaign_id INTEGER REFERENCES campaigns(id)",
 ]
 
 # How long to wait between passes over the log files. Two seconds keeps the

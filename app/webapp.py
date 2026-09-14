@@ -155,7 +155,7 @@ RANGES = {
 # is a real problem, not noise.
 SIGNALS = ["port_scan", "network_sweep", "slow_scan", "dns_bypass", "ids_alert", "threat_intel",
            "dns_tunneling", "beacon", "brute_force", "malicious_domain", "new_device",
-           "adblock_ineffective", "volume_anomaly"]
+           "adblock_ineffective", "volume_anomaly", "campaign"]
 
 # Step 6.1's own exit criterion calls this "the learning badge until 7
 # days of data exist" - matches BASELINE_MIN_SAMPLES in correlation.py.
@@ -1123,6 +1123,26 @@ def api_add_incident_note(incident_id: int, body: IncidentNote):
     c.commit()
     audit.log(c, CONSOLE_USERNAME, "incident.note_added", target=str(incident_id), detail=note)
     return {"ok": True}
+
+
+@app.get("/api/campaigns")
+def api_list_campaigns(status: str = Query("")):
+    """ENHANCEMENT-PLAN.md step 2.8. Each row's `tactics` field is
+    already the kill chain itself (see correlation.py's campaign_signal),
+    so this needs no extra assembly - unlike incidents, campaigns aren't
+    paginated here since there are always far fewer of them."""
+    c = db()
+    q = "SELECT * FROM campaigns"
+    params = ()
+    if status:
+        q += " WHERE status = ?"
+        params = (status,)
+    q += " ORDER BY updated_at DESC"
+    campaigns = [dict(r) for r in c.execute(q, params)]
+    for camp in campaigns:
+        camp["incident_ids"] = [r["id"] for r in c.execute(
+            "SELECT id FROM incidents WHERE campaign_id = ? ORDER BY first_seen", (camp["id"],))]
+    return campaigns
 
 
 @app.get("/api/suppressions")

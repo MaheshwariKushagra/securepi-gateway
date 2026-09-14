@@ -240,6 +240,84 @@ class BruteForceSignalTests(unittest.TestCase):
         self.assertEqual(correlation.brute_force_signal(conn), 0)
 
 
+class DnsBypassSignalTests(unittest.TestCase):
+    """ENHANCEMENT-PLAN.md step 2.2: combines nftables reject-rule hits,
+    canary-domain queries, and Suricata TLS SNI matches on known DoH
+    providers into one per-device count."""
+
+    def test_fires_on_enough_nftables_bypass_attempts_alone(self):
+        conn = fixtures.temp_db()
+        fixtures.insert_device(conn, 1)
+        now = time.time()
+        for _ in range(3):  # meets the default threshold of 3
+            fixtures.insert_bypass_attempt(conn, 1, "dot-bypass", now - 10)
+        fired = correlation.dns_bypass_signal(conn)
+        self.assertEqual(fired, 1)
+        row = conn.execute("SELECT * FROM incidents WHERE signal_type='dns_bypass'").fetchone()
+        self.assertIsNotNone(row)
+        self.assertEqual(row["severity"], "medium")
+        self.assertIn("dot-bypass", row["description"])
+
+    def test_fires_on_enough_canary_domain_queries_alone(self):
+        conn = fixtures.temp_db()
+        fixtures.insert_device(conn, 1)
+        now = time.time()
+        for _ in range(3):
+            fixtures.insert_dns_query(conn, 1, "use-application-dns.net", now - 10, blocked=1)
+        self.assertEqual(correlation.dns_bypass_signal(conn), 1)
+
+    def test_fires_on_enough_known_doh_sni_matches_alone(self):
+        conn = fixtures.temp_db()
+        fixtures.insert_device(conn, 1)
+        now = time.time()
+        for _ in range(3):
+            fixtures.insert_tls(conn, 1, "dns.google", now - 10)
+        self.assertEqual(correlation.dns_bypass_signal(conn), 1)
+
+    def test_combines_different_kinds_of_evidence_toward_one_threshold(self):
+        conn = fixtures.temp_db()
+        fixtures.insert_device(conn, 1)
+        now = time.time()
+        fixtures.insert_bypass_attempt(conn, 1, "quic-blocked", now - 10)
+        fixtures.insert_dns_query(conn, 1, "mask.icloud.com", now - 8, blocked=1)
+        fixtures.insert_tls(conn, 1, "cloudflare-dns.com", now - 6)
+        fired = correlation.dns_bypass_signal(conn)
+        self.assertEqual(fired, 1, "1+1+1 across three kinds of evidence should still meet threshold 3")
+        row = conn.execute("SELECT * FROM incidents WHERE signal_type='dns_bypass'").fetchone()
+        self.assertEqual(row["evidence_count"], 3)
+
+    def test_does_not_fire_below_threshold(self):
+        conn = fixtures.temp_db()
+        fixtures.insert_device(conn, 1)
+        now = time.time()
+        fixtures.insert_bypass_attempt(conn, 1, "dot-bypass", now - 10)
+        fixtures.insert_dns_query(conn, 1, "mask.icloud.com", now - 8, blocked=1)
+        self.assertEqual(correlation.dns_bypass_signal(conn), 0)
+
+    def test_ordinary_dns_and_tls_traffic_does_not_count(self):
+        conn = fixtures.temp_db()
+        fixtures.insert_device(conn, 1)
+        now = time.time()
+        for _ in range(5):
+            fixtures.insert_dns_query(conn, 1, "example.com", now - 10, blocked=0)
+            fixtures.insert_tls(conn, 1, "example.com", now - 10)
+        self.assertEqual(correlation.dns_bypass_signal(conn), 0)
+
+    def test_repeated_firing_merges_into_one_incident(self):
+        conn = fixtures.temp_db()
+        fixtures.insert_device(conn, 1)
+        now = time.time()
+        for _ in range(3):
+            fixtures.insert_bypass_attempt(conn, 1, "dot-bypass", now - 10)
+        correlation.dns_bypass_signal(conn)
+        for _ in range(2):  # bypass attempts continue
+            fixtures.insert_bypass_attempt(conn, 1, "dot-bypass", now - 5)
+        correlation.dns_bypass_signal(conn)
+        rows = conn.execute("SELECT * FROM incidents WHERE signal_type='dns_bypass'").fetchall()
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]["evidence_count"], 5)
+
+
 class MaliciousDomainSignalTests(unittest.TestCase):
     """Tests the FIXED behaviour: the threshold applies to distinct
     blocked domains, not raw blocked-lookup count (ENHANCEMENT-PLAN.md
@@ -519,6 +597,8 @@ class WindowSettingsTests(unittest.TestCase):
         self.assertEqual(settings.get(conn, "port_scan_window_seconds"), 300)
         self.assertEqual(settings.get(conn, "network_sweep_window_seconds"), 300)
         self.assertEqual(settings.get(conn, "slow_scan_window_seconds"), 7200)
+        self.assertEqual(settings.get(conn, "dns_bypass_window_seconds"), 300)
+        self.assertEqual(settings.get(conn, "dns_bypass_threshold"), 3)
         self.assertEqual(settings.get(conn, "brute_force_window_seconds"), 120)
         self.assertEqual(settings.get(conn, "malicious_domain_window_seconds"), 600)
         self.assertEqual(settings.get(conn, "new_device_lookback_seconds"), 3600)

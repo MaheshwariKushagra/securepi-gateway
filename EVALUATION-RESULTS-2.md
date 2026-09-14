@@ -203,3 +203,35 @@ clean, journal clear, both new settings keys (`network_sweep_threshold`,
 `slow_scan_window_seconds`) confirmed resolving their real hardcoded
 defaults via `settings.get()` on the live database before either live test
 ran.
+
+### 2.2 — DNS-bypass hardening + detection
+
+**Hardening**, all applied live and verified, not just written:
+
+| Change | Verification |
+|---|---|
+| Two AdGuard `$dnsrewrite=NXDOMAIN` rules: Firefox's DoH canary (`use-application-dns.net`) and Apple's iCloud Private Relay opt-out (`mask.icloud.com`, `mask-h2.icloud.com`) | `dig` against each returned genuine `status: NXDOMAIN` (confirmed this gateway's global `blocking_mode` is `"default"`, which would otherwise answer a plain block with `0.0.0.0` - a real, resolvable-looking answer that would NOT trip either mechanism's own "did this fail to resolve" check) |
+| HaGeZi's DoH-only blocklist (`doh.txt`, 3,313 rules) added and enabled network-wide | `dig` against `dns.google`, `cloudflare-dns.com`, `dns.quad9.net` each returned `0.0.0.0` (previously resolved normally) |
+| HaGeZi's combined DoH/VPN/Proxy-bypass list added but **disabled** network-wide - the plan's "VPN/proxy part available as a profile option in 4.3" isn't buildable yet (no profile system exists), so this stays a togglable-but-off list until then, rather than either skipping it or force-enabling VPN/proxy blocking network-wide without that control | `filtering_status()` confirms `enabled: false`, `rules_count: 0` |
+| `doh_resolvers` nftables set now refreshed daily from HaGeZi's maintained `doh-ips.txt` (`gateway/refresh-doh-set.sh` + `securepi-doh-refresh.timer`) instead of 14 hand-picked IPs | Ran the script live: **1,445 addresses loaded** in one atomic `nft` transaction (flush+fill, no empty-set window). Script fails safe on a bad/short download (`MIN_PLAUSIBLE_COUNT` guard) rather than ever wiping the set to empty |
+| `log prefix` added to all three reject rules (`dot-bypass`, `doh-bypass`, `quic-blocked`) in the forward chain | See the live firewall-reload section below |
+
+**Firewall change process (lockout insurance, since this touches the live forward chain):**
+1. Backed up `nft list ruleset` and `/etc/nftables.conf` before touching anything (`~/nft-backups/`, `/etc/nftables.conf.bak-2.2-*`).
+2. `sudo nft -c -f` (check-only, no apply) against the new config first - passed clean.
+3. Confirmed both `quarantine` and `enrolled` sets were empty before reload (a full `nft -f` re-application flushes every set with no static elements - documented, expected behaviour, same as the ad-block deploy session's own note on this).
+4. Applied with `sudo nft -f`, then immediately re-ran an independent `ssh` connection to confirm the management link survived, followed by a full `securepi status`.
+
+**Detection - the harder verification problem:** the test harness's isolated `ns_attacker`/`ns_victim` pair sits on `br-test`, which has no path to `ap0` (the interface these reject rules match on) - the same limitation the plan's own step 5.7 documents for the DPI redirect rule. A real DoT/DoH/QUIC bypass attempt from a genuine LAN client couldn't be exercised this session (0 devices were connected to `SecurePi-Test`). Rather than skip verification or fake it, each layer was checked with what's actually available, honestly scoped:
+
+| Layer | How verified |
+|---|---|
+| `log prefix` → kernel ring buffer → `journalctl -k` (the actual OS/nftables plumbing, not project-specific code) | **Proven with real, live traffic**: a temporary, non-persisted `chain output` rule (`log prefix "dot-bypass: "` on `tcp dport 853` outbound) was added, a fresh `dig` query forced a real DoT handshake from AdGuard to its upstream (`1.0.0.1:853`), the resulting kernel log lines were confirmed in `journalctl -k`, and the temporary rule was removed immediately after (never persisted to `/etc/nftables.conf`) |
+| `app/ingest.py`'s `read_nft_log` | Run live against those real journal lines (not synthetic ones): correctly parsed and inserted 10 real `bypass_attempt` events with the right `src_ip`/`dest_ip`/`dest_port`/`proto`/`block_reason` |
+| `app/correlation.py`'s `dns_bypass_signal` | Run live against the real database: executed with no error; correctly did **not** fire, since the test traffic (the gateway's own outbound DoT) has no `device_id` (it's WAN-side gateway traffic, not an attributable LAN device) - exactly the intended behaviour |
+| The `iifname "ap0"` match condition specifically (a real LAN client's traffic actually reaching these rules) | **Not exercised this session** - no real device attempted a bypass, and the harness genuinely cannot reach `ap0`. This is standard, well-established nftables interface matching, not bespoke project logic, so the residual risk here is low - but it's not "observed," and is recorded as such rather than implied |
+| Cleanup | The 20 test rows this verification created (unattributed, `device_id IS NULL`) were deleted from the live database afterward - they were also technically mislabeled `bypass_attempt` despite never having actually been rejected, since the temporary test rule only logged, never blocked, to avoid disrupting AdGuard's real upstream DNS during the test |
+
+8 new unit tests for `dns_bypass_signal` (nftables-only, canary-only, SNI-only, and all three combined toward one threshold), 10 new unit tests for `flatten_nft_log`/`read_nft_log`/the watermark helpers (subprocess mocked, the same pattern `ReadAghApiTests` already uses for AdGuard's API). 2 new settings (`dns_bypass_threshold`, `dns_bypass_window_seconds`). ATT&CK: tagged at the tactic level only (Defense Evasion, TA0005) - full reasoning in `app/playbooks.py`, the same caution `malicious_domain`'s own docstring already applies to a signal with a real benign-majority risk.
+
+`make deploy` (app code) and manual `rsync` (the firewall config and refresh script, deliberately kept out of the automated `make deploy` target - see the Makefile's own comment) both used. All three app services restarted clean; journal clear throughout every step above.

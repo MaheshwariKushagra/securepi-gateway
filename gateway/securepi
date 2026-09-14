@@ -45,7 +45,7 @@ service_list() {
     else
         # Fallback if the list file is ever missing - better a stale hardcoded
         # set than a status check that silently checks nothing.
-        echo "hostapd securepi-ap0 AdGuardHome nftables securepi-dpi securepi-ca-server" | tr ' ' '\n'
+        echo "hostapd securepi-ap0 AdGuardHome nftables securepi-dpi securepi-ca-server securepi-doh-refresh.timer" | tr ' ' '\n'
     fi
 }
 

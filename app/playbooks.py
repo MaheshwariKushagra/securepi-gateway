@@ -22,6 +22,13 @@ rather than a guessed technique:
   triggered by normal Android ad-SDK retry traffic, not by contact with
   confirmed-malicious infrastructure. Tagging it with a C2/DNS-tunnelling
   technique would overstate what it actually detected.
+- dns_bypass (ENHANCEMENT-PLAN.md step 2.2) fires on DoH/DoT/QUIC/Private-
+  Relay indicators, but modern OSes and browsers increasingly enable
+  encrypted DNS BY DEFAULT for ordinary privacy reasons (iOS 14+'s
+  Private Relay, Firefox's DoH rollouts) - not to evade THIS network's
+  policy specifically. Tagged at the TACTIC level only (Defense Evasion,
+  TA0005), the same treatment volume_anomaly gets for the same reason:
+  real evidence of evaded filtering, not reliable evidence of intent.
 - new_device is an informational registry event, not an attack pattern.
 - adblock_ineffective is about this project's OWN ad-removal degrading,
   not about anything the network did - it has no attacker-side technique
@@ -84,6 +91,14 @@ ATTACK_MAPPING = {
         "note": "Tactic-level only - a statistical volume anomaly is one of the few "
                 "externally observable signs of this tactic, but doesn't match one "
                 "specific technique.",
+    },
+    "dns_bypass": {
+        "tactic": "Defense Evasion", "tactic_id": "TA0005",
+        "technique": None, "technique_id": None,
+        "url": "https://attack.mitre.org/tactics/TA0005/",
+        "note": "Tactic-level only - modern devices increasingly enable encrypted DNS by "
+                "default for privacy reasons unrelated to evading this network's own "
+                "filtering, so a specific technique tag would overstate a single device's intent.",
     },
 }
 
@@ -159,6 +174,21 @@ PLAYBOOKS = {
         "recommended_action": "Resolve this once you recognize the device. If it's not "
             "something you or anyone in the household set up, quarantine it and investigate "
             "before resolving.",
+    },
+    "dns_bypass": {
+        "what_it_means": "This device's traffic showed enough combined signs of routing DNS "
+            "around AdGuard - a rejected DoT/DoH/QUIC connection, a query for Firefox's or "
+            "Apple's own encrypted-DNS canary domains, or a TLS connection to a known DoH "
+            "provider - to cross the threshold. This is very often a normal privacy default "
+            "(iOS Private Relay, a browser's own DoH rollout), not an attempt to evade this "
+            "network specifically.",
+        "how_to_check": "Open the evidence chain and read the breakdown in the description - it "
+            "names which specific mechanism(s) were seen and how many times each.",
+        "recommended_action": "For a known device with encrypted DNS enabled by its own OS/"
+            "browser defaults, mark false positive - filtering continues to apply to every "
+            "other device regardless. If this is unexpected for the device (e.g. a device that "
+            "should have no reason to seek out a specific third-party DoH provider), investigate "
+            "further before deciding.",
     },
     "adblock_ineffective": {
         "what_it_means": "SecurePi's own YouTube ad-removal (the Tier 2 mitmproxy-based DPI "

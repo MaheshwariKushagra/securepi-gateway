@@ -107,6 +107,19 @@ SETTINGS_SCHEMA = {
         "label": "New-device lookback",
         "help": "How far back (seconds) a device's first_seen can be and still count as \"new\".",
     },
+    "dns_bypass_threshold": {
+        "default": 3, "type": int, "min": 1, "max": 100,
+        "label": "DNS-bypass threshold",
+        "help": "Combined DoT/DoH/QUIC/Private-Relay bypass attempts from one device, in the "
+                "signal's window, before it's flagged. Combines nftables reject-rule hits, "
+                "Firefox/Apple canary-domain queries, and Suricata TLS SNI matches on known "
+                "DoH providers into one count.",
+    },
+    "dns_bypass_window_seconds": {
+        "default": 300, "type": int, "min": 30, "max": 3600,
+        "label": "DNS-bypass window",
+        "help": "How far back (seconds) the DNS-bypass signal looks when counting bypass attempts.",
+    },
     "dedup_window_seconds": {
         "default": 600, "type": int, "min": 60, "max": 86400,
         "label": "Incident dedup window",

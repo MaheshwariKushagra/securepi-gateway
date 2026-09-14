@@ -408,6 +408,133 @@ def slow_scan_signal(conn):
 
 
 # --------------------------------------------------------------------------
+# Signal 1d: DNS-filtering bypass (ENHANCEMENT-PLAN.md step 2.2)
+#
+# Combines three independent kinds of evidence that a device is routing
+# its DNS around AdGuard rather than through it, into one count per
+# device:
+#   1. nftables reject-rule hits (source='nftables', event_type=
+#      'bypass_attempt') - a device that actually tried DoT (port 853),
+#      a known-IP DoH resolver, or QUIC on 443 and got rejected. See
+#      gateway/nftables.conf's `log prefix` additions and
+#      app/ingest.py's read_nft_log.
+#   2. Canary-domain queries (event_type='dns_query') for
+#      use-application-dns.net (Firefox's own DoH auto-enable check) or
+#      mask.icloud.com / mask-h2.icloud.com (Apple's documented iCloud
+#      Private Relay opt-out signal) - AdGuard now answers all three with
+#      a genuine NXDOMAIN (app/adguard.py's add_nxdomain_rule), so seeing
+#      the QUERY at all means the client-side mechanism ran, independent
+#      of whether the nftables layer ever saw a rejected connection.
+#   3. Suricata TLS SNI matches (event_type='tls') against known DoH
+#      provider hostnames - catches a provider's IP the moment it
+#      changes, before the doh_resolvers nft set's next daily refresh
+#      (gateway/refresh-doh-set.sh) would.
+#
+# Deliberately NOT ATT&CK-tagged at the technique level - see
+# app/playbooks.py's own docstring for the full reasoning, but the short
+# version: modern OSes and browsers increasingly auto-enable encrypted
+# DNS by default for ordinary privacy reasons (iOS Private Relay, recent
+# Firefox DoH rollouts), so one device tripping this signal is real
+# evidence of evaded DNS filtering, not reliable evidence of malicious
+# intent - the same caution malicious_domain_signal's own docstring
+# already applies to blocklist-hit volume.
+# --------------------------------------------------------------------------
+# Window and threshold both live in app/settings.py - see port_scan_signal's
+# own note above.
+
+CANARY_DOMAINS = ("use-application-dns.net", "mask.icloud.com", "mask-h2.icloud.com")
+# Curated, not exhaustive - the same "short, defensible list beats a large
+# opaque one" reasoning brute_force_signal's AUTH_PORTS gives. Widening
+# this is cheap (just add a hostname) and doesn't need a redeploy of
+# anything else, since it's only read here.
+KNOWN_DOH_PROVIDER_SNIS = (
+    "dns.google", "cloudflare-dns.com", "mozilla.cloudflare-dns.com",
+    "dns.quad9.net", "doh.opendns.com", "dns.adguard.com", "dns.nextdns.io",
+)
+
+
+def dns_bypass_signal(conn):
+    now = time.time()
+    window = settings.get(conn, "dns_bypass_window_seconds")
+    since = now - window
+    threshold = settings.get(conn, "dns_bypass_threshold")
+
+    canary_placeholders = ",".join("?" for _ in CANARY_DOMAINS)
+    sni_placeholders = ",".join("?" for _ in KNOWN_DOH_PROVIDER_SNIS)
+    rows = conn.execute(
+        f"""
+        SELECT device_id, count(*) n, min(ts) first_seen, max(ts) last_seen
+          FROM events
+         WHERE device_id IS NOT NULL AND ts > ?
+           AND (
+                (source='nftables' AND event_type='bypass_attempt')
+             OR (event_type='dns_query' AND dns_rrname IN ({canary_placeholders}))
+             OR (event_type='tls' AND tls_sni IN ({sni_placeholders}))
+           )
+         GROUP BY device_id
+        HAVING n >= ?
+        """,
+        (since, *CANARY_DOMAINS, *KNOWN_DOH_PROVIDER_SNIS, threshold),
+    ).fetchall()
+
+    fired = 0
+    for r in rows:
+        event_ids = [
+            e["id"] for e in conn.execute(
+                f"""SELECT id FROM events WHERE device_id=? AND ts > ?
+                     AND (
+                          (source='nftables' AND event_type='bypass_attempt')
+                       OR (event_type='dns_query' AND dns_rrname IN ({canary_placeholders}))
+                       OR (event_type='tls' AND tls_sni IN ({sni_placeholders}))
+                     )
+                     ORDER BY ts""",
+                (r["device_id"], since, *CANARY_DOMAINS, *KNOWN_DOH_PROVIDER_SNIS),
+            )
+        ]
+        # A short breakdown by kind, so the incident says WHICH mechanism
+        # was seen rather than just a bare count - "3 DoT attempts" reads
+        # very differently to an analyst than "3 canary-domain queries".
+        by_reason = conn.execute(
+            """SELECT block_reason reason, count(*) n FROM events
+                WHERE device_id=? AND ts > ? AND source='nftables' AND event_type='bypass_attempt'
+                GROUP BY block_reason""",
+            (r["device_id"], since),
+        ).fetchall()
+        by_canary = conn.execute(
+            f"""SELECT dns_rrname reason, count(*) n FROM events
+                 WHERE device_id=? AND ts > ? AND event_type='dns_query'
+                   AND dns_rrname IN ({canary_placeholders})
+                 GROUP BY dns_rrname""",
+            (r["device_id"], since, *CANARY_DOMAINS),
+        ).fetchall()
+        by_sni = conn.execute(
+            f"""SELECT tls_sni reason, count(*) n FROM events
+                 WHERE device_id=? AND ts > ? AND event_type='tls' AND tls_sni IN ({sni_placeholders})
+                 GROUP BY tls_sni""",
+            (r["device_id"], since, *KNOWN_DOH_PROVIDER_SNIS),
+        ).fetchall()
+        parts = ["%s x%d" % (b["reason"], b["n"]) for b in list(by_reason) + list(by_canary) + list(by_sni)]
+
+        raise_incident(
+            conn, r["device_id"], "dns_bypass", "medium",
+            title="Device tried to bypass DNS filtering %d times" % r["n"],
+            description=(
+                "%d DoH/DoT/QUIC/Private-Relay bypass indicators in %d seconds: %s. Modern "
+                "devices increasingly enable encrypted DNS by default for privacy, so this is "
+                "evidence of evaded filtering, not necessarily malicious intent - see the "
+                "evidence chain for exactly what was attempted."
+                % (r["n"], window, ", ".join(parts) or "no breakdown available")
+            ),
+            first_seen=r["first_seen"], last_seen=r["last_seen"],
+            event_ids=event_ids,
+        )
+        fired += 1
+
+    set_window_start(conn, "dns_bypass", now)
+    return fired
+
+
+# --------------------------------------------------------------------------
 # Signal 2: brute force
 #
 # Many short connections from one device to one auth-service port on one
@@ -768,9 +895,9 @@ def behavioral_baseline_signal(conn):
     return fired
 
 
-SIGNALS = [port_scan_signal, network_sweep_signal, slow_scan_signal, brute_force_signal,
-           malicious_domain_signal, new_device_signal, adblock_effectiveness_signal,
-           behavioral_baseline_signal]
+SIGNALS = [port_scan_signal, network_sweep_signal, slow_scan_signal, dns_bypass_signal,
+           brute_force_signal, malicious_domain_signal, new_device_signal,
+           adblock_effectiveness_signal, behavioral_baseline_signal]
 
 
 def run_all(conn):

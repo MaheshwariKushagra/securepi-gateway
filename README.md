@@ -11,7 +11,7 @@ Built as a final-year engineering project, deployed on real hardware, and measur
 
 ![Python](https://img.shields.io/badge/Python-3.12-3776AB?style=for-the-badge&logo=python&logoColor=white) ![FastAPI](https://img.shields.io/badge/FastAPI-console-009688?style=for-the-badge&logo=fastapi&logoColor=white) ![Suricata](https://img.shields.io/badge/Suricata-IDS-EF3B2D?style=for-the-badge) ![AdGuard Home](https://img.shields.io/badge/AdGuard_Home-DNS-68BC71?style=for-the-badge&logo=adguard&logoColor=white) ![mitmproxy](https://img.shields.io/badge/mitmproxy-selective_DPI-2B6CB0?style=for-the-badge) ![Ubuntu](https://img.shields.io/badge/Ubuntu-24.04_LTS-E95420?style=for-the-badge&logo=ubuntu&logoColor=white)
 
-![Tests](https://img.shields.io/badge/tests-118_passing-2fbf71?style=flat-square) ![Detection signals](https://img.shields.io/badge/detection_signals-8-4f9cf9?style=flat-square) ![ATT&CK](https://img.shields.io/badge/MITRE_ATT%26CK-mapped-7b5cf0?style=flat-square) ![Stages complete](https://img.shields.io/badge/roadmap-stages_0%C2%B71%C2%B75%C2%B76_complete-2fbf71?style=flat-square) ![No Docker](https://img.shields.io/badge/footprint-3.6_GiB_RAM,_no_Docker-8d99ad?style=flat-square)
+![Tests](https://img.shields.io/badge/tests-136_passing-2fbf71?style=flat-square) ![Detection signals](https://img.shields.io/badge/detection_signals-9-4f9cf9?style=flat-square) ![ATT&CK](https://img.shields.io/badge/MITRE_ATT%26CK-mapped-7b5cf0?style=flat-square) ![Stages complete](https://img.shields.io/badge/roadmap-stages_0%C2%B71%C2%B75%C2%B76_complete-2fbf71?style=flat-square) ![No Docker](https://img.shields.io/badge/footprint-3.6_GiB_RAM,_no_Docker-8d99ad?style=flat-square)
 
 <br>
 
@@ -41,7 +41,7 @@ It decrypts nothing else.
 
 ### Detect
 **Suricata IDS**, the DNS resolver and the inspection proxy all write into one event
-store. A **correlation engine** runs eight signal checks over that data every 15 seconds and
+store. A **correlation engine** runs nine signal checks over that data every 15 seconds and
 merges repeat detections, so **15,884 raw events became 10 incidents** over a real
 24-hour window.
 
@@ -74,7 +74,7 @@ audit trail.
 | **DNS rules enforced** | **656,735** across 5 curated lists | Live AdGuard Home |
 | **Memory under attack load** | **40%** of 3.6 GiB used, over 2 GiB free | [Evaluation §5](EVALUATION-RESULTS.md) |
 | **Throughput headroom** | Limited by the WAN (~30 Mbps). The inspection path itself ran at **39.9 Gbps** on virtual links | [Evaluation §6](EVALUATION-RESULTS.md) |
-| **Automated tests** | **118** unit tests (`make test`), all on synthetic data | [`tests/`](tests) |
+| **Automated tests** | **136** unit tests (`make test`), all on synthetic data | [`tests/`](tests) |
 
 ---
 
@@ -274,11 +274,12 @@ produces the reduction ratio.
 | `slow_port_scan` / `slow_network_sweep` | The same two patterns above, paced too slowly for their fast window to ever catch (nmap `-T0`/`-T1`-style timing) | ≥ 8 over 7200 s | ![high](https://img.shields.io/badge/-high-f2545b?style=flat-square) | Same techniques as above |
 | `brute_force` | Many short connections to an auth port (SSH, FTP, Telnet, RDP, SMTP) | ≥ 6 attempts in 120 s | ![high](https://img.shields.io/badge/-high-f2545b?style=flat-square) | Credential Access · [T1110](https://attack.mitre.org/techniques/T1110/) |
 | `malicious_domain` | Blocked lookups across many **distinct** domains (not raw volume, which is mostly SDK retries) | ≥ 15 distinct in 600 s | ![medium](https://img.shields.io/badge/-medium-f5a524?style=flat-square) | *not tagged on purpose*¹ |
+| `dns_bypass` | A device routing DNS around AdGuard: rejected DoT/DoH/QUIC, Firefox/Apple canary-domain queries, or a TLS SNI matching a known DoH provider | ≥ 3 combined indicators in 300 s | ![medium](https://img.shields.io/badge/-medium-f5a524?style=flat-square) | Defense Evasion · [TA0005](https://attack.mitre.org/tactics/TA0005/) (tactic only)¹ |
 | `volume_anomaly` | Traffic far above **this device's own** baseline for this hour of day | z > 3.0 after 7 days of history | ![medium](https://img.shields.io/badge/-medium-f5a524?style=flat-square) | Exfiltration · [TA0010](https://attack.mitre.org/tactics/TA0010/) (tactic only) |
 | `new_device` | A device the registry has never seen | 30 s grace, 1 h lookback | ![low](https://img.shields.io/badge/-low-4f9cf9?style=flat-square) | *informational* |
 | `adblock_ineffective` | YouTube being decrypted but nothing stripped: a format change or server-side ad insertion | ≥ 5 decrypts, 0 stripped in 1 h | ![medium](https://img.shields.io/badge/-medium-f5a524?style=flat-square) | *health check of this platform* |
 
-<sub>¹ A blocklist hit on an ad or tracker domain is not evidence of contact with attacker infrastructure, so tagging it with a C2 technique would overstate the finding. The reasoning is in <a href="app/playbooks.py"><code>app/playbooks.py</code></a>.</sub>
+<sub>¹ A blocklist hit on an ad or tracker domain, or an encrypted-DNS attempt, is not evidence of contact with attacker infrastructure or of intent to evade this network specifically (modern devices increasingly enable encrypted DNS by default for ordinary privacy reasons) - tagging either with a specific technique would overstate the finding. The reasoning is in <a href="app/playbooks.py"><code>app/playbooks.py</code></a>.</sub>
 
 <details>
 <summary><b>Sequence: from a live SSH brute-force to a quarantined device</b></summary>
@@ -621,7 +622,7 @@ securepi-gateway/
 │   ├── templates/  static/   Jinja2 pages, vanilla JS, one stylesheet
 ├── dpi/                      Selective HTTPS inspection (mitmproxy addon, rules, canary)
 ├── gateway/                  nftables, hostapd, `securepi` CLI, evaluation harness
-├── tests/                    118 unit tests on synthetic fixtures (`make test`)
+├── tests/                    136 unit tests on synthetic fixtures (`make test`)
 └── docs/
     ├── assets/               Banner, social preview, screenshots
     └── demo/                 Synthetic-data console used for the screenshots

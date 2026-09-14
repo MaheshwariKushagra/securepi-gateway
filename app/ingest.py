@@ -23,7 +23,9 @@ Run it as a service; it polls, sleeps, and repeats.
 
 import json
 import os
+import re
 import sqlite3
+import subprocess
 import sys
 import time
 
@@ -37,6 +39,7 @@ AGH_QUERYLOG_PATH = "/opt/AdGuardHome/data/querylog.json"
 AGH_API_PAGE_SIZE = 500  # comfortably covers real accumulation between 2s polls - see read_agh_api's docstring
 AGH_WATERMARK_STARTUP_LOOKBACK_SECONDS = 300  # first-ever run: start 5 minutes back, not from epoch 0
 DPI_EVENTS_PATH = "/var/log/securepi/dpi-events.jsonl"
+NFT_LOG_STARTUP_LOOKBACK_SECONDS = 300  # same first-run convention as AdGuard's watermark above
 
 # Schema changes made after the Day 14 database was already created on the
 # gateway. schema.sql already lists these for a FRESH install (open_db()
@@ -668,6 +671,142 @@ def read_dpi_events(conn):
     return read, saved, errors
 
 
+# ------------------------------------------------------------- nftables log
+# ENHANCEMENT-PLAN.md step 2.2: the DNS-bypass reject rules in
+# gateway/nftables.conf's forward chain (dot-bypass, doh-bypass,
+# quic-blocked) now each carry a `log prefix` - see that file. nftables'
+# `log` statement with no `group` writes straight to the kernel ring
+# buffer (`dmesg`), which journald already captures as the kernel's own
+# log stream - no new daemon, no nflog socket, no extra dependency, in
+# keeping with this project's "plain Python, minimal moving parts"
+# design. Read via `journalctl -k`, the same "poll by watermark, not by
+# tailing a growing file" shape as read_agh_api - journalctl isn't a
+# plain file with a stable inode to seek in, so a timestamp watermark is
+# the natural fit here too, not the inode-and-offset approach read_eve
+# and read_dpi_events use.
+NFT_LOG_PREFIXES = ("dot-bypass: ", "doh-bypass: ", "quic-blocked: ")
+# A standard iptables/nftables kernel log line, e.g.:
+#   dot-bypass: IN=ap0 OUT=wlp2s0 ... SRC=10.10.0.50 DST=1.1.1.1 ...
+#   PROTO=TCP SPT=51000 DPT=853 ...
+NFT_LOG_FIELD_RE = re.compile(r"\b(SRC|DST|PROTO|SPT|DPT)=(\S+)")
+
+
+def flatten_nft_log(message):
+    """Parse one kernel log line from the reject rules above into an
+    events row, or None if this line isn't one of ours (journalctl -k
+    carries every kernel message, not just nftables') or doesn't parse.
+    source='nftables', event_type='bypass_attempt' - a new combination on
+    the existing generic events shape, not a bespoke table (this file's
+    own header/schema.sql's own header give the same reasoning for
+    dpi_decision rows). block_reason carries which rule matched
+    ('dot-bypass' etc.) - the same field's existing job (Tier 1's "why
+    was this blocked?") extended to a second, related meaning: why was
+    this connection attempt rejected."""
+    prefix = next((p for p in NFT_LOG_PREFIXES if p in message), None)
+    if prefix is None:
+        return None
+    fields = dict(NFT_LOG_FIELD_RE.findall(message))
+    if "SRC" not in fields:
+        return None  # not a real match for our rules' expected shape
+    dest_port = fields.get("DPT")
+    return {
+        "ts": time.time(),  # overwritten by the real journal timestamp by the caller
+        "ts_iso": None,
+        "source": "nftables",
+        "event_type": "bypass_attempt",
+        "src_ip": fields["SRC"],
+        "dest_ip": fields.get("DST"),
+        "dest_port": int(dest_port) if dest_port and dest_port.isdigit() else None,
+        "proto": fields.get("PROTO"),
+        "block_reason": prefix.rstrip(": "),
+    }
+
+
+def get_nft_log_watermark(conn):
+    row = conn.execute(
+        "SELECT watermark_ts FROM ingest_state WHERE source='nftables'"
+    ).fetchone()
+    if row is not None and row["watermark_ts"] is not None:
+        return row["watermark_ts"]
+    start = time.time() - NFT_LOG_STARTUP_LOOKBACK_SECONDS
+    conn.execute(
+        "INSERT INTO ingest_state (source, file_path, file_inode, byte_offset, watermark_ts, updated_at)"
+        " VALUES ('nftables', '(journalctl -k)', NULL, 0, ?, ?)"
+        " ON CONFLICT(source) DO UPDATE SET watermark_ts=excluded.watermark_ts",
+        (start, time.time()),
+    )
+    conn.commit()
+    return start
+
+
+def set_nft_log_watermark(conn, ts):
+    conn.execute(
+        "UPDATE ingest_state SET watermark_ts=?, updated_at=? WHERE source='nftables'",
+        (ts, time.time()),
+    )
+
+
+def read_nft_log(conn):
+    """Poll the kernel log for new DNS-bypass reject-rule hits since the
+    last watermark. Returns (0, 0, 0) rather than raising if journalctl
+    itself fails (e.g. permissions, or running somewhere without a
+    journal at all, like a test sandbox) - a missing detection source for
+    one cycle should never take the whole ingest loop down, the same
+    principle main()'s own try/except already applies at the top level."""
+    watermark = get_nft_log_watermark(conn)
+    try:
+        result = subprocess.run(
+            ["journalctl", "-k", "-o", "json", "--no-pager", "--since=@%d" % int(watermark)],
+            capture_output=True, text=True, timeout=10,
+        )
+    except Exception as exc:
+        print("read_nft_log: journalctl failed: %s" % exc, file=sys.stderr, flush=True)
+        return 0, 0, 0
+
+    read = errors = 0
+    rows = []
+    newest = watermark
+    for line in result.stdout.splitlines():
+        if not line.strip():
+            continue
+        try:
+            rec = json.loads(line)
+        except json.JSONDecodeError:
+            errors += 1
+            continue
+        message = rec.get("MESSAGE")
+        if not isinstance(message, str):
+            continue
+        # __REALTIME_TIMESTAMP is microseconds-since-epoch, as a string.
+        try:
+            ts = int(rec.get("__REALTIME_TIMESTAMP", 0)) / 1_000_000.0
+        except (TypeError, ValueError):
+            continue
+        if ts <= watermark:
+            continue  # journalctl's --since is second-granularity; re-filter precisely
+        read += 1
+        row = flatten_nft_log(message)
+        if row is None:
+            continue
+        row["ts"] = ts
+        row["ts_iso"] = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(ts))
+        rows.append(row)
+        if ts > newest:
+            newest = ts
+
+    saved = insert_events(conn, rows)
+    if newest > watermark:
+        set_nft_log_watermark(conn, newest)
+    conn.execute(
+        "UPDATE ingest_stats SET events_read = events_read + ?,"
+        " events_saved = events_saved + ?, parse_errors = parse_errors + ?,"
+        " last_run = ? WHERE id = 1",
+        (read, saved, errors, time.time()),
+    )
+    conn.commit()
+    return read, saved, errors
+
+
 def main():
     conn = open_db()
     print("ingest started, polling every %ds" % POLL_SECONDS, flush=True)
@@ -688,6 +827,17 @@ def main():
             d_read, d_saved, d_errors = read_dpi_events(conn)
             saved += a_saved + d_saved
             errors += a_errors + d_errors
+            # read_nft_log spawns a journalctl subprocess, unlike every other
+            # reader here (a pure Python file read or HTTP call) - real but
+            # small overhead that a bypass attempt's own rarity doesn't need
+            # paid every 2s. Every fifth cycle (~10s), the same cadence as
+            # the lease refresh just above, keeps detection latency well
+            # under dns_bypass_signal's own window while cutting the
+            # subprocess spawn rate by 5x.
+            if cycle % 5 == 0:
+                n_read, n_saved, n_errors = read_nft_log(conn)
+                saved += n_saved
+                errors += n_errors
             total += saved
 
             # Attach events to devices. Done after insertion rather than

@@ -292,7 +292,7 @@ New signals follow the `correlation.py` pattern (trailing-window SQL → `raise_
 | Step | Work | Origin | Exit criteria | Days |
 |---|---|---|---|---|
 | 2.1 | **Scan family:** network sweep (one port across many hosts) + slow-scan variants — **done, 14 September 2026** | F§12.3 | `nmap -T0` from `ns_attacker` detected — verified live: see `EVALUATION-RESULTS-2.md` §2.1 | 1 |
-| 2.2 | **DNS-bypass hardening + detection.** *Hardening:* (a) DNS-level blocking of DoH hostnames (HaGeZi DoH/VPN/proxy bypass list, DoH part on by default; VPN/proxy part available as a profile option in 4.3). (b) Firefox canary `use-application-dns.net` → NXDOMAIN, which disables Firefox's automatic DoH. (c) iCloud Private Relay opt-out: `mask.icloud.com` / `mask-h2.icloud.com` → NXDOMAIN, Apple's documented network signal. (d) The `doh_resolvers` nft set refreshes daily from resolved DoH hostnames instead of 14 static IPs. *Detection:* `log prefix` on the dot/doh/quic reject rules, those log lines ingested as events (the restored nftables source), plus Suricata TLS SNI matches on DoH hostnames. Incident: "Device X tried to bypass DNS filtering N times via DoH/DoT/Private Relay" | F§11.3, 15d cut, A5, Mkt (NextDNS) | Firefox with DoH on, Chrome Secure DNS with a custom provider, and Android Private DNS each end up resolving through AdGuard (or failing closed). One incident per device with evidence | 2 |
+| 2.2 | **DNS-bypass hardening + detection — done, 14 September 2026** (the `doh_resolvers` set is refreshed from HaGeZi's maintained IP list rather than resolved hostnames — a better source than the plan's own original wording envisioned; see `EVALUATION-RESULTS-2.md` §2.2 for the honest scope of what was and wasn't live-verified). *Hardening:* (a) DNS-level blocking of DoH hostnames (HaGeZi DoH/VPN/proxy bypass list, DoH part on by default; VPN/proxy part available as a profile option in 4.3). (b) Firefox canary `use-application-dns.net` → NXDOMAIN, which disables Firefox's automatic DoH. (c) iCloud Private Relay opt-out: `mask.icloud.com` / `mask-h2.icloud.com` → NXDOMAIN, Apple's documented network signal. (d) The `doh_resolvers` nft set refreshes daily from resolved DoH hostnames instead of 14 static IPs. *Detection:* `log prefix` on the dot/doh/quic reject rules, those log lines ingested as events (the restored nftables source), plus Suricata TLS SNI matches on DoH hostnames. Incident: "Device X tried to bypass DNS filtering N times via DoH/DoT/Private Relay" | F§11.3, 15d cut, A5, Mkt (NextDNS) | Firefox with DoH on, Chrome Secure DNS with a custom provider, and Android Private DNS each end up resolving through AdGuard (or failing closed). One incident per device with evidence | 2 |
 | 2.3 | **IDS alerts → taxonomy → incidents** (mapping table: ET category/SID → plain name, severity, ATT&CK) | F§9.6 | Test signature → plain-language incident | 1 |
 | 2.4 | **Offline threat intel.** Daily abuse.ch Feodo/URLhaus/ThreatFox into an `ioc` table, matched on IP/domain/SNI. The same domains are pushed to AdGuard as a **security blocklist**, so they're both blocked and turned into incidents | F§19, Mkt | Seeded test IOC is blocked **and** raises an incident. Feed age visible | 1 |
 | 2.5 | **DNS tunnelling + DGA** (subdomain entropy, label length, unique subdomains, TXT ratio; NXDOMAIN burst + entropy) | F§12.3 | Harness generators detected. No firing on 24 h of phone traffic | 1.5 |
@@ -557,7 +557,7 @@ Never cut Stage 2, steps 5.2, 5.3, 5.7, or evaluation items 7.2–7.5.
 |---|---|---|
 | 0 | **0.1 done, 0.2 done and verified live, 0.3 done** | Stage 0 complete |
 | 1 | **1.1 done, 1.2 done, 1.3 done, 1.4 done, 1.5 done, 1.6 done, 1.7 done, 1.8 done** (1.8 out of order - see note below) | Stage 1 complete |
-| 2 | **2.1 done**, 2.2 · 2.3 · 2.4 · 2.5 · 2.6 · 2.7 · 2.8 | In progress |
+| 2 | **2.1 done, 2.2 done**, 2.3 · 2.4 · 2.5 · 2.6 · 2.7 · 2.8 | In progress |
 | 3 | 3.1 · 3.2 · 3.3 · 3.4 · 3.5 · 3.6 | Not started |
 | 4 | 4.1 · 4.2 · 4.3 · 4.4 · 4.5 | Not started |
 | 5 | **5.1 done, 5.2 done, 5.3 done, 5.4 done, 5.5 done, 5.6 done, 5.7 done, 5.8 done, 5.9 done, 5.10 done, 5.11 done (Path 1 only)** (out of order) | 5.1–5.11 done - 5.11 scoped to Path 1 (cosmetic CSS), Path 2 (scriptlets) deferred and recorded |
@@ -612,6 +612,32 @@ its capture socket to the recreated interface. Both live scenarios were
 run against the real gateway, not just asserted in unit tests: full
 results in `EVALUATION-RESULTS-2.md` §2.1. `make deploy` (0.2) was used
 for the code side and ran clean.
+
+**2.2 (DNS-bypass hardening + detection) is also done.** This one touched
+the live firewall (`gateway/nftables.conf`'s forward chain), which the
+user was consulted about first given the real lockout risk a firewall
+mistake carries (no recovery but physical console access to the Dell) -
+they asked to proceed with the same lockout-insurance discipline
+`GATEWAY-SETUP-RUNBOOK.md` already documents: ruleset backed up, `nft -c
+-f` syntax-checked before touching anything live, and the management link
+independently re-verified immediately after the real `nft -f` apply.
+Two AdGuard `$dnsrewrite=NXDOMAIN` rules (Firefox's DoH canary, Apple's
+Private Relay opt-out domains) and two HaGeZi blocklists (DoH-only,
+enabled; the combined DoH/VPN/Proxy list, added but left disabled until
+4.3's profile system exists to actually offer it as a choice) were added
+and each verified live with `dig`. The `doh_resolvers` nft set is now
+refreshed daily from HaGeZi's maintained `doh-ips.txt` (a better, already-
+curated IP source than the plan's original "resolved hostnames" wording
+envisioned) via a new script and systemd timer, run once live and
+confirmed loading 1,445 addresses. Detection (`dns_bypass_signal`,
+`read_nft_log`) was verified as far as this session's setup honestly
+allows: the harness can't reach `ap0` (same limitation as step 5.7's own
+documented gap), so the full ingest pipeline was proven instead with real
+kernel log lines from the gateway's own genuine outbound DoT traffic via
+one temporary, non-persisted test rule, added and removed cleanly. What
+specifically was NOT observed - a real LAN client's traffic actually
+hitting the `iifname "ap0"` reject rules - is named plainly rather than
+implied to be covered. Full detail: `EVALUATION-RESULTS-2.md` §2.2.
 
 **Note on 13 September:** at the user's request, 1.8 and Stage 5's telemetry
 foundation (5.1) and "why blocked / unbreak" tools (5.2) were implemented

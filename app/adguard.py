@@ -112,6 +112,29 @@ def remove_user_rule(rule):
     _request("POST", "/control/filtering/set_rules", {"rules": rules})
 
 
+def add_nxdomain_rule(domain):
+    """Force a genuine NXDOMAIN response for this exact domain, regardless
+    of the gateway's global blocking_mode (confirmed live: this gateway
+    runs 'default' mode, which answers a plain blocked query with
+    0.0.0.0/:: - a real, if bogus, answer, not a failed lookup).
+
+    ENHANCEMENT-PLAN.md step 2.2 needs this for two specific domains that
+    check for a FAILED resolution, not just "some answer": Firefox's DoH
+    canary (use-application-dns.net - Firefox auto-enables DoH unless this
+    fails to resolve) and Apple's iCloud Private Relay opt-out domains
+    (mask.icloud.com / mask-h2.icloud.com - Apple's own documented network
+    signal for disabling Private Relay). A plain add_user_rule('block')
+    would answer 0.0.0.0 here, which is a resolvable address as far as
+    either check is concerned - it would not actually disable either
+    feature. AdGuard's $dnsrewrite modifier overrides the global mode on a
+    per-rule basis; NXDOMAIN is one of its documented shorthand values."""
+    rule = "||%s^$dnsrewrite=NXDOMAIN" % domain
+    rules = user_rules()
+    if rule not in rules:
+        rules.append(rule)
+        _request("POST", "/control/filtering/set_rules", {"rules": rules})
+
+
 def describe_rule(rule):
     """Turn a raw AdGuard rule string into something the console can show
     next to a plain-language action, rather than syntax the operator has to

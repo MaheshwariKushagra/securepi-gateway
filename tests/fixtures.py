@@ -80,6 +80,26 @@ def insert_dns_query(conn, device_id, dns_rrname, ts, blocked=0, src_ip="10.10.0
     conn.commit()
 
 
+def insert_tls(conn, device_id, tls_sni, ts, src_ip="10.10.0.50"):
+    conn.execute(
+        "INSERT INTO events (ts, ts_iso, source, event_type, src_ip, device_id, tls_sni)"
+        " VALUES (?, 'test', 'suricata', 'tls', ?, ?, ?)",
+        (ts, src_ip, device_id, tls_sni),
+    )
+    conn.commit()
+
+
+def insert_bypass_attempt(conn, device_id, block_reason, ts, src_ip="10.10.0.50",
+                           dest_ip="9.9.9.9", dest_port=853, proto="TCP"):
+    conn.execute(
+        "INSERT INTO events (ts, ts_iso, source, event_type, src_ip, device_id,"
+        " dest_ip, dest_port, proto, block_reason)"
+        " VALUES (?, 'test', 'nftables', 'bypass_attempt', ?, ?, ?, ?, ?, ?)",
+        (ts, src_ip, device_id, dest_ip, dest_port, proto, block_reason),
+    )
+    conn.commit()
+
+
 def insert_dpi_event(conn, device_id, dpi_action, ts, dpi_ads_removed=0):
     conn.execute(
         "INSERT INTO events (ts, ts_iso, source, event_type, device_id, dpi_action,"

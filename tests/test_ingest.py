@@ -268,5 +268,105 @@ class ReadAghApiTests(unittest.TestCase):
         self.assertEqual(result, (0, 0, 0))
 
 
+class FlattenNftLogTests(unittest.TestCase):
+    """ENHANCEMENT-PLAN.md step 2.2: parsing the kernel log lines the
+    dot-bypass/doh-bypass/quic-blocked reject rules now produce (see
+    gateway/nftables.conf's `log prefix` additions)."""
+
+    def test_dot_bypass_line(self):
+        line = ("dot-bypass: IN=ap0 OUT=wlp2s0 MAC=aa:bb SRC=10.10.0.50 DST=9.9.9.9 LEN=60 "
+                "TOS=0x00 PREC=0x00 TTL=64 ID=1 DF PROTO=TCP SPT=51000 DPT=853 WINDOW=64240 SYN")
+        row = ingest.flatten_nft_log(line)
+        self.assertIsNotNone(row)
+        self.assertEqual(row["source"], "nftables")
+        self.assertEqual(row["event_type"], "bypass_attempt")
+        self.assertEqual(row["src_ip"], "10.10.0.50")
+        self.assertEqual(row["dest_ip"], "9.9.9.9")
+        self.assertEqual(row["dest_port"], 853)
+        self.assertEqual(row["proto"], "TCP")
+        self.assertEqual(row["block_reason"], "dot-bypass")
+
+    def test_doh_bypass_line(self):
+        line = "doh-bypass: IN=ap0 SRC=10.10.0.51 DST=1.1.1.1 PROTO=TCP SPT=52000 DPT=443"
+        row = ingest.flatten_nft_log(line)
+        self.assertEqual(row["block_reason"], "doh-bypass")
+        self.assertEqual(row["dest_port"], 443)
+
+    def test_quic_blocked_line(self):
+        line = "quic-blocked: IN=ap0 SRC=10.10.0.52 DST=8.8.8.8 PROTO=UDP SPT=53000 DPT=443"
+        row = ingest.flatten_nft_log(line)
+        self.assertEqual(row["block_reason"], "quic-blocked")
+        self.assertEqual(row["proto"], "UDP")
+
+    def test_unrelated_kernel_line_is_ignored(self):
+        self.assertIsNone(ingest.flatten_nft_log("audit: type=1400 apparmor=STATUS operation=..."))
+
+    def test_our_prefix_but_unparseable_body_is_ignored_not_crashed(self):
+        self.assertIsNone(ingest.flatten_nft_log("dot-bypass: (malformed, no fields at all)"))
+
+
+class NftLogWatermarkTests(unittest.TestCase):
+    def test_first_call_seeds_a_recent_watermark_not_epoch_zero(self):
+        conn = fixtures.temp_db()
+        wm = ingest.get_nft_log_watermark(conn)
+        self.assertGreater(wm, time.time() - ingest.NFT_LOG_STARTUP_LOOKBACK_SECONDS - 5)
+        self.assertLess(wm, time.time())
+
+    def test_set_then_get_round_trips(self):
+        conn = fixtures.temp_db()
+        ingest.get_nft_log_watermark(conn)  # seed the row first
+        ingest.set_nft_log_watermark(conn, 12345.0)
+        self.assertEqual(ingest.get_nft_log_watermark(conn), 12345.0)
+
+
+class ReadNftLogTests(unittest.TestCase):
+    """read_nft_log itself, with subprocess.run mocked - no real journalctl
+    call, matching how ReadAghApiTests mocks adguard._request rather than
+    hitting a real AdGuard instance."""
+
+    @staticmethod
+    def _journal_line(message, realtime_us):
+        import json
+        return json.dumps({"MESSAGE": message, "__REALTIME_TIMESTAMP": str(realtime_us)})
+
+    def test_only_ingests_lines_newer_than_the_watermark(self):
+        conn = fixtures.temp_db()
+        ingest.get_nft_log_watermark(conn)  # seed the row first
+        ingest.set_nft_log_watermark(conn, 1000.0)
+        old = self._journal_line("dot-bypass: SRC=10.10.0.1 DST=9.9.9.9 PROTO=TCP DPT=853", 500_000_000)
+        new = self._journal_line("dot-bypass: SRC=10.10.0.2 DST=9.9.9.9 PROTO=TCP DPT=853", 2000_000_000)
+        fake = mock.Mock(stdout=old + "\n" + new + "\n")
+        with mock.patch("subprocess.run", return_value=fake):
+            read, saved, errors = ingest.read_nft_log(conn)
+        self.assertEqual(saved, 1)
+        rows = conn.execute("SELECT src_ip FROM events WHERE event_type='bypass_attempt'").fetchall()
+        self.assertEqual([r["src_ip"] for r in rows], ["10.10.0.2"])
+
+    def test_advances_the_watermark(self):
+        conn = fixtures.temp_db()
+        ingest.get_nft_log_watermark(conn)  # seed the row first
+        ingest.set_nft_log_watermark(conn, 1000.0)
+        line = self._journal_line("quic-blocked: SRC=10.10.0.3 DST=8.8.8.8 PROTO=UDP DPT=443", 3000_000_000)
+        with mock.patch("subprocess.run", return_value=mock.Mock(stdout=line + "\n")):
+            ingest.read_nft_log(conn)
+        self.assertEqual(ingest.get_nft_log_watermark(conn), 3000.0)
+
+    def test_journalctl_failure_is_a_quiet_no_op(self):
+        conn = fixtures.temp_db()
+        with mock.patch("subprocess.run", side_effect=OSError("journalctl not found")):
+            result = ingest.read_nft_log(conn)
+        self.assertEqual(result, (0, 0, 0))
+
+    def test_non_matching_kernel_lines_are_read_but_not_saved(self):
+        conn = fixtures.temp_db()
+        ingest.get_nft_log_watermark(conn)  # seed the row first
+        ingest.set_nft_log_watermark(conn, 1000.0)
+        line = self._journal_line("audit: unrelated kernel noise", 2000_000_000)
+        with mock.patch("subprocess.run", return_value=mock.Mock(stdout=line + "\n")):
+            read, saved, errors = ingest.read_nft_log(conn)
+        self.assertEqual(read, 1, "the line IS newer than the watermark, so it should be counted as read")
+        self.assertEqual(saved, 0, "but it doesn't match any of our prefixes, so nothing is saved")
+
+
 if __name__ == "__main__":
     unittest.main()

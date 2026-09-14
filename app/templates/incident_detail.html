@@ -102,9 +102,10 @@
             {% endif %}
         </div>
         <div class="card-foot">
-            This lists other still-open incidents on the same device - it is not a
-            cross-signal campaign correlation (that's a separate, not-yet-built piece
-            of the plan).
+            This lists other still-open incidents on the same device. Separately, the
+            correlation engine links a device's open incidents into one campaign when
+            they span enough distinct ATT&amp;CK tactics (step 2.8) - an open campaign
+            shows as a "Chain" row in {% if device %}<a class="link" href="/devices/{{ device.id }}">this device's risk score</a>{% else %}the device's risk score{% endif %}.
         </div>
     </div>
 </div>

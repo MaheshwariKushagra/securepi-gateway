@@ -778,11 +778,11 @@ def _incident_timeline(conn, incident_id, created_at):
 
 
 def _related_open_incidents(conn, device_id, exclude_incident_id, now):
-    """Other still-open incidents on the same device - NOT a cross-signal
-    campaign. Step 2's D7 (cross-signal campaign correlation + MITRE
-    ATT&CK linking) hasn't been built; this is the honest, minimal slice
-    step 6.4 itself needs, labelled as such in the template rather than
-    implying a campaign exists."""
+    """Other still-open incidents on the same device, whatever their signal.
+    This is deliberately NOT the campaign view: campaigns (step 2.8,
+    correlation.py's campaign_signal) only link incidents spanning distinct
+    ATT&CK tactics, and live in their own table. The template's card footer
+    says so and points to where an open campaign is shown."""
     return [{
         "id": r["id"], "title": r["title"], "severity": r["severity"],
         "signal_type": r["signal_type"],

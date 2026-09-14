@@ -129,7 +129,7 @@ checksum-verified on the gateway afterwards.
 | `090e975` | Dark / light theme toggle (topbar button + ⌘K entry, saved per browser in `localStorage` key `sp.theme`, dark is the default) |
 | `52942a6` | Theme switch radiates out from the toggle (View Transitions API, crossfade fallback) |
 | `4732a88` | Motion system: page-to-page transitions, sliding segmented-control indicator, popover/palette exit animations, new-row highlights, bars and meters that glide on live refresh |
-| (this commit) | README screenshots regenerated, including a new light-theme dashboard capture |
+| `4cbeaed` | README screenshots regenerated, including a new light-theme dashboard capture; these notes |
 
 **Real bugs fixed along the way** (all were present before the redesign):
 - Bar-list fills (Top Talkers, Detections by Signal, …) never rendered:
@@ -174,10 +174,12 @@ steps): run `seed.py` and then **restart** `serve.py`. A demo server left
 running from earlier keeps the old, deleted database file open and shows
 hours-stale data (empty charts), even after a fresh seed.
 
-**Small follow-up noticed, not done:** the Related Incidents card footer on
-the incident page still says cross-signal campaign correlation is
-"not-yet-built". Step 2.8 built it, so that copy in
-`app/templates/incident_detail.html` is now out of date.
+**Follow-up done:** the Related Incidents card footer on the incident page
+used to say campaign correlation was "not-yet-built". It now describes the
+step 2.8 campaign behaviour and links to the device's risk score, where an
+open campaign appears as a "Chain" row. The same stale claim in the
+docstrings of `webapp.py`'s `_related_open_incidents` and `playbooks.py` was
+corrected too.
 
 ### Recommended next step: Stage 3 (Hardening & reliability)
 

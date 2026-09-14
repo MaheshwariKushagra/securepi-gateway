@@ -5,13 +5,12 @@ Incident workbench.
 
 ENHANCEMENT-PLAN.md's V4 catalogue entry and step 6.4's own row both ask
 for an "ATT&CK badge" and a "per-signal playbook". Both are built here as
-static, per-signal-type content - not the full Stage 2 D7 ("cross-signal
-campaign correlation + MITRE ATT&CK"), which would tag individual events,
-build a campaign object linking incidents across tactics, and hasn't been
-built. This is the minimal, honest slice 6.4 itself needs: a label on
-each incident naming the real MITRE ATT&CK tactic/technique it maps to
-(when one genuinely applies), and a short piece of guidance for an
-analyst looking at it.
+static, per-signal-type content: a label on each incident naming the real
+MITRE ATT&CK tactic/technique it maps to (when one genuinely applies), and
+a short piece of guidance for an analyst looking at it. The cross-signal
+campaign correlation that links a device's incidents across tactics was
+built later, in step 2.8 (correlation.py's campaign_signal) - and it uses
+this module's tactic mapping to decide what counts as a kill-chain stage.
 
 ATT&CK mapping is deliberately NOT forced onto every signal. Three of
 this project's six signals do not get a tag, with the reason stated

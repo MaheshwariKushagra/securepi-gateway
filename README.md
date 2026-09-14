@@ -613,7 +613,7 @@ is in [`ENHANCEMENT-PLAN.md`](ENHANCEMENT-PLAN.md).
 | **7** | Evaluation 2.0: expanded benchmark battery, 7-day continuous run | ![Not started](https://img.shields.io/badge/-not_started-5a6679?style=flat-square) |
 | **8** | Documentation and demo | ![Not started](https://img.shields.io/badge/-not_started-5a6679?style=flat-square) |
 
-<sub>Stages 5 and 6 were built before Stage 1 on purpose, where the order didn't affect correctness. Each of those decisions and its reasoning is recorded in the plan.</sub>
+<sub>Stages 5 and 6 were built before Stages 1–2 on purpose, where the order didn't affect correctness. Each of those decisions and its reasoning is recorded in the plan.</sub>
 
 ---
 

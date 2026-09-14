@@ -19,9 +19,7 @@ something back on" in one command.
   is running.
 - Close the lid again. Sleep is masked, so it keeps running.
 - **Leave it on the charger.** The gateway runs from battery when unplugged, and
-  a battery-death shutdown is not a clean one. At the end of this session the
-  gateway was on battery at 31% — check the charger is actually connected before
-  leaving it.
+  a battery-death shutdown is not a clean one.
 
 ## 2. Make sure the Mac is sharing
 
@@ -44,8 +42,8 @@ ssh maheshwari@192.168.2.5 'sudo securepi enroll all'  # YouTube ad removal ON
 ssh maheshwari@192.168.2.5 'sudo securepi unenroll'    # back off
 ```
 
-DNS filtering (656,000+ rules across 5 curated lists) is always on for every
-device and needs no action.
+DNS filtering (656,000+ rules across curated lists, plus a daily-refreshed
+offline-threat-intel list) is always on for every device and needs no action.
 
 ---
 
@@ -53,46 +51,87 @@ device and needs no action.
 
 Full detail, reasoning, and live-verification notes for every step are in
 `ENHANCEMENT-PLAN.md` (the progress tracker is section 8) — this is the
-compact summary.
+compact summary. Results from Stage 1 onward are in `EVALUATION-RESULTS-2.md`.
 
 | Stage | Focus | Status |
 |---|---|---|
-| 0 | Housekeeping | Not started |
-| **1** | **Foundation & correctness** — real test suite (110+ tests), retention, real-time AdGuard ingest, complete audit coverage, four detection-accuracy fixes | **Complete** |
-| 2 | Detection breadth — beaconing, DNS tunnelling, campaigns, MITRE ATT&CK | Not started — **recommended next stage**, see below |
-| 3 | Hardening & reliability — session auth, TLS, health supervision | Not started |
+| **0** | Housekeeping — planning docs archived, `make deploy`/`make status`, baseline snapshot | **Complete** |
+| **1** | Foundation & correctness — test suite, retention, real-time ingest, audit coverage | **Complete** |
+| **2** | **Detection breadth** — scan family, DNS-bypass hardening, IDS alerts, threat intel, DNS tunnelling/DGA, C2 beaconing, suppression rules, campaign correlation + ATT&CK kill chain | **Complete** |
+| 3 | Hardening & reliability — session auth, TLS, privilege separation, health supervision, fail-open DNS | Not started — **recommended next stage**, see below |
 | 4 | Response & orchestration — policy profiles, timed quarantine, notifications | Not started |
-| **5** | **Ad blocking & privacy filtering** (5.11 scoped to Path 1; Path 2 deferred with reasoning recorded) | **Complete** |
-| **6** | **Intelligence & console** — behavioural baselines, device fingerprinting, settings, incident workbench, hunt/explorer, weekly report, responsive layout | **Complete** |
+| **5** | Ad blocking & privacy filtering (5.11 scoped to Path 1; Path 2 deferred with reasoning recorded) | **Complete** |
+| **6** | Intelligence & console — behavioural baselines, device fingerprinting, settings, incident workbench, hunt/explorer, weekly report, responsive layout | **Complete** |
 | 7 | Evaluation 2.0 — expanded benchmark battery | Not started |
 | 8 | Documentation & demo | Not started |
 
-Stages 5 and 6 were built before Stage 1 deliberately, then Stage 1 was
-completed this session — each such out-of-order decision is recorded with its
-reasoning in `ENHANCEMENT-PLAN.md` rather than left implicit.
+Stages 5 and 6 were built before Stages 1–2 deliberately, then Stages 1 and 2
+were completed in later sessions — each such out-of-order decision is recorded
+with its reasoning in `ENHANCEMENT-PLAN.md` rather than left implicit.
 
-### Recommended next step: Stage 2 (Detection breadth)
+### What Stage 2 added (this session, 14 September 2026)
 
-`ENHANCEMENT-PLAN.md` calls Stage 2 the project's academic core and says
-"never cut" it. It adds: the scan family (network sweep, slow scan), DNS
-bypass hardening + detection, IDS alerts → incidents, offline threat intel,
-DNS tunnelling/DGA detection, C2 beaconing, suppression rules, and campaign
-correlation with MITRE ATT&CK. None of it depends on anything still missing
-from Stages 3/4.
+Ten new correlation signals beyond the original six, closing the plan's own
+"never cut" detection core:
 
-### Known real bugs found and fixed this session (for context, not action)
+- **2.1** `network_sweep`, `slow_port_scan`, `slow_network_sweep` — horizontal
+  scans and scans paced too slowly for a fast window to catch.
+- **2.2** `dns_bypass` — DoH/DoT/QUIC/Private-Relay evasion. Touched the live
+  firewall (new `log prefix` on the reject rules, daily-refreshed
+  `doh_resolvers` set); backed up and syntax-checked before applying.
+- **2.3** `ids_trojan`/`ids_c2`/`ids_c2_domain`/`ids_exploit_kit`/
+  `ids_shellcode`/`ids_privilege_gain`/`ids_credential_theft`/`ids_other` —
+  Suricata/ET alerts finally turned into incidents (previously ingested but
+  never used).
+- **2.4** `threat_intel` — matches against a daily-refreshed `ioc` table
+  (Feodo Tracker, URLhaus, ThreatFox — 5,600+ real indicators). New
+  `securepi-static` (loopback file server) and `securepi-intel-refresh.timer`
+  services.
+- **2.5** `dns_tunneling`, `dga` — entropy/TXT-ratio/NXDOMAIN-burst based.
+- **2.6** `beacon` — RITA-style timing/size regularity score for C2 check-ins.
+- **2.7** Suppression rules — a false-positive verdict can silence a signal
+  for one device or network-wide, with audit and optional expiry.
+- **2.8** Campaign correlation — links a device's incidents across distinct
+  ATT&CK tactics into one campaign with a recorded kill chain, weighted into
+  the risk score.
 
-- `new_device_signal`'s old persisted-watermark bug and `raise_incident`'s old
-  cumulative evidence-count bug — both already fixed before this session,
-  now permanently regression-tested (`tests/test_correlation.py`).
-- A real 5.5-hour timestamp skew affecting every AdGuard-sourced event
-  (`to_epoch_agh` hardcoded UTC regardless of the real offset) — fixed in
-  step 1.4. Events ingested before that fix still carry the old skewed
-  timestamp; this was a deliberate choice (see `ENHANCEMENT-PLAN.md`'s note
-  on step 1.4), not an oversight.
-- G1/G2/G3/G6 from the original gap analysis (scan-signal naming, incident
-  dedup status, malicious-domain false positives, device-attribution
-  tie-break) — all fixed in step 1.6, each with a regression test.
+Every step above was deployed to the live gateway and verified against real
+data (not just synthetic fixtures) — see `EVALUATION-RESULTS-2.md` §2.1–§2.8
+for exactly what was and wasn't observed live, including a few real bugs
+found and fixed along the way (a `dns_rcode` capture gap, AdGuard rejecting a
+`file://` blocklist URL, a ThreatFox CSV quoting mismatch). Test suite grew
+from 110 → **206**, all passing.
+
+Two new systemd timers exist now: `securepi-doh-refresh.timer` and
+`securepi-intel-refresh.timer` (both daily), plus `securepi-static.service`
+(a loopback-only static file server). All three are in `services.list` /
+`sudo securepi status`'s health check already.
+
+The isolated test harness (`gateway/setup-test-harness.sh`) now gives
+`ns_victim` ten addresses (`10.10.0.221`–`230`) instead of one, needed for
+the network-sweep test scenario — this changed the harness meaningfully
+enough that recreating it (`sudo ip netns del ns_attacker ns_victim && sudo
+ip link del br-test`, then rerun the script, then `sudo systemctl restart
+suricata`) was necessary once, live, this session. Shouldn't be needed again
+unless the harness script changes further.
+
+### Recommended next step: Stage 3 (Hardening & reliability)
+
+Session authentication, TLS on the console, privilege separation (the web
+app currently calls `nft` directly), a health supervisor, and fail-open DNS.
+None of it depends on anything still missing from Stage 4.
+
+### Known real bugs found and fixed (for context, not action)
+
+From earlier sessions: `new_device_signal`'s old persisted-watermark bug,
+`raise_incident`'s old cumulative evidence-count bug, and G1/G2/G3/G6 from
+the original gap analysis — all fixed with regression tests
+(`tests/test_correlation.py`).
+
+From this session (Stage 2): see `EVALUATION-RESULTS-2.md` for full detail
+on each — the `dns_rcode`/`status` field ingest.py never captured, AdGuard's
+`add_url` rejecting a `file://` scheme, and ThreatFox's CSV quoting (a space
+after each comma) silently parsing zero rows under a naive split.
 
 ## Two things still outstanding from Day 15 (unrelated to this session's work)
 

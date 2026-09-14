@@ -9,7 +9,7 @@ browsing.
 |---|---|
 | `seed.py` | Builds `securepi.db`: invented devices on `10.10.0.0/24`, 36 hours of flows, DNS, TLS and Tier 2 events, 9 days of hourly baselines, and a scripted attack (a new `kali` host port-scanning and SSH brute-forcing the NAS). The live incidents are raised by running the project's own `correlation.run_all()` over that data — not typed in by hand. |
 | `serve.py` | Starts the console on `http://127.0.0.1:8765` (user `securepi`, password `demo`). Things that only exist on the gateway — AdGuard Home's API, nftables sets, the inspection CA — are replaced with small in-memory stand-ins. Also runs the same 15-second engine loop the gateway does. |
-| `shoot.js` | Opens each page in a headless Chromium browser (Chrome, Brave or Chromium) and saves a 2× screenshot. |
+| `shoot.js` | Opens each page in a headless Chromium browser (Chrome, Brave or Chromium) and saves a 2× screenshot - in the dark theme, plus one dashboard capture in the light theme. |
 
 ```bash
 cd docs/demo

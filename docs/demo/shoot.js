@@ -21,6 +21,7 @@ const PAGES = [
   { name: 'filtering', path: '/filtering', wait: 3500, h: 900 },
   { name: 'settings', path: '/settings', wait: 2500, h: 700 },
   { name: 'mobile', path: '/', wait: 3500, mobile: true },
+  { name: 'dashboard-light', path: '/', wait: 3500, h: 1180, theme: 'light' },
 ];
 
 (async () => {
@@ -32,6 +33,9 @@ const PAGES = [
   for (const p of PAGES) {
     if (only.length && !only.includes(p.name)) continue;
     const page = await browser.newPage();
+    // The console remembers its theme in localStorage, which every page in
+    // this browser shares - so set it explicitly for each capture.
+    await page.evaluateOnNewDocument(t => { try { localStorage.setItem('sp.theme', t); } catch (e) {} }, p.theme || 'dark');
     await page.authenticate({ username: 'securepi', password: 'demo' });
     if (p.mobile) await page.setViewport({ width: 390, height: 844, deviceScaleFactor: 2, isMobile: true });
     else await page.setViewport({ width: 1440, height: p.h || 960, deviceScaleFactor: 2 });

@@ -115,6 +115,70 @@ ip link del br-test`, then rerun the script, then `sudo systemctl restart
 suricata`) was necessary once, live, this session. Shouldn't be needed again
 unless the harness script changes further.
 
+### Console redesign (14–15 September 2026, separate session)
+
+Front-end only: `app/static/app.css`, `app/static/app.js` and
+`app/templates/*.html`. No API routes, template context or backend
+behaviour changed, and the test suite is still **206**, all passing. Every
+step was deployed with `make deploy`, and all 12 front-end files were
+checksum-verified on the gateway afterwards.
+
+| Commit | What |
+|---|---|
+| `bc43430` | Visual overhaul: design tokens, grouped sidebar + breadcrumbs, KPI icons/meters, incident and device header cards, device Controls card, playbook as three steps, phone bottom tab bar |
+| `090e975` | Dark / light theme toggle (topbar button + ⌘K entry, saved per browser in `localStorage` key `sp.theme`, dark is the default) |
+| `52942a6` | Theme switch radiates out from the toggle (View Transitions API, crossfade fallback) |
+| `4732a88` | Motion system: page-to-page transitions, sliding segmented-control indicator, popover/palette exit animations, new-row highlights, bars and meters that glide on live refresh |
+| (this commit) | README screenshots regenerated, including a new light-theme dashboard capture |
+
+**Real bugs fixed along the way** (all were present before the redesign):
+- Bar-list fills (Top Talkers, Detections by Signal, …) never rendered:
+  the fill was an inline `<span>`, which ignores width.
+- Audit log, weekly report, Hunt saved searches, Related Incidents and the
+  status timeline all reused the dashboard's 4-column event grid and
+  overlapped or truncated.
+- The incidents table overflowed at 1440px, hiding Evidence and Last seen.
+
+**Things a future change needs to know:**
+- **Colors are tokens.** A new component should use the CSS variables, never
+  hex values, or it won't follow the light theme. The light palette is only
+  token overrides under `:root[data-theme="light"]`.
+- **Chart colors live in two places.** Chart.js draws on a canvas and can't
+  read CSS variables, so `CHART_PALETTES` in `app.js` duplicates the chart
+  roles. Keep it in step with `app.css`. On a theme switch every chart is
+  rebuilt from its own config (`restyleCharts`), because an in-place
+  `chart.update()` leaves bar and doughnut segments in the old colors
+  (Chart.js caches them).
+- **Clicks during a view transition.** Chromium sends every click to `<html>`
+  while one runs, and CSS `pointer-events` can't change that. `app.js`
+  finishes the transition and re-dispatches the click to the element under
+  the pointer. Don't remove that listener, or quick double-clicks and
+  mid-transition navigation silently break.
+- **Row animations use `animation-fill-mode: backwards` on purpose.** A
+  lingering transform gives each table row its own stacking context and
+  traps the incident row menu under the next row.
+- **Lists that refresh live are keyed** (`data-key`, `markNewRows`,
+  `renderBarList`), so a 5-second refresh only animates what actually
+  changed. A new list that re-renders on the live tick should follow the
+  same pattern rather than rebuilding with `innerHTML` and animating
+  everything.
+- **Motion is off under `prefers-reduced-motion`**: page transitions,
+  smooth scroll and the theme reveal all check it.
+- **Browser support**: page transitions need Chrome/Edge/Brave 126+ or
+  Safari 18.2+; exit animations need Chrome 117+ or Safari 18. Older
+  browsers fall back to instant changes. Only Chromium (Brave) was tested in
+  automation — Safari support is from its documentation, not verified here.
+
+**Regenerating the README screenshots** (`docs/demo/README.md` has the full
+steps): run `seed.py` and then **restart** `serve.py`. A demo server left
+running from earlier keeps the old, deleted database file open and shows
+hours-stale data (empty charts), even after a fresh seed.
+
+**Small follow-up noticed, not done:** the Related Incidents card footer on
+the incident page still says cross-signal campaign correlation is
+"not-yet-built". Step 2.8 built it, so that copy in
+`app/templates/incident_detail.html` is now out of date.
+
 ### Recommended next step: Stage 3 (Hardening & reliability)
 
 Session authentication, TLS on the console, privilege separation (the web

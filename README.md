@@ -90,14 +90,14 @@ audit trail.
 
 <p align="center">
   <img src="docs/assets/screenshots/dashboard.png" alt="Network overview dashboard" width="100%">
-  <br><sub><b>Network overview</b>: KPI tiles with sparklines, throughput, DNS allowed vs blocked, severity breakdown, detections by signal, top talkers, and blocked and contacted domains.</sub>
+  <br><sub><b>Network overview</b>: KPI tiles with sparklines and meters, throughput, DNS allowed vs blocked, a severity donut, detections by signal, top talkers, blocked and contacted domains, live event stream, weekly activity heatmap and pipeline health.</sub>
 </p>
 
 <table>
 <tr>
 <td width="50%" valign="top">
 <img src="docs/assets/screenshots/incident-detail.png" alt="Incident workbench">
-<p align="center"><sub><b>Incident workbench</b>: what was detected and why, the MITRE ATT&CK tag, a playbook, the evidence chain, related incidents and quarantine.</sub></p>
+<p align="center"><sub><b>Incident workbench</b>: a summary header with severity, status, MITRE ATT&CK tag and one-click triage and quarantine, then what was detected and why, a three-step playbook, related incidents and the evidence chain.</sub></p>
 </td>
 <td width="50%" valign="top">
 <img src="docs/assets/screenshots/incidents.png" alt="Incident queue">
@@ -107,11 +107,11 @@ audit trail.
 <tr>
 <td width="50%" valign="top">
 <img src="docs/assets/screenshots/device-detail.png" alt="Device detail">
-<p align="center"><sub><b>Device profile</b>: traffic history, identity kept across MAC randomization, fingerprint (type, vendor, OS and confidence), behavioural baseline and risk score.</sub></p>
+<p align="center"><sub><b>Device profile</b>: traffic history, identity kept across MAC randomization, fingerprint (type, vendor, OS and confidence), behavioural baseline, risk score, and a Controls panel for filtering, quarantine and Tier 2 enrollment.</sub></p>
 </td>
 <td width="50%" valign="top">
 <img src="docs/assets/screenshots/filtering.png" alt="Filtering">
-<p align="center"><sub><b>Filtering</b>: "why is this blocked?" tester, ad-blocking analytics, Tier 2 HTTPS ad-removal counters, and top blocked domains and devices.</sub></p>
+<p align="center"><sub><b>Filtering</b>: section jump links, a "why is this blocked?" tester, ad-blocking analytics, resolver quality, Tier 2 HTTPS ad-removal counters and rules, and top blocked domains and devices.</sub></p>
 </td>
 </tr>
 <tr>
@@ -121,7 +121,13 @@ audit trail.
 </td>
 <td width="50%" valign="top" align="center">
 <img src="docs/assets/screenshots/mobile.png" alt="Mobile layout" width="46%">
-<p align="center"><sub><b>Responsive</b>: every page is usable at phone width.</sub></p>
+<p align="center"><sub><b>Responsive</b>: every page is usable at phone width, with a bottom tab bar in place of the sidebar.</sub></p>
+</td>
+</tr>
+<tr>
+<td colspan="2" valign="top">
+<img src="docs/assets/screenshots/dashboard-light.png" alt="Dashboard in the light theme">
+<p align="center"><sub><b>Light and dark themes</b>: switch from the topbar or the command palette. The new theme radiates out from the toggle, charts included, and each browser remembers its choice.</sub></p>
 </td>
 </tr>
 </table>
@@ -133,7 +139,8 @@ audit trail.
 
 - **Hunt / explorer**: search flows, DNS and TLS by device, IP, domain, port and time range. Pivot on any value, see top talkers and protocol breakdowns, and save searches.
 - **Weekly report**: incidents by ATT&CK tactic, riskiest devices, ad-blocking summary (block rate, tracker companies, estimated savings) and platform health, for any past week, printable to PDF.
-- **Command palette** (<kbd>⌘</kbd>/<kbd>Ctrl</kbd> + <kbd>K</kbd>), live notifications, a pause/resume live mode, and a pipeline-health panel showing ingest and each signal's last run.
+- **Command palette** (<kbd>⌘</kbd>/<kbd>Ctrl</kbd> + <kbd>K</kbd>) for pages, devices, incidents and the theme switch, live notifications, a pause/resume live mode, and a pipeline-health panel showing ingest and each signal's last run.
+- **Motion that carries meaning**: pages crossfade under a fixed sidebar and topbar, range and filter controls slide to the chosen option, bars glide to new values on each live refresh, and newly arrived incidents get a brief highlight. All of it is switched off when the OS asks for reduced motion.
 - **Per-device policy**: DNS filtering on or off, native-tracker blocklist profiles, time-limited allow and block rules ("unbreak this site"), and Tier 2 enrollment with auto-expiry.
 - **Blocklist health**: time since each list last synced, a stale warning after 48 hours, and each list's share of observed blocks.
 - **Audit log**: every console action that changes something (status changes, rules, settings, quarantine, enrollment) is recorded with who did it and when.

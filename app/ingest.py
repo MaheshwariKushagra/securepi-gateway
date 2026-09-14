@@ -514,6 +514,17 @@ def flatten_agh_api(entry, ts=None):
         "dns_type": "query",
         "dns_rrname": question.get("name"),
         "dns_rrtype": question.get("type"),
+        # 'status' is the response code AdGuard itself answered with, not
+        # necessarily what the real upstream would say for a NON-blocked
+        # query - confirmed live (14 September 2026) that a query this
+        # gateway's filtering blocks still reports status NOERROR (the
+        # "default" blocking_mode's 0.0.0.0 answer IS a real, if bogus,
+        # NOERROR response - see app/adguard.py's add_nxdomain_rule for
+        # the same fact used elsewhere). That's exactly what step 2.5's
+        # DGA detection needs: a genuine NXDOMAIN here means the query
+        # reached the real upstream and the domain doesn't actually
+        # exist anywhere - not that AdGuard chose to block it.
+        "dns_rcode": entry.get("status"),
         "blocked": 1 if reason.startswith("Filtered") else 0,
         "dns_cached": 1 if entry.get("cached") else 0,
         "dns_upstream": entry.get("upstream") or None,

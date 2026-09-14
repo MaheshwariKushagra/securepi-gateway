@@ -80,6 +80,15 @@ The signals that DO get a tag:
   destination itself is malicious infrastructure - real, specific
   evidence - but not which C2 technique this device's own traffic to it
   represents.
+- dns_tunneling (ENHANCEMENT-PLAN.md step 2.5) -> Command and Control /
+  T1071.004 Application Layer Protocol: DNS. An exact, textbook match:
+  this technique's own MITRE definition IS "using DNS as a C2 channel",
+  which is precisely the behaviour pattern (many high-entropy subdomains
+  or an unusual TXT-query ratio under one domain) this signal looks for.
+- dga -> Command and Control / T1568.002 Dynamic Resolution: Domain
+  Generation Algorithms. Also an exact match by definition, not an
+  inference - a burst of genuine NXDOMAIN lookups with high-entropy
+  labels under one domain IS what this technique describes.
   have identified a technique.
 """
 
@@ -169,6 +178,16 @@ ATTACK_MAPPING = {
         "note": "Tactic-level only - a curated indicator (abuse.ch Feodo/URLhaus/ThreatFox) "
                 "confirms the DESTINATION is malicious infrastructure, but not which specific "
                 "technique this device's traffic to it represents.",
+    },
+    "dns_tunneling": {
+        "tactic": "Command and Control", "tactic_id": "TA0011",
+        "technique": "Application Layer Protocol: DNS", "technique_id": "T1071.004",
+        "url": "https://attack.mitre.org/techniques/T1071/004/",
+    },
+    "dga": {
+        "tactic": "Command and Control", "tactic_id": "TA0011",
+        "technique": "Dynamic Resolution: Domain Generation Algorithms", "technique_id": "T1568.002",
+        "url": "https://attack.mitre.org/techniques/T1568/002/",
     },
 }
 
@@ -346,6 +365,30 @@ PLAYBOOKS = {
         "recommended_action": "Treat as a real finding - quarantine the device and investigate. "
             "A confirmed indicator match has a much lower false-positive rate than this "
             "project's other domain-based signals.",
+    },
+    "dns_tunneling": {
+        "what_it_means": "This device queried an unusually large number of distinct, "
+            "random-looking subdomains under one domain (or an unusual share of TXT-record "
+            "lookups) - a common way malware smuggles data out through DNS, since DNS traffic "
+            "is rarely blocked outbound.",
+        "how_to_check": "Open the evidence chain for the base domain and the actual subdomain "
+            "strings queried. A handful of legitimate services use varied, machine-generated "
+            "subdomains too (some CDNs, some IoT cloud platforms) - check whether this device "
+            "is expected to talk to anything like that.",
+        "recommended_action": "If it's expected traffic, mark false positive. Otherwise "
+            "quarantine and investigate - this is a data-exfiltration pattern, not just "
+            "reconnaissance.",
+    },
+    "dga": {
+        "what_it_means": "This device looked up a burst of domain names that don't exist "
+            "anywhere (genuine NXDOMAIN, not just blocked), with random-looking names - the "
+            "classic pattern of malware trying candidate command-and-control domains from a "
+            "domain-generation algorithm until one resolves.",
+        "how_to_check": "Open the evidence chain for the actual failed domain names. Real "
+            "typos and decommissioned services also produce occasional NXDOMAIN, but not a "
+            "burst of high-entropy names in a short window.",
+        "recommended_action": "Quarantine and investigate promptly - unlike most signals in "
+            "this project, this pattern has few ordinary explanations.",
     },
     "adblock_ineffective": {
         "what_it_means": "SecurePi's own YouTube ad-removal (the Tier 2 mitmproxy-based DPI "

@@ -203,6 +203,20 @@ class FlattenAghApiTests(unittest.TestCase):
             timestamp="2026-09-13T14:28:29.571373047+05:30"))
         self.assertAlmostEqual(row["ts"], 1789289909.571373, places=3)
 
+    def test_dns_rcode_comes_from_the_status_field(self):
+        # ENHANCEMENT-PLAN.md step 2.5 needs a genuine NXDOMAIN signal -
+        # confirmed live (14 September 2026) that 'status' is the real
+        # response code AdGuard answered with, distinct from whether IT
+        # blocked the query (a blocked query still reports NOERROR under
+        # this gateway's 'default' blocking_mode).
+        row = ingest.flatten_agh_api(fixtures.make_agh_api_entry(
+            blocked=False, reason="NotFilteredNotFound", status="NXDOMAIN"))
+        self.assertEqual(row["dns_rcode"], "NXDOMAIN")
+
+    def test_a_blocked_query_still_reports_noerror(self):
+        row = ingest.flatten_agh_api(fixtures.make_agh_api_entry(blocked=True))
+        self.assertEqual(row["dns_rcode"], "NOERROR")
+
 
 class AghWatermarkTests(unittest.TestCase):
     def test_first_call_seeds_a_recent_watermark_not_epoch_zero(self):

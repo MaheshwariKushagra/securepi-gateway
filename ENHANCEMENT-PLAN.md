@@ -178,7 +178,7 @@ step 3.5.**
 | IDS alerts surfaced | ✓ | ✓ | ✓ | ✓ | ◐ | ✗ | **◐** | 2.3 |
 | Behavioural / anomaly detection | ✓ | ◐ | ◐ | ◐ | ✓ | ✓ | **◐** | 2.x, 6.1 |
 | C2 beaconing | ◐ | ✗ | ✗ | ◐ | ◐ | ✓ | **✗** | 2.6 |
-| DNS tunnelling / DGA | ◐ | ✗ | ✗ | ◐ | ✓ | ✓ | **✗** | 2.5 |
+| DNS tunnelling / DGA | ◐ | ✗ | ✗ | ◐ | ✓ | ✓ | **✓** entropy + TXT-ratio + NXDOMAIN-burst | 2.5 |
 | Threat-intel IOC matching | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | **✓** Feodo/URLhaus/ThreatFox, daily | 2.4 |
 | Device type fingerprinting | ✓ | ✓ | ✓ | ✗ | ◐ | ✗ | **◐** | 6.2 |
 | New-device approval | ✓ | ◐ | ✓ | ✗ | ✗ | ✗ | **◐** | 4.4 |
@@ -295,7 +295,7 @@ New signals follow the `correlation.py` pattern (trailing-window SQL → `raise_
 | 2.2 | **DNS-bypass hardening + detection — done, 14 September 2026** (the `doh_resolvers` set is refreshed from HaGeZi's maintained IP list rather than resolved hostnames — a better source than the plan's own original wording envisioned; see `EVALUATION-RESULTS-2.md` §2.2 for the honest scope of what was and wasn't live-verified). *Hardening:* (a) DNS-level blocking of DoH hostnames (HaGeZi DoH/VPN/proxy bypass list, DoH part on by default; VPN/proxy part available as a profile option in 4.3). (b) Firefox canary `use-application-dns.net` → NXDOMAIN, which disables Firefox's automatic DoH. (c) iCloud Private Relay opt-out: `mask.icloud.com` / `mask-h2.icloud.com` → NXDOMAIN, Apple's documented network signal. (d) The `doh_resolvers` nft set refreshes daily from resolved DoH hostnames instead of 14 static IPs. *Detection:* `log prefix` on the dot/doh/quic reject rules, those log lines ingested as events (the restored nftables source), plus Suricata TLS SNI matches on DoH hostnames. Incident: "Device X tried to bypass DNS filtering N times via DoH/DoT/Private Relay" | F§11.3, 15d cut, A5, Mkt (NextDNS) | Firefox with DoH on, Chrome Secure DNS with a custom provider, and Android Private DNS each end up resolving through AdGuard (or failing closed). One incident per device with evidence | 2 |
 | 2.3 | **IDS alerts → taxonomy → incidents — done, 14 September 2026** (mapping by `alert_category`, confirmed against this gateway's real `classification.config`, not SID — see `EVALUATION-RESULTS-2.md` §2.3 for two real findings from the live data and the honest scope of live verification) | F§9.6 | Test signature → plain-language incident | 1 |
 | 2.4 | **Offline threat intel — done, 14 September 2026.** Daily abuse.ch Feodo/URLhaus/ThreatFox into an `ioc` table, matched on IP/domain/SNI. The same domains are pushed to AdGuard as a **security blocklist**, so they're both blocked and turned into incidents (see `EVALUATION-RESULTS-2.md` §2.4 for a real `file://`-URL bug found and fixed live, and each feed's real confirmed format) | F§19, Mkt | Seeded test IOC is blocked **and** raises an incident. Feed age visible | 1 |
-| 2.5 | **DNS tunnelling + DGA** (subdomain entropy, label length, unique subdomains, TXT ratio; NXDOMAIN burst + entropy) | F§12.3 | Harness generators detected. No firing on 24 h of phone traffic | 1.5 |
+| 2.5 | **DNS tunnelling + DGA — done, 14 September 2026** (subdomain entropy, label length, unique subdomains, TXT ratio; NXDOMAIN burst + entropy — see `EVALUATION-RESULTS-2.md` §2.5 for a real `dns_rcode` capture gap found and fixed, and both exit-criterion checks run against real data) | F§12.3 | Harness generators detected. No firing on 24 h of phone traffic | 1.5 |
 | 2.6 | **C2 beaconing** (RITA-style timing and size regularity score, allowlist for NTP/push) | F§12.3, 15d cut | Harness beacon (60 s, 10% jitter) ≥ 0.8. No real-phone incidents | 2 |
 | 2.7 | **Suppression rules** (from false-positive verdicts, audited, expiring) | F§11.2 | Suppressed pattern stops raising incidents | 1 |
 | 2.8 | **Campaign correlation + MITRE ATT&CK kill chain**, weighted into risk | F§12.3 | Scan → brute force → beacon → one campaign linking three incidents | 1.5 |
@@ -557,7 +557,7 @@ Never cut Stage 2, steps 5.2, 5.3, 5.7, or evaluation items 7.2–7.5.
 |---|---|---|
 | 0 | **0.1 done, 0.2 done and verified live, 0.3 done** | Stage 0 complete |
 | 1 | **1.1 done, 1.2 done, 1.3 done, 1.4 done, 1.5 done, 1.6 done, 1.7 done, 1.8 done** (1.8 out of order - see note below) | Stage 1 complete |
-| 2 | **2.1 done, 2.2 done, 2.3 done, 2.4 done**, 2.5 · 2.6 · 2.7 · 2.8 | In progress |
+| 2 | **2.1 done, 2.2 done, 2.3 done, 2.4 done, 2.5 done**, 2.6 · 2.7 · 2.8 | In progress |
 | 3 | 3.1 · 3.2 · 3.3 · 3.4 · 3.5 · 3.6 | Not started |
 | 4 | 4.1 · 4.2 · 4.3 · 4.4 · 4.5 | Not started |
 | 5 | **5.1 done, 5.2 done, 5.3 done, 5.4 done, 5.5 done, 5.6 done, 5.7 done, 5.8 done, 5.9 done, 5.10 done, 5.11 done (Path 1 only)** (out of order) | 5.1–5.11 done - 5.11 scoped to Path 1 (cosmetic CSS), Path 2 (scriptlets) deferred and recorded |
@@ -682,6 +682,29 @@ fired correctly against a synthetic flow event pointed at a real
 Feodo-listed IP (never actually contacted - the same safe approach the
 unit tests use), cleaned up afterward. Full detail:
 `EVALUATION-RESULTS-2.md` §2.4.
+
+**2.5 (DNS tunnelling + DGA) is also done.** `dns_tunneling_signal`
+groups DNS queries by (device, base domain - a simplified last-two-
+labels heuristic, a stated limitation rather than a maintained Public
+Suffix List dependency) and computes Shannon entropy, distinct-
+subdomain count, and TXT ratio, splitting into `dns_tunneling` (T1071.004
+Application Layer Protocol: DNS) and `dga` (T1568.002 Dynamic Resolution:
+DGA) - both exact ATT&CK matches by definition, not inferences. A real
+gap was found and fixed first: `flatten_agh_api` never captured AdGuard's
+own `status` field, so `dns_rcode` was always NULL for AdGuard-sourced
+queries - no way to tell a genuine NXDOMAIN from anything else. Confirmed
+live that a query THIS gateway blocks still reports NOERROR (same fact
+step 2.2's NXDOMAIN-rule work already established), which is exactly what
+DGA detection needs to get right. Both halves of the exit criterion were
+verified against real data, not just asserted: the signal's exact logic
+was run against **all 4,732 real DNS queries** from a real device's full
+2.5-day history (201 base domains) with **zero false positives** - the
+one close call (`fastly-edge.com` at 4.07 bits/char entropy) turned out
+to be one real, repeated hostname, not an actual pattern, and correctly
+stayed unflagged since it never approached the distinct-subdomain gate.
+Harness-generated synthetic tunnelling and DGA data (for the isolated
+test-attacker device, no real traffic) both fired correctly, cleaned up
+afterward. Full detail: `EVALUATION-RESULTS-2.md` §2.5.
 
 **Note on 13 September:** at the user's request, 1.8 and Stage 5's telemetry
 foundation (5.1) and "why blocked / unbreak" tools (5.2) were implemented

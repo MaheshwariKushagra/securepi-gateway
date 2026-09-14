@@ -144,6 +144,46 @@ SETTINGS_SCHEMA = {
         "label": "Threat-intel window",
         "help": "How far back (seconds) the threat-intel signal looks when counting IOC matches.",
     },
+    "dns_tunneling_window_seconds": {
+        "default": 600, "type": int, "min": 60, "max": 3600,
+        "label": "DNS tunnelling/DGA window",
+        "help": "How far back (seconds) the DNS tunnelling and DGA signals look, grouped by "
+                "device and base domain.",
+    },
+    "dns_tunneling_min_distinct_subdomains": {
+        "default": 20, "type": int, "min": 5, "max": 1000,
+        "label": "DNS tunnelling: minimum distinct subdomains",
+        "help": "Distinct subdomains queried under one base domain, in the window, before "
+                "tunnelling is even considered - normal browsing rarely touches this many "
+                "distinct hostnames under a single domain.",
+    },
+    "dns_tunneling_min_entropy": {
+        "default": 3.5, "type": float, "min": 0.0, "max": 6.0,
+        "label": "DNS tunnelling: minimum subdomain entropy",
+        "help": "Average Shannon entropy (bits/character) of the subdomain labels queried, "
+                "above which they look encoded/random rather than a real hostname.",
+    },
+    "dns_tunneling_min_txt_ratio": {
+        "default": 0.3, "type": float, "min": 0.0, "max": 1.0,
+        "label": "DNS tunnelling: minimum TXT-query ratio",
+        "help": "Fraction of queries under one base domain that are TXT-record lookups - "
+                "unusual for ordinary browsing (almost all A/AAAA/HTTPS), a common way DNS "
+                "tunnelling carries data.",
+    },
+    "dga_min_nxdomain_count": {
+        "default": 10, "type": int, "min": 3, "max": 1000,
+        "label": "DGA: minimum NXDOMAIN burst",
+        "help": "Genuine NXDOMAIN responses (the domain doesn't exist anywhere, not just "
+                "blocked - see app/ingest.py's flatten_agh_api) under one base domain, in the "
+                "window, before a domain-generation-algorithm pattern is considered.",
+    },
+    "dga_min_entropy": {
+        "default": 3.3, "type": float, "min": 0.0, "max": 6.0,
+        "label": "DGA: minimum subdomain entropy",
+        "help": "Average Shannon entropy of the failed lookups' subdomain labels - "
+                "algorithmically generated domain names look random, unlike a typo or a "
+                "decommissioned real service.",
+    },
     "dedup_window_seconds": {
         "default": 600, "type": int, "min": 60, "max": 86400,
         "label": "Incident dedup window",

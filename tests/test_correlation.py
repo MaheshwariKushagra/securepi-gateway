@@ -456,6 +456,150 @@ class ThreatIntelSignalTests(unittest.TestCase):
         self.assertEqual(rows[0]["evidence_count"], 2)
 
 
+class DnsTunnelingSignalTests(unittest.TestCase):
+    """ENHANCEMENT-PLAN.md step 2.5. High-entropy subdomains generated
+    with Python's own random module - deterministic given a fixed seed,
+    so these tests don't flake on an unlucky low-entropy draw."""
+
+    @staticmethod
+    def _random_label(rng, length=20):
+        import string
+        alphabet = string.ascii_lowercase + string.digits
+        return "".join(rng.choice(alphabet) for _ in range(length))
+
+    def test_fires_on_many_high_entropy_distinct_subdomains(self):
+        import random
+        rng = random.Random(42)
+        conn = fixtures.temp_db()
+        fixtures.insert_device(conn, 1)
+        now = time.time()
+        for i in range(25):  # exceeds the default 20-subdomain threshold
+            label = self._random_label(rng)
+            fixtures.insert_dns_query(conn, 1, "%s.tunnel.example.com" % label, now - i)
+        fired = correlation.dns_tunneling_signal(conn)
+        self.assertGreaterEqual(fired, 1)
+        row = conn.execute("SELECT * FROM incidents WHERE signal_type='dns_tunneling'").fetchone()
+        self.assertIsNotNone(row)
+        self.assertEqual(row["severity"], "high")
+        self.assertIn("example.com", row["title"])
+
+    def test_fires_on_a_high_txt_ratio_even_with_few_distinct_names(self):
+        import random
+        rng = random.Random(7)
+        conn = fixtures.temp_db()
+        fixtures.insert_device(conn, 1)
+        now = time.time()
+        # 20 distinct high-entropy subdomains, all TXT queries - crosses
+        # both the distinct-count gate AND the TXT-ratio gate.
+        for i in range(20):
+            label = self._random_label(rng)
+            conn.execute(
+                "INSERT INTO events (ts, ts_iso, source, event_type, device_id, dns_rrname, dns_rrtype)"
+                " VALUES (?, 'test', 'adguard', 'dns_query', 1, ?, 'TXT')",
+                (now - i, "%s.tunnel.example.com" % label),
+            )
+        conn.commit()
+        fired = correlation.dns_tunneling_signal(conn)
+        self.assertGreaterEqual(fired, 1)
+
+    def test_does_not_fire_on_ordinary_low_entropy_browsing(self):
+        conn = fixtures.temp_db()
+        fixtures.insert_device(conn, 1)
+        now = time.time()
+        real_names = ["www", "mail", "api", "cdn", "static", "images", "shop", "blog",
+                      "support", "docs", "assets", "media", "app", "login", "secure",
+                      "m", "news", "help", "forum", "status", "beta", "dev"]
+        for i, name in enumerate(real_names):
+            fixtures.insert_dns_query(conn, 1, "%s.example.com" % name, now - i)
+        self.assertEqual(correlation.dns_tunneling_signal(conn), 0)
+
+    def test_does_not_fire_below_the_distinct_subdomain_floor(self):
+        import random
+        rng = random.Random(1)
+        conn = fixtures.temp_db()
+        fixtures.insert_device(conn, 1)
+        now = time.time()
+        for i in range(5):  # well below the default threshold of 20
+            label = self._random_label(rng)
+            fixtures.insert_dns_query(conn, 1, "%s.tunnel.example.com" % label, now - i)
+        self.assertEqual(correlation.dns_tunneling_signal(conn), 0)
+
+    def test_fires_dga_on_a_genuine_nxdomain_burst_of_high_entropy_names(self):
+        import random
+        rng = random.Random(99)
+        conn = fixtures.temp_db()
+        fixtures.insert_device(conn, 1)
+        now = time.time()
+        for i in range(12):  # exceeds the default 10-NXDOMAIN threshold
+            label = self._random_label(rng)
+            conn.execute(
+                "INSERT INTO events (ts, ts_iso, source, event_type, device_id, dns_rrname,"
+                " dns_rrtype, dns_rcode) VALUES (?, 'test', 'adguard', 'dns_query', 1, ?, 'A', 'NXDOMAIN')",
+                (now - i, "%s.cnc.example.com" % label),
+            )
+        conn.commit()
+        fired = correlation.dns_tunneling_signal(conn)
+        self.assertGreaterEqual(fired, 1)
+        row = conn.execute("SELECT * FROM incidents WHERE signal_type='dga'").fetchone()
+        self.assertIsNotNone(row)
+
+    def test_a_blocked_query_does_not_count_as_nxdomain_for_dga(self):
+        # app/ingest.py's flatten_agh_api docstring: a query THIS gateway
+        # blocked still reports dns_rcode NOERROR, not NXDOMAIN - only a
+        # genuine upstream NXDOMAIN should count.
+        import random
+        rng = random.Random(5)
+        conn = fixtures.temp_db()
+        fixtures.insert_device(conn, 1)
+        now = time.time()
+        for i in range(12):
+            label = self._random_label(rng)
+            fixtures.insert_dns_query(conn, 1, "%s.ads.example.com" % label, now - i, blocked=1)
+        self.assertEqual(correlation.dns_tunneling_signal(conn), 0)
+
+    def test_repeated_firing_merges_into_one_incident(self):
+        import random
+        rng = random.Random(3)
+        conn = fixtures.temp_db()
+        fixtures.insert_device(conn, 1)
+        now = time.time()
+        for i in range(25):
+            label = self._random_label(rng)
+            fixtures.insert_dns_query(conn, 1, "%s.tunnel.example.com" % label, now - i)
+        correlation.dns_tunneling_signal(conn)
+        rows_before = conn.execute("SELECT * FROM incidents WHERE signal_type='dns_tunneling'").fetchall()
+        for i in range(25, 28):
+            label = self._random_label(rng)
+            fixtures.insert_dns_query(conn, 1, "%s.tunnel.example.com" % label, now - i + 100)
+        correlation.dns_tunneling_signal(conn)
+        rows_after = conn.execute("SELECT * FROM incidents WHERE signal_type='dns_tunneling'").fetchall()
+        self.assertEqual(len(rows_before), len(rows_after), "a continuing pattern must extend, not duplicate")
+
+
+class ShannonEntropyTests(unittest.TestCase):
+    def test_a_single_repeated_character_has_zero_entropy(self):
+        self.assertEqual(correlation._shannon_entropy("aaaaaa"), 0.0)
+
+    def test_an_empty_string_has_zero_entropy(self):
+        self.assertEqual(correlation._shannon_entropy(""), 0.0)
+
+    def test_more_varied_characters_have_higher_entropy(self):
+        low = correlation._shannon_entropy("aaaaaabbbbbb")
+        high = correlation._shannon_entropy("a1b2c3d4e5f6")
+        self.assertGreater(high, low)
+
+
+class BaseDomainTests(unittest.TestCase):
+    def test_takes_the_last_two_labels(self):
+        self.assertEqual(correlation._base_domain("random123.tunnel.example.com"), "example.com")
+        self.assertEqual(correlation._base_domain("example.com"), "example.com")
+
+    def test_subdomain_part_strips_the_base_domain(self):
+        self.assertEqual(correlation._subdomain_part("abc.tunnel.example.com", "example.com"),
+                          "abc.tunnel")
+        self.assertEqual(correlation._subdomain_part("example.com", "example.com"), "")
+
+
 class MaliciousDomainSignalTests(unittest.TestCase):
     """Tests the FIXED behaviour: the threshold applies to distinct
     blocked domains, not raw blocked-lookup count (ENHANCEMENT-PLAN.md
@@ -741,6 +885,12 @@ class WindowSettingsTests(unittest.TestCase):
         self.assertEqual(settings.get(conn, "ids_alert_threshold"), 3)
         self.assertEqual(settings.get(conn, "threat_intel_window_seconds"), 3600)
         self.assertEqual(settings.get(conn, "threat_intel_threshold"), 1)
+        self.assertEqual(settings.get(conn, "dns_tunneling_window_seconds"), 600)
+        self.assertEqual(settings.get(conn, "dns_tunneling_min_distinct_subdomains"), 20)
+        self.assertEqual(settings.get(conn, "dns_tunneling_min_entropy"), 3.5)
+        self.assertEqual(settings.get(conn, "dns_tunneling_min_txt_ratio"), 0.3)
+        self.assertEqual(settings.get(conn, "dga_min_nxdomain_count"), 10)
+        self.assertEqual(settings.get(conn, "dga_min_entropy"), 3.3)
         self.assertEqual(settings.get(conn, "brute_force_window_seconds"), 120)
         self.assertEqual(settings.get(conn, "malicious_domain_window_seconds"), 600)
         self.assertEqual(settings.get(conn, "new_device_lookback_seconds"), 3600)

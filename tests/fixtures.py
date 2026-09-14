@@ -207,7 +207,7 @@ def make_agh_entry(client_ip="10.10.0.50", domain="ads.example.com",
 def make_agh_api_entry(client_ip="10.10.0.50", domain="ads.example.com",
                         blocked=True, timestamp=None, cached=False,
                         upstream="tls://1.1.1.1", elapsed_ms="5.123456",
-                        reason=None):
+                        reason=None, status="NOERROR", rrtype="A"):
     """A synthetic /control/querylog API entry - a DIFFERENT shape from
     the on-disk file (make_agh_entry above). Fields and their real
     values (including the exact two 'reason' strings used below) were
@@ -224,10 +224,10 @@ def make_agh_api_entry(client_ip="10.10.0.50", domain="ads.example.com",
         "client_info": {"whois": {}, "name": "", "disallowed_rule": "", "disallowed": False},
         "client_proto": "",
         "elapsedMs": elapsed_ms,
-        "question": {"class": "IN", "name": domain, "type": "A"},
+        "question": {"class": "IN", "name": domain, "type": rrtype},
         "reason": reason,
         "rules": [],
-        "status": "NOERROR",
+        "status": status,
         "time": timestamp or "2026-09-14T10:00:00.500000000Z",
         "upstream": upstream or "",
     }

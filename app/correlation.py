@@ -33,8 +33,10 @@ number of incidents from a large number of raw events - the reduction ratio
 that is the point of having a correlation layer at all.
 """
 
+import math
 import sqlite3
 import time
+from collections import Counter, defaultdict
 
 import settings
 import signature_taxonomy
@@ -732,6 +734,148 @@ def threat_intel_signal(conn):
 
 
 # --------------------------------------------------------------------------
+# Signal 1g: DNS tunnelling + DGA (ENHANCEMENT-PLAN.md step 2.5)
+#
+# Both patterns share the same underlying shape - many algorithmically-
+# generated-looking subdomains under one base domain - and are computed
+# from the same grouped query below, splitting into two incident types
+# only when raising (the same one-function-two-signal_types pattern
+# slow_scan_signal already established in step 2.1):
+#
+#   - dns_tunneling: malware carrying data OUT via DNS, encoded into
+#     subdomain labels and/or TXT record lookups (a common tunnelling
+#     carrier - TXT records hold more data per query than A/AAAA). Looks
+#     for many DISTINCT high-entropy subdomains, or an unusually high
+#     TXT-query ratio, under one base domain.
+#   - dga: malware trying to find its command-and-control server by
+#     querying algorithmically-generated domain names until one
+#     resolves. Looks for a burst of GENUINE NXDOMAIN responses (the
+#     domain doesn't exist anywhere - see app/ingest.py's
+#     flatten_agh_api docstring on why a blocked query does NOT count as
+#     NXDOMAIN here) with high-entropy labels.
+#
+# "Base domain" here is a simplified last-two-labels heuristic
+# (_base_domain below), not a real Public Suffix List lookup - documented
+# as a real, stated limitation rather than a maintained-dependency this
+# project doesn't need for its own traffic volume: it would misgroup a
+# multi-part suffix like "example.co.uk" (treating "co.uk" as the base
+# domain), but every domain this gateway has actually seen live is a
+# plain second-level one, and getting this wrong only under-flags a
+# tunnelling pattern that happens to sit under a two-part-suffix
+# registrar, not over-flag normal traffic.
+# --------------------------------------------------------------------------
+# All five thresholds and the shared window live in app/settings.py - see
+# port_scan_signal's own note above.
+
+
+def _shannon_entropy(s):
+    """Bits of entropy per character - 0 for a single repeated character,
+    up to log2(len(alphabet)) for a uniformly random string over that
+    alphabet. Standard textbook Shannon entropy; used here (rather than a
+    trained classifier) because it's the same "a query anyone can run by
+    hand" property this whole file's design favors - see the module
+    docstring."""
+    if not s:
+        return 0.0
+    counts = Counter(s)
+    length = len(s)
+    return -sum((c / length) * math.log2(c / length) for c in counts.values())
+
+
+def _base_domain(fqdn):
+    """Simplified registrable-domain heuristic (last two labels) - see
+    this signal's own header comment for why a real Public Suffix List
+    isn't used here."""
+    parts = (fqdn or "").rstrip(".").split(".")
+    if len(parts) < 2:
+        return fqdn or ""
+    return ".".join(parts[-2:])
+
+
+def _subdomain_part(fqdn, base_domain):
+    """Everything before the base domain - the part a DGA/tunnel actually
+    randomizes. Empty string for a query against the apex domain itself."""
+    if fqdn == base_domain:
+        return ""
+    suffix = "." + base_domain
+    return fqdn[: -len(suffix)] if fqdn.endswith(suffix) else fqdn
+
+
+def dns_tunneling_signal(conn):
+    now = time.time()
+    window = settings.get(conn, "dns_tunneling_window_seconds")
+    since = now - window
+
+    rows = conn.execute(
+        """SELECT id, device_id, dns_rrname, dns_rrtype, dns_rcode, ts FROM events
+            WHERE event_type='dns_query' AND device_id IS NOT NULL
+              AND dns_rrname IS NOT NULL AND ts > ?""",
+        (since,),
+    ).fetchall()
+
+    # Group in Python, not SQL: the entropy/subdomain-splitting logic
+    # above has no clean SQL equivalent, and event volume in one window
+    # is small enough (this file's own header explains why a full scan
+    # is fine at this project's scale) that this costs nothing measurable.
+    groups = defaultdict(list)
+    for r in rows:
+        base = _base_domain(r["dns_rrname"])
+        groups[(r["device_id"], base)].append(r)
+
+    fired = 0
+    for (device_id, base), group in groups.items():
+        subdomains = {r["dns_rrname"] for r in group}
+        non_apex = [_subdomain_part(r["dns_rrname"], base) for r in group if r["dns_rrname"] != base]
+        entropies = [_shannon_entropy(s) for s in non_apex if s]
+        avg_entropy = sum(entropies) / len(entropies) if entropies else 0.0
+        txt_ratio = sum(1 for r in group if r["dns_rrtype"] == "TXT") / len(group)
+        nxdomain_rows = [r for r in group if r["dns_rcode"] == "NXDOMAIN"]
+
+        event_ids_all = [r["id"] for r in group]
+        first_seen = min(r["ts"] for r in group)
+        last_seen = max(r["ts"] for r in group)
+
+        if (len(subdomains) >= settings.get(conn, "dns_tunneling_min_distinct_subdomains")
+                and (avg_entropy >= settings.get(conn, "dns_tunneling_min_entropy")
+                     or txt_ratio >= settings.get(conn, "dns_tunneling_min_txt_ratio"))):
+            raise_incident(
+                conn, device_id, "dns_tunneling", "high",
+                title="Possible DNS tunnelling under %s" % base,
+                description=(
+                    "%d distinct subdomains under %s in %d seconds (avg subdomain entropy "
+                    "%.1f bits/char, %.0f%% TXT queries) - looks encoded rather than typed."
+                    % (len(subdomains), base, window, avg_entropy, txt_ratio * 100)
+                ),
+                first_seen=first_seen, last_seen=last_seen, event_ids=event_ids_all,
+            )
+            fired += 1
+
+        if nxdomain_rows:
+            nx_entropies = [_shannon_entropy(_subdomain_part(r["dns_rrname"], base))
+                             for r in nxdomain_rows if r["dns_rrname"] != base]
+            nx_avg_entropy = sum(nx_entropies) / len(nx_entropies) if nx_entropies else 0.0
+            if (len(nxdomain_rows) >= settings.get(conn, "dga_min_nxdomain_count")
+                    and nx_avg_entropy >= settings.get(conn, "dga_min_entropy")):
+                raise_incident(
+                    conn, device_id, "dga", "high",
+                    title="Possible domain-generation-algorithm activity under %s" % base,
+                    description=(
+                        "%d genuine NXDOMAIN lookups under %s in %d seconds (avg entropy %.1f "
+                        "bits/char) - a pattern consistent with malware searching for its "
+                        "command-and-control server by trying algorithmically generated names."
+                        % (len(nxdomain_rows), base, window, nx_avg_entropy)
+                    ),
+                    first_seen=min(r["ts"] for r in nxdomain_rows),
+                    last_seen=max(r["ts"] for r in nxdomain_rows),
+                    event_ids=[r["id"] for r in nxdomain_rows],
+                )
+                fired += 1
+
+    set_window_start(conn, "dns_tunneling", now)
+    return fired
+
+
+# --------------------------------------------------------------------------
 # Signal 2: brute force
 #
 # Many short connections from one device to one auth-service port on one
@@ -1093,8 +1237,9 @@ def behavioral_baseline_signal(conn):
 
 
 SIGNALS = [port_scan_signal, network_sweep_signal, slow_scan_signal, dns_bypass_signal,
-           ids_alert_signal, threat_intel_signal, brute_force_signal, malicious_domain_signal,
-           new_device_signal, adblock_effectiveness_signal, behavioral_baseline_signal]
+           ids_alert_signal, threat_intel_signal, dns_tunneling_signal, brute_force_signal,
+           malicious_domain_signal, new_device_signal, adblock_effectiveness_signal,
+           behavioral_baseline_signal]
 
 
 def run_all(conn):

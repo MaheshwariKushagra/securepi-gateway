@@ -153,7 +153,8 @@ RANGES = {
 # anything lately". Engine cycles every 15s (see engine.py); 4 missed cycles
 # is a real problem, not noise.
 SIGNALS = ["port_scan", "network_sweep", "slow_scan", "dns_bypass", "ids_alert", "threat_intel",
-           "brute_force", "malicious_domain", "new_device", "adblock_ineffective", "volume_anomaly"]
+           "dns_tunneling", "brute_force", "malicious_domain", "new_device", "adblock_ineffective",
+           "volume_anomaly"]
 
 # Step 6.1's own exit criterion calls this "the learning badge until 7
 # days of data exist" - matches BASELINE_MIN_SAMPLES in correlation.py.

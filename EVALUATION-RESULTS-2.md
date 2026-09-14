@@ -285,3 +285,21 @@ New `app/intel.py` fetches three real abuse.ch feeds daily - Feodo Tracker (botn
 | Daily timers | `securepi-doh-refresh.timer` and `securepi-intel-refresh.timer` both enabled, next runs scheduled, added to `services.list` / `gateway/securepi`'s health check |
 
 13 new unit tests (`tests/test_intel.py`, using real feed-shaped sample text captured from live downloads, plus additions to `tests/test_correlation.py`). 2 new settings (`threat_intel_threshold` defaulting to 1 - unlike a hit-volume signal, one confirmed match is significant - and `threat_intel_window_seconds`). ATT&CK: tagged tactic-level only (Command and Control, TA0011) - a curated indicator confirms the destination is malicious, not which specific technique this device's traffic to it represents.
+
+### 2.5 — DNS tunnelling + DGA
+
+New `dns_tunneling_signal` in `app/correlation.py` groups DNS queries by (device, base domain) - a simplified last-two-labels heuristic, documented as a real, stated limitation rather than pulling in a maintained Public Suffix List this project's own traffic volume doesn't need - and computes Shannon entropy, distinct-subdomain count, and TXT-query ratio per group, splitting into two incident types on the same one-function-two-signal_types pattern `slow_scan_signal` (step 2.1) established:
+
+- **`dns_tunneling`**: many distinct high-entropy subdomains, or an unusual TXT-query ratio, under one domain - a common way malware carries data out through DNS. ATT&CK: **T1071.004** Application Layer Protocol: DNS - an exact, textbook match, not an inference.
+- **`dga`**: a burst of *genuine* NXDOMAIN lookups (the domain doesn't exist anywhere - not just blocked) with high-entropy labels - malware searching for its C2 server via algorithmically generated names. ATT&CK: **T1568.002** Dynamic Resolution: Domain Generation Algorithms - also an exact match.
+
+**A real gap found and fixed before writing the signal:** `app/ingest.py`'s `flatten_agh_api` never captured AdGuard's own `status` field (the real DNS response code), so `dns_rcode` was always `NULL` for AdGuard-sourced queries - there was no way to tell a genuine NXDOMAIN from anything else. Confirmed live (14 September 2026) against this gateway's real API that `status` is exactly this field, and - importantly - that **a query THIS gateway blocks still reports `NOERROR`** (the "default" blocking_mode's `0.0.0.0` answer is a real, if bogus, successful response, the same fact `app/adguard.py`'s `add_nxdomain_rule` already established for a different reason in step 2.2). This distinction is exactly what DGA detection needs: a genuine NXDOMAIN means the domain doesn't exist anywhere, not that AdGuard chose to block it. 2 new ingest tests confirm both cases.
+
+**The exit criterion's two halves, both verified live against the real gateway, not just unit tests:**
+
+| Check | Result |
+|---|---|
+| "No firing on 24h of phone traffic" | Ran the exact grouping/entropy/threshold logic against **all 4,732 real DNS queries** from a real device's full 2.5-day history (201 distinct base domains) - **zero false positives** on either `dns_tunneling` or `dga`. The highest average entropy seen on any real domain was 4.07 bits/char on `fastly-edge.com`, comfortably explained by a single real Google Safe Browsing OHTTP-relay hostname appearing repeatedly (1 distinct subdomain, nowhere near the 20-subdomain gate) - not an actual DGA/tunnelling pattern, and correctly not flagged |
+| "Harness generators detected" | Synthetic tunnelling (25 distinct high-entropy subdomains) and DGA (12 genuine-NXDOMAIN high-entropy lookups) rows were inserted for the isolated test-attacker device (id 4, real DNS traffic never generated) and the signal run live: **both fired correctly**, with accurate titles, severities and descriptions. Cleaned up afterward |
+
+7 new unit tests for the signal (`DnsTunnelingSignalTests`), `ShannonEntropyTests` and `BaseDomainTests` for the two new helper functions, and 2 new `flatten_agh_api` tests for the `dns_rcode`/`status` fix. 6 new settings (window, plus one min-distinct/min-entropy/min-txt-ratio for tunnelling and one min-nxdomain-count/min-entropy for DGA).

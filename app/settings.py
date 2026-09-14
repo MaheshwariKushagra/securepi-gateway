@@ -132,6 +132,18 @@ SETTINGS_SCHEMA = {
         "label": "IDS-alert window",
         "help": "How far back (seconds) the IDS-alert signal looks when counting alerts of one category.",
     },
+    "threat_intel_threshold": {
+        "default": 1, "type": int, "min": 1, "max": 100,
+        "label": "Threat-intel match threshold",
+        "help": "Matches against a confirmed-malicious IP/domain from one device, in the "
+                "signal's window, before it's flagged. Unlike a blocklist-hit-volume signal, "
+                "even one confirmed match is significant, so this defaults to 1.",
+    },
+    "threat_intel_window_seconds": {
+        "default": 3600, "type": int, "min": 60, "max": 86400,
+        "label": "Threat-intel window",
+        "help": "How far back (seconds) the threat-intel signal looks when counting IOC matches.",
+    },
     "dedup_window_seconds": {
         "default": 600, "type": int, "min": 60, "max": 86400,
         "label": "Incident dedup window",

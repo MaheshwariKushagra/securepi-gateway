@@ -325,4 +325,47 @@ CREATE TABLE IF NOT EXISTS saved_searches (
     created_at REAL NOT NULL
 );
 
+-- ------------------------------------------------------------------- ioc --
+-- Offline threat intelligence (ENHANCEMENT-PLAN.md step 2.4): confirmed-
+-- malicious IPs and domains from abuse.ch's Feodo Tracker (botnet C2 IPs),
+-- URLhaus (malware-hosting hostnames) and ThreatFox (mixed IOC types,
+-- filtered to just 'ip:port' and 'domain' - see app/intel.py). Fetched
+-- daily by a systemd timer, never on a request path.
+--
+-- `source` matters for de-duplication, not display: the SAME indicator
+-- can legitimately appear from more than one feed (all three are curated
+-- by the same abuse.ch project), so the UNIQUE constraint is on the
+-- (indicator, ioc_type, source) triple - one row per feed's own claim
+-- about an indicator, not one row per indicator overall. A refresh
+-- extends last_seen for an indicator still present in its feed rather
+-- than deleting and re-inserting, so first_seen keeps meaning "since
+-- when has THIS gateway believed this indicator is bad" even across
+-- daily refreshes.
+CREATE TABLE IF NOT EXISTS ioc (
+    id          INTEGER PRIMARY KEY,
+    indicator   TEXT NOT NULL,       -- an IP address or a domain name
+    ioc_type    TEXT NOT NULL,       -- 'ip' or 'domain'
+    source      TEXT NOT NULL,       -- 'feodo' | 'urlhaus' | 'threatfox'
+    description TEXT,                -- e.g. a malware family name, when the feed supplies one
+    first_seen  REAL NOT NULL,       -- when THIS gateway first loaded it
+    last_seen   REAL NOT NULL,       -- when THIS gateway most recently saw it still listed
+    UNIQUE (indicator, ioc_type, source)
+);
+
+CREATE INDEX IF NOT EXISTS idx_ioc_indicator ON ioc(indicator, ioc_type);
+
+-- One row per feed: when it last successfully refreshed, and what went
+-- wrong the last time it didn't - the "feed age visible" half of this
+-- step's own exit criterion. A failed fetch is recorded here but never
+-- touches the ioc table itself (fail-safe, the same principle
+-- gateway/refresh-doh-set.sh already applies to the doh_resolvers set):
+-- yesterday's indicators stay live rather than the whole feed silently
+-- going empty because of one bad fetch.
+CREATE TABLE IF NOT EXISTS intel_feed_state (
+    source          TEXT PRIMARY KEY,
+    last_fetched    REAL,
+    last_error      TEXT,
+    indicator_count INTEGER
+);
+
 INSERT OR IGNORE INTO ingest_stats (id) VALUES (1);

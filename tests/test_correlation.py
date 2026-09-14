@@ -389,6 +389,73 @@ class IdsAlertSignalTests(unittest.TestCase):
         self.assertEqual(rows[0]["evidence_count"], 5)
 
 
+class ThreatIntelSignalTests(unittest.TestCase):
+    """ENHANCEMENT-PLAN.md step 2.4: matches events against the ioc table
+    (app/intel.py's daily-refreshed abuse.ch feeds)."""
+
+    def test_fires_on_a_single_malicious_ip_flow_match(self):
+        conn = fixtures.temp_db()
+        fixtures.insert_device(conn, 1)
+        fixtures.insert_ioc(conn, "203.0.113.99", "ip", source="feodo",
+                             description="Feodo Tracker botnet C2")
+        now = time.time()
+        fixtures.insert_flow(conn, 1, "203.0.113.99", 443, now - 10)
+        fired = correlation.threat_intel_signal(conn)
+        self.assertEqual(fired, 1, "even ONE confirmed match should fire - default threshold is 1")
+        row = conn.execute("SELECT * FROM incidents WHERE signal_type='threat_intel'").fetchone()
+        self.assertIsNotNone(row)
+        self.assertEqual(row["severity"], "high")
+        self.assertIn("203.0.113.99", row["title"])
+        self.assertIn("feodo", row["description"])
+
+    def test_fires_on_a_malicious_domain_dns_query_match(self):
+        conn = fixtures.temp_db()
+        fixtures.insert_device(conn, 1)
+        fixtures.insert_ioc(conn, "evil.example.com", "domain", source="urlhaus")
+        now = time.time()
+        fixtures.insert_dns_query(conn, 1, "evil.example.com", now - 10, blocked=1)
+        self.assertEqual(correlation.threat_intel_signal(conn), 1)
+
+    def test_fires_on_a_malicious_domain_tls_sni_match(self):
+        conn = fixtures.temp_db()
+        fixtures.insert_device(conn, 1)
+        fixtures.insert_ioc(conn, "evil.example.com", "domain", source="threatfox")
+        now = time.time()
+        fixtures.insert_tls(conn, 1, "evil.example.com", now - 10)
+        self.assertEqual(correlation.threat_intel_signal(conn), 1)
+
+    def test_does_not_fire_on_a_clean_destination(self):
+        conn = fixtures.temp_db()
+        fixtures.insert_device(conn, 1)
+        fixtures.insert_ioc(conn, "203.0.113.99", "ip")
+        now = time.time()
+        fixtures.insert_flow(conn, 1, "203.0.113.100", 443, now - 10)  # one digit off, not a match
+        self.assertEqual(correlation.threat_intel_signal(conn), 0)
+
+    def test_an_ip_indicator_does_not_match_a_domain_field_or_vice_versa(self):
+        conn = fixtures.temp_db()
+        fixtures.insert_device(conn, 1)
+        fixtures.insert_ioc(conn, "evil.example.com", "domain")
+        now = time.time()
+        # Same string coincidentally used as a dest_ip on a flow - must
+        # not match, since this indicator is type 'domain'.
+        fixtures.insert_flow(conn, 1, "evil.example.com", 443, now - 10)
+        self.assertEqual(correlation.threat_intel_signal(conn), 0)
+
+    def test_repeated_firing_merges_into_one_incident(self):
+        conn = fixtures.temp_db()
+        fixtures.insert_device(conn, 1)
+        fixtures.insert_ioc(conn, "203.0.113.99", "ip")
+        now = time.time()
+        fixtures.insert_flow(conn, 1, "203.0.113.99", 443, now - 10)
+        correlation.threat_intel_signal(conn)
+        fixtures.insert_flow(conn, 1, "203.0.113.99", 8080, now - 5)
+        correlation.threat_intel_signal(conn)
+        rows = conn.execute("SELECT * FROM incidents WHERE signal_type='threat_intel'").fetchall()
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]["evidence_count"], 2)
+
+
 class MaliciousDomainSignalTests(unittest.TestCase):
     """Tests the FIXED behaviour: the threshold applies to distinct
     blocked domains, not raw blocked-lookup count (ENHANCEMENT-PLAN.md
@@ -672,6 +739,8 @@ class WindowSettingsTests(unittest.TestCase):
         self.assertEqual(settings.get(conn, "dns_bypass_threshold"), 3)
         self.assertEqual(settings.get(conn, "ids_alert_window_seconds"), 300)
         self.assertEqual(settings.get(conn, "ids_alert_threshold"), 3)
+        self.assertEqual(settings.get(conn, "threat_intel_window_seconds"), 3600)
+        self.assertEqual(settings.get(conn, "threat_intel_threshold"), 1)
         self.assertEqual(settings.get(conn, "brute_force_window_seconds"), 120)
         self.assertEqual(settings.get(conn, "malicious_domain_window_seconds"), 600)
         self.assertEqual(settings.get(conn, "new_device_lookback_seconds"), 3600)

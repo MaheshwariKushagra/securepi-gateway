@@ -75,6 +75,11 @@ The signals that DO get a tag:
   into this one signal_type, and don't share one specific technique).
   ids_credential_theft -> Credential Access / TA0006 (tactic-level - many
   distinct techniques could produce this classtype).
+- threat_intel (ENHANCEMENT-PLAN.md step 2.4) -> Command and Control /
+  TA0011, tactic-level only. A curated abuse.ch indicator confirms the
+  destination itself is malicious infrastructure - real, specific
+  evidence - but not which C2 technique this device's own traffic to it
+  represents.
   have identified a technique.
 """
 
@@ -157,6 +162,14 @@ ATTACK_MAPPING = {
     },
     # ids_other deliberately absent - see the module docstring's "does NOT
     # get a tag" section.
+    "threat_intel": {
+        "tactic": "Command and Control", "tactic_id": "TA0011",
+        "technique": None, "technique_id": None,
+        "url": "https://attack.mitre.org/tactics/TA0011/",
+        "note": "Tactic-level only - a curated indicator (abuse.ch Feodo/URLhaus/ThreatFox) "
+                "confirms the DESTINATION is malicious infrastructure, but not which specific "
+                "technique this device's traffic to it represents.",
+    },
 }
 
 PLAYBOOKS = {
@@ -322,6 +335,17 @@ PLAYBOOKS = {
             "step 2.7's suppression rules (once built) will let a verdict like this apply "
             "automatically going forward instead of needing to be repeated. For anything "
             "unfamiliar, investigate before deciding.",
+    },
+    "threat_intel": {
+        "what_it_means": "This device contacted an IP address or domain that abuse.ch's Feodo "
+            "Tracker, URLhaus or ThreatFox feeds - curated, community-run threat intelligence, "
+            "refreshed daily - list as confirmed-malicious infrastructure. Unlike a blocklist-"
+            "hit-volume signal, this fires on even a single match.",
+        "how_to_check": "Open the evidence chain for the exact indicator and which feed(s) "
+            "listed it, plus the malware family name if the feed supplied one.",
+        "recommended_action": "Treat as a real finding - quarantine the device and investigate. "
+            "A confirmed indicator match has a much lower false-positive rate than this "
+            "project's other domain-based signals.",
     },
     "adblock_ineffective": {
         "what_it_means": "SecurePi's own YouTube ad-removal (the Tier 2 mitmproxy-based DPI "

@@ -80,6 +80,16 @@ def insert_dns_query(conn, device_id, dns_rrname, ts, blocked=0, src_ip="10.10.0
     conn.commit()
 
 
+def insert_ioc(conn, indicator, ioc_type, source="feodo", description="test IOC", ts=None):
+    ts = ts if ts is not None else time.time()
+    conn.execute(
+        "INSERT INTO ioc (indicator, ioc_type, source, description, first_seen, last_seen)"
+        " VALUES (?, ?, ?, ?, ?, ?)",
+        (indicator, ioc_type, source, description, ts, ts),
+    )
+    conn.commit()
+
+
 def insert_alert(conn, device_id, alert_category, ts, alert_signature="ET TEST signature",
                   alert_severity=2, src_ip="10.10.0.50", dest_ip="203.0.113.5"):
     conn.execute(

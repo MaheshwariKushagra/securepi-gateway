@@ -101,6 +101,23 @@ SCHEMA_MIGRATIONS = [
            filters    TEXT NOT NULL,
            created_at REAL NOT NULL
        )""",
+    """CREATE TABLE IF NOT EXISTS ioc (
+           id          INTEGER PRIMARY KEY,
+           indicator   TEXT NOT NULL,
+           ioc_type    TEXT NOT NULL,
+           source      TEXT NOT NULL,
+           description TEXT,
+           first_seen  REAL NOT NULL,
+           last_seen   REAL NOT NULL,
+           UNIQUE (indicator, ioc_type, source)
+       )""",
+    "CREATE INDEX IF NOT EXISTS idx_ioc_indicator ON ioc(indicator, ioc_type)",
+    """CREATE TABLE IF NOT EXISTS intel_feed_state (
+           source          TEXT PRIMARY KEY,
+           last_fetched    REAL,
+           last_error      TEXT,
+           indicator_count INTEGER
+       )""",
 ]
 
 # How long to wait between passes over the log files. Two seconds keeps the

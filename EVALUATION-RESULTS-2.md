@@ -257,3 +257,31 @@ Closes the exact gap `ENHANCEMENT-PLAN.md` §1.1 names: "Suricata metadata only.
 The signal is correctly wired, deployed, and will pick up any qualifying activity going forward - the specific gap is a fresh, real, *security-relevant* trigger within this session's environment, the same class of limitation already recorded for steps 2.1's live namespace constraints and 2.2's `ap0` reachability gap.
 
 11 new unit tests (`tests/test_signature_taxonomy.py` + additions to `tests/test_correlation.py`). 2 new settings (`ids_alert_threshold`, `ids_alert_window_seconds`). 8 new signal_types (7 curated + `ids_other`), each with a `playbooks.py` entry.
+
+### 2.4 — Offline threat intelligence
+
+New `app/intel.py` fetches three real abuse.ch feeds daily - Feodo Tracker (botnet C2 IPs), URLhaus (malware-hosting hostnames), ThreatFox (mixed IOCs, filtered to `ip:port` and `domain` types only) - into a new `ioc` table, matched against events by `app/correlation.py`'s new `threat_intel_signal`. Domain-type indicators are also pushed to AdGuard as a real Tier 1 blocklist, so a match is both blocked and turned into an incident, per this step's own wording.
+
+**Every feed's real format was confirmed against a live download before writing any parser** - none of the three matched a naive first guess:
+
+| Feed | What was assumed | What's actually true (confirmed live) |
+|---|---|---|
+| Feodo Tracker | - | Correct on the first try: bare IPs, `#`-comments |
+| URLhaus | - | Correct on the first try: hosts-file format, `127.0.0.1<TAB>hostname` |
+| ThreatFox | A `csv/recent/` path would exist, standard `"a","b","c"` CSV quoting | Real path is `export/csv/recent/`; real quoting has a **space** after each comma (`"a", "b", "c"`) - a naive `split('","')` silently parsed zero rows until this was caught and fixed before deploying |
+
+**A real bug found and fixed before touching the gateway:** `add_blocklist()` was first pointed at a `file:///opt/securepi/ioc-domains.txt` URL, on the assumption AdGuard could read a local blocklist file directly. Running it live returned `HTTP 400: bad enum value: "file"; want "http" or "https"` - AdGuard's `add_url` endpoint validates the scheme server-side and rejects anything but http/https outright. Fixed by adding `securepi-static.service`, a loopback-only (`127.0.0.1:8082`) static file server - the same `python3 -m http.server` pattern `dpi/deploy-dpi.sh` already uses for the CA download server - and registering `http://127.0.0.1:8082/ioc-domains.txt` instead. Re-run afterward, clean.
+
+**Live verification, 14 September 2026:**
+
+| Check | Result |
+|---|---|
+| `make deploy` (new `ioc`/`intel_feed_state` tables via `SCHEMA_MIGRATIONS`) | Clean; journal clear; both tables confirmed present |
+| `intel.py` run live | **5 Feodo IPs, 354 URLhaus hostnames, 5,292 ThreatFox IOCs (3,849 IP, 1,443 domain)** fetched and loaded |
+| AdGuard blocklist registration | `http://127.0.0.1:8082/ioc-domains.txt` registered, **1,794 rules**, enabled |
+| A real fetched domain (`0following.com`) | `dig` confirms `0.0.0.0` - genuinely blocked |
+| `intel_feed_state` ("feed age visible", this step's own exit criterion) | All three sources show `last_error: NULL`, a real `last_fetched` timestamp, and a computed age in seconds |
+| `threat_intel_signal`, live | A synthetic `flow` event was inserted against a **real** Feodo-listed IP (`162.243.103.246`) - never actually contacted; the same safe "insert the row, don't touch the destination" approach the unit tests already use - attributed to the isolated test-attacker device (id 4). Fired correctly: "Contact with known-malicious IP: 162.243.103.246", severity high, evidence_count 1, description naming the source feed and malware label. The synthetic event and incident were deleted afterward |
+| Daily timers | `securepi-doh-refresh.timer` and `securepi-intel-refresh.timer` both enabled, next runs scheduled, added to `services.list` / `gateway/securepi`'s health check |
+
+13 new unit tests (`tests/test_intel.py`, using real feed-shaped sample text captured from live downloads, plus additions to `tests/test_correlation.py`). 2 new settings (`threat_intel_threshold` defaulting to 1 - unlike a hit-volume signal, one confirmed match is significant - and `threat_intel_window_seconds`). ATT&CK: tagged tactic-level only (Command and Control, TA0011) - a curated indicator confirms the destination is malicious, not which specific technique this device's traffic to it represents.

@@ -628,6 +628,110 @@ def ids_alert_signal(conn):
 
 
 # --------------------------------------------------------------------------
+# Signal 1f: offline threat intelligence (ENHANCEMENT-PLAN.md step 2.4)
+#
+# Matches recent events against app/intel.py's daily-refreshed `ioc`
+# table (abuse.ch Feodo Tracker / URLhaus / ThreatFox): flow destination
+# IPs against ip-type indicators, and DNS queries / TLS SNI against
+# domain-type ones. Domain-type indicators are ALSO pushed to AdGuard as
+# a real blocklist (intel.py's own job) - this signal is what turns a
+# match into an INCIDENT, on top of intel.py's blocklist turning it into
+# a block. The three UNION ALL branches (rather than one query with OR'd
+# join conditions across mismatched columns) keep each branch using a
+# single, obvious index and stay readable - this is the one signal in
+# this file that joins against another table at all, so leaning toward
+# clarity here mattered more than a single denser query.
+#
+# threshold defaults to 1 (app/settings.py) - unlike a hit-VOLUME signal
+# like malicious_domain, contact with even ONE confirmed-malicious
+# indicator is significant on its own; these aren't ad/tracker
+# blocklists, they're curated indicators of actual compromise
+# infrastructure.
+# --------------------------------------------------------------------------
+# Window and threshold both live in app/settings.py - see port_scan_signal's
+# own note above.
+
+
+def _threat_intel_matches(conn, since):
+    return conn.execute(
+        """
+        SELECT device_id, indicator, ioc_type, source, description, ts
+          FROM (
+            SELECT e.device_id device_id, i.indicator indicator, i.ioc_type ioc_type,
+                   i.source source, i.description description, e.ts ts
+              FROM events e JOIN ioc i ON i.ioc_type='ip' AND e.dest_ip = i.indicator
+             WHERE e.event_type='flow' AND e.device_id IS NOT NULL AND e.ts > ?
+            UNION ALL
+            SELECT e.device_id, i.indicator, i.ioc_type, i.source, i.description, e.ts
+              FROM events e JOIN ioc i ON i.ioc_type='domain' AND e.dns_rrname = i.indicator
+             WHERE e.event_type='dns_query' AND e.device_id IS NOT NULL AND e.ts > ?
+            UNION ALL
+            SELECT e.device_id, i.indicator, i.ioc_type, i.source, i.description, e.ts
+              FROM events e JOIN ioc i ON i.ioc_type='domain' AND e.tls_sni = i.indicator
+             WHERE e.event_type='tls' AND e.device_id IS NOT NULL AND e.ts > ?
+          )
+        """,
+        (since, since, since),
+    ).fetchall()
+
+
+def threat_intel_signal(conn):
+    now = time.time()
+    window = settings.get(conn, "threat_intel_window_seconds")
+    since = now - window
+    threshold = settings.get(conn, "threat_intel_threshold")
+
+    matches = _threat_intel_matches(conn, since)
+    by_key = {}
+    for m in matches:
+        key = (m["device_id"], m["indicator"])
+        by_key.setdefault(key, []).append(m)
+
+    fired = 0
+    for (device_id, indicator), group in by_key.items():
+        if len(group) < threshold:
+            continue
+        ioc_type = group[0]["ioc_type"]
+        sources = sorted({g["source"] for g in group})
+        description_text = group[0]["description"] or ""
+        first_seen = min(g["ts"] for g in group)
+        last_seen = max(g["ts"] for g in group)
+
+        # Evidence: the actual matching events, re-queried directly rather
+        # than carried through the grouping above - same "look it up
+        # again by the real predicate" approach every other signal here
+        # uses for its own event_ids.
+        if ioc_type == "ip":
+            event_ids = [e["id"] for e in conn.execute(
+                """SELECT id FROM events WHERE event_type='flow' AND device_id=?
+                     AND dest_ip=? AND ts > ? ORDER BY ts""",
+                (device_id, indicator, since))]
+        else:
+            event_ids = [e["id"] for e in conn.execute(
+                """SELECT id FROM events WHERE device_id=? AND ts > ?
+                     AND ((event_type='dns_query' AND dns_rrname=?)
+                       OR (event_type='tls' AND tls_sni=?))
+                     ORDER BY ts""",
+                (device_id, since, indicator, indicator))]
+
+        raise_incident(
+            conn, device_id, "threat_intel", "high",
+            title="Contact with known-malicious %s: %s" % (
+                "IP" if ioc_type == "ip" else "domain", indicator),
+            description=(
+                "%d event(s) involving %s, listed by %s (%s) over %d seconds."
+                % (len(group), indicator, " and ".join(sources), description_text, window)
+            ),
+            first_seen=first_seen, last_seen=last_seen,
+            event_ids=event_ids,
+        )
+        fired += 1
+
+    set_window_start(conn, "threat_intel", now)
+    return fired
+
+
+# --------------------------------------------------------------------------
 # Signal 2: brute force
 #
 # Many short connections from one device to one auth-service port on one
@@ -989,8 +1093,8 @@ def behavioral_baseline_signal(conn):
 
 
 SIGNALS = [port_scan_signal, network_sweep_signal, slow_scan_signal, dns_bypass_signal,
-           ids_alert_signal, brute_force_signal, malicious_domain_signal, new_device_signal,
-           adblock_effectiveness_signal, behavioral_baseline_signal]
+           ids_alert_signal, threat_intel_signal, brute_force_signal, malicious_domain_signal,
+           new_device_signal, adblock_effectiveness_signal, behavioral_baseline_signal]
 
 
 def run_all(conn):

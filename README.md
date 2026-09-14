@@ -1,190 +1,636 @@
-# SecurePi Gateway
+<div align="center">
 
-**A unified network monitoring, filtering and security platform for a small-enterprise network.**
-Final-year engineering project.
+<img src="docs/assets/banner.svg" alt="SecurePi Gateway — network monitoring, DNS and HTTPS filtering, and a security operations console" width="100%">
 
-![Python](https://img.shields.io/badge/python-3.12-3776AB?logo=python&logoColor=white)
-![FastAPI](https://img.shields.io/badge/backend-FastAPI-009688?logo=fastapi&logoColor=white)
-![Suricata](https://img.shields.io/badge/IDS-Suricata-CC0000)
-![AdGuard Home](https://img.shields.io/badge/DNS-AdGuard%20Home-68BC71)
-![Platform](https://img.shields.io/badge/platform-Ubuntu%2024.04-E95420?logo=ubuntu&logoColor=white)
-![Status](https://img.shields.io/badge/status-active%20development-brightgreen)
+<br>
 
-The gateway sits between the network and its uplink: DNS-based content filtering
-for every device, selective HTTPS inspection for enrolled devices, and a full
-security operations centre built on real network telemetry — routing, filtering,
-sensing, detection, and a live console, evaluated against real traffic on real
-hardware, not a simulation.
+**A unified network monitoring, filtering and security platform for a small-enterprise network.**<br>
+Built as a final-year engineering project, deployed on real hardware, and measured against real traffic rather than a simulation.
 
----
+<br>
 
-## Contents
+![Python](https://img.shields.io/badge/Python-3.12-3776AB?style=for-the-badge&logo=python&logoColor=white) ![FastAPI](https://img.shields.io/badge/FastAPI-console-009688?style=for-the-badge&logo=fastapi&logoColor=white) ![Suricata](https://img.shields.io/badge/Suricata-IDS-EF3B2D?style=for-the-badge) ![AdGuard Home](https://img.shields.io/badge/AdGuard_Home-DNS-68BC71?style=for-the-badge&logo=adguard&logoColor=white) ![mitmproxy](https://img.shields.io/badge/mitmproxy-selective_DPI-2B6CB0?style=for-the-badge) ![Ubuntu](https://img.shields.io/badge/Ubuntu-24.04_LTS-E95420?style=for-the-badge&logo=ubuntu&logoColor=white)
 
-- [Measured results](#measured-results)
-- [What's working](#whats-working)
-- [Project roadmap](#project-roadmap)
-- [Architecture](#architecture)
-- [Documents](#documents)
-- [A note on credentials](#a-note-on-credentials)
-- [Logging into the console](#logging-into-the-console)
-- [Browsing the console from the Mac](#browsing-the-console-from-the-mac)
+![Tests](https://img.shields.io/badge/tests-110_passing-2fbf71?style=flat-square) ![Detection signals](https://img.shields.io/badge/detection_signals-6-4f9cf9?style=flat-square) ![ATT&CK](https://img.shields.io/badge/MITRE_ATT%26CK-mapped-7b5cf0?style=flat-square) ![Stages complete](https://img.shields.io/badge/roadmap-stages_1%C2%B75%C2%B76_complete-2fbf71?style=flat-square) ![No Docker](https://img.shields.io/badge/footprint-3.6_GiB_RAM,_no_Docker-8d99ad?style=flat-square)
+
+<br>
+
+[**Overview**](#overview) · [**Console tour**](#console-tour) · [**Architecture**](#architecture) · [**How it works**](#how-it-works) · [**Evaluation**](#evaluation) · [**Roadmap**](#roadmap) · [**Getting started**](#getting-started) · [**Documentation**](#documentation)
+
+</div>
 
 ---
 
-## Measured results
+## Overview
 
-Real numbers, from `EVALUATION-RESULTS.md`, reproducible with `gateway/evaluate.py`
-against the live gateway — never against the two real devices on the network.
-
-| Metric | Result |
-|---|---|
-| Alert-to-incident reduction ratio | **1,588 : 1** over a clean 24h window |
-| Third-party ad-block rate | **100%** (10/10 fixed test domains) |
-| Detection signals verified | 6/6, live traffic, one real bug found and fixed along the way |
-| DNS blocklist rules enforced | **656,735** rules across 5 curated lists |
-| Memory under load | 40% used, 2 GiB+ free headroom |
-| Throughput impact | WAN-bound (~30 Mbps); gateway itself has tens of Gbps of headroom |
-
-## What's working
+SecurePi Gateway sits between a network and its internet uplink and turns a single
+low-cost machine into the three things a small office normally buys separately:
 
 <table>
-<tr><td valign="top">
+<tr>
+<td width="33%" valign="top">
 
-**Network core**
-- Routed gateway — DHCP, DNS, NAT
-- Wi-Fi access point, client isolation
-- DNS filtering, bypass-resistant
-- Selective HTTPS inspection (first-party ad removal)
+### Filter
+**DNS filtering** for every device, with 656,735 rules from five curated
+blocklists. DoT, known DoH and QUIC are blocked so devices can't route around it.
+**Selective HTTPS inspection** removes first-party YouTube ads for devices that opt in.
+It decrypts nothing else.
 
-**Sensing & detection**
-- Suricata IDS + full event pipeline
-- Device registry, identity across MAC randomization
-- Device type fingerprinting
-- 6-signal correlation engine, console-tunable
-- Real automated test suite (110+ tests)
+</td>
+<td width="33%" valign="top">
 
-</td><td valign="top">
+### Detect
+**Suricata IDS**, the DNS resolver and the inspection proxy all write into one event
+store. A **correlation engine** runs six signals over that data every 15 seconds and
+merges repeat detections, so **15,884 raw events became 10 incidents** over a real
+24-hour window.
 
-**Console**
-- Live dashboard, devices, incidents
-- Incident workbench — ATT&CK tags, playbooks, notes
-- Hunt / explorer — search, pivot, saved searches
-- Filtering management, per-device policy
-- Weekly report, print-to-PDF
-- Settings — tunable thresholds, audit log
-- Responsive down to phone width
+</td>
+<td width="33%" valign="top">
 
-**Operations**
-- Quarantine action + undo
-- Explainable, decaying risk scoring
-- Full audit trail on every write action
-- Data retention with evidence-chain safety
+### Respond
+A **security operations console** with a live dashboard, an incident workbench
+(evidence chain, ATT&CK tags, playbooks, notes), threat hunting, per-device policy,
+one-click **quarantine**, explainable risk scores, a weekly PDF report and a full
+audit trail.
 
-</td></tr>
+</td>
+</tr>
 </table>
 
-## Project roadmap
+> [!NOTE]
+> **Built to be defended, not only demonstrated.** Every detection is a plain SQL query you
+> can run by hand. Every incident links to the exact events that caused it. Every number
+> in this README can be reproduced with [`gateway/evaluate.py`](gateway/evaluate.py).
+> Limitations are written down next to the results, not left out.
 
-Full detail, reasoning, and live-verification notes for every step live in
-[`ENHANCEMENT-PLAN.md`](ENHANCEMENT-PLAN.md) — this is the compact view.
+### At a glance
 
-| Stage | Focus | Status |
+| | Result | Source |
 |---|---|---|
-| 0 | Housekeeping | Not started |
-| **1** | **Foundation & correctness** — test suite, retention, real-time ingest, audit, detection fixes | **Complete** |
-| 2 | Detection breadth — beaconing, DNS tunnelling, campaigns, MITRE ATT&CK | Not started |
-| 3 | Hardening & reliability — session auth, TLS, health supervision | Not started |
-| 4 | Response & orchestration — policy profiles, timed quarantine, notifications | Not started |
-| **5** | **Ad blocking & privacy filtering** | **Complete** |
-| **6** | **Intelligence & console** — baselines, fingerprinting, settings, incident workbench, hunt, reports, responsive layout | **Complete** |
-| 7 | Evaluation 2.0 — expanded benchmark battery | Not started |
-| 8 | Documentation & demo | Not started |
+| **Alert-to-incident reduction** | **1,588 : 1** over a clean 24-hour window | [Evaluation §2](EVALUATION-RESULTS.md) |
+| **Third-party ad blocking** | **100%** (10/10 fixed test domains) | [Evaluation §4](EVALUATION-RESULTS.md) |
+| **Detection** | 4 attack types × 3 runs each, **all detected**. 6/6 signals verified live. One real bug found and fixed along the way | [Evaluation §1](EVALUATION-RESULTS.md) |
+| **DNS rules enforced** | **656,735** across 5 curated lists | Live AdGuard Home |
+| **Memory under attack load** | **40%** of 3.6 GiB used, over 2 GiB free | [Evaluation §5](EVALUATION-RESULTS.md) |
+| **Throughput headroom** | Limited by the WAN (~30 Mbps). The inspection path itself ran at **39.9 Gbps** on virtual links | [Evaluation §6](EVALUATION-RESULTS.md) |
+| **Automated tests** | **110** unit tests (`make test`), all on synthetic data | [`tests/`](tests) |
 
-Stages were deliberately built out of plan order (5 and 6, then 1) where doing
-so didn't compromise correctness — each such decision, and its reasoning, is
-recorded in `ENHANCEMENT-PLAN.md` rather than left implicit.
+---
+
+## Console tour
+
+> [!IMPORTANT]
+> These screenshots show the **real console code** with **synthetic demo data**. No real
+> person's devices or browsing appear. The devices and traffic are generated by
+> [`docs/demo/seed.py`](docs/demo). The open incidents were raised by the project's own
+> correlation engine running on that data, not typed in by hand. You can regenerate every image
+> yourself (see [Run the console locally](#2-run-the-console-locally-with-demo-data)).
+
+<p align="center">
+  <img src="docs/assets/screenshots/dashboard.png" alt="Network overview dashboard" width="100%">
+  <br><sub><b>Network overview</b>: KPI tiles with sparklines, throughput, DNS allowed vs blocked, severity breakdown, detections by signal, top talkers, and blocked and contacted domains.</sub>
+</p>
+
+<table>
+<tr>
+<td width="50%" valign="top">
+<img src="docs/assets/screenshots/incident-detail.png" alt="Incident workbench">
+<p align="center"><sub><b>Incident workbench</b>: what was detected and why, the MITRE ATT&CK tag, a playbook, the evidence chain, related incidents and quarantine.</sub></p>
+</td>
+<td width="50%" valign="top">
+<img src="docs/assets/screenshots/incidents.png" alt="Incident queue">
+<p align="center"><sub><b>Incident queue</b>: severity and status filters, triage states (new, investigating, resolved, false positive), evidence counts and CSV export.</sub></p>
+</td>
+</tr>
+<tr>
+<td width="50%" valign="top">
+<img src="docs/assets/screenshots/device-detail.png" alt="Device detail">
+<p align="center"><sub><b>Device profile</b>: traffic history, identity kept across MAC randomization, fingerprint (type, vendor, OS and confidence), behavioural baseline and risk score.</sub></p>
+</td>
+<td width="50%" valign="top">
+<img src="docs/assets/screenshots/filtering.png" alt="Filtering">
+<p align="center"><sub><b>Filtering</b>: "why is this blocked?" tester, ad-blocking analytics, Tier 2 HTTPS ad-removal counters, and top blocked domains and devices.</sub></p>
+</td>
+</tr>
+<tr>
+<td width="50%" valign="top">
+<img src="docs/assets/screenshots/settings.png" alt="Settings">
+<p align="center"><sub><b>Settings</b>: detection thresholds and windows you can change from the console. Each change is validated, audited and picked up on the engine's next cycle.</sub></p>
+</td>
+<td width="50%" valign="top" align="center">
+<img src="docs/assets/screenshots/mobile.png" alt="Mobile layout" width="46%">
+<p align="center"><sub><b>Responsive</b>: every page is usable at phone width.</sub></p>
+</td>
+</tr>
+</table>
+
+<details>
+<summary><b>Other console features not pictured</b></summary>
+
+<br>
+
+- **Hunt / explorer**: search flows, DNS and TLS by device, IP, domain, port and time range. Pivot on any value, see top talkers and protocol breakdowns, and save searches.
+- **Weekly report**: incidents by ATT&CK tactic, riskiest devices, ad-blocking summary (block rate, tracker companies, estimated savings) and platform health, for any past week, printable to PDF.
+- **Command palette** (<kbd>⌘</kbd>/<kbd>Ctrl</kbd> + <kbd>K</kbd>), live notifications, a pause/resume live mode, and a pipeline-health panel showing ingest and each signal's last run.
+- **Per-device policy**: DNS filtering on or off, native-tracker blocklist profiles, time-limited allow and block rules ("unbreak this site"), and Tier 2 enrollment with auto-expiry.
+- **Blocklist health**: time since each list last synced, a stale warning after 48 hours, and each list's share of observed blocks.
+- **Audit log**: every console action that changes something (status changes, rules, settings, quarantine, enrollment) is recorded with who did it and when.
+
+</details>
+
+---
 
 ## Architecture
 
-The existing home router is treated purely as an upstream uplink; no configuration
-change is required on it. The gateway takes its own internet over Wi-Fi and serves
-the project network from an access point on the same radio.
+### Deployment topology
+
+The existing home router is only the upstream link and needs no configuration changes. The gateway
+gets its internet over Wi-Fi and serves the project network from an access point on the
+same radio. A separate wired link is used only for management.
 
 ```mermaid
 flowchart LR
-    Internet((Internet))
-    Router[Home Router]
-    Gateway[SecurePi Gateway<br/>Ubuntu 24.04]
-    AP{{Wi-Fi AP<br/>SecurePi-Test}}
-    Devices[Test devices<br/>10.10.0.0/24]
+    Internet(("Internet"))
+    Router["Home router<br/><i>untouched uplink</i>"]
 
-    Internet <-->|WAN| Router
-    Router <-->|Wi-Fi uplink| Gateway
-    Gateway <-->|hostapd, client-isolated| AP
-    AP <--> Devices
-```
-
-Telemetry flows from three sensors into one shared event store, which the
-correlation engine and console both read from directly:
-
-```mermaid
-flowchart LR
-    subgraph Sensors
-        Suricata[Suricata IDS]
-        AdGuard[AdGuard Home]
-        DPI[mitmproxy DPI addon]
+    subgraph GW["SecurePi Gateway · Dell Vostro 3501 · Ubuntu 24.04"]
+        direction TB
+        WAN["wlp2s0<br/>WAN uplink"]
+        FW{{"nftables<br/>NAT · forward policy · quarantine"}}
+        LAN["ap0 · hostapd<br/>SSID SecurePi-Test"]
+        MGMT["enp1s0<br/>management"]
+        WAN --- FW --- LAN
     end
-    Suricata --> Ingest[ingest.py]
-    AdGuard -->|real-time API poll| Ingest
-    DPI --> Ingest
-    Ingest --> DB[(SQLite)]
-    DB --> Engine[correlation.py<br/>6 signals, every 15s]
-    Engine -->|incidents| DB
-    DB --> Console[FastAPI console]
+
+    subgraph NET["Project LAN · 10.10.0.0/24 · client-isolated"]
+        D1["Laptops / PCs"]
+        D2["Phones"]
+        D3["IoT / TV"]
+    end
+
+    Mac["MacBook<br/>development and console via SSH tunnel"]
+
+    Internet <--> Router <-->|"Wi-Fi"| WAN
+    LAN <-->|"WPA2"| D1 & D2 & D3
+    Mac <-->|"Cat7 / USB-C"| MGMT
 ```
 
-## Documents
+### Data pipeline
 
-| File | Contents |
+Three sensors write into one shared event table. The correlation engine and the console both
+read from it directly, so what the console shows is exactly what detection saw. The console
+also writes back: quarantine and enrollment go to nftables sets, and filtering rules and
+per-device policy go to AdGuard Home's API.
+
+```mermaid
+flowchart LR
+    subgraph S["Sensors"]
+        direction TB
+        SUR["Suricata IDS<br/>eve.json"]
+        AGH["AdGuard Home<br/>query API"]
+        DPI["mitmproxy addon<br/>dpi-events.jsonl"]
+    end
+
+    ING["<b>ingest.py</b><br/>tails logs by inode<br/>polls AdGuard every 2 s"]
+    LEASE["DHCP leases"]
+    REG["<b>registry.py</b><br/>device identity<br/>IP history"]
+    DB[("<b>SQLite · WAL</b><br/>events · devices<br/>incidents · audit_log")]
+    ENG["<b>engine.py</b> · every 15 s<br/>6 signals · rollups<br/>retention"]
+    UI["<b>Console</b><br/>FastAPI · Jinja2 · JS"]
+    NFT{{"nftables<br/>quarantine · enrolled"}}
+
+    SUR --> ING
+    AGH --> ING
+    DPI --> ING
+    ING -->|"unified events"| DB
+    LEASE --> REG -->|"attribution"| DB
+    ENG <-->|"read events<br/>write incidents"| DB
+    DB --> UI
+    UI -->|"quarantine · enroll"| NFT
+```
+
+### Technology
+
+| Layer | Choice | Why |
+|---|---|---|
+| Host | Ubuntu Server 24.04 LTS on an x86-64 laptop (i3-1005G1, **3.6 GiB RAM**) | x86-64 packages, an SSD and a built-in battery. The small RAM budget ruled out Docker from day one |
+| Network | `hostapd`, `nftables`, AdGuard Home DHCP | Router, access point, NAT and firewall on one box |
+| Sensing | **Suricata 7** (af-packet), **AdGuard Home**, **mitmproxy 12** addon | IDS flows/alerts, DNS decisions, selective TLS inspection |
+| Storage | **SQLite** in WAL mode, one unified `events` table | One `events` table, so no UNIONs across tables in detection queries. Readers never block the writer |
+| Detection | Plain Python and windowed SQL, no framework | Every detection is a query anyone can run by hand to check it |
+| Console | **FastAPI**, Jinja2, vanilla JS, **Chart.js 4**, one hand-written stylesheet | No build step and no SPA framework. HTTP Basic Auth runs as middleware and blocks every request if the password file is missing |
+| Testing | `unittest` (pytest-compatible), in-memory SQLite fixtures | Runs on the Mac in well under a second, without the gateway |
+
+---
+
+## How it works
+
+### Correlation engine
+
+Each signal is a **windowed SQL query** over recent events, re-run in full every 15 seconds.
+There are no in-memory counters: state is bounded by the query's time range, and every detection can
+be reproduced by hand. When a signal fires, `raise_incident()` either **extends an open incident**
+for the same device and signal within the dedup window, or opens a new one. That merge step
+produces the reduction ratio.
+
+| Signal | Looks for | Default trigger | Severity | ATT&CK |
+|---|---|---|:---:|---|
+| `port_scan` | One device touching many distinct ports on **one** host (vertical scan) | ≥ 8 ports in 300 s | ![high](https://img.shields.io/badge/-high-f2545b?style=flat-square) | Discovery · [T1046](https://attack.mitre.org/techniques/T1046/) |
+| `brute_force` | Many short connections to an auth port (SSH, FTP, Telnet, RDP, SMTP) | ≥ 6 attempts in 120 s | ![high](https://img.shields.io/badge/-high-f2545b?style=flat-square) | Credential Access · [T1110](https://attack.mitre.org/techniques/T1110/) |
+| `malicious_domain` | Blocked lookups across many **distinct** domains (not raw volume, which is mostly SDK retries) | ≥ 15 distinct in 600 s | ![medium](https://img.shields.io/badge/-medium-f5a524?style=flat-square) | *not tagged on purpose*¹ |
+| `volume_anomaly` | Traffic far above **this device's own** baseline for this hour of day | z > 3.0 after 7 days of history | ![medium](https://img.shields.io/badge/-medium-f5a524?style=flat-square) | Exfiltration · [TA0010](https://attack.mitre.org/tactics/TA0010/) (tactic only) |
+| `new_device` | A device the registry has never seen | 30 s grace, 1 h lookback | ![low](https://img.shields.io/badge/-low-4f9cf9?style=flat-square) | *informational* |
+| `adblock_ineffective` | YouTube being decrypted but nothing stripped: a format change or server-side ad insertion | ≥ 5 decrypts, 0 stripped in 1 h | ![medium](https://img.shields.io/badge/-medium-f5a524?style=flat-square) | *health check of this platform* |
+
+<sub>¹ A blocklist hit on an ad or tracker domain is not evidence of contact with attacker infrastructure, so tagging it with a C2 technique would overstate the finding. The reasoning is in <a href="app/playbooks.py"><code>app/playbooks.py</code></a>.</sub>
+
+<details>
+<summary><b>Sequence: from a live SSH brute-force to a quarantined device</b></summary>
+
+<br>
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor A as Unknown device
+    participant S as Suricata + ingest
+    participant D as SQLite
+    participant E as Engine
+    actor O as Operator
+    participant N as nftables
+
+    A->>S: 24 short TCP connections to NAS :22
+    S->>D: flow events, attributed by IP history
+    loop every 15 s
+        E->>D: brute_force query, trailing 120 s
+        alt no open incident for device + signal
+            E->>D: new incident + evidence links
+        else open incident in dedup window
+            E->>D: extend last_seen, recount evidence
+        end
+    end
+    O->>D: review evidence chain + T1110 playbook
+    O->>N: Quarantine (add IP to set)
+    N-->>A: forward chain drops all traffic
+    O->>D: status investigating, note, audit_log
+```
+
+</details>
+
+<details>
+<summary><b>Incident lifecycle</b></summary>
+
+<br>
+
+```mermaid
+stateDiagram-v2
+    [*] --> new: signal fires, no open match
+    new --> new: same signal and device within dedup window (merged)
+    new --> investigating: operator triage
+    investigating --> investigating: still firing (merged, not duplicated)
+    investigating --> resolved
+    investigating --> false_positive
+    new --> resolved
+    new --> false_positive
+    resolved --> [*]
+    false_positive --> [*]
+    note right of resolved
+        Operator decisions are final.
+        A later detection opens a new
+        incident instead of reopening this one.
+    end note
+```
+
+</details>
+
+### Device identity under MAC randomization
+
+Modern phones randomize their MAC per network and rotate it, so neither a MAC nor an IP is a stable identity.
+The registry anchors identity on the DHCP hostname and records every MAC and IP beneath a device as
+**time intervals**. An event from three hours ago is attributed to whoever held that address three hours ago,
+not to whoever holds it now.
+
+```mermaid
+flowchart TD
+    L["DHCP lease observed<br/>(mac, ip, hostname)"] --> K{"MAC already<br/>known?"}
+    K -->|yes| SAME["Same device<br/>extend MAC and IP intervals"]
+    K -->|no| H{"Hostname matches<br/>a known device?"}
+    H -->|yes| ROT["Same device, re-randomized MAC<br/>add new MAC row"]
+    H -->|no| NEW["New device<br/>new_device signal after 30 s grace"]
+    SAME & ROT & NEW --> ATTR["Attribute events by<br/>device_ips time intervals"]
+    NEW -.-> FP["fingerprint.py: hostname patterns,<br/>connectivity-check domains, OUI, DHCP opt 55<br/>→ type, OS, confidence, evidence"]
+```
+
+### Two-tier ad blocking
+
+DNS filtering cannot remove YouTube ads, because the ad video comes from the same domain as the
+real video. Tier 2 handles that case, and it is limited in two ways: **only enrolled devices** are
+redirected, and **only allowlisted hostnames** are decrypted. The proxy sees the requested hostname
+(SNI) *before* any decryption. Banking, email and messaging connections pass through as encrypted bytes,
+and no certificate is ever presented for them.
+
+```mermaid
+flowchart TD
+    Q["Device traffic"] --> DNS{"DNS query"}
+    DNS -->|"any resolver, port 53"| DNAT["nftables DNAT<br/>forced to 10.10.0.1"]
+    DNAT --> AGH{"AdGuard Home<br/>656,735 rules"}
+    AGH -->|match| BLK["0.0.0.0 · blocked<br/><b>Tier 1</b>: every device"]
+    AGH -->|clean| OK["resolved via DoT upstreams"]
+
+    Q --> BYP{"DoT :853 · known DoH IPs :443 · QUIC udp/443"}
+    BYP --> REJ["rejected<br/>no DNS-filter bypass<br/>QUIC falls back to TLS over TCP"]
+
+    Q --> TLS{"TCP 443 from an<br/>enrolled device?"}
+    TLS -->|no| FWD["forwarded untouched"]
+    TLS -->|yes| MITM["redirect to mitmproxy :8080"]
+    MITM --> SNI{"SNI on decrypt allowlist?<br/>youtube.com · googlevideo.com · ytimg.com …"}
+    SNI -->|no| PASS["passthrough, never decrypted"]
+    SNI -->|"yes, but 3 TLS failures<br/>(app pins its certificate)"| PIN["auto-passthrough for 24 h"]
+    SNI -->|yes| STRIP["remove adPlacements, playerAds, adSlots<br/>block ad-tracking paths<br/><b>Tier 2</b>: enrolled devices only"]
+```
+
+<details>
+<summary><b>Tier 2 safeguards</b></summary>
+
+<br>
+
+| Safeguard | What it does |
 |---|---|
-| [`ENHANCEMENT-PLAN.md`](ENHANCEMENT-PLAN.md) | **Active plan.** Market comparison, gap analysis, the ordered stage-by-stage roadmap, and a live log of every step's implementation, deployment and verification |
-| [`NEXT-SESSION.md`](NEXT-SESSION.md) | Session handoff — how to bring the gateway back up, where the project stands, and what's recommended next |
-| [`EVALUATION-RESULTS.md`](EVALUATION-RESULTS.md) | Day 14 evaluation: detection rate, reduction ratio, false positives, resource/throughput |
-| [`SECUREPI-15-DAY-PLAN.md`](SECUREPI-15-DAY-PLAN.md) | Original build plan, confirmed topology, scope decisions |
-| [`GATEWAY-SETUP-RUNBOOK.md`](GATEWAY-SETUP-RUNBOOK.md) | Host and network setup |
-| [`STEP-1-INSTALL-UBUNTU.md`](STEP-1-INSTALL-UBUNTU.md) | Operating system installation |
-| [`REPORT-adblocking.md`](REPORT-adblocking.md) | Report material for the ad-blocking subsystem |
-| [`FIRST-PARTY-ADS-ANALYSIS.md`](FIRST-PARTY-ADS-ANALYSIS.md) | Analysis of what network-level filtering can and cannot block |
-| `app/` | Ingest pipeline, correlation engine, and the console (FastAPI + Jinja2 + vanilla JS) |
-| `dpi/` | Selective HTTPS inspection addon and deployment script |
-| `tests/` | The permanent automated test suite — `make test` |
-| `gateway/evaluate.py` | Scripted evaluation battery — reproduces every number in `EVALUATION-RESULTS.md` |
+| **Off after every reboot** | Enrollment has to be switched on deliberately each time and never persists silently. `securepi status` reports it explicitly |
+| **Auto-unenroll** | Each enrollment is an nftables set element with a **24 h timeout**, so the kernel expires it without needing a scheduler |
+| **Privacy-scope canary** | Every 15 minutes, `dpi/privacy_canary.py` checks the deployed addon's decision for a must-pass host and a must-decrypt host. If either is wrong, **every device is unenrolled** and a high-severity incident is raised |
+| **Pinning-aware passthrough** | Apps that pin their certificate stop being decrypted instead of staying broken |
+| **Effectiveness watchdog** | The `adblock_ineffective` signal reports when ad removal stops working (for example, server-side ad insertion) |
+| **Versioned rules** | The decrypt allowlist, ad fields and blocked paths are in [`dpi/adfilter-rules.json`](dpi/adfilter-rules.json), can be edited from the console, and are covered by tests |
+| **CA never leaves the gateway** | Generated on the box, root-only, excluded from git by `.gitignore` |
 
-## A note on credentials
+</details>
 
-No keys, certificates or passwords belong in this repository. The certificate authority
-used for HTTPS inspection is generated on the gateway and never leaves it. See
-`.gitignore`.
+### Explainable risk scoring
 
-## Logging into the console
+A device's risk score is a sum of named contributions from its **open** incidents, each decaying with a
+24-hour half-life. Resolved incidents and false positives contribute nothing, and the console shows
+each term that makes up the score.
 
-The console requires HTTP Basic Auth (username `securepi`). The password lives
-only on the gateway, at `/root/.securepi-console-password` — root-only, never
-in this repository. Ask whoever last set it, or generate a new one:
+$$
+\text{risk}(d) = \min\left(100, \sum_{i \in \text{open}(d)} w_{\text{sev}(i)} \cdot 0.5^{\Delta t_i / 24\text{h}}\right), \qquad w_{\text{high}} = 40, \quad w_{\text{medium}} = 20, \quad w_{\text{low}} = 8
+$$
 
+### Data model and retention
+
+<details>
+<summary><b>Entity-relationship diagram</b> (<code>app/schema.sql</code>)</summary>
+
+<br>
+
+```mermaid
+erDiagram
+    devices ||--o{ device_macs : "has used"
+    devices ||--o{ device_ips : "held (intervals)"
+    devices ||--o{ events : "attributed"
+    devices ||--o{ device_hourly : "rolled up"
+    devices ||--o{ incidents : "subject of"
+    incidents ||--o{ incident_events : "evidence chain"
+    events ||--o{ incident_events : "cited by"
+    incidents ||--o{ incident_notes : "analyst notes"
+
+    devices {
+        int id PK
+        text hostname "anchor across MAC rotation"
+        text friendly_name
+        real first_seen
+        real last_seen
+    }
+    events {
+        int id PK
+        real ts
+        text source "suricata | adguard | dpi"
+        text event_type "flow | dns_query | tls | alert | dhcp | dpi_decision"
+        text src_ip
+        text dest_ip
+        int device_id FK
+        text dns_rrname
+        text tls_sni
+        int blocked
+        text dpi_action
+    }
+    incidents {
+        int id PK
+        int device_id FK
+        text signal_type
+        text severity
+        text status "new | investigating | resolved | false_positive"
+        int evidence_count
+    }
+    device_hourly {
+        int device_id FK
+        int hour_start
+        int bytes_down
+        int bytes_up
+        int dns_blocked
+    }
+    audit_log {
+        int id PK
+        real ts
+        text actor
+        text action
+        text target
+    }
 ```
-ssh maheshwari@192.168.2.5 'echo "NEW_PASSWORD" | sudo tee /root/.securepi-console-password > /dev/null && sudo chmod 600 /root/.securepi-console-password'
+
+</details>
+
+| Data | Kept for | Note |
+|---|---|---|
+| Flow / TLS / QUIC events | 14 days | Highest volume |
+| DNS, alerts, all other events | 30 days | |
+| Hourly device rollups | 180 days | Feeds behavioural baselines |
+| Incidents | 365 days | An event cited as evidence is **never** pruned while its incident exists |
+| Audit log | Forever | An audit trail that deletes its own history would defeat its purpose |
+
+---
+
+## Evaluation
+
+Measured on 13 September 2026 against the live gateway with a scripted harness. Attacks ran from isolated network
+namespaces (`ns_attacker` → `ns_victim`) using `nmap` and `hydra`, and **never touched the real
+devices on the network**. Full method and raw figures: [`EVALUATION-RESULTS.md`](EVALUATION-RESULTS.md).
+
+<table>
+<tr>
+<td width="55%" valign="top">
+
+**Detection rate and time to detect** (3 runs per attack)
+
+| Signal | Detected | Mean latency |
+|---|:---:|---:|
+| Port scan | 3 / 3 | 25.4 s |
+| Brute force | 3 / 3 | 34.0 s |
+| Malicious domain | 3 / 3 | 11.3 s* |
+| New device | 3 / 3 | 45.1 s |
+
+<sub>The first run of each attack is the slowest because it waits for a fresh engine cycle. Runs 2 and 3 fall inside the dedup window and extend the same incident, which is the reduction ratio working as designed. New-device latency is structural: 30 s grace plus one 15 s cycle.</sub>
+
+</td>
+<td width="45%" valign="top">
+
+**Resource use under attack load**
+
+| Service | Memory |
+|---|---:|
+| Suricata | 683 MB |
+| AdGuard Home | 235 MB |
+| Console (`securepi-web`) | 121 MB |
+| Ingest | 15 MB |
+| Correlation engine | 5 MB |
+| **System total** | **1,457 / 3,683 MB** |
+
+<sub>Load average 0.17. The day-1 memory budget from the build plan held.</sub>
+
+</td>
+</tr>
+</table>
+
+> [!WARNING]
+> **Limitations found and reported honestly**
+> - **A real bug found during evaluation:** `new_device_signal` used a persisted watermark that meant new devices were almost never detected. It was fixed, verified live, and is now covered by regression tests.
+> - **\*Malicious-domain latency** was originally limited by AdGuard only flushing its on-disk query log every 1,000 queries. Ingest now polls AdGuard's API in real time instead (step 1.4).
+> - **One false positive** on a real phone: ordinary ad-SDK background traffic crossed a *raw-count* threshold. The signal now counts **distinct** domains (step 1.6).
+> - **Quarantine is keyed on IP**, so a DHCP renewal can move a quarantined device to a new address. Matching on MAC in PREROUTING is future work, noted in [`app/quarantine.py`](app/quarantine.py).
+
+---
+
+## Roadmap
+
+The full plan (market comparison, gap analysis, and a log of how each step was implemented, deployed and verified)
+is in [`ENHANCEMENT-PLAN.md`](ENHANCEMENT-PLAN.md).
+
+| Stage | Focus | Status |
+|:---:|---|---|
+| **0** | Housekeeping | ![Not started](https://img.shields.io/badge/-not_started-5a6679?style=flat-square) |
+| **1** | **Foundation and correctness**: test suite, retention, real-time ingest, audit coverage, detection-accuracy fixes, AP client isolation | ![Complete](https://img.shields.io/badge/-complete-2fbf71?style=flat-square) |
+| **2** | Detection breadth: network sweep, DNS tunnelling/DGA, C2 beaconing, threat intel, campaigns | ![Next](https://img.shields.io/badge/-next-4f9cf9?style=flat-square) |
+| **3** | Hardening and reliability: session auth, TLS, health supervision | ![Not started](https://img.shields.io/badge/-not_started-5a6679?style=flat-square) |
+| **4** | Response and orchestration: policy profiles, timed quarantine, notifications | ![Not started](https://img.shields.io/badge/-not_started-5a6679?style=flat-square) |
+| **5** | **Ad blocking and privacy filtering**: telemetry, unbreak workflow, analytics, list health, Tier 2 lifecycle, privacy canary, pinning bypass, watchdog | ![Complete](https://img.shields.io/badge/-complete-2fbf71?style=flat-square) |
+| **6** | **Intelligence and console**: baselines, fingerprinting, settings, incident workbench, hunt, weekly report, responsive layout | ![Complete](https://img.shields.io/badge/-complete-2fbf71?style=flat-square) |
+| **7** | Evaluation 2.0: expanded benchmark battery, 7-day continuous run | ![Not started](https://img.shields.io/badge/-not_started-5a6679?style=flat-square) |
+| **8** | Documentation and demo | ![Not started](https://img.shields.io/badge/-not_started-5a6679?style=flat-square) |
+
+<sub>Stages 5 and 6 were built before Stage 1 on purpose, where the order didn't affect correctness. Each of those decisions and its reasoning is recorded in the plan.</sub>
+
+---
+
+## Getting started
+
+### Repository layout
+
+```text
+securepi-gateway/
+├── app/                      Ingest, identity, correlation engine and console
+│   ├── ingest.py             Suricata / AdGuard / DPI → unified events table
+│   ├── registry.py           Device identity across MAC randomization
+│   ├── correlation.py        The six detection signals + incident dedup
+│   ├── engine.py             15-second loop: signals, rollups, retention
+│   ├── risk.py · playbooks.py · fingerprint.py · quarantine.py · retention.py
+│   ├── webapp.py             FastAPI console (pages + JSON API)
+│   ├── schema.sql            The whole data model, with the reasoning in comments
+│   ├── templates/  static/   Jinja2 pages, vanilla JS, one stylesheet
+├── dpi/                      Selective HTTPS inspection (mitmproxy addon, rules, canary)
+├── gateway/                  nftables, hostapd, `securepi` CLI, evaluation harness
+├── tests/                    110 unit tests on synthetic fixtures (`make test`)
+└── docs/
+    ├── assets/               Banner, social preview, screenshots
+    └── demo/                 Synthetic-data console used for the screenshots
 ```
 
-## Browsing the console from the Mac
+### 1. Run the test suite
 
-The console is only reachable from the project LAN by default. To view it
-from the Mac without joining `SecurePi-Test`:
+The code that can run anywhere (parsing, detection, retention, identity, DPI rule logic) is tested on the
+development Mac against in-memory SQLite and synthetic Suricata and AdGuard records. It never touches the live gateway.
 
+```bash
+make test        # python3 -m unittest discover -s tests -p 'test_*.py' -v
 ```
+
+### 2. Run the console locally with demo data
+
+```bash
+cd docs/demo
+python3 seed.py && python3 serve.py
+# open http://127.0.0.1:8765  (user: securepi, password: demo)
+```
+
+See [`docs/demo/README.md`](docs/demo/README.md) for regenerating the screenshots.
+
+### 3. Operate the live gateway
+
+<details>
+<summary><b>Health check, HTTPS inspection, console access</b></summary>
+
+<br>
+
+```bash
+./session-start.sh                                         # tunnel + full gateway status + git check
+ssh maheshwari@192.168.2.5 'sudo securepi status'          # services, network, post-reboot to-dos
+ssh maheshwari@192.168.2.5 'sudo securepi enroll all'      # Tier 2 HTTPS ad removal ON
+ssh maheshwari@192.168.2.5 'sudo securepi unenroll all'    # and OFF
+```
+
+**Browsing the console from the Mac.** The console is reachable only from the project LAN by default.
+To view it without joining `SecurePi-Test`, use the management link (Internet Sharing over the
+Cat7/USB-C adapter must be on):
+
+```bash
 ./mac-tunnel.sh start      # then open http://localhost:8000
 ./mac-tunnel.sh stop
 ```
 
-Requires the management link (Internet Sharing over the Cat7/USB-C adapter)
-to be up.
+**Logging in.** HTTP Basic Auth, username `securepi`. The password is stored only on the gateway, at
+`/root/.securepi-console-password` (root-only, never in this repository). To set a new one:
+
+```bash
+ssh maheshwari@192.168.2.5 'echo "NEW_PASSWORD" | sudo tee /root/.securepi-console-password > /dev/null && sudo chmod 600 /root/.securepi-console-password'
+```
+
+Full host setup: [`STEP-1-INSTALL-UBUNTU.md`](STEP-1-INSTALL-UBUNTU.md) → [`GATEWAY-SETUP-RUNBOOK.md`](GATEWAY-SETUP-RUNBOOK.md).
+Power-on and reboot notes: [`NEXT-SESSION.md`](NEXT-SESSION.md) and [`gateway/REBOOT-SAFETY.md`](gateway/REBOOT-SAFETY.md).
+
+</details>
+
+---
+
+## Security and privacy
+
+- **No secrets in git.** Keys, certificates, passwords, tokens, packet captures and query logs are all excluded by [`.gitignore`](.gitignore). The committed `hostapd.conf` has its passphrase redacted.
+- **Minimal decryption.** HTTPS inspection is opt-in per device, expires after 24 hours, covers only a short hostname allowlist, and is checked by a canary every 15 minutes that unenrolls every device if the scope is wrong.
+- **Fails closed.** The console rejects every request if its password file is missing, and the firewall's forward policy is `drop`.
+- **Accountable.** Every console action that changes something is written to an audit log that retention never deletes.
+- **Tested without real people's data.** Tests and demo screenshots use synthetic data only. Evaluation attacks ran in isolated namespaces.
+
+---
+
+## Documentation
+
+| Document | Contents |
+|---|---|
+| [`ENHANCEMENT-PLAN.md`](ENHANCEMENT-PLAN.md) | **Active plan.** Market comparison, gap analysis, the stage-by-stage roadmap, and a log of how each step was implemented and verified |
+| [`EVALUATION-RESULTS.md`](EVALUATION-RESULTS.md) | Detection rate, reduction ratio, false positives, ad-block ratio, resources, throughput |
+| [`REPORT-adblocking.md`](REPORT-adblocking.md) | Report material for the two-tier ad-blocking subsystem |
+| [`FIRST-PARTY-ADS-ANALYSIS.md`](FIRST-PARTY-ADS-ANALYSIS.md) | What network-level filtering can and cannot block |
+| [`SECUREPI-15-DAY-PLAN.md`](SECUREPI-15-DAY-PLAN.md) | Original build plan, hardware constraints, confirmed topology, scope decisions |
+| [`GATEWAY-SETUP-RUNBOOK.md`](GATEWAY-SETUP-RUNBOOK.md) · [`STEP-1-INSTALL-UBUNTU.md`](STEP-1-INSTALL-UBUNTU.md) | Host and network setup |
+| [`NEXT-SESSION.md`](NEXT-SESSION.md) | Handoff notes: bringing the gateway back up, current status, what comes next |
+
+---
+
+<div align="center">
+
+<img src="docs/assets/social-preview.png" alt="SecurePi Gateway" width="420">
+
+<sub><b>SecurePi Gateway</b> · Final-year engineering project · Built by <a href="https://github.com/MaheshwariKushagra">Kushagra Maheshwari</a></sub>
+
+<sub><a href="#overview">Back to top ↑</a></sub>
+
+</div>

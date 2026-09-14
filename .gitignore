@@ -21,3 +21,10 @@ querylog*
 
 # OS noise
 .DS_Store
+
+# Demo console build artefacts (docs/demo/)
+docs/demo/securepi.db*
+docs/demo/dpi-rule-stats.json
+docs/demo/node_modules/
+docs/demo/package*.json
+docs/demo/*.log

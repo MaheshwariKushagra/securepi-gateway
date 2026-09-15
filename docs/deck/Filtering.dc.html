@@ -1,0 +1,88 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+  <style>
+    body { margin: 0; }
+    a { color: #4f9cf9; } a:hover { color: #7db4ff; }
+  </style>
+</helmet>
+<div style="width:1280px;height:720px;position:relative;overflow:hidden;background:#0b111c;color:#e8eef7;font-family:'IBM Plex Sans',system-ui,sans-serif;">
+  <div style="position:absolute;inset:0;background:radial-gradient(720px 440px at 18% -16%, rgba(47,191,113,0.12), transparent 60%);"></div>
+  <div style="position:relative;height:100%;padding:56px 72px;display:flex;flex-direction:column;">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:26px;">
+      <div style="display:flex;align-items:center;gap:11px;font-family:'IBM Plex Mono',monospace;font-size:13px;letter-spacing:2px;color:#9fb0c8;">
+        <span style="width:9px;height:9px;border-radius:50%;background:#2fbf71;box-shadow:0 0 10px #2fbf71;"></span>FILTERING &amp; PRIVACY
+      </div>
+      <div style="font-family:'IBM Plex Mono',monospace;font-size:13px;color:#6b7d99;">06 / 11</div>
+    </div>
+
+    <h2 style="font-family:'Space Grotesk',sans-serif;font-weight:700;font-size:40px;line-height:1.06;letter-spacing:-0.8px;margin:0 0 6px;">
+      Two tiers of filtering, and no way around them.
+    </h2>
+    <p style="font-size:17px;color:#9fb0c8;margin:0 0 30px;max-width:900px;line-height:1.5;">
+      Tier&nbsp;1 blocks ad, tracker and threat domains for every device at the DNS layer. Tier&nbsp;2
+      is opt-in and surgical &mdash; it removes first-party YouTube ads and decrypts nothing else.
+    </p>
+
+    <div style="flex:1;display:flex;gap:22px;">
+      <!-- Tier 1 -->
+      <div style="flex:1;border:1px solid #204035;border-radius:18px;padding:26px;background:linear-gradient(180deg,rgba(47,191,113,0.08),#0f1826);display:flex;flex-direction:column;">
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:16px;">
+          <span style="font-family:'IBM Plex Mono',monospace;font-size:12px;letter-spacing:1px;color:#2fbf71;border:1px solid #2fbf71;border-radius:6px;padding:3px 8px;">TIER 1</span>
+          <span style="font-family:'Space Grotesk',sans-serif;font-weight:600;font-size:20px;">DNS filtering &mdash; every device</span>
+        </div>
+        <div style="display:flex;align-items:baseline;gap:10px;margin-bottom:8px;">
+          <span style="font-family:'Space Grotesk',sans-serif;font-weight:700;font-size:38px;color:#2fbf71;">656,735</span>
+          <span style="font-size:15px;color:#9fb0c8;">rules &middot; 5 curated lists</span>
+        </div>
+        <div style="font-size:15px;color:#c7d3e5;line-height:1.6;margin-bottom:18px;">Refreshed daily, plus an offline threat-intel list. Every lookup is logged and attributed to a device.</div>
+        <div style="margin-top:auto;border-top:1px solid #22304a;padding-top:16px;">
+          <div style="font-size:13px;color:#9fb0c8;margin-bottom:10px;">Anti-bypass &mdash; devices can't route DNS around it:</div>
+          <div style="display:flex;flex-wrap:wrap;gap:8px;">
+            <span style="font-family:'IBM Plex Mono',monospace;font-size:12.5px;color:#dff3e8;border:1px solid #2a5140;border-radius:999px;padding:5px 12px;background:rgba(47,191,113,0.08);">DoT blocked</span>
+            <span style="font-family:'IBM Plex Mono',monospace;font-size:12.5px;color:#dff3e8;border:1px solid #2a5140;border-radius:999px;padding:5px 12px;background:rgba(47,191,113,0.08);">known DoH blocked</span>
+            <span style="font-family:'IBM Plex Mono',monospace;font-size:12.5px;color:#dff3e8;border:1px solid #2a5140;border-radius:999px;padding:5px 12px;background:rgba(47,191,113,0.08);">QUIC blocked</span>
+            <span style="font-family:'IBM Plex Mono',monospace;font-size:12.5px;color:#dff3e8;border:1px solid #2a5140;border-radius:999px;padding:5px 12px;background:rgba(47,191,113,0.08);">canary domains</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Tier 2 -->
+      <div style="flex:1;border:1px solid #2a3a58;border-radius:18px;padding:26px;background:linear-gradient(180deg,rgba(79,156,249,0.08),#0f1826);display:flex;flex-direction:column;">
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:16px;">
+          <span style="font-family:'IBM Plex Mono',monospace;font-size:12px;letter-spacing:1px;color:#4f9cf9;border:1px solid #4f9cf9;border-radius:6px;padding:3px 8px;">TIER 2</span>
+          <span style="font-family:'Space Grotesk',sans-serif;font-weight:600;font-size:20px;">HTTPS inspection &mdash; opt-in</span>
+        </div>
+        <div style="font-size:15px;color:#c7d3e5;line-height:1.6;margin-bottom:16px;">
+          A selective mitmproxy addon strips first-party YouTube ads for enrolled devices only. It is
+          <b>off after every reboot</b> and enabled deliberately, per device.
+        </div>
+        <div style="border:1px solid #22304a;border-radius:12px;padding:16px;background:#0f1826;">
+          <div style="font-size:13px;color:#9fb0c8;margin-bottom:8px;">What it decrypts</div>
+          <div style="display:flex;align-items:center;gap:10px;font-size:14.5px;color:#dff3e8;margin-bottom:6px;">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#2fbf71" stroke-width="2.2"><path d="M5 12l4 4 10-10"></path></svg>
+            YouTube ad traffic on enrolled devices
+          </div>
+          <div style="display:flex;align-items:center;gap:10px;font-size:14.5px;color:#9fb0c8;">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#f2545b" stroke-width="2.2"><path d="M6 6l12 12M18 6L6 18"></path></svg>
+            Everything else &mdash; passed through untouched
+          </div>
+        </div>
+        <div style="margin-top:auto;padding-top:16px;display:flex;align-items:baseline;gap:10px;">
+          <span style="font-family:'Space Grotesk',sans-serif;font-weight:700;font-size:34px;color:#4f9cf9;">100%</span>
+          <span style="font-size:14px;color:#9fb0c8;">third-party ad blocking (10/10 fixed test domains)</span>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+</x-dc>
+</body>
+</html>

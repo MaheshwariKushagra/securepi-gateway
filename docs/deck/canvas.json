@@ -1,0 +1,17 @@
+{
+  "artboards": [
+    { "file": "Main.dc.html",         "x": 0,     "y": 0,    "w": 1280, "h": 720, "title": "01 · Title" },
+    { "file": "Problem.dc.html",      "x": 1360,  "y": 0,    "w": 1280, "h": 720, "title": "02 · Problem" },
+    { "file": "Solution.dc.html",     "x": 2720,  "y": 0,    "w": 1280, "h": 720, "title": "03 · Solution" },
+    { "file": "Architecture.dc.html", "x": 4080,  "y": 0,    "w": 1280, "h": 720, "title": "04 · Architecture" },
+    { "file": "Pipeline.dc.html",     "x": 0,     "y": 860,  "w": 1280, "h": 720, "title": "05 · Pipeline" },
+    { "file": "Detection.dc.html",    "x": 1360,  "y": 860,  "w": 1280, "h": 720, "title": "06 · Detection" },
+    { "file": "Filtering.dc.html",    "x": 2720,  "y": 860,  "w": 1280, "h": 720, "title": "07 · Filtering" },
+    { "file": "Console.dc.html",      "x": 4080,  "y": 860,  "w": 1280, "h": 720, "title": "08 · Console" },
+    { "file": "Demo.dc.html",         "x": 0,     "y": 1720, "w": 1280, "h": 720, "title": "09 · Live demo" },
+    { "file": "Results.dc.html",      "x": 1360,  "y": 1720, "w": 1280, "h": 720, "title": "10 · Evaluation" },
+    { "file": "Stack.dc.html",        "x": 2720,  "y": 1720, "w": 1280, "h": 720, "title": "11 · Technology" },
+    { "file": "Closing.dc.html",      "x": 4080,  "y": 1720, "w": 1280, "h": 720, "title": "12 · Closing" }
+  ],
+  "launch": { "view": "canvas" }
+}

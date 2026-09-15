@@ -1,0 +1,69 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+  <style>
+    body { margin: 0; }
+    a { color: #4f9cf9; } a:hover { color: #7db4ff; }
+  </style>
+</helmet>
+<div style="width:1280px;height:720px;position:relative;overflow:hidden;background:#0b111c;color:#e8eef7;font-family:'IBM Plex Sans',system-ui,sans-serif;">
+  <!-- background glow + grid -->
+  <div style="position:absolute;inset:0;background:radial-gradient(900px 520px at 78% -8%, rgba(79,156,249,0.18), transparent 60%),radial-gradient(700px 480px at 6% 108%, rgba(139,108,240,0.16), transparent 60%);"></div>
+  <div style="position:absolute;inset:0;background-image:linear-gradient(rgba(255,255,255,0.035) 1px,transparent 1px),linear-gradient(90deg,rgba(255,255,255,0.035) 1px,transparent 1px);background-size:44px 44px;mask-image:linear-gradient(180deg,transparent,black 30%,black 70%,transparent);"></div>
+
+  <div style="position:relative;height:100%;padding:64px 72px;display:flex;flex-direction:column;justify-content:space-between;">
+    <!-- top wordmark -->
+    <div style="display:flex;align-items:center;gap:12px;">
+      <div style="width:34px;height:34px;border-radius:9px;background:linear-gradient(150deg,#4f9cf9,#8b6cf0);display:flex;align-items:center;justify-content:center;box-shadow:0 6px 22px rgba(79,156,249,0.35);">
+        <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="#0b111c" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l7 3v5c0 4.4-3 8.3-7 9.5C8 22.3 5 18.4 5 14V6z"></path><path d="M9.2 12.2l2 2 3.6-4"></path></svg>
+      </div>
+      <span style="font-family:'IBM Plex Mono',monospace;font-size:14px;letter-spacing:2.5px;color:#9fb0c8;">SECUREPI&nbsp;GATEWAY</span>
+    </div>
+
+    <!-- hero -->
+    <div style="max-width:960px;">
+      <div style="display:inline-flex;align-items:center;gap:10px;padding:7px 14px;border:1px solid #22304a;border-radius:999px;background:rgba(17,26,40,0.7);font-family:'IBM Plex Mono',monospace;font-size:12.5px;letter-spacing:1.5px;color:#9fb0c8;margin-bottom:28px;">
+        <span style="width:8px;height:8px;border-radius:50%;background:#2fbf71;box-shadow:0 0 10px #2fbf71;"></span>
+        FINAL-YEAR ENGINEERING PROJECT &middot; DEPLOYED ON REAL HARDWARE
+      </div>
+      <h1 style="font-family:'Space Grotesk',sans-serif;font-weight:700;font-size:74px;line-height:1.02;letter-spacing:-1.5px;margin:0 0 22px;">
+        One low-cost box that<br>
+        <span style="background:linear-gradient(100deg,#4f9cf9,#8b6cf0 55%,#2fbf71);-webkit-background-clip:text;background-clip:text;color:transparent;">filters, detects, and responds.</span>
+      </h1>
+      <p style="font-size:22px;line-height:1.5;color:#9fb0c8;margin:0;max-width:800px;">
+        A unified network monitoring, filtering and security-operations platform for a
+        small-enterprise network &mdash; measured against real traffic, not a simulation.
+      </p>
+    </div>
+
+    <!-- bottom stat strip -->
+    <div style="display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:18px;">
+      <div style="border:1px solid #22304a;border-radius:14px;padding:18px 20px;background:linear-gradient(180deg,#111a28,#0f1826);">
+        <div style="font-family:'Space Grotesk',sans-serif;font-weight:700;font-size:30px;color:#4f9cf9;">14</div>
+        <div style="font-size:13px;color:#9fb0c8;margin-top:3px;">detection signals</div>
+      </div>
+      <div style="border:1px solid #22304a;border-radius:14px;padding:18px 20px;background:linear-gradient(180deg,#111a28,#0f1826);">
+        <div style="font-family:'Space Grotesk',sans-serif;font-weight:700;font-size:30px;color:#2fbf71;">656,735</div>
+        <div style="font-size:13px;color:#9fb0c8;margin-top:3px;">DNS rules enforced</div>
+      </div>
+      <div style="border:1px solid #22304a;border-radius:14px;padding:18px 20px;background:linear-gradient(180deg,#111a28,#0f1826);">
+        <div style="font-family:'Space Grotesk',sans-serif;font-weight:700;font-size:30px;color:#8b6cf0;">1,588:1</div>
+        <div style="font-size:13px;color:#9fb0c8;margin-top:3px;">alert&#8209;to&#8209;incident reduction</div>
+      </div>
+      <div style="border:1px solid #22304a;border-radius:14px;padding:18px 20px;background:linear-gradient(180deg,#111a28,#0f1826);">
+        <div style="font-family:'Space Grotesk',sans-serif;font-weight:700;font-size:30px;color:#f5a524;">206</div>
+        <div style="font-size:13px;color:#9fb0c8;margin-top:3px;">automated tests passing</div>
+      </div>
+    </div>
+  </div>
+</div>
+</x-dc>
+</body>
+</html>

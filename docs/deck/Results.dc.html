@@ -1,0 +1,68 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+  <style>
+    body { margin: 0; }
+    a { color: #4f9cf9; } a:hover { color: #7db4ff; }
+  </style>
+</helmet>
+<div style="width:1280px;height:720px;position:relative;overflow:hidden;background:#0b111c;color:#e8eef7;font-family:'IBM Plex Sans',system-ui,sans-serif;">
+  <div style="position:absolute;inset:0;background:radial-gradient(720px 440px at 30% -16%, rgba(47,191,113,0.11), transparent 60%);"></div>
+  <div style="position:relative;height:100%;padding:56px 72px;display:flex;flex-direction:column;">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:24px;">
+      <div style="display:flex;align-items:center;gap:11px;font-family:'IBM Plex Mono',monospace;font-size:13px;letter-spacing:2px;color:#9fb0c8;">
+        <span style="width:9px;height:9px;border-radius:50%;background:#2fbf71;box-shadow:0 0 10px #2fbf71;"></span>EVALUATION
+      </div>
+      <div style="font-family:'IBM Plex Mono',monospace;font-size:13px;color:#6b7d99;">09 / 11</div>
+    </div>
+
+    <h2 style="font-family:'Space Grotesk',sans-serif;font-weight:700;font-size:40px;line-height:1.06;letter-spacing:-0.8px;margin:0 0 6px;">
+      Measured against real traffic &mdash; and reproducible.
+    </h2>
+    <p style="font-size:17px;color:#9fb0c8;margin:0 0 28px;max-width:920px;line-height:1.5;">
+      Every number here comes out of <span style="font-family:'IBM Plex Mono',monospace;color:#c7d3e5;">gateway/evaluate.py</span>.
+      Limitations are written next to the results, not left out.
+    </p>
+
+    <div style="flex:1;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));grid-template-rows:repeat(2,minmax(0,1fr));gap:16px;">
+      <div style="border:1px solid #22304a;border-radius:15px;padding:22px;background:linear-gradient(180deg,#111a28,#0f1826);display:flex;flex-direction:column;">
+        <div style="font-family:'Space Grotesk',sans-serif;font-weight:700;font-size:34px;color:#8b6cf0;">1,588&#8202;:&#8202;1</div>
+        <div style="font-size:14px;color:#c7d3e5;margin-top:6px;">Alert-to-incident reduction over a clean 24-hour window</div>
+      </div>
+      <div style="border:1px solid #22304a;border-radius:15px;padding:22px;background:linear-gradient(180deg,#111a28,#0f1826);display:flex;flex-direction:column;">
+        <div style="font-family:'Space Grotesk',sans-serif;font-weight:700;font-size:34px;color:#2fbf71;">100%</div>
+        <div style="font-size:14px;color:#c7d3e5;margin-top:6px;">Third-party ad blocking (10/10 fixed test domains)</div>
+      </div>
+      <div style="border:1px solid #22304a;border-radius:15px;padding:22px;background:linear-gradient(180deg,#111a28,#0f1826);display:flex;flex-direction:column;">
+        <div style="font-family:'Space Grotesk',sans-serif;font-weight:700;font-size:34px;color:#f2545b;">4&times;3</div>
+        <div style="font-size:14px;color:#c7d3e5;margin-top:6px;">Attack types &times; runs each &mdash; all detected; 6/6 signals verified live</div>
+      </div>
+      <div style="border:1px solid #22304a;border-radius:15px;padding:22px;background:linear-gradient(180deg,#111a28,#0f1826);display:flex;flex-direction:column;">
+        <div style="font-family:'Space Grotesk',sans-serif;font-weight:700;font-size:34px;color:#4f9cf9;">40%</div>
+        <div style="font-size:14px;color:#c7d3e5;margin-top:6px;">Memory used under attack load &mdash; over 2&nbsp;GiB of 3.6&nbsp;GiB free</div>
+      </div>
+      <div style="border:1px solid #22304a;border-radius:15px;padding:22px;background:linear-gradient(180deg,#111a28,#0f1826);display:flex;flex-direction:column;">
+        <div style="font-family:'Space Grotesk',sans-serif;font-weight:700;font-size:34px;color:#f5a524;">39.9 Gbps</div>
+        <div style="font-size:14px;color:#c7d3e5;margin-top:6px;">Inspection-path throughput on virtual links (WAN-limited in practice)</div>
+      </div>
+      <div style="border:1px solid #22304a;border-radius:15px;padding:22px;background:linear-gradient(180deg,#111a28,#0f1826);display:flex;flex-direction:column;">
+        <div style="font-family:'Space Grotesk',sans-serif;font-weight:700;font-size:34px;color:#2fbf71;">206</div>
+        <div style="font-size:14px;color:#c7d3e5;margin-top:6px;">Automated unit tests, all passing on synthetic data</div>
+      </div>
+    </div>
+
+    <div style="margin-top:20px;border:1px solid #22304a;border-radius:12px;padding:14px 18px;background:#0f1826;font-size:14px;color:#c7d3e5;line-height:1.5;">
+      <b style="color:#e8eef7;">Built to be defended, not only demonstrated:</b> every detection is a plain SQL query you can run by hand, and every incident links to the exact events that caused it.
+    </div>
+  </div>
+</div>
+</x-dc>
+</body>
+</html>

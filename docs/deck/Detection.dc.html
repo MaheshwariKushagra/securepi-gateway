@@ -1,0 +1,95 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+  <style>
+    body { margin: 0; }
+    a { color: #4f9cf9; } a:hover { color: #7db4ff; }
+  </style>
+</helmet>
+<div style="width:1280px;height:720px;position:relative;overflow:hidden;background:#0b111c;color:#e8eef7;font-family:'IBM Plex Sans',system-ui,sans-serif;">
+  <div style="position:absolute;inset:0;background:radial-gradient(700px 420px at 85% -14%, rgba(245,165,36,0.10), transparent 60%);"></div>
+  <div style="position:relative;height:100%;padding:56px 72px;display:flex;flex-direction:column;">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:24px;">
+      <div style="display:flex;align-items:center;gap:11px;font-family:'IBM Plex Mono',monospace;font-size:13px;letter-spacing:2px;color:#9fb0c8;">
+        <span style="width:9px;height:9px;border-radius:50%;background:#f5a524;box-shadow:0 0 10px #f5a524;"></span>DETECTION ENGINE
+      </div>
+      <div style="font-family:'IBM Plex Mono',monospace;font-size:13px;color:#6b7d99;">05 / 11</div>
+    </div>
+
+    <h2 style="font-family:'Space Grotesk',sans-serif;font-weight:700;font-size:40px;line-height:1.06;letter-spacing:-0.8px;margin:0 0 6px;">
+      14 windowed queries, re-run every 15 seconds.
+    </h2>
+    <p style="font-size:17px;color:#9fb0c8;margin:0 0 26px;max-width:920px;line-height:1.5;">
+      No in-memory counters &mdash; state is bounded by each query's time range, so every detection is
+      reproducible by hand. Repeat detections merge into one incident; related incidents link into a campaign.
+    </p>
+
+    <div style="flex:1;display:flex;gap:22px;">
+      <!-- left: funnel + campaign -->
+      <div style="width:340px;display:flex;flex-direction:column;gap:16px;">
+        <div style="border:1px solid #22304a;border-radius:16px;padding:22px;background:linear-gradient(180deg,#111a28,#0f1826);">
+          <div style="font-size:13px;color:#9fb0c8;margin-bottom:14px;">Over a clean 24-hour window</div>
+          <div style="display:flex;align-items:baseline;gap:8px;">
+            <span style="font-family:'Space Grotesk',sans-serif;font-weight:700;font-size:40px;color:#f5a524;">15,884</span>
+            <span style="font-size:15px;color:#9fb0c8;">raw events</span>
+          </div>
+          <div style="margin:10px 0;display:flex;align-items:center;gap:10px;color:#6b7d99;">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#6b7d99" stroke-width="1.8"><path d="M12 4v14"></path><path d="M6 12l6 6 6-6"></path></svg>
+            <span style="font-family:'IBM Plex Mono',monospace;font-size:12px;letter-spacing:1px;">merge &amp; correlate</span>
+          </div>
+          <div style="display:flex;align-items:baseline;gap:8px;">
+            <span style="font-family:'Space Grotesk',sans-serif;font-weight:700;font-size:40px;color:#2fbf71;">10</span>
+            <span style="font-size:15px;color:#9fb0c8;">incidents</span>
+          </div>
+          <div style="margin-top:14px;padding-top:14px;border-top:1px solid #22304a;font-size:13px;color:#c7d3e5;">
+            <b style="color:#e8eef7;">1,588&nbsp;:&nbsp;1</b> alert-to-incident reduction
+          </div>
+        </div>
+        <div style="border:1px solid #3a2b58;border-radius:16px;padding:20px;background:linear-gradient(180deg,rgba(139,108,240,0.09),#0f1826);flex:1;">
+          <div style="font-family:'Space Grotesk',sans-serif;font-weight:600;font-size:17px;color:#b9a6ff;margin-bottom:8px;">Campaigns &amp; ATT&amp;CK</div>
+          <div style="font-size:14px;color:#c7d3e5;line-height:1.55;">
+            Incidents on one device across distinct tactics link into a campaign with a recorded
+            MITRE ATT&amp;CK kill chain, weighted into an explainable risk score.
+          </div>
+        </div>
+      </div>
+
+      <!-- right: signal grid -->
+      <div style="flex:1;">
+        <div style="display:flex;gap:16px;margin-bottom:12px;font-family:'IBM Plex Mono',monospace;font-size:11.5px;color:#9fb0c8;">
+          <span style="display:flex;align-items:center;gap:6px;"><span style="width:8px;height:8px;border-radius:50%;background:#f2545b;"></span>high</span>
+          <span style="display:flex;align-items:center;gap:6px;"><span style="width:8px;height:8px;border-radius:50%;background:#f5a524;"></span>medium</span>
+          <span style="display:flex;align-items:center;gap:6px;"><span style="width:8px;height:8px;border-radius:50%;background:#4f9cf9;"></span>low / info</span>
+        </div>
+        <div style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;">
+          <!-- reusable chip pattern -->
+          <div style="border:1px solid #22304a;border-radius:10px;padding:11px 12px;background:#0f1826;"><div style="display:flex;align-items:center;gap:7px;"><span style="width:7px;height:7px;border-radius:50%;background:#f2545b;"></span><span style="font-family:'IBM Plex Mono',monospace;font-size:13px;color:#e8eef7;">port_scan</span></div><div style="font-size:11px;color:#6b7d99;margin-top:4px;">Discovery &middot; T1046</div></div>
+          <div style="border:1px solid #22304a;border-radius:10px;padding:11px 12px;background:#0f1826;"><div style="display:flex;align-items:center;gap:7px;"><span style="width:7px;height:7px;border-radius:50%;background:#f2545b;"></span><span style="font-family:'IBM Plex Mono',monospace;font-size:13px;color:#e8eef7;">network_sweep</span></div><div style="font-size:11px;color:#6b7d99;margin-top:4px;">Discovery &middot; T1018</div></div>
+          <div style="border:1px solid #22304a;border-radius:10px;padding:11px 12px;background:#0f1826;"><div style="display:flex;align-items:center;gap:7px;"><span style="width:7px;height:7px;border-radius:50%;background:#f2545b;"></span><span style="font-family:'IBM Plex Mono',monospace;font-size:13px;color:#e8eef7;">brute_force</span></div><div style="font-size:11px;color:#6b7d99;margin-top:4px;">Cred. Access &middot; T1110</div></div>
+          <div style="border:1px solid #22304a;border-radius:10px;padding:11px 12px;background:#0f1826;"><div style="display:flex;align-items:center;gap:7px;"><span style="width:7px;height:7px;border-radius:50%;background:#f2545b;"></span><span style="font-family:'IBM Plex Mono',monospace;font-size:13px;color:#e8eef7;">threat_intel</span></div><div style="font-size:11px;color:#6b7d99;margin-top:4px;">C2 &middot; 5,600+ IOCs</div></div>
+          <div style="border:1px solid #22304a;border-radius:10px;padding:11px 12px;background:#0f1826;"><div style="display:flex;align-items:center;gap:7px;"><span style="width:7px;height:7px;border-radius:50%;background:#f2545b;"></span><span style="font-family:'IBM Plex Mono',monospace;font-size:13px;color:#e8eef7;">dns_tunneling</span></div><div style="font-size:11px;color:#6b7d99;margin-top:4px;">C2 &middot; T1071.004</div></div>
+          <div style="border:1px solid #22304a;border-radius:10px;padding:11px 12px;background:#0f1826;"><div style="display:flex;align-items:center;gap:7px;"><span style="width:7px;height:7px;border-radius:50%;background:#f2545b;"></span><span style="font-family:'IBM Plex Mono',monospace;font-size:13px;color:#e8eef7;">dga</span></div><div style="font-size:11px;color:#6b7d99;margin-top:4px;">C2 &middot; T1568.002</div></div>
+          <div style="border:1px solid #22304a;border-radius:10px;padding:11px 12px;background:#0f1826;"><div style="display:flex;align-items:center;gap:7px;"><span style="width:7px;height:7px;border-radius:50%;background:#f2545b;"></span><span style="font-family:'IBM Plex Mono',monospace;font-size:13px;color:#e8eef7;">beacon</span></div><div style="font-size:11px;color:#6b7d99;margin-top:4px;">C2 &middot; T1071</div></div>
+          <div style="border:1px solid #22304a;border-radius:10px;padding:11px 12px;background:#0f1826;"><div style="display:flex;align-items:center;gap:7px;"><span style="width:7px;height:7px;border-radius:50%;background:#f5a524;"></span><span style="font-family:'IBM Plex Mono',monospace;font-size:13px;color:#e8eef7;">slow_scan</span></div><div style="font-size:11px;color:#6b7d99;margin-top:4px;">paced recon</div></div>
+          <div style="border:1px solid #22304a;border-radius:10px;padding:11px 12px;background:#0f1826;"><div style="display:flex;align-items:center;gap:7px;"><span style="width:7px;height:7px;border-radius:50%;background:#f5a524;"></span><span style="font-family:'IBM Plex Mono',monospace;font-size:13px;color:#e8eef7;">dns_bypass</span></div><div style="font-size:11px;color:#6b7d99;margin-top:4px;">Defense Evasion</div></div>
+          <div style="border:1px solid #22304a;border-radius:10px;padding:11px 12px;background:#0f1826;"><div style="display:flex;align-items:center;gap:7px;"><span style="width:7px;height:7px;border-radius:50%;background:#f5a524;"></span><span style="font-family:'IBM Plex Mono',monospace;font-size:13px;color:#e8eef7;">malicious_domain</span></div><div style="font-size:11px;color:#6b7d99;margin-top:4px;">distinct-domain hits</div></div>
+          <div style="border:1px solid #22304a;border-radius:10px;padding:11px 12px;background:#0f1826;"><div style="display:flex;align-items:center;gap:7px;"><span style="width:7px;height:7px;border-radius:50%;background:#f5a524;"></span><span style="font-family:'IBM Plex Mono',monospace;font-size:13px;color:#e8eef7;">volume_anomaly</span></div><div style="font-size:11px;color:#6b7d99;margin-top:4px;">per-device baseline</div></div>
+          <div style="border:1px solid #22304a;border-radius:10px;padding:11px 12px;background:#0f1826;"><div style="display:flex;align-items:center;gap:7px;"><span style="width:7px;height:7px;border-radius:50%;background:#4f9cf9;"></span><span style="font-family:'IBM Plex Mono',monospace;font-size:13px;color:#e8eef7;">new_device</span></div><div style="font-size:11px;color:#6b7d99;margin-top:4px;">registry &middot; info</div></div>
+        </div>
+        <div style="margin-top:12px;border:1px dashed #2a3a58;border-radius:10px;padding:12px 14px;background:rgba(79,156,249,0.05);font-size:13px;color:#9fb0c8;">
+          <b style="color:#c7d3e5;">+ ids_* &mdash; 8 Suricata / ET categories</b> (trojan, C2, exploit kit, shellcode, privilege gain, credential theft&hellip;), each with a plain name and ATT&amp;CK tag &middot; plus <span style="color:#c7d3e5;">adblock_ineffective</span> platform health.
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+</x-dc>
+</body>
+</html>

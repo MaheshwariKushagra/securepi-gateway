@@ -1,0 +1,98 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+  <style>
+    body { margin: 0; }
+    a { color: #4f9cf9; } a:hover { color: #7db4ff; }
+  </style>
+</helmet>
+<div style="width:1280px;height:720px;position:relative;overflow:hidden;background:#0b111c;color:#e8eef7;font-family:'IBM Plex Sans',system-ui,sans-serif;">
+  <div style="position:absolute;inset:0;background:radial-gradient(700px 420px at 20% -18%, rgba(79,156,249,0.12), transparent 60%);"></div>
+  <div style="position:relative;height:100%;padding:56px 72px;display:flex;flex-direction:column;">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:26px;">
+      <div style="display:flex;align-items:center;gap:11px;font-family:'IBM Plex Mono',monospace;font-size:13px;letter-spacing:2px;color:#9fb0c8;">
+        <span style="width:9px;height:9px;border-radius:50%;background:#4f9cf9;box-shadow:0 0 10px #4f9cf9;"></span>ARCHITECTURE &middot; DEPLOYMENT
+      </div>
+      <div style="font-family:'IBM Plex Mono',monospace;font-size:13px;color:#6b7d99;">03 / 11</div>
+    </div>
+
+    <h2 style="font-family:'Space Grotesk',sans-serif;font-weight:700;font-size:40px;line-height:1.06;letter-spacing:-0.8px;margin:0 0 6px;">
+      One box between the network and the internet.
+    </h2>
+    <p style="font-size:17px;color:#9fb0c8;margin:0 0 30px;max-width:900px;line-height:1.5;">
+      The existing router is left untouched. The gateway gets its uplink over Wi-Fi and serves the
+      project network from an access point on the same radio; a wired link is used only for management.
+    </p>
+
+    <!-- diagram -->
+    <div style="flex:1;display:flex;align-items:center;gap:14px;">
+      <!-- internet + router -->
+      <div style="display:flex;flex-direction:column;gap:16px;">
+        <div style="border:1px solid #3a4763;border-radius:12px;padding:16px 18px;background:#161d2b;text-align:center;min-width:132px;">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#9fb0c8" stroke-width="1.7"><circle cx="12" cy="12" r="9"></circle><path d="M3 12h18M12 3c3 3.5 3 14.5 0 18M12 3c-3 3.5-3 14.5 0 18"></path></svg>
+          <div style="font-weight:600;margin-top:8px;font-size:15px;">Internet</div>
+        </div>
+        <div style="border:1px solid #3a4763;border-radius:12px;padding:16px 18px;background:#161d2b;text-align:center;min-width:132px;">
+          <div style="font-weight:600;font-size:15px;">Home router</div>
+          <div style="font-size:12px;color:#6b7d99;font-style:italic;margin-top:3px;">untouched uplink</div>
+        </div>
+      </div>
+
+      <svg width="40" height="24" viewBox="0 0 40 24" fill="none" stroke="#4f9cf9" stroke-width="1.8"><path d="M2 12h32"></path><path d="M28 6l7 6-7 6"></path></svg>
+
+      <!-- gateway box -->
+      <div style="flex:1;border:1.5px solid #4f9cf9;border-radius:18px;padding:20px;background:linear-gradient(180deg,#0e1626,#0c1420);box-shadow:0 0 40px rgba(79,156,249,0.12);">
+        <div style="font-family:'IBM Plex Mono',monospace;font-size:11.5px;letter-spacing:1px;color:#9fb0c8;margin-bottom:14px;">SECUREPI GATEWAY &middot; DELL VOSTRO 3501 &middot; UBUNTU 24.04</div>
+        <div style="display:flex;align-items:center;gap:10px;">
+          <div style="flex:1;border:1px solid #2a3a58;border-radius:11px;padding:13px;text-align:center;background:rgba(79,156,249,0.08);">
+            <div style="font-family:'IBM Plex Mono',monospace;font-size:12px;color:#4f9cf9;">wlp2s0</div>
+            <div style="font-size:12.5px;color:#c7d3e5;margin-top:2px;">WAN uplink</div>
+          </div>
+          <svg width="26" height="16" viewBox="0 0 26 16" fill="none" stroke="#f2545b" stroke-width="1.7"><path d="M1 8h18"></path><path d="M15 3l5 5-5 5"></path></svg>
+          <div style="flex:1.1;border:1px solid #5a2830;border-radius:11px;padding:13px;text-align:center;background:rgba(242,84,91,0.09);">
+            <div style="font-family:'IBM Plex Mono',monospace;font-size:12px;color:#f2545b;">nftables</div>
+            <div style="font-size:12px;color:#c7d3e5;margin-top:2px;">NAT &middot; policy &middot; quarantine</div>
+          </div>
+          <svg width="26" height="16" viewBox="0 0 26 16" fill="none" stroke="#2fbf71" stroke-width="1.7"><path d="M1 8h18"></path><path d="M15 3l5 5-5 5"></path></svg>
+          <div style="flex:1;border:1px solid #204035;border-radius:11px;padding:13px;text-align:center;background:rgba(47,191,113,0.08);">
+            <div style="font-family:'IBM Plex Mono',monospace;font-size:12px;color:#2fbf71;">ap0 &middot; hostapd</div>
+            <div style="font-size:12px;color:#c7d3e5;margin-top:2px;">SSID SecurePi&#8209;Test</div>
+          </div>
+        </div>
+        <div style="margin-top:14px;border-top:1px dashed #22304a;padding-top:12px;display:flex;align-items:center;gap:10px;justify-content:center;">
+          <div style="font-family:'IBM Plex Mono',monospace;font-size:12px;color:#8b6cf0;">enp1s0 management</div>
+          <svg width="24" height="14" viewBox="0 0 24 14" fill="none" stroke="#8b6cf0" stroke-width="1.6"><path d="M1 7h16"></path><path d="M13 2.5l5 4.5-5 4.5"></path></svg>
+          <div style="font-size:12.5px;color:#c7d3e5;">MacBook &mdash; console via SSH tunnel</div>
+        </div>
+      </div>
+
+      <svg width="40" height="24" viewBox="0 0 40 24" fill="none" stroke="#2fbf71" stroke-width="1.8"><path d="M2 12h32"></path><path d="M28 6l7 6-7 6"></path></svg>
+
+      <!-- LAN devices -->
+      <div style="border:1px solid #204035;border-radius:14px;padding:16px;background:rgba(47,191,113,0.06);min-width:150px;">
+        <div style="font-family:'IBM Plex Mono',monospace;font-size:11px;letter-spacing:0.5px;color:#2fbf71;margin-bottom:12px;">10.10.0.0/24 &middot; ISOLATED</div>
+        <div style="display:flex;flex-direction:column;gap:9px;">
+          <div style="display:flex;align-items:center;gap:9px;font-size:13.5px;color:#c7d3e5;"><span style="width:7px;height:7px;border-radius:50%;background:#2fbf71;"></span>Laptops / PCs</div>
+          <div style="display:flex;align-items:center;gap:9px;font-size:13.5px;color:#c7d3e5;"><span style="width:7px;height:7px;border-radius:50%;background:#2fbf71;"></span>Phones</div>
+          <div style="display:flex;align-items:center;gap:9px;font-size:13.5px;color:#c7d3e5;"><span style="width:7px;height:7px;border-radius:50%;background:#2fbf71;"></span>IoT / TV</div>
+        </div>
+      </div>
+    </div>
+
+    <div style="display:flex;gap:26px;margin-top:22px;font-size:13.5px;color:#6b7d99;">
+      <span>Footprint: <b style="color:#c7d3e5;">3.6 GiB RAM, no Docker</b></span>
+      <span>Router, AP, NAT &amp; firewall <b style="color:#c7d3e5;">on one host</b></span>
+      <span>Client isolation <b style="color:#c7d3e5;">between devices</b></span>
+    </div>
+  </div>
+</div>
+</x-dc>
+</body>
+</html>

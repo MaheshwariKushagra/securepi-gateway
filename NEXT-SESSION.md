@@ -32,6 +32,23 @@ the USB Ethernet adapter, toggle on.
 (The Dell's own internet comes from Wi-Fi, not from the Mac. Sharing is only for
 the management cable.)
 
+## 2b. If devices join SecurePi-Test but get no internet
+
+Check the `WAN` line of `sudo securepi status`. If it's blank, the Dell can't
+see any saved upstream network (e.g. Babu_Home when away from home). Add the
+network you're near, then apply. The password is typed at a hidden prompt:
+
+```
+ssh -t maheshwari@192.168.2.5 'sudo securepi-add-uplink "Network Name"'
+ssh maheshwari@192.168.2.5 'sudo systemd-run --collect /usr/sbin/netplan apply'
+```
+
+Saved networks: Babu_Home, Redmi Note 12 Pro 5G. Avoid networks with a browser
+login page (campus "STAFFS"/open networks) - the gateway can't click through one.
+`securepi-ap-follow-uplink.service` moves SecurePi-Test onto the uplink's
+channel automatically (one radio can't do two channels); the AP is 2.4 GHz
+only, so a 5 GHz-only uplink won't work.
+
 ## 3. Only if you want HTTPS inspection
 
 It is **off after every reboot**, on purpose — it decrypts traffic, so it should

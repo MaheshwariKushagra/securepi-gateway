@@ -68,9 +68,15 @@ sudo cp $DPI/ca/mitmproxy-ca-cert.pem /var/www-ca/securepi-ca.crt 2>/dev/null ||
 sudo tee /etc/systemd/system/securepi-ca-server.service >/dev/null <<'UNIT'
 [Unit]
 Description=SecurePi Gateway - serve the CA certificate to enrolling devices
+# Binds 10.10.0.1, which only exists once ap0 is up. Without the ordering and
+# a real RestartSec, a boot race burned through systemd's restart limit in
+# under a second and left the unit failed after reboot (15 September 2026).
+After=securepi-ap0.service hostapd.service
+Wants=securepi-ap0.service
 [Service]
 ExecStart=/usr/bin/python3 -m http.server 8081 --bind 10.10.0.1 --directory /var/www-ca
 Restart=on-failure
+RestartSec=5
 [Install]
 WantedBy=multi-user.target
 UNIT

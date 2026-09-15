@@ -1,0 +1,16 @@
+[Unit]
+Description=SecurePi Gateway - keep the access point on the uplink Wi-Fi channel
+# See /usr/local/sbin/securepi-ap-follow-uplink for why this exists.
+After=netplan-wpa-wlp2s0.service hostapd.service
+Wants=netplan-wpa-wlp2s0.service
+
+[Service]
+Type=simple
+# Catch up once at start: the uplink may have connected before this service did.
+ExecStartPre=/usr/local/sbin/securepi-ap-follow-uplink wlp2s0 CONNECTED
+ExecStart=/usr/sbin/wpa_cli -p /run/wpa_supplicant -i wlp2s0 -a /usr/local/sbin/securepi-ap-follow-uplink
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

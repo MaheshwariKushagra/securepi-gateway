@@ -1,0 +1,43 @@
+#!/bin/bash
+# SecurePi Gateway - save another upstream Wi-Fi network for the gateway.
+#
+# The gateway gets its own internet from wlp2s0 (netplan, /etc/netplan/99-wifi.yaml).
+# That file can list several networks; wpa_supplicant joins whichever is in range.
+# This adds one without the password ever appearing on a command line, in shell
+# history, or in a chat transcript - it is typed at a hidden prompt.
+#
+# Install:  scp gateway/securepi-add-uplink maheshwari@192.168.2.5:/tmp/ &&
+#           ssh maheshwari@192.168.2.5 'sudo install -m 755 /tmp/securepi-add-uplink /usr/local/sbin/'
+# Usage:    ssh -t maheshwari@192.168.2.5 'sudo securepi-add-uplink "Network Name"'
+# Then:     sudo netplan apply   (on the gateway)
+
+set -e
+SSID="${1:?usage: securepi-add-uplink \"Network Name\"}"
+FILE=/etc/netplan/99-wifi.yaml
+
+read -r -s -p "Wi-Fi password for \"$SSID\": " PW
+echo
+if [ ${#PW} -lt 8 ]; then
+    echo "WPA2 passwords are at least 8 characters - nothing saved."
+    exit 1
+fi
+
+cp -p "$FILE" "$FILE.bak-$(date +%Y%m%d-%H%M%S)"
+
+# The password goes to python through the environment, not argv, so it never
+# shows up in `ps` output while this runs.
+SSID="$SSID" PW="$PW" python3 - "$FILE" <<'PY'
+import os, sys, yaml
+path = sys.argv[1]
+with open(path) as f:
+    cfg = yaml.safe_load(f)
+networks = cfg["network"]["wifis"]["wlp2s0"]["access-points"]
+networks[os.environ["SSID"]] = {"password": os.environ["PW"]}
+with open(path, "w") as f:
+    yaml.safe_dump(cfg, f, default_flow_style=False, sort_keys=False)
+PY
+
+chmod 600 "$FILE"
+netplan generate
+echo "Saved \"$SSID\". Networks now configured:"
+python3 -c "import yaml; print('  ' + '\n  '.join(yaml.safe_load(open('$FILE'))['network']['wifis']['wlp2s0']['access-points']))"

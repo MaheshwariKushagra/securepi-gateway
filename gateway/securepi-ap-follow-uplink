@@ -1,0 +1,41 @@
+#!/bin/bash
+# SecurePi Gateway - keep the SecurePi-Test access point on the uplink's channel.
+#
+# The Dell has one Wi-Fi radio (QCA9377) doing two jobs: wlp2s0 joins the
+# upstream network and ap0 broadcasts SecurePi-Test. That chip cannot be on two
+# channels at once, so the AP has to use whatever channel the upstream network
+# is on. hostapd.conf used to hard-code channel 6, which only worked because
+# Babu_Home happens to be on 6 - on a phone hotspot (channel 1) the AP kept
+# broadcasting its name but no device could actually stay connected.
+#
+# Run by securepi-ap-follow-uplink.service, which is `wpa_cli -a` - wpa_cli
+# calls this with "<interface> CONNECTED" every time wlp2s0 joins a network
+# (and "<interface> DISCONNECTED", ignored). Also run once at service start.
+
+HOSTAPD_CONF=/etc/hostapd/hostapd.conf
+
+[ "${2:-CONNECTED}" = "CONNECTED" ] || exit 0
+
+UPLINK=$(/usr/sbin/iw dev wlp2s0 info | awk '/channel/ {print $2; exit}')
+CURRENT=$(awk -F= '/^channel=/ {print $2}' "$HOSTAPD_CONF")
+
+if [ -z "$UPLINK" ]; then
+    echo "uplink not connected - leaving the AP on channel $CURRENT"
+    exit 0
+fi
+
+# hostapd.conf here is hw_mode=g (2.4 GHz). A 5 GHz uplink can't be matched
+# by this AP config, so say so rather than writing a channel hostapd rejects.
+if [ "$UPLINK" -gt 14 ]; then
+    echo "uplink is on 5 GHz channel $UPLINK - the AP is 2.4 GHz only, can't follow"
+    exit 0
+fi
+
+if [ "$UPLINK" = "$CURRENT" ]; then
+    echo "AP already on uplink channel $UPLINK"
+    exit 0
+fi
+
+echo "uplink moved to channel $UPLINK - moving AP from channel $CURRENT"
+sed -i "s/^channel=.*/channel=$UPLINK/" "$HOSTAPD_CONF"
+systemctl restart hostapd

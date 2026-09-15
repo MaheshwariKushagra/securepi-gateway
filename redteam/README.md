@@ -24,7 +24,7 @@ runs the same on Windows, macOS, and Linux.
 | (join) | Laptop joins the Wi-Fi | — | `new_device` (Discovery) |
 | 1 | Port scan (14 ports) | Gateway `10.10.0.1` | `port_scan` (Discovery / T1046) |
 | 2 | SSH brute force (20 attempts) | Gateway `10.10.0.1:22` | `brute_force` (Credential Access / T1110) |
-| 3 | C2 beacon (repeats until Ctrl+C) | External `1.1.1.1:443` (through the gateway) | `beacon` (Command & Control / T1071) |
+| 3 | C2 beacon (repeats until Ctrl+C) | External `example.com:443` (through the gateway) | `beacon` (Command & Control / T1071) |
 
 Stage 3 keeps running so you can quarantine the device mid-beacon and watch the
 check-ins flip from `OK` to `BLOCKED`.
@@ -130,8 +130,16 @@ Useful options:
   the device to be registered first — that’s what the 45s settle wait is for).
 - **The block isn’t visible after quarantine.** The beacon must target an
   **external** address so its traffic passes *through* the gateway (quarantine
-  only drops forwarded traffic). The default `1.1.1.1:443` already does this —
+  only drops forwarded traffic). The default `example.com:443` already does this —
   don’t point `--c2` at the gateway itself.
+- **Stage 3 says BLOCKED before you quarantine anything.** The beacon target is
+  itself being dropped by the gateway, so the block is not a response to the
+  attack. **Never point `--c2` at a public DNS resolver** (`1.1.1.1`, `8.8.8.8`,
+  `9.9.9.9`, …): the gateway’s anti-DNS-bypass rules reject DoH resolvers on 443
+  and block all QUIC/UDP-443. Use a plain website — the default `example.com` is
+  fine. (This was the old default `1.1.1.1` before it collided with those rules.)
+  The tool now probes the target once at the start of stage 3 and warns if it is
+  unreachable before any quarantine.
 - **Detections are slow or don’t trigger.** Thresholds are tunable from the
   console **Settings** page; you can lower a window/threshold, but the tool’s
   default counts comfortably exceed the defaults.

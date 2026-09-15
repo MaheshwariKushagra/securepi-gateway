@@ -25,7 +25,7 @@ AUTHORISATION / SAFETY
 ----------------------
 This is an authorised demo tool for the operator's OWN SecurePi network. It only
 opens ordinary TCP connections (the same thing any browser does) plus one small,
-benign, repeated check-in to an external address. It performs NO exploitation, no
+benign, repeated check-in to an ordinary external website. It performs NO exploitation, no
 password guessing, and sends no malicious payload - the gateway's detection is
 based on *patterns of connections*, not on any real attack succeeding, so plain
 connections are all that is needed. All targets are configurable and default to
@@ -68,9 +68,19 @@ GATEWAY_IP = "10.10.0.1"
 # The beacon (stage 3) must go to a destination OUT on the internet, reached
 # *through* the gateway. That is deliberate: the gateway's quarantine only drops
 # traffic that passes *through* it, so an external target is what lets you see
-# the block happen. 1.1.1.1:443 is Cloudflare - a real, always-up address that
-# connects instantly before quarantine and cleanly times out after it.
-C2_IP = "1.1.1.1"
+# the block happen.
+#
+# It must NOT be a public DNS resolver. The gateway's own anti-DNS-bypass
+# firewall rules reject traffic from the LAN to known DoH resolvers on 443
+# (1.1.1.1, 8.8.8.8, 9.9.9.9 ...) and all UDP/443 (QUIC). An earlier default of
+# 1.1.1.1:443 was silently rejected by that rule, so the beacon showed BLOCKED
+# from the very first check-in and the tool wrongly narrated it as quarantine -
+# the block was the DoH rule, not a response to the attack. A plain content host
+# on TCP 443 is reachable normally and is dropped ONLY once you quarantine the
+# device, which is exactly what the demo needs to show. A hostname (resolved via
+# the gateway's own DNS each time) is used rather than a fixed IP so the target
+# survives the content provider changing addresses.
+C2_HOST = "example.com"
 C2_PORT = 443
 
 # Stage 1: the ports we knock on. The IDS raises a port-scan alert once it sees
@@ -232,7 +242,7 @@ def stage_brute_force(gateway_ip, port, tries):
         "T1110) should appear in ~15-20s.", C.CYAN)
 
 
-def stage_beacon(c2_ip, c2_port, every, size):
+def stage_beacon(c2_host, c2_port, every, size):
     """
     Stage 3: a command-and-control beacon that keeps checking in forever.
 
@@ -243,16 +253,36 @@ def stage_beacon(c2_ip, c2_port, every, size):
     """
     banner("STAGE 3 - C2 BEACON  (this stage runs until you press Ctrl+C)")
     log("Beaconing to external C2 %s:%d every %ds, %d bytes each ..."
-        % (c2_ip, c2_port, every, size), C.YELLOW)
+        % (c2_host, c2_port, every, size), C.YELLOW)
+
+    # Baseline probe BEFORE the loop. The whole point of stage 3 is to show a
+    # block that is a RESPONSE to the attack (quarantine), so the target must be
+    # reachable to begin with. If it is not, a "BLOCKED" later would be
+    # meaningless - most often it means the target itself is being dropped by
+    # the gateway (never point --c2 at a DNS resolver: DoH resolvers on 443 and
+    # all QUIC/UDP-443 are rejected by the gateway's anti-bypass rules), or this
+    # laptop simply has no internet. Say so plainly instead of mislabeling it.
+    if not tcp_connect(c2_host, c2_port, timeout=BEACON_TIMEOUT):
+        log("WARNING: %s:%d is not reachable even before any quarantine."
+            % (c2_host, c2_port), C.RED + C.BOLD)
+        log("  A block seen now is NOT the gateway responding to the attack.", C.RED)
+        log("  Likely: the target is itself blocked (don't use a DNS resolver "
+            "such as 1.1.1.1/8.8.8.8), or this laptop has no internet.", C.RED)
+        log("  Pick a plain website with --c2, e.g.  --c2 example.com", C.RED)
+        print()
+
     payload = b"\x00" * size
     count = 0
     was_blocked = False
+    ever_ok = False            # have we EVER connected? distinguishes a real
+                               # quarantine (OK -> BLOCKED) from a target that
+                               # was never reachable in the first place.
     announced_alert = False
     announced_quarantine_hint = False
     try:
         while True:
             count += 1
-            ok = tcp_connect(c2_ip, c2_port, timeout=BEACON_TIMEOUT, payload=payload)
+            ok = tcp_connect(c2_host, c2_port, timeout=BEACON_TIMEOUT, payload=payload)
 
             if ok:
                 if was_blocked:
@@ -263,8 +293,11 @@ def stage_beacon(c2_ip, c2_port, every, size):
                     was_blocked = False
                 else:
                     log("check-in #%d ... OK" % count, C.GREEN)
+                ever_ok = True
             else:
-                if not was_blocked:
+                if not was_blocked and ever_ok:
+                    # A transition from working to blocked - THIS is the
+                    # quarantine taking effect, the moment the demo is about.
                     log("check-in #%d ... BLOCKED  <-- traffic dropped by the "
                         "gateway (quarantine active)" % count, C.RED + C.BOLD)
                     print()
@@ -272,6 +305,10 @@ def stage_beacon(c2_ip, c2_port, every, size):
                         "STOPPING it. Detection + response demonstrated.", C.RED + C.BOLD)
                     print()
                     was_blocked = True
+                elif not ever_ok:
+                    # Never connected - not a quarantine. See the warning above.
+                    log("check-in #%d ... BLOCKED  (target unreachable before "
+                        "quarantine - see warning above)" % count, C.RED)
                 else:
                     log("check-in #%d ... BLOCKED" % count, C.RED)
 
@@ -409,8 +446,9 @@ def build_parser():
                     "(authorised demo tool for your own network).")
     p.add_argument("--gateway", default=GATEWAY_IP,
                    help="Gateway IP to scan / brute-force (default: %(default)s)")
-    p.add_argument("--c2", default=C2_IP,
-                   help="External beacon target IP (default: %(default)s)")
+    p.add_argument("--c2", default=C2_HOST,
+                   help="External beacon target host or IP - NOT a DNS resolver "
+                        "(default: %(default)s)")
     p.add_argument("--c2-port", type=int, default=C2_PORT,
                    help="External beacon target port (default: %(default)s)")
     p.add_argument("--settle", type=int, default=SETTLE_SECS,

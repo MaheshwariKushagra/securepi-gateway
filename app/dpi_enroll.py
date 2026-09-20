@@ -11,9 +11,16 @@ step 5.6a). Deliberately mirrors quarantine.py's shape - same nft-via-
 subprocess approach, same idempotency contract - since it is solving the
 same kind of problem for a different set.
 
-This process runs as root already (webapp.py's systemd unit has no User=
-line), so it can call `nft` directly. No separate privileged helper was
-needed for this step, unlike what the plan assumed going in.
+Privilege separation (ENHANCEMENT-PLAN.md step 3.3)
+-----------------------------------------------------
+`securepi-web` no longer runs as root (finding G9), so this module no
+longer calls `nft` directly - every call goes through
+`gateway/securepi-web-helper`, run via a narrow sudoers NOPASSWD rule.
+The helper hardcodes the family/table/set per verb and validates its
+own arguments (including the enroll timeout, so an out-of-range value
+here is still caught even before this module's own bounds would
+matter). This module's idempotency/error-string handling is unchanged:
+the helper passes nft's real stdout/stderr/exit code straight through.
 
 Keyed on IP, not MAC - one deliberate scope reduction
 -------------------------------------------------------
@@ -48,19 +55,19 @@ actually work.
 import json
 import subprocess
 
-FAMILY, TABLE, SET_NAME = "ip", "nat", "enrolled"
 DEFAULT_TIMEOUT_HOURS = 24
+HELPER = "/usr/local/sbin/securepi-web-helper"
 
 
 class DpiEnrollError(Exception):
-    """nftables could not be reached, or rejected a request."""
+    """The privileged helper could not be reached, or rejected a request."""
 
 
-def _run(args):
+def _run(verb, *args):
     try:
-        return subprocess.run(["nft"] + args, capture_output=True, text=True, timeout=5)
+        return subprocess.run(["sudo", HELPER, verb] + list(args), capture_output=True, text=True, timeout=5)
     except (OSError, subprocess.TimeoutExpired) as e:
-        raise DpiEnrollError("could not run nft: %s" % e)
+        raise DpiEnrollError("could not run the privileged helper: %s" % e)
 
 
 def enrolled():
@@ -68,7 +75,7 @@ def enrolled():
     auto-expires (None if it has no timeout, which shouldn't happen once
     every enrollment goes through enroll() below, but a manually-added
     element wouldn't have one)."""
-    result = _run(["-j", "list", "set", FAMILY, TABLE, SET_NAME])
+    result = _run("enrolled-list")
     if result.returncode != 0:
         raise DpiEnrollError("nft list set failed: %s" % result.stderr.strip())
     data = json.loads(result.stdout)
@@ -98,10 +105,13 @@ def is_enrolled(ip):
 def enroll(ip, hours=DEFAULT_TIMEOUT_HOURS):
     """(Re-)enroll an address, always with a fresh timeout - see this
     module's docstring for why a plain `add` on an already-enrolled
-    address would not reset its clock."""
+    address would not reset its clock. `hours` must be a whole number
+    from 1 to 720 (30 days) - the privileged helper enforces this bound
+    itself (step 3.3), so an out-of-range value is rejected rather than
+    silently creating a never-expiring enrollment; webapp.py's own
+    DpiEnrollRequest validates the same bound for a cleaner API error."""
     unenroll(ip)
-    spec = "{ %s timeout %dh }" % (ip, hours) if hours else "{ %s }" % ip
-    result = _run(["add", "element", FAMILY, TABLE, SET_NAME, spec])
+    result = _run("enrolled-add", ip, str(hours))
     if result.returncode != 0:
         raise DpiEnrollError("could not enroll %s: %s" % (ip, result.stderr.strip()))
 
@@ -121,14 +131,14 @@ def flush():
     the right decrypt/passthrough decision, the right response is to stop
     inspecting everyone immediately, not leave any device exposed while
     someone investigates."""
-    result = _run(["flush", "set", FAMILY, TABLE, SET_NAME])
+    result = _run("enrolled-flush")
     if result.returncode != 0:
         raise DpiEnrollError("could not flush the enrolled set: %s" % result.stderr.strip())
 
 
 def unenroll(ip):
     """Idempotent: unenrolling an address that was never enrolled is a no-op."""
-    result = _run(["delete", "element", FAMILY, TABLE, SET_NAME, "{ %s }" % ip])
+    result = _run("enrolled-delete", ip)
     if result.returncode != 0:
         stderr_lower = result.stderr.lower()
         if not any(marker in stderr_lower for marker in _NOT_FOUND_MARKERS):

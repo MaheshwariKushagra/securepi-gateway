@@ -24,27 +24,38 @@ Every read asks nftables directly rather than mirroring state in SQLite, so
 the console can never show "quarantined" for a device nftables has actually
 stopped blocking (or vice versa) because a write happened outside the
 console.
+
+Privilege separation (ENHANCEMENT-PLAN.md step 3.3)
+-----------------------------------------------------
+`securepi-web` no longer runs as root (finding G9 - "web app runs nft
+itself"), so this module no longer calls `nft` directly. Every call
+goes through `gateway/securepi-web-helper`, a narrow root-run program
+invoked via a sudoers NOPASSWD rule scoped to that one program - the
+helper hardcodes the family/table/set for each verb and validates its
+own arguments, so this module's own idempotency and error-string
+handling below is unchanged: the helper passes nft's real stdout/
+stderr/exit code straight back through.
 """
 
 import json
 import subprocess
 
-FAMILY, TABLE, SET_NAME = "inet", "filter", "quarantine"
+HELPER = "/usr/local/sbin/securepi-web-helper"
 
 
 class QuarantineError(Exception):
-    """nftables could not be reached, or rejected a request."""
+    """The privileged helper could not be reached, or rejected a request."""
 
 
-def _run(args):
+def _run(verb, *args):
     try:
-        return subprocess.run(["nft"] + args, capture_output=True, text=True, timeout=5)
+        return subprocess.run(["sudo", HELPER, verb] + list(args), capture_output=True, text=True, timeout=5)
     except (OSError, subprocess.TimeoutExpired) as e:
-        raise QuarantineError("could not run nft: %s" % e)
+        raise QuarantineError("could not run the privileged helper: %s" % e)
 
 
 def quarantined_ips():
-    result = _run(["-j", "list", "set", FAMILY, TABLE, SET_NAME])
+    result = _run("quarantine-list")
     if result.returncode != 0:
         raise QuarantineError("nft list set failed: %s" % result.stderr.strip())
     data = json.loads(result.stdout)
@@ -60,13 +71,13 @@ def is_quarantined(ip):
 
 def quarantine(ip):
     """Idempotent: quarantining an already-quarantined address is a no-op."""
-    result = _run(["add", "element", FAMILY, TABLE, SET_NAME, "{ %s }" % ip])
+    result = _run("quarantine-add", ip)
     if result.returncode != 0:
         raise QuarantineError("could not quarantine %s: %s" % (ip, result.stderr.strip()))
 
 
 def release(ip):
     """Idempotent: releasing an address that was never quarantined is a no-op."""
-    result = _run(["delete", "element", FAMILY, TABLE, SET_NAME, "{ %s }" % ip])
+    result = _run("quarantine-delete", ip)
     if result.returncode != 0 and "does not exist" not in result.stderr:
         raise QuarantineError("could not release %s: %s" % (ip, result.stderr.strip()))

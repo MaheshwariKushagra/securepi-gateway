@@ -705,14 +705,23 @@ no longer gets a response at all, not a redirect - that's what "HTTPS only" mean
 
 **Logging in.** A session login at `/login` (one shared account, username `securepi` in the audit
 log; step 3.1 replaced the earlier HTTP Basic Auth). The password is stored only on the gateway, at
-`/root/.securepi-console-password` (root-only, never in this repository), hashed rather than
-plaintext. Change it from the console's Settings page normally. If you're locked out and need to
-reset it directly over SSH, writing a plain new password into the file still works - the console
-accepts a plaintext file once, then transparently rehashes it on that same login:
+`/etc/securepi/console-password` (moved out of `/root` in step 3.3, so the unprivileged console
+process can still read/write it - see "Privilege separation" below; never in this repository),
+hashed rather than plaintext. Change it from the console's Settings page normally. If you're locked
+out and need to reset it directly over SSH, writing a plain new password into the file still works -
+the console accepts a plaintext file once, then transparently rehashes it on that same login:
 
 ```bash
-ssh maheshwari@192.168.2.5 'echo "NEW_PASSWORD" | sudo tee /root/.securepi-console-password > /dev/null && sudo chmod 600 /root/.securepi-console-password'
+ssh maheshwari@192.168.2.5 'echo "NEW_PASSWORD" | sudo tee /etc/securepi/console-password > /dev/null && sudo chown root:securepi /etc/securepi/console-password && sudo chmod 660 /etc/securepi/console-password'
 ```
+
+**Privilege separation (step 3.3).** The web console runs as an unprivileged `securepi-web` system
+user, not root (finding G9 - it used to call `nft` directly). Firewall changes (device quarantine,
+Tier 2 HTTPS-inspection enrollment) go through `gateway/securepi-web-helper`, a narrow root-run
+program invoked via a sudoers rule that allows running only that one program - the helper itself
+validates every argument (a malformed IP or an out-of-range timeout is rejected before `nft` is ever
+called) and hardcodes which firewall set each action can touch. Set up once with
+`gateway/setup-privilege-separation.sh`.
 
 Full host setup: [`STEP-1-INSTALL-UBUNTU.md`](STEP-1-INSTALL-UBUNTU.md) → [`GATEWAY-SETUP-RUNBOOK.md`](GATEWAY-SETUP-RUNBOOK.md).
 Power-on and reboot notes: [`NEXT-SESSION.md`](NEXT-SESSION.md) and [`gateway/REBOOT-SAFETY.md`](gateway/REBOOT-SAFETY.md).

@@ -98,6 +98,21 @@ sudo chown root:root "$TLS_DIR/ca.key" "$TLS_DIR/ca.crt" "$TLS_DIR/console.key" 
 sudo chmod 600 "$TLS_DIR/ca.key" "$TLS_DIR/console.key"
 sudo chmod 644 "$TLS_DIR/ca.crt" "$TLS_DIR/console.crt"
 
+# console.key needs to be group-readable once step 3.3's privilege
+# separation is in place - the web console (securepi-web, unprivileged
+# since that step) loads this file itself to serve TLS, and a 600
+# root-only key blocked it outright the first time these two steps'
+# ordering was actually exercised live (this script ran before the
+# 3.3 group existed, so the key was left root-only until 3.3's own
+# setup script - or a rerun of this one, after that group exists -
+# fixed it). ca.key is deliberately left untouched at 600 root-only:
+# nothing at runtime ever needs it, only a future re-run of this
+# script to sign a new leaf certificate.
+if getent group securepi >/dev/null; then
+    sudo chown root:securepi "$TLS_DIR/console.key"
+    sudo chmod 640 "$TLS_DIR/console.key"
+fi
+
 echo
 echo "================================================================"
 echo " DONE."

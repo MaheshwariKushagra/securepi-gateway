@@ -23,7 +23,13 @@ from base64 import b64encode
 
 BASE_URL = "http://127.0.0.1:3000"
 USERNAME = "securepi"
-PASSWORD_FILE = "/root/.securepi-dns-password"
+# Moved out of /root (step 3.3, finding G9): once securepi-web drops
+# root it can no longer traverse into /root at all. /etc/securepi is
+# root:securepi, 750 - the unprivileged service user's own group can
+# read this file directly, the same proportionate "plain data file,
+# not firewall control" reasoning app/webapp.py's CONSOLE_PASSWORD_FILE
+# comment gives.
+PASSWORD_FILE = "/etc/securepi/dns-password"
 
 
 class AdGuardError(Exception):

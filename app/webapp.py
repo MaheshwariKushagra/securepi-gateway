@@ -79,7 +79,7 @@ from fastapi import FastAPI, HTTPException, Query
 from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from starlette.requests import Request
 
 import adfilter_rules
@@ -98,7 +98,17 @@ import tracker_entities
 
 DB_PATH = "/opt/securepi/securepi.db"
 CONSOLE_USERNAME = session_auth.CONSOLE_USERNAME
-CONSOLE_PASSWORD_FILE = "/root/.securepi-console-password"
+# Moved out of /root (step 3.3): /root is 700 root-only, so once
+# securepi-web drops root (finding G9) it can no longer traverse into
+# it at all, regardless of this file's own permissions. Lives in
+# /etc/securepi instead - root:securepi, 750 - readable/writable by the
+# securepi group the unprivileged service user belongs to. This is a
+# plain data file (a password hash, since step 3.1), not something
+# that grants system control the way nftables access does, so direct
+# group access is proportionate; contrast with quarantine/enrollment,
+# which still go through the privileged helper because THOSE control
+# the firewall.
+CONSOLE_PASSWORD_FILE = "/etc/securepi/console-password"
 
 # Static assets are versioned by service start time. Without this, a browser
 # holding a cached stylesheet shows the old console after a deploy, which is
@@ -343,7 +353,11 @@ class ResolverTuningRequest(BaseModel):
 
 class DpiEnrollRequest(BaseModel):
     enrolled: bool
-    hours: int = dpi_enroll.DEFAULT_TIMEOUT_HOURS
+    # 1-720 (30 days): matches the privileged helper's own hard bound
+    # (gateway/securepi-web-helper, step 3.3) - validated here too so a
+    # bad value gets a clean 422 instead of a 502 from the helper
+    # rejecting it two layers down.
+    hours: int = Field(default=dpi_enroll.DEFAULT_TIMEOUT_HOURS, ge=1, le=720)
 
 
 class DpiRulesUpdate(BaseModel):

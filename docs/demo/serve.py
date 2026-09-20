@@ -55,9 +55,10 @@ src = (src.replace('"/opt/securepi/static"', repr(os.path.join(REPO, "app/static
           .replace('DB_PATH = "/opt/securepi/securepi.db"', "DB_PATH = %r" % DB)
           # step 3.1: a successful login rewrites this file with a fresh
           # hash (see session_auth.needs_rehash) - point that at a local,
-          # writable path instead of the real gateway's root-only one,
-          # which this Mac has no permission to touch.
-          .replace('CONSOLE_PASSWORD_FILE = "/root/.securepi-console-password"',
+          # writable path instead of the real gateway's one (moved out
+          # of /root in step 3.3, but still root:securepi-group-owned,
+          # which this Mac has no matching group for anyway).
+          .replace('CONSOLE_PASSWORD_FILE = "/etc/securepi/console-password"',
                     "CONSOLE_PASSWORD_FILE = %r" % os.path.join(HERE, "console-password.demo"))
           .replace('DPI_RULES_PATH = "/opt/securepi-dpi/adfilter-rules.json"',
                    "DPI_RULES_PATH = %r" % os.path.join(REPO, "dpi/adfilter-rules.json"))

@@ -1,0 +1,23 @@
+# SecurePi Gateway - sudoers rule for the unprivileged web console
+# (ENHANCEMENT-PLAN.md step 3.3).
+#
+# Installed as /etc/sudoers.d/securepi-web, mode 440, root:root - always
+# validate with `visudo -c -f` before installing a change here, since a
+# syntax error in a sudoers file can break sudo for EVERYONE on the box,
+# not just this one rule.
+#
+# This is the entire privileged surface the web console has: permission
+# to run exactly one program, as root, with no password prompt (a
+# systemd service has no terminal to type one into). It does NOT grant
+# `nft`, a shell, or anything else - securepi-web-helper is the only
+# thing this rule can reach, and that program's own job (see its
+# docstring) is validating everything it's asked to do before it ever
+# touches nftables.
+#
+# !requiretty: Ubuntu's default sudoers already disables requiretty
+# globally (confirmed on the live gateway before relying on it here),
+# but it's restated for this specific rule so this file is correct on
+# its own, without depending on that default staying unchanged upstream.
+Defaults:securepi-web !requiretty
+
+securepi-web ALL=(root) NOPASSWD: /usr/local/sbin/securepi-web-helper

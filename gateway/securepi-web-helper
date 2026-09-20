@@ -1,0 +1,164 @@
+#!/usr/bin/env python3
+"""
+SecurePi Gateway - privileged helper for the web console
+(ENHANCEMENT-PLAN.md step 3.3, "unprivileged web app + allowlisted root
+helper for quarantine, block, enroll/unenroll", finding G9).
+
+Runs as root, invoked by the unprivileged `securepi-web` service through
+a narrow sudoers NOPASSWD rule (gateway/securepi-web-sudoers) that allows
+running ONLY this one program. This is the only thing on the gateway
+that runs `nft` on the web console's behalf - app/quarantine.py and
+app/dpi_enroll.py no longer call `nft` directly; they call this instead,
+through exactly the same subprocess-with-a-list shape they already used
+(never a shell, never string interpolation into a shell command), and
+keep their own idempotency/error-string logic unchanged, since this
+helper passes nft's real stdout/stderr/exit code straight back through.
+
+sudoers only decides WHICH PROGRAM may run as root - it does not (and
+should not be relied on to) understand what a "valid IP" or "a sane
+timeout" looks like. That is this script's own job: every verb below
+validates its arguments before touching nftables at all, and refuses
+anything that doesn't parse as exactly what it claims to be. This is
+deliberately NOT a general-purpose nft wrapper - it hardcodes the
+family/table/set for each verb, so nothing this console asks for can
+touch a different part of the ruleset than the one operation it's
+allowlisted for.
+
+Verbs (each maps to exactly one nft invocation):
+  quarantine-add <ip>          add <ip> to inet filter quarantine
+  quarantine-delete <ip>       remove <ip> from inet filter quarantine
+  quarantine-list              list inet filter quarantine (JSON, as nft -j prints it)
+  enrolled-add <ip> <hours>    add <ip> to ip nat enrolled, with a fresh timeout
+  enrolled-delete <ip>         remove <ip> from ip nat enrolled
+  enrolled-list                list ip nat enrolled (JSON)
+  enrolled-flush               remove every element from ip nat enrolled
+
+Every call is logged to the system journal via syslog (auth facility),
+independent of and in addition to the web app's own audit_log table -
+this is the half of the audit trail that exists even if the database
+itself were somehow bypassed.
+"""
+
+import ipaddress
+import subprocess
+import sys
+import syslog
+
+NFT = "/usr/sbin/nft"
+
+# Each entry: verb -> (expected arg count, nft argv builder).
+# The builder receives the helper's OWN argv (already validated) and
+# returns the exact argv to pass to `nft` - no table/family/set name
+# ever comes from the caller.
+_QUARANTINE = ("inet", "filter", "quarantine")
+_ENROLLED = ("ip", "nat", "enrolled")
+
+
+class RejectedInput(Exception):
+    """Raised for anything that doesn't parse as what a verb expects.
+    Never lets a malformed argument reach `nft` at all."""
+
+
+def _require_ip(value, what="argument"):
+    try:
+        ipaddress.ip_address(value)
+    except ValueError:
+        raise RejectedInput("%s is not a valid IP address: %r" % (what, value))
+    return value
+
+
+def _require_hours(value):
+    # 1-720 hours (1 hour to 30 days): generous enough for any real
+    # enrollment length this console offers, narrow enough that a typo
+    # or an injected huge number can't create a set element that
+    # effectively never expires.
+    if not value.isdigit() or not (1 <= int(value) <= 720):
+        raise RejectedInput("hours must be a whole number from 1 to 720: %r" % value)
+    return value
+
+
+def build_nft_argv(verb, args):
+    """Pure function: verb + already-split argv -> the exact nft argv to
+    run, or raises RejectedInput. No subprocess call happens here, which
+    is what makes this testable without root or a real nftables ruleset
+    (see tests/test_securepi_web_helper.py)."""
+    family, table, set_name = None, None, None
+
+    if verb == "quarantine-add":
+        if len(args) != 1:
+            raise RejectedInput("quarantine-add takes exactly one argument (an IP)")
+        ip = _require_ip(args[0])
+        family, table, set_name = _QUARANTINE
+        return ["add", "element", family, table, set_name, "{ %s }" % ip]
+
+    if verb == "quarantine-delete":
+        if len(args) != 1:
+            raise RejectedInput("quarantine-delete takes exactly one argument (an IP)")
+        ip = _require_ip(args[0])
+        family, table, set_name = _QUARANTINE
+        return ["delete", "element", family, table, set_name, "{ %s }" % ip]
+
+    if verb == "quarantine-list":
+        if len(args) != 0:
+            raise RejectedInput("quarantine-list takes no arguments")
+        family, table, set_name = _QUARANTINE
+        return ["-j", "list", "set", family, table, set_name]
+
+    if verb == "enrolled-add":
+        if len(args) != 2:
+            raise RejectedInput("enrolled-add takes exactly two arguments (an IP and a whole-number hour count)")
+        ip = _require_ip(args[0])
+        hours = _require_hours(args[1])
+        family, table, set_name = _ENROLLED
+        return ["add", "element", family, table, set_name, "{ %s timeout %sh }" % (ip, hours)]
+
+    if verb == "enrolled-delete":
+        if len(args) != 1:
+            raise RejectedInput("enrolled-delete takes exactly one argument (an IP)")
+        ip = _require_ip(args[0])
+        family, table, set_name = _ENROLLED
+        return ["delete", "element", family, table, set_name, "{ %s }" % ip]
+
+    if verb == "enrolled-list":
+        if len(args) != 0:
+            raise RejectedInput("enrolled-list takes no arguments")
+        family, table, set_name = _ENROLLED
+        return ["-j", "list", "set", family, table, set_name]
+
+    if verb == "enrolled-flush":
+        if len(args) != 0:
+            raise RejectedInput("enrolled-flush takes no arguments")
+        family, table, set_name = _ENROLLED
+        return ["flush", "set", family, table, set_name]
+
+    raise RejectedInput("unknown verb: %r" % verb)
+
+
+def main(argv):
+    syslog.openlog("securepi-web-helper", syslog.LOG_PID, syslog.LOG_AUTH)
+    if not argv:
+        print("usage: securepi-web-helper <verb> [args...]", file=sys.stderr)
+        return 2
+    verb, args = argv[0], argv[1:]
+    try:
+        nft_argv = build_nft_argv(verb, args)
+    except RejectedInput as e:
+        syslog.syslog(syslog.LOG_WARNING, "REJECTED %s %s - %s" % (verb, args, e))
+        print("REJECTED: %s" % e, file=sys.stderr)
+        return 1
+
+    syslog.syslog(syslog.LOG_INFO, "%s %s" % (verb, args))
+    try:
+        result = subprocess.run([NFT] + nft_argv, capture_output=True, text=True, timeout=5)
+    except (OSError, subprocess.TimeoutExpired) as e:
+        syslog.syslog(syslog.LOG_ERR, "could not run nft for %s: %s" % (verb, e))
+        print("could not run nft: %s" % e, file=sys.stderr)
+        return 1
+
+    sys.stdout.write(result.stdout)
+    sys.stderr.write(result.stderr)
+    return result.returncode
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))

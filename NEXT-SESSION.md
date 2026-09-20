@@ -234,9 +234,10 @@ Nothing sensitive is in this repository. On the gateway:
 
 | What | Where |
 |---|---|
-| CA private key | `/opt/securepi-dpi/ca/mitmproxy-ca.pem`, root-only |
-| DNS admin password | `/root/.securepi-dns-password` |
-| Console login password (user `securepi`) | `/root/.securepi-console-password` |
+| CA private key (DPI/HTTPS inspection) | `/opt/securepi-dpi/ca/mitmproxy-ca.pem`, root-only |
+| Console TLS CA/leaf private keys (step 3.2) | `/opt/securepi-tls/{ca,console}.key`, root-only (certs are `root:securepi`, group-readable) |
+| DNS admin password | `/etc/securepi/dns-password` (moved out of `/root` in step 3.3), `root:securepi` |
+| Console login password (user `securepi`) | `/etc/securepi/console-password` (moved out of `/root` in step 3.3), `root:securepi` |
 | Wi-Fi AP passphrase | `/etc/hostapd/hostapd.conf` (redacted in the committed copy) |
 
 The user's own GitHub Personal Access Token is stored via `git credential-osxkeychain`

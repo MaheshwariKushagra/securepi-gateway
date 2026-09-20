@@ -35,7 +35,7 @@ echo "-- browser tunnel (http://localhost:8000) --"
 echo
 
 echo "-- backup status --"
-cd "$(dirname "$0")"
+cd "$(dirname "$0")" || exit 1
 UNPUSHED=$(git log --oneline "origin/main..HEAD" 2>/dev/null | wc -l | tr -d ' ')
 UNCOMMITTED=$(git status --short | wc -l | tr -d ' ')
 if [ "$UNCOMMITTED" != "0" ]; then

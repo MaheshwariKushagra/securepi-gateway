@@ -51,7 +51,7 @@ ip netns exec ns_victim ip addr add 10.10.0.221/24 dev eth0
 # isolated from ap0/hostapd and the two real devices, same as the existing
 # .221 address.
 for i in $(seq 222 230); do
-    ip netns exec ns_victim ip addr add 10.10.0.$i/24 dev eth0
+    ip netns exec ns_victim ip addr add "10.10.0.$i/24" dev eth0
 done
 
 echo "test harness created: ns_attacker=10.10.0.220, ns_victim=10.10.0.221-230"

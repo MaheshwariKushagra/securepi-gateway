@@ -160,6 +160,24 @@ async def session_auth_middleware(request: Request, call_next):
     return await call_next(request)
 
 
+# Registered after session_auth_middleware, so it wraps OUTSIDE it -
+# Starlette runs the last-registered middleware first on the way in and
+# last on the way out, which means this touches every response,
+# including the 401s/redirects the auth middleware returns directly,
+# not just the ones that reach a real route. Step 3.4 security
+# self-review: standard, low-risk hardening headers with no functional
+# cost here - this console never needs to be framed by another page,
+# never serves user-uploaded content a browser might MIME-sniff, and
+# never needs to leak its own internal URLs into an outbound Referer.
+@app.middleware("http")
+async def security_headers_middleware(request: Request, call_next):
+    response = await call_next(request)
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["Referrer-Policy"] = "no-referrer"
+    return response
+
+
 @app.get("/login", response_class=HTMLResponse)
 def login_page(request: Request, next: str = Query("/"), error: Optional[str] = Query(None)):
     return templates.TemplateResponse("login.html", {"request": request, "next": next, "error": error})

@@ -25,9 +25,16 @@ Type=simple
 # --mode transparent : act on traffic redirected to us by the firewall
 # --set confdir      : keep our CA here, not in root's home
 # --showhost         : log the real hostname rather than the IP
+# --listen-host 10.10.0.1, not 0.0.0.0 (step 3.4 security self-review):
+# the nftables redirect rule (`iifname "ap0" ... redirect to :8080`)
+# only ever needs this reachable from ap0's own address - `redirect`
+# targets the local address a packet actually arrived on, which for
+# ap0-sourced traffic is 10.10.0.1, never the WAN uplink. Binding
+# 0.0.0.0 needlessly exposed the proxy's listening socket on the WAN
+# interface too, found live via `ss -tlnp` during that review.
 ExecStart=/opt/securepi-dpi/bin/mitmdump \
     --mode transparent \
-    --listen-host 0.0.0.0 \
+    --listen-host 10.10.0.1 \
     --listen-port 8080 \
     --set confdir=/opt/securepi-dpi/ca \
     --set block_global=false \

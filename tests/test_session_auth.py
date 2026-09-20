@@ -168,6 +168,12 @@ class OriginCheckTests(unittest.TestCase):
     def test_a_missing_origin_header_is_allowed(self):
         self.assertTrue(session_auth.origin_is_allowed(None, "10.10.0.1:8000"))
 
+    def test_a_null_origin_is_allowed(self):
+        # Real Safari behavior, not hypothetical: it sends this exact
+        # literal string on a same-origin form POST when the page also
+        # has Referrer-Policy: no-referrer.
+        self.assertTrue(session_auth.origin_is_allowed("null", "10.10.0.1:8000"))
+
     def test_a_matching_origin_is_allowed(self):
         self.assertTrue(session_auth.origin_is_allowed("http://10.10.0.1:8000", "10.10.0.1:8000"))
 

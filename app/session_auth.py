@@ -218,8 +218,18 @@ def origin_is_allowed(origin_header, host_header):
     authenticated endpoint in the first place regardless of what this
     function decides. This check is defense in depth for browsers or
     proxies that might not honour SameSite, not the only thing standing
-    between a cross-site page and this console."""
-    if not origin_header:
+    between a cross-site page and this console.
+
+    A literal "null" Origin is treated the same as no header at all,
+    for the same reason - found live, not guessed: Safari sends
+    `Origin: null` on an ordinary same-origin form POST when the page
+    also carries a `Referrer-Policy: no-referrer` header (step 3.4's
+    own hardening addition), a real WebKit interoperability quirk, not
+    a sign of a cross-site request. A genuine sandboxed/cross-site
+    request that produces `Origin: null` is still fully stopped by
+    SameSite=Strict never attaching the cookie in the first place, so
+    accepting "null" here loses no real protection."""
+    if not origin_header or origin_header == "null":
         return True
     origin_host = origin_header.split("://", 1)[-1].rstrip("/")
     return origin_host == host_header

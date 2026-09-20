@@ -225,6 +225,30 @@ SETTINGS_SCHEMA = {
                 "instead of raising a new one. Shared by every signal - this is what turns a flurry of "
                 "detections into one incident.",
     },
+    "session_idle_timeout_seconds": {
+        "default": 1800, "type": int, "min": 300, "max": 86400,
+        "label": "Session idle timeout",
+        "help": "How long (seconds) a signed-in console session may sit inactive before it's signed "
+                "out automatically, regardless of how recently it was created (step 3.1).",
+    },
+    "session_absolute_timeout_seconds": {
+        "default": 43200, "type": int, "min": 900, "max": 604800,
+        "label": "Session absolute timeout",
+        "help": "The longest (seconds) a console session stays valid no matter how active it is - "
+                "forces a fresh login periodically even if the console is never idle (step 3.1).",
+    },
+    "login_rate_limit_max_attempts": {
+        "default": 10, "type": int, "min": 3, "max": 100,
+        "label": "Login rate limit: max attempts",
+        "help": "Failed login attempts from one address, within the rate-limit window, before "
+                "further attempts are refused (step 3.1). Successful logins don't count toward this.",
+    },
+    "login_rate_limit_window_seconds": {
+        "default": 900, "type": int, "min": 60, "max": 86400,
+        "label": "Login rate limit: window",
+        "help": "How far back (seconds) failed login attempts are counted when applying the "
+                "login rate limit (step 3.1).",
+    },
 }
 
 

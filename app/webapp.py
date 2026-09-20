@@ -10,6 +10,8 @@ every few seconds is not something anyone would want to watch during an
 incident.
 
 Routes:
+  /login             sign in (step 3.1: replaces HTTP Basic Auth)
+  /logout            end the current session
   /                  dashboard shell
   /devices           device inventory
   /devices/{id}      per-device detail
@@ -50,7 +52,7 @@ Routes:
   /api/settings                  view/edit console-tunable detection thresholds (step 6.3)
   /api/settings/retention        honest "not yet implemented" - Stage 1's F3
   /api/settings/channels         honest "not yet implemented" - Stage 4's R3
-  /api/settings/password         change the console's shared Basic Auth password
+  /api/settings/password         change the console's shared login password (step 3.1: hashed, not plaintext)
   /api/audit                     recent audit log entries
   /api/attributions              third-party components this project uses, with real versions/licences
   /api/incidents/{id}            PATCH: change status, now audited with a real timeline entry
@@ -63,19 +65,18 @@ Routes:
   /api/reports/weekly            incidents by tactic, riskiest devices, ad-blocking, platform health
 """
 
-import base64
 import collections
 import datetime
 import json
 import os
-import secrets
 import sqlite3
 import subprocess
 import time
 from typing import Any, Optional
+from urllib.parse import parse_qs, quote
 
 from fastapi import FastAPI, HTTPException, Query
-from fastapi.responses import HTMLResponse, PlainTextResponse
+from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel
@@ -90,12 +91,13 @@ import native_trackers
 import playbooks
 import quarantine
 import risk
+import session_auth
 import settings
 import suppression
 import tracker_entities
 
 DB_PATH = "/opt/securepi/securepi.db"
-CONSOLE_USERNAME = "securepi"
+CONSOLE_USERNAME = session_auth.CONSOLE_USERNAME
 CONSOLE_PASSWORD_FILE = "/root/.securepi-console-password"
 
 # Static assets are versioned by service start time. Without this, a browser
@@ -114,30 +116,115 @@ def _console_password():
         return f.read().strip()
 
 
-# Plain HTTP Basic Auth as ASGI middleware rather than a FastAPI dependency:
-# it runs ahead of routing, so it also covers the /static mount, and it keeps
-# auth as one linear function instead of a dependency wired onto every route
-# (see SECUREPI-15-DAY-PLAN.md 4.5 - no dependency-injection patterns).
-# Fails closed: if the password file is missing, every request is rejected
-# rather than the console silently running open.
+# Session-cookie auth as ASGI middleware rather than a FastAPI dependency,
+# for the same reason the Basic Auth it replaces (step 3.1) was one: it
+# runs ahead of routing, so it also covers the /static mount, and it keeps
+# auth as one linear function instead of a dependency wired onto every
+# route (see SECUREPI-15-DAY-PLAN.md 4.5 - no dependency-injection
+# patterns). Fails closed: a missing/expired/unrecognised session sends an
+# API caller a 401 and a browser to /login, never through to a route.
+#
+# The Origin check runs first and applies to EVERY state-changing request,
+# authenticated or not (including /login itself) - ENHANCEMENT-PLAN.md
+# step 3.1's "Cross-origin POST rejected" exit criterion. It's on top of,
+# not instead of, the session cookie's own SameSite=Strict attribute -
+# see session_auth.origin_is_allowed()'s docstring for why both exist.
 @app.middleware("http")
-async def basic_auth(request: Request, call_next):
-    scheme, _, creds = request.headers.get("authorization", "").partition(" ")
-    if scheme.lower() == "basic":
-        try:
-            username, password = base64.b64decode(creds).decode().split(":", 1)
-        except Exception:
-            username, password = "", ""
-        try:
-            correct_password = _console_password()
-        except FileNotFoundError:
-            correct_password = None
-        if (correct_password is not None
-                and secrets.compare_digest(username, CONSOLE_USERNAME)
-                and secrets.compare_digest(password, correct_password)):
-            return await call_next(request)
-    return PlainTextResponse("Authentication required", status_code=401,
-                              headers={"WWW-Authenticate": 'Basic realm="SecurePi Gateway"'})
+async def session_auth_middleware(request: Request, call_next):
+    if request.method in ("POST", "PUT", "PATCH", "DELETE"):
+        if not session_auth.origin_is_allowed(request.headers.get("origin"), request.headers.get("host")):
+            return PlainTextResponse("cross-origin request rejected", status_code=403)
+
+    path = request.url.path
+    if path == "/login" or path.startswith("/static/"):
+        return await call_next(request)
+
+    conn = db()
+    token = request.cookies.get(session_auth.SESSION_COOKIE)
+    session = session_auth.get_session(conn, token)
+    if session is None:
+        if path.startswith("/api/"):
+            return JSONResponse({"error": "authentication required"}, status_code=401)
+        return RedirectResponse(url="/login?next=%s" % quote(path, safe=""), status_code=303)
+    session_auth.touch_session(conn, token)
+    return await call_next(request)
+
+
+@app.get("/login", response_class=HTMLResponse)
+def login_page(request: Request, next: str = Query("/"), error: Optional[str] = Query(None)):
+    return templates.TemplateResponse("login.html", {"request": request, "next": next, "error": error})
+
+
+@app.post("/login")
+async def do_login(request: Request):
+    """Check the password, and on success issue a session cookie instead
+    of asking the browser to resend the password on every future request
+    (what Basic Auth did through Stage 2). Reads a plain HTML form, not
+    JSON - this page has to work even if a future change to app.js is
+    broken, since it's the one page a locked-out operator most needs to
+    load reliably.
+
+    Parses the body with urllib.parse rather than Starlette's own
+    request.form(): checked live before settling on this - form()
+    needs the separate `python-multipart` package installed even for a
+    plain application/x-www-form-urlencoded body (not just real
+    multipart/form-data), which this project doesn't otherwise depend
+    on anywhere, on the Mac or the gateway. A hand-rolled parse of a
+    single flat field avoids that dependency entirely, in keeping with
+    this project's own "plain Python" standing constraint."""
+    body = await request.body()
+    form = parse_qs(body.decode(), keep_blank_values=True)
+    password = form.get("password", [""])[0]
+    next_path = form.get("next", ["/"])[0] or "/"
+    if not next_path.startswith("/") or next_path.startswith("//"):
+        next_path = "/"  # never redirect off-site (open-redirect guard)
+    ip = request.client.host if request.client else "unknown"
+
+    conn = db()
+    session_auth.cleanup_expired(conn)
+    if not session_auth.check_rate_limit(conn, ip):
+        return templates.TemplateResponse("login.html", {
+            "request": request, "next": next_path,
+            "error": "Too many attempts from this address. Wait a few minutes and try again.",
+        }, status_code=429)
+
+    try:
+        stored = _console_password()
+    except FileNotFoundError:
+        stored = None
+
+    if stored is not None and session_auth.verify_password(password, stored):
+        if session_auth.needs_rehash(stored):
+            with open(CONSOLE_PASSWORD_FILE, "w") as f:
+                f.write(session_auth.hash_password(password))
+        session_auth.clear_attempts(conn, ip)
+        token = session_auth.create_session(conn, CONSOLE_USERNAME)
+        audit.log(conn, CONSOLE_USERNAME, "auth.login", detail="ip=%s" % ip)
+        response = RedirectResponse(url=next_path, status_code=303)
+        response.set_cookie(
+            key=session_auth.SESSION_COOKIE, value=token, httponly=True,
+            samesite="strict", secure=False,  # secure=True once step 3.2 (TLS) lands
+            max_age=settings.get(conn, "session_absolute_timeout_seconds"),
+        )
+        return response
+
+    session_auth.record_failed_attempt(conn, ip)
+    print("console: failed login attempt from %s" % ip, flush=True)
+    return templates.TemplateResponse("login.html", {
+        "request": request, "next": next_path, "error": "Incorrect password.",
+    }, status_code=401)
+
+
+@app.post("/logout")
+def do_logout(request: Request):
+    token = request.cookies.get(session_auth.SESSION_COOKIE)
+    if token:
+        conn = db()
+        audit.log(conn, CONSOLE_USERNAME, "auth.logout")
+        session_auth.delete_session(conn, token)
+    response = RedirectResponse(url="/login", status_code=303)
+    response.delete_cookie(session_auth.SESSION_COOKIE)
+    return response
 
 # Time ranges offered by the dashboard's selector. Bucket widths are chosen so
 # every range produces a similar number of points (~24-30): enough shape to
@@ -2222,11 +2309,14 @@ def api_settings_get():
 
 @app.post("/api/settings/password")
 def api_settings_password(body: PasswordChange):
-    """Change the console's Basic Auth password. There is one shared
-    account today (finding C7 - no sessions, no per-user accounts yet),
-    so this changes the one password everyone uses. Never logs the
-    actual password value, before or after, into the audit trail or the
-    journal - only that a change happened.
+    """Change the console's login password. There is one shared account
+    today (finding C7 - no per-user accounts yet), so this changes the
+    one password everyone uses. Never logs the actual password value,
+    before or after, into the audit trail or the journal - only that a
+    change happened. Stored as a PBKDF2-HMAC-SHA256 hash (step 3.1 - see
+    session_auth.py's module docstring for why not scrypt as originally
+    planned), not plaintext. Existing sessions are unaffected, since a
+    session's validity never depended on the password file after login.
 
     Declared here, before the /api/settings/{key} route below, on
     purpose: Starlette matches routes in declaration order, and a
@@ -2239,14 +2329,14 @@ def api_settings_password(body: PasswordChange):
         current = _console_password()
     except FileNotFoundError:
         raise HTTPException(500, "console password file is missing")
-    if not secrets.compare_digest(body.current_password, current):
+    if not session_auth.verify_password(body.current_password, current):
         raise HTTPException(400, "current password is incorrect")
     if len(body.new_password) < 12:
         raise HTTPException(400, "new password must be at least 12 characters")
     if body.new_password == body.current_password:
         raise HTTPException(400, "new password must be different from the current one")
     with open(CONSOLE_PASSWORD_FILE, "w") as f:
-        f.write(body.new_password)
+        f.write(session_auth.hash_password(body.new_password))
     audit.log(db(), CONSOLE_USERNAME, "settings.password_change", detail="password changed (value not logged)")
     print("settings: console password changed", flush=True)
     return {"ok": True}

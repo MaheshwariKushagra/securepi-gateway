@@ -430,4 +430,40 @@ CREATE TABLE IF NOT EXISTS intel_feed_state (
     indicator_count INTEGER
 );
 
+-- -------------------------------------------------------------- sessions --
+-- Console login sessions (ENHANCEMENT-PLAN.md step 3.1, "Session
+-- authentication"), replacing the HTTP Basic Auth this console used
+-- through Stage 2. `token` is the value the HttpOnly SameSite=Strict
+-- cookie carries - a random, unguessable string with no information of
+-- its own, so a stolen cookie is useless once its row here is deleted.
+-- Kept in the database rather than process memory for the same reason
+-- audit_log/settings are tables: a `securepi-web` restart (part of
+-- every `make deploy`) shouldn't silently sign everyone out, and this
+-- console is a single process, so there's no multi-worker consistency
+-- problem a table has to solve either. See app/session_auth.py.
+CREATE TABLE IF NOT EXISTS sessions (
+    token       TEXT PRIMARY KEY,
+    username    TEXT NOT NULL,
+    created_at  REAL NOT NULL,
+    last_active REAL NOT NULL,   -- refreshed on every authenticated request; drives the idle timeout
+    expires_at  REAL NOT NULL    -- absolute cap, regardless of activity
+);
+
+CREATE INDEX IF NOT EXISTS idx_sessions_expires ON sessions(expires_at);
+
+-- -------------------------------------------------------- login_attempts --
+-- One row per FAILED login, keyed by client IP (step 3.1's rate limit -
+-- see app/session_auth.py's check_rate_limit()). A successful login
+-- never adds a row here, and clears any of the same IP's existing rows,
+-- so only a sustained guessing pattern from one address is ever
+-- throttled, not a legitimate user who mistyped their password once
+-- or twice.
+CREATE TABLE IF NOT EXISTS login_attempts (
+    id INTEGER PRIMARY KEY,
+    ip TEXT NOT NULL,
+    ts REAL NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_login_attempts_ip_ts ON login_attempts(ip, ts);
+
 INSERT OR IGNORE INTO ingest_stats (id) VALUES (1);

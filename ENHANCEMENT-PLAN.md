@@ -306,7 +306,7 @@ New signals follow the `correlation.py` pattern (trailing-window SQL → `raise_
 
 | Step | Work | Origin | Exit criteria | Days |
 |---|---|---|---|---|
-| 3.1 | **Session authentication** (scrypt hash, HttpOnly SameSite=Strict cookie, rate limit, Origin check, timeout, password change) | F§11.1 | Unauthenticated → login. Cross-origin POST rejected | 1 |
+| 3.1 | **Session authentication — done, 20 September 2026** (PBKDF2-HMAC-SHA256, not scrypt as originally written here - `hashlib.scrypt` isn't available on the Mac's own Python; HttpOnly SameSite=Strict cookie, rate limit, Origin check, idle + absolute timeout, password change adapted. Full detail, live-verification results and the real environment gaps found: `EVALUATION-RESULTS-2.md` §3.1) | F§11.1 | Unauthenticated → login. Cross-origin POST rejected - **both confirmed live on the gateway** | 1 |
 | 3.2 | **TLS on the console** (console CA, separate from the DPI CA) | F§11.1 | HTTPS only | 0.5 |
 | 3.3 | **Privilege separation:** unprivileged web app + allowlisted root helper for quarantine, block, **enroll/unenroll** | F§11.1, G9 | Web process has no root. Helper rejects malformed input. Calls audited | 1 |
 | 3.4 | **Security self-review** (CSRF/XSS/injection, secrets in logs, `pip-audit`, WAN exposure) → `docs/SECURITY-REVIEW.md` | F§14 Ph9 | No unmitigated high findings | 0.5 |
@@ -558,7 +558,7 @@ Never cut Stage 2, steps 5.2, 5.3, 5.7, or evaluation items 7.2–7.5.
 | 0 | **0.1 done, 0.2 done and verified live, 0.3 done** | Stage 0 complete |
 | 1 | **1.1 done, 1.2 done, 1.3 done, 1.4 done, 1.5 done, 1.6 done, 1.7 done, 1.8 done** (1.8 out of order - see note below) | Stage 1 complete |
 | 2 | **2.1–2.8 all done** | **Stage 2 complete** |
-| 3 | 3.1 · 3.2 · 3.3 · 3.4 · 3.5 · 3.6 | Not started |
+| 3 | **3.1 done** · 3.2 · 3.3 · 3.4 · 3.5 · 3.6 | In progress |
 | 4 | 4.1 · 4.2 · 4.3 · 4.4 · 4.5 | Not started |
 | 5 | **5.1 done, 5.2 done, 5.3 done, 5.4 done, 5.5 done, 5.6 done, 5.7 done, 5.8 done, 5.9 done, 5.10 done, 5.11 done (Path 1 only)** (out of order) | 5.1–5.11 done - 5.11 scoped to Path 1 (cosmetic CSS), Path 2 (scriptlets) deferred and recorded |
 | 6 | **6.1 done, 6.2 done, 6.3 done, 6.4 done, 6.5 done, 6.6 done, 6.7 done** | Stage 6 complete |

@@ -54,7 +54,13 @@
         <line x1="4" y1="12" x2="20" y2="12"/><circle cx="15" cy="12" r="2" fill="currentColor" stroke="none"/>
         <line x1="4" y1="18" x2="20" y2="18"/><circle cx="7" cy="18" r="2" fill="currentColor" stroke="none"/>
     </symbol>
+    <symbol id="i-logout" viewBox="0 0 24 24">
+        <path d="M9 4 H5.5 a1.5 1.5 0 0 0 -1.5 1.5 V18.5 a1.5 1.5 0 0 0 1.5 1.5 H9"/>
+        <line x1="21" y1="12" x2="10" y2="12"/><polyline points="16,7 21,12 16,17"/>
+    </symbol>
 </svg>
+
+<form id="logoutForm" method="post" action="/logout" hidden></form>
 
 <div class="shell" id="shell">
     <aside class="sidebar" id="sidebar">
@@ -130,6 +136,9 @@
             <button class="icon-btn theme-toggle" id="themeToggle" title="Switch to light mode" aria-label="Switch to light mode">
                 <svg class="icon icon-moon" width="17" height="17"><use href="#i-moon"/></svg>
                 <svg class="icon icon-sun" width="17" height="17"><use href="#i-sun"/></svg>
+            </button>
+            <button class="icon-btn" type="submit" form="logoutForm" title="Sign out" aria-label="Sign out">
+                <svg class="icon" width="17" height="17"><use href="#i-logout"/></svg>
             </button>
             <div class="notif-wrap">
                 <button class="icon-btn" id="notifBtn" aria-label="Notifications">

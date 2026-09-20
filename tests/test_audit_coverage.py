@@ -38,7 +38,15 @@ WEBAPP_PATH = os.path.join(REPO_ROOT, "app", "webapp.py")
 EXPLICITLY_UNAUDITED_OK = set()
 
 ENDPOINT_PATTERN = re.compile(
-    r'@app\.(post|patch|put)\("([^"]+)"\)\ndef (\w+)\(', re.MULTILINE
+    # (?:async )? - step 3.1 added this project's first `async def` write
+    # endpoint (POST /login). Without this, the scanner below silently
+    # skips any async endpoint rather than checking it, which would have
+    # let a genuinely unaudited async endpoint pass this test - the
+    # opposite of what a "future endpoint added without an audit call
+    # fails this test immediately" regression guard is for. Caught by
+    # running this exact scanner against the real new endpoint and
+    # noticing it wasn't in the results, not assumed.
+    r'@app\.(post|patch|put)\("([^"]+)"\)\n(?:async )?def (\w+)\(', re.MULTILINE
 )
 
 

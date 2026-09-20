@@ -141,6 +141,20 @@ SCHEMA_MIGRATIONS = [
        )""",
     "CREATE INDEX IF NOT EXISTS idx_campaigns_device ON campaigns(device_id)",
     "ALTER TABLE incidents ADD COLUMN campaign_id INTEGER REFERENCES campaigns(id)",
+    """CREATE TABLE IF NOT EXISTS sessions (
+           token       TEXT PRIMARY KEY,
+           username    TEXT NOT NULL,
+           created_at  REAL NOT NULL,
+           last_active REAL NOT NULL,
+           expires_at  REAL NOT NULL
+       )""",
+    "CREATE INDEX IF NOT EXISTS idx_sessions_expires ON sessions(expires_at)",
+    """CREATE TABLE IF NOT EXISTS login_attempts (
+           id INTEGER PRIMARY KEY,
+           ip TEXT NOT NULL,
+           ts REAL NOT NULL
+       )""",
+    "CREATE INDEX IF NOT EXISTS idx_login_attempts_ip_ts ON login_attempts(ip, ts)",
 ]
 
 # How long to wait between passes over the log files. Two seconds keeps the

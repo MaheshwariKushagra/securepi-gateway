@@ -53,6 +53,12 @@ src = open(os.path.join(REPO, "app/webapp.py")).read()
 src = (src.replace('"/opt/securepi/static"', repr(os.path.join(REPO, "app/static")))
           .replace('"/opt/securepi/templates"', repr(os.path.join(REPO, "app/templates")))
           .replace('DB_PATH = "/opt/securepi/securepi.db"', "DB_PATH = %r" % DB)
+          # step 3.1: a successful login rewrites this file with a fresh
+          # hash (see session_auth.needs_rehash) - point that at a local,
+          # writable path instead of the real gateway's root-only one,
+          # which this Mac has no permission to touch.
+          .replace('CONSOLE_PASSWORD_FILE = "/root/.securepi-console-password"',
+                    "CONSOLE_PASSWORD_FILE = %r" % os.path.join(HERE, "console-password.demo"))
           .replace('DPI_RULES_PATH = "/opt/securepi-dpi/adfilter-rules.json"',
                    "DPI_RULES_PATH = %r" % os.path.join(REPO, "dpi/adfilter-rules.json"))
           .replace('"/var/log/securepi/dpi-rule-stats.json"', repr(os.path.join(HERE, "dpi-rule-stats.json"))))

@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Sign in · SecurePi Gateway</title>
+    <script>
+        /* Same pre-paint theme read as base.html, so a light-mode user
+           never sees a flash of the dark console on the login page. */
+        try { if (localStorage.getItem("sp.theme") === "light") document.documentElement.dataset.theme = "light"; } catch (e) {}
+    </script>
+    <link rel="stylesheet" href="/static/app.css?v={{ asset_v }}">
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🛡️</text></svg>">
+    <style>
+        /* Page-specific layout only - everything else (colors, .card,
+           .input, .btn, .field-*) comes from app.css's shared tokens, so
+           this page follows the dark/light theme automatically. */
+        body { display: flex; align-items: center; justify-content: center; min-height: 100vh; }
+        .login-wrap { width: 100%; max-width: 340px; padding: 16px; }
+        .login-brand { display: flex; align-items: center; gap: 10px; justify-content: center; margin-bottom: 22px; }
+        .login-brand .brand-mark {
+            width: 34px; height: 34px; border-radius: var(--r-sm); display: flex; align-items: center;
+            justify-content: center; background: var(--accent-dim); color: var(--accent-text); flex-shrink: 0;
+        }
+        .login-brand-text { text-align: left; line-height: 1.25; }
+        .login-brand-name { font-weight: 650; font-size: 15px; }
+        .login-brand-sub { font-size: 11.5px; color: var(--text-3); }
+        .login-title { font-size: 14px; font-weight: 600; margin: 0 0 14px; }
+        .login-error {
+            background: var(--high-bg); border: 1px solid var(--high-line); color: var(--high-text);
+            border-radius: var(--r-sm); padding: 9px 12px; font-size: 12.5px; margin-bottom: 14px;
+        }
+        .login-submit { width: 100%; justify-content: center; margin-top: 4px; }
+        .login-foot { text-align: center; margin-top: 16px; font-size: 11.5px; color: var(--text-3); }
+    </style>
+</head>
+<body>
+<div class="login-wrap">
+    <div class="login-brand">
+        <span class="brand-mark">
+            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6">
+                <path d="M12 2 L20 5 L20 12 L12 22 L4 12 L4 5 Z"/>
+            </svg>
+        </span>
+        <span class="login-brand-text">
+            <span class="login-brand-name" style="display:block">SecurePi</span>
+            <span class="login-brand-sub">Gateway console</span>
+        </span>
+    </div>
+    <div class="card">
+        <div class="card-body">
+            <h1 class="login-title">Sign in</h1>
+            {% if error %}
+            <div class="login-error">{{ error }}</div>
+            {% endif %}
+            <form method="post" action="/login">
+                <input type="hidden" name="next" value="{{ next or '/' }}">
+                <label class="field" style="display:block; margin-bottom:14px">
+                    <span class="field-label">Password</span>
+                    <input class="input" type="password" name="password" autocomplete="current-password"
+                           autofocus required style="width:100%; box-sizing:border-box">
+                </label>
+                <button class="btn primary login-submit" type="submit">Sign in</button>
+            </form>
+        </div>
+    </div>
+    <div class="login-foot">One shared console account. Ask whoever manages this gateway if you need the password.</div>
+</div>
+</body>
+</html>

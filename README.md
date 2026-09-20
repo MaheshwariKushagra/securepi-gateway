@@ -260,7 +260,7 @@ flowchart LR
 | Sensing | **Suricata 7** (af-packet), **AdGuard Home**, **mitmproxy 12** addon | IDS flows/alerts, DNS decisions, selective TLS inspection |
 | Storage | **SQLite** in WAL mode, one unified `events` table | One `events` table, so no UNIONs across tables in detection queries. Readers never block the writer |
 | Detection | Plain Python and windowed SQL, no framework | Every detection is a query anyone can run by hand to check it |
-| Console | **FastAPI**, Jinja2, vanilla JS, **Chart.js 4**, one hand-written stylesheet | No build step and no SPA framework. HTTP Basic Auth runs as middleware and blocks every request if the password file is missing |
+| Console | **FastAPI**, Jinja2, vanilla JS, **Chart.js 4**, one hand-written stylesheet | No build step and no SPA framework. Session-cookie auth runs as middleware (step 3.1) and blocks every request if the password file is missing |
 | Testing | `unittest` (pytest-compatible), in-memory SQLite fixtures | Runs on the Mac in well under a second, without the gateway |
 
 ---
@@ -689,8 +689,12 @@ Cat7/USB-C adapter must be on):
 ./mac-tunnel.sh stop
 ```
 
-**Logging in.** HTTP Basic Auth, username `securepi`. The password is stored only on the gateway, at
-`/root/.securepi-console-password` (root-only, never in this repository). To set a new one:
+**Logging in.** A session login at `/login` (one shared account, username `securepi` in the audit
+log; step 3.1 replaced the earlier HTTP Basic Auth). The password is stored only on the gateway, at
+`/root/.securepi-console-password` (root-only, never in this repository), hashed rather than
+plaintext. Change it from the console's Settings page normally. If you're locked out and need to
+reset it directly over SSH, writing a plain new password into the file still works - the console
+accepts a plaintext file once, then transparently rehashes it on that same login:
 
 ```bash
 ssh maheshwari@192.168.2.5 'echo "NEW_PASSWORD" | sudo tee /root/.securepi-console-password > /dev/null && sudo chmod 600 /root/.securepi-console-password'

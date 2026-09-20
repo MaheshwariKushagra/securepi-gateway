@@ -466,4 +466,35 @@ CREATE TABLE IF NOT EXISTS login_attempts (
 
 CREATE INDEX IF NOT EXISTS idx_login_attempts_ip_ts ON login_attempts(ip, ts);
 
+-- --------------------------------------------------------- sensor_stats --
+-- Suricata's own periodic 'stats' record (ENHANCEMENT-PLAN.md step 3.5,
+-- health supervisor): kernel-level packet/drop counts, so the platform
+-- health check can tell "capturing fine" apart from "the kernel is
+-- dropping packets under load" - a real, distinct failure mode from
+-- "Suricata isn't running at all". One upserted row (id=1), the same
+-- "current snapshot, not history" shape as ingest_stats.
+CREATE TABLE IF NOT EXISTS sensor_stats (
+    id              INTEGER PRIMARY KEY,
+    ts              REAL NOT NULL,
+    kernel_packets  INTEGER,
+    kernel_drops    INTEGER,
+    capture_errors  INTEGER
+);
+
+-- --------------------------------------------------------- service_health --
+-- One row per systemd unit this project watches (app/services.list),
+-- refreshed every engine cycle by app/health.py (step 3.5) - is it
+-- active, and its current memory/CPU from systemd's own cgroup
+-- accounting (no psutil, no /proc parsing - see ENHANCEMENT-PLAN.md
+-- §1.6's decision against adding a system-monitor dependency). Powers
+-- both the platform-down incident check and a "platform health" console
+-- panel.
+CREATE TABLE IF NOT EXISTS service_health (
+    service       TEXT PRIMARY KEY,
+    checked_at    REAL NOT NULL,
+    is_active     INTEGER,       -- NULL means systemctl itself couldn't be asked, not "known down"
+    memory_bytes  INTEGER,
+    cpu_seconds   REAL
+);
+
 INSERT OR IGNORE INTO ingest_stats (id) VALUES (1);

@@ -1,0 +1,25 @@
+# SecurePi Gateway - services that must be active at all times.
+#
+# This is the single source of truth for "is the gateway fully up". Both
+# securepi status (on the gateway), session-start.sh (on the Mac), and
+# app/health.py's platform health supervisor (step 3.5) read this file,
+# so a new service only needs to be added HERE to be checked everywhere -
+# update this whenever a new always-on systemd unit is added.
+#
+# Format: one service name per line. Blank lines and #-comments ignored.
+
+hostapd
+securepi-ap-follow-uplink
+securepi-ap0
+AdGuardHome
+nftables
+securepi-dpi
+securepi-ca-server
+securepi-test-harness
+suricata
+securepi-ingest
+securepi-engine
+securepi-web
+securepi-doh-refresh.timer
+securepi-static
+securepi-intel-refresh.timer

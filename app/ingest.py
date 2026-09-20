@@ -30,6 +30,7 @@ import sys
 import time
 
 import adguard
+import health
 import registry
 
 DB_PATH = "/opt/securepi/securepi.db"
@@ -155,16 +156,34 @@ SCHEMA_MIGRATIONS = [
            ts REAL NOT NULL
        )""",
     "CREATE INDEX IF NOT EXISTS idx_login_attempts_ip_ts ON login_attempts(ip, ts)",
+    """CREATE TABLE IF NOT EXISTS sensor_stats (
+           id             INTEGER PRIMARY KEY,
+           ts             REAL NOT NULL,
+           kernel_packets INTEGER,
+           kernel_drops   INTEGER,
+           capture_errors INTEGER
+       )""",
+    """CREATE TABLE IF NOT EXISTS service_health (
+           service      TEXT PRIMARY KEY,
+           checked_at   REAL NOT NULL,
+           is_active    INTEGER,
+           memory_bytes INTEGER,
+           cpu_seconds  REAL
+       )""",
 ]
 
 # How long to wait between passes over the log files. Two seconds keeps the
 # console feeling live without spinning the CPU on an idle network.
 POLL_SECONDS = 2
 
-# Suricata emits a 'stats' record every few seconds. They are useful for
-# monitoring Suricata itself but they are not network events, so they do not
-# belong in the events table.
-SKIP_TYPES = {"stats"}
+# Event types that are not network events and so do not belong in the
+# events table. 'stats' USED to be skipped entirely here - as of step 3.5
+# it gets its own handling (save_sensor_stats) instead, since the health
+# supervisor needs Suricata's own capture-drop count. Kept as an empty-
+# but-present set rather than removed outright, so a genuinely new
+# non-network event type has an obvious place to go without having to
+# rediscover this exact reasoning.
+SKIP_TYPES = set()
 
 
 def open_db():
@@ -254,6 +273,27 @@ def to_epoch(timestamp):
     """Convert Suricata's eve.json timestamp to epoch seconds. See
     parse_rfc3339's own docstring for the real bug this used to have."""
     return parse_rfc3339(timestamp)
+
+
+def save_sensor_stats(conn, event):
+    """Suricata emits a 'stats' record periodically (every 8s by default) -
+    previously discarded entirely via SKIP_TYPES. ENHANCEMENT-PLAN.md step
+    3.5 (health supervisor) needs the capture drop count to tell "packets
+    are arriving but the kernel is dropping some" apart from "nothing is
+    arriving at all" - a single upserted row (matching the ingest_stats/
+    signal_state pattern: one current snapshot, not a growing history) is
+    all that check needs. capture.kernel_packets/kernel_drops/errors are
+    Suricata's own documented stats.capture fields, confirmed against a
+    real record on the live gateway before writing this, not guessed."""
+    capture = event.get("stats", {}).get("capture", {})
+    conn.execute(
+        "INSERT INTO sensor_stats (id, ts, kernel_packets, kernel_drops, capture_errors)"
+        " VALUES (1, ?, ?, ?, ?)"
+        " ON CONFLICT(id) DO UPDATE SET ts=excluded.ts, kernel_packets=excluded.kernel_packets,"
+        " kernel_drops=excluded.kernel_drops, capture_errors=excluded.capture_errors",
+        (to_epoch(event["timestamp"]), capture.get("kernel_packets"),
+         capture.get("kernel_drops"), capture.get("errors")),
+    )
 
 
 def flatten_suricata(event):
@@ -409,6 +449,9 @@ def read_eve(conn):
                 event = json.loads(line)
             except Exception:
                 errors += 1
+                continue
+            if event.get("event_type") == "stats":
+                save_sensor_stats(conn, event)
                 continue
             if event.get("event_type") in SKIP_TYPES:
                 continue
@@ -916,6 +959,16 @@ def main():
                     saved, total, attributed,
                     ", %d parse errors" % errors if errors else ""
                 ), flush=True)
+
+            # step 3.5's health supervisor rides this loop, not
+            # engine.py's - a process can't reliably detect its own
+            # death, and securepi-ingest is a genuinely separate systemd
+            # unit from securepi-engine, so it can correctly report "the
+            # engine hasn't run recently" even if the engine crashed.
+            # Throttled internally (run_if_due) to health_check_interval_
+            # seconds, since most of these checks are too costly to
+            # repeat every 2s.
+            health.run_if_due(conn)
         except Exception as exc:
             # Never let one bad pass kill the service; report and carry on.
             print("ingest error: %s" % exc, file=sys.stderr, flush=True)

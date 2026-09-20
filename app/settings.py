@@ -249,6 +249,33 @@ SETTINGS_SCHEMA = {
         "help": "How far back (seconds) failed login attempts are counted when applying the "
                 "login rate limit (step 3.1).",
     },
+    "health_check_interval_seconds": {
+        "default": 30, "type": int, "min": 15, "max": 300,
+        "label": "Platform health check interval",
+        "help": "How often (seconds) the health supervisor checks service state, disk, DB size "
+                "and WAN reachability (step 3.5) - well under the 60s a stopped service must be "
+                "flagged within.",
+    },
+    "health_stale_after_seconds": {
+        "default": 60, "type": int, "min": 30, "max": 3600,
+        "label": "Platform staleness threshold",
+        "help": "How long (seconds) with no fresh Suricata- or AdGuard-sourced events before "
+                "that sensor is flagged stale, even if its systemd unit is still 'active' - "
+                "catches a hung process a bare is-active check would miss (step 3.5).",
+    },
+    "health_disk_min_free_pct": {
+        "default": 10, "type": int, "min": 1, "max": 50,
+        "label": "Minimum free disk %",
+        "help": "Free disk space, as a percentage, below which the health supervisor raises a "
+                "platform incident (step 3.5).",
+    },
+    "health_db_max_size_mb": {
+        "default": 500, "type": int, "min": 50, "max": 10000,
+        "label": "Maximum expected database size (MB)",
+        "help": "Database file size above which the health supervisor raises a platform incident - "
+                "most likely a sign step 1.3's retention job has stopped running, not that this "
+                "much data is actually expected (step 3.5).",
+    },
 }
 
 

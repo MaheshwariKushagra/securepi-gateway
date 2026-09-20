@@ -1066,6 +1066,26 @@ class RaiseIncidentDedupAndEvidenceTests(unittest.TestCase):
         self.assertEqual(rows[0]["status"], "resolved")
         self.assertEqual(rows[1]["status"], "new")
 
+    def test_a_device_less_platform_incident_dedups_against_itself(self):
+        """Regression test for a step 3.5 finding: SQLite's `=` never
+        matches NULL, even against another NULL, so the dedup query's
+        original `device_id = ?` would never find a platform-wide
+        incident's own earlier firing (device_id=None, used by the
+        health supervisor) and would raise a brand new incident every
+        single cycle instead of extending the open one - the exact
+        opposite of what dedup is for. `device_id IS ?` fixes this
+        while behaving identically for every real device_id above."""
+        conn = fixtures.temp_db()
+        now = time.time()
+        id1 = correlation.raise_incident(
+            conn, None, "platform_unhealthy", "high", "t1", "d1", now - 100, now - 100, [])
+        id2 = correlation.raise_incident(
+            conn, None, "platform_unhealthy", "high", "t2", "d2", now - 90, now - 90, [])
+        self.assertEqual(id1, id2, "must merge into the same platform incident, not open a new one")
+        rows = conn.execute("SELECT * FROM incidents WHERE device_id IS NULL").fetchall()
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]["description"], "d2")
+
     def test_outside_dedup_window_creates_a_separate_incident(self):
         conn = fixtures.temp_db()
         fixtures.insert_device(conn, 1)

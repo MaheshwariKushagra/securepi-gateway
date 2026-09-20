@@ -123,8 +123,17 @@ def raise_incident(conn, device_id, signal_type, severity, title, description,
 
     dedup_window = settings.get(conn, "dedup_window_seconds")
     existing = conn.execute(
+        # `device_id IS ?`, not `= ?` (step 3.5 finding, found before it
+        # could bite): SQLite's `=` never matches NULL, even against
+        # another NULL, so a platform-wide incident (device_id=None, new
+        # in step 3.5's health supervisor) would never dedup against its
+        # own earlier firing under `=` - every cycle would raise a brand
+        # new incident instead of extending the open one. `IS` matches
+        # NULL-to-NULL correctly and behaves identically to `=` for every
+        # real (non-NULL) device_id, confirmed with a quick sqlite3
+        # check before relying on it, not assumed from general SQL rules.
         """SELECT id, evidence_count FROM incidents
-            WHERE device_id = ? AND signal_type = ? AND status IN ('new', 'investigating')
+            WHERE device_id IS ? AND signal_type = ? AND status IN ('new', 'investigating')
               AND last_seen >= ?
             ORDER BY last_seen DESC LIMIT 1""",
         (device_id, signal_type, last_seen - dedup_window),

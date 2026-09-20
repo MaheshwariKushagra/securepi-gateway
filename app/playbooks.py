@@ -435,6 +435,58 @@ PLAYBOOKS = {
             "baseline adapts over time. If the volume is genuinely unexplained, investigate what "
             "this device sent and to where.",
     },
+    "platform_service_down": {
+        "what_it_means": "One or more always-on gateway services (listed in the incident's own "
+            "description) is not running. Every detection signal that depends on a stopped "
+            "service is silently blind while it's down - this is not about a device, it's about "
+            "whether the rest of this dashboard can be trusted right now (step 3.5).",
+        "how_to_check": "SSH to the gateway and run `sudo securepi status`, or "
+            "`sudo systemctl status <service>` for the specific one(s) named. Check its journal "
+            "(`sudo journalctl -u <service> -n 50`) for why it stopped.",
+        "recommended_action": "Restart the service (`sudo systemctl restart <service>`) and "
+            "confirm it stays up. Resolve once `securepi status` shows it active again - this "
+            "incident will not clear itself.",
+    },
+    "platform_stale": {
+        "what_it_means": "A service the incident names is still reported 'active' by systemd but "
+            "hasn't produced fresh output in longer than expected - a hang, not necessarily a "
+            "crash, which is why the service-down check alone wouldn't catch it (step 3.5).",
+        "how_to_check": "Check the named service's journal for the last real activity, and "
+            "compare against its own expected cadence (ingest polls every 2s, the engine every "
+            "15s, Suricata/AdGuard continuously).",
+        "recommended_action": "A restart usually clears a genuine hang: "
+            "`sudo systemctl restart <service>`. Resolve once fresh events/incidents resume.",
+    },
+    "platform_disk_low": {
+        "what_it_means": "Free disk space on the volume holding the database has dropped below "
+            "the configured threshold (Settings). Left unaddressed, the database and every "
+            "service that writes to disk will eventually fail outright.",
+        "how_to_check": "`df -h` on the gateway, and `du -sh /opt/securepi/*` to see what's using "
+            "space - old `.bak-*` files from past deploys are a common, safe-to-remove cause.",
+        "recommended_action": "Free space (remove old backups/logs) or expand storage. Resolve "
+            "once free space is back above the threshold.",
+    },
+    "platform_db_size": {
+        "what_it_means": "The live database file is larger than the configured expected maximum "
+            "- most likely because step 1.3's nightly retention job has stopped running, not "
+            "because this much data is actually expected day to day.",
+        "how_to_check": "Check `securepi-engine`'s journal for retention's own daily log line "
+            "(\"retention: removed ... - db size ...\"). If it's missing for more than a day, "
+            "retention isn't running.",
+        "recommended_action": "Restart `securepi-engine` if retention has stopped logging. "
+            "Resolve once the database shrinks back under the threshold or a legitimate reason "
+            "for the growth is confirmed.",
+    },
+    "platform_wan_down": {
+        "what_it_means": "A single ping to a well-known public address failed, meaning the "
+            "gateway's own internet uplink is down. DNS filtering, threat-intel updates and "
+            "blocklist refreshes all depend on this; local network monitoring, the console, and "
+            "device-to-device traffic on SecurePi-Test are unaffected.",
+        "how_to_check": "`sudo securepi status` shows the WAN line; check whether the upstream "
+            "Wi-Fi network is actually reachable from another device.",
+        "recommended_action": "Reconnect the uplink (`sudo securepi-add-uplink \"Network Name\"` "
+            "if it's a new network). Resolve once WAN connectivity is confirmed restored.",
+    },
 }
 
 

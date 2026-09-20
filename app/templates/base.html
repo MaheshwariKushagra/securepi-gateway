@@ -159,6 +159,10 @@
                 <button class="btn" id="liveToggle">Pause</button>
             </span>
         </header>
+        <div class="degraded-banner" id="degradedBanner" hidden>
+            <svg class="icon" width="15" height="15"><use href="#i-alert"/></svg>
+            <span id="degradedBannerText">DNS protection degraded - AdGuard isn't answering, so plaintext DNS is running unfiltered through a public resolver.</span>
+        </div>
         <main>
         {% block content %}{% endblock %}
         </main>

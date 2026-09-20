@@ -487,6 +487,20 @@ PLAYBOOKS = {
         "recommended_action": "Reconnect the uplink (`sudo securepi-add-uplink \"Network Name\"` "
             "if it's a new network). Resolve once WAN connectivity is confirmed restored.",
     },
+    "platform_dns_failopen": {
+        "what_it_means": "AdGuard Home stopped answering real DNS queries for longer than the "
+            "configured grace period (Settings), so the gateway redirected plaintext DNS to a "
+            "public upstream resolver to keep devices online - every device on the network is "
+            "currently resolving names WITHOUT ad/threat blocking, DNS filtering, or DoH-bypass "
+            "protection (step 3.6).",
+        "how_to_check": "`sudo systemctl status AdGuardHome` and its journal "
+            "(`sudo journalctl -u AdGuardHome -n 50`) for why it stopped or won't start. "
+            "`sudo securepi status` shows whether Tier 1 DNS filtering currently reads active.",
+        "recommended_action": "Fix and restart AdGuard (`sudo systemctl restart AdGuardHome`); "
+            "filtering resumes on its own the next time this check confirms it's answering again - "
+            "no manual step needed for that part. Resolve this incident once you've confirmed "
+            "filtering is actually back, not just that AdGuard is running.",
+    },
 }
 
 

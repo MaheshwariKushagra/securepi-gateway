@@ -276,6 +276,21 @@ SETTINGS_SCHEMA = {
                 "most likely a sign step 1.3's retention job has stopped running, not that this "
                 "much data is actually expected (step 3.5).",
     },
+    "dns_failopen_check_interval_seconds": {
+        "default": 5, "type": int, "min": 2, "max": 60,
+        "label": "DNS fail-open check interval",
+        "help": "How often (seconds) the gateway probes AdGuard with a real DNS query, separate "
+                "from and faster than the general platform health interval - the ~30s 'clients "
+                "still resolve' exit criterion has no room to wait out a slower cycle (step 3.6).",
+    },
+    "dns_failopen_after_seconds": {
+        "default": 10, "type": int, "min": 5, "max": 120,
+        "label": "DNS fail-open grace period",
+        "help": "How long (seconds) AdGuard must go on not answering DNS queries before the "
+                "gateway redirects plaintext DNS to a public upstream resolver - long enough that "
+                "AdGuard's own automatic restart (10s) usually gets a chance to fix things first, "
+                "short enough that the ~30s exit criterion still has margin (step 3.6).",
+    },
 }
 
 

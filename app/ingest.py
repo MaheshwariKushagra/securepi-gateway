@@ -170,6 +170,13 @@ SCHEMA_MIGRATIONS = [
            memory_bytes INTEGER,
            cpu_seconds  REAL
        )""",
+    """CREATE TABLE IF NOT EXISTS dns_failopen_state (
+           id         INTEGER PRIMARY KEY CHECK (id = 1),
+           active     INTEGER NOT NULL DEFAULT 0,
+           down_since REAL,
+           changed_at REAL
+       )""",
+    "INSERT OR IGNORE INTO dns_failopen_state (id, active, down_since, changed_at) VALUES (1, 0, NULL, NULL)",
 ]
 
 # How long to wait between passes over the log files. Two seconds keeps the
@@ -969,6 +976,14 @@ def main():
             # seconds, since most of these checks are too costly to
             # repeat every 2s.
             health.run_if_due(conn)
+
+            # step 3.6's DNS fail-open check needs a tighter, dedicated
+            # cadence than the general platform checks above - the ~30s
+            # "clients still resolve" exit criterion has no room for
+            # waiting out a full health_check_interval_seconds cycle
+            # first. Same root/same-loop reasoning as run_if_due(), just
+            # its own faster throttle.
+            health.run_dns_failopen_if_due(conn)
         except Exception as exc:
             # Never let one bad pass kill the service; report and carry on.
             print("ingest error: %s" % exc, file=sys.stderr, flush=True)

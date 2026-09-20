@@ -497,4 +497,22 @@ CREATE TABLE IF NOT EXISTS service_health (
     cpu_seconds   REAL
 );
 
+-- ----------------------------------------------------- dns_failopen_state --
+-- One row (id=1), live status for ENHANCEMENT-PLAN.md step 3.6 (F§8.4):
+-- is plaintext DNS currently being redirected to a public upstream
+-- resolver because AdGuard stopped answering queries. Read directly by
+-- the (unprivileged, step 3.3) web console to show/hide its "protection
+-- degraded" banner - app/health.py, which runs as root, is the only
+-- writer. `down_since` is cleared the moment resolution works again,
+-- even before `active` flips - see app/health.py's check_dns_failopen()
+-- for why the two aren't the same thing (a brief outage under the grace
+-- period sets down_since without ever setting active).
+CREATE TABLE IF NOT EXISTS dns_failopen_state (
+    id          INTEGER PRIMARY KEY CHECK (id = 1),
+    active      INTEGER NOT NULL DEFAULT 0,
+    down_since  REAL,
+    changed_at  REAL
+);
+
 INSERT OR IGNORE INTO ingest_stats (id) VALUES (1);
+INSERT OR IGNORE INTO dns_failopen_state (id, active, down_since, changed_at) VALUES (1, 0, NULL, NULL);

@@ -22,6 +22,7 @@ import unittest
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import fixtures  # noqa: E402
 
+import dns_failopen  # noqa: E402
 import health  # noqa: E402
 
 
@@ -196,6 +197,130 @@ class CheckWanTests(unittest.TestCase):
         health.check_wan(conn, time.time())
         rows = conn.execute("SELECT * FROM incidents WHERE signal_type='platform_wan_down'").fetchall()
         self.assertEqual(len(rows), 0)
+
+
+class CheckDnsFailopenTests(unittest.TestCase):
+    def setUp(self):
+        self._orig_resolves = health._dns_resolves
+        self._orig_activate = dns_failopen.activate
+        self._orig_deactivate = dns_failopen.deactivate
+
+    def tearDown(self):
+        health._dns_resolves = self._orig_resolves
+        dns_failopen.activate = self._orig_activate
+        dns_failopen.deactivate = self._orig_deactivate
+
+    def test_no_action_while_resolution_keeps_working(self):
+        conn = fixtures.temp_db()
+        health._dns_resolves = lambda host: True
+        activated = []
+        dns_failopen.activate = lambda: activated.append(1)
+        health.check_dns_failopen(conn, time.time())
+        self.assertEqual(activated, [])
+        rows = conn.execute("SELECT * FROM incidents WHERE signal_type='platform_dns_failopen'").fetchall()
+        self.assertEqual(len(rows), 0)
+
+    def test_a_brief_outage_under_the_grace_period_does_not_fail_open(self):
+        conn = fixtures.temp_db()
+        health._dns_resolves = lambda host: False
+        activated = []
+        dns_failopen.activate = lambda: activated.append(1)
+        now = time.time()
+        health.check_dns_failopen(conn, now)
+        health.check_dns_failopen(conn, now + 2)  # well under the 10s default grace
+        self.assertEqual(activated, [])
+        rows = conn.execute("SELECT * FROM incidents WHERE signal_type='platform_dns_failopen'").fetchall()
+        self.assertEqual(len(rows), 0)
+
+    def test_outage_past_the_grace_period_fails_open_and_raises_an_incident(self):
+        conn = fixtures.temp_db()
+        health._dns_resolves = lambda host: False
+        activated = []
+        dns_failopen.activate = lambda: activated.append(1)
+        now = time.time()
+        health.check_dns_failopen(conn, now)
+        health.check_dns_failopen(conn, now + 15)  # past the 10s default grace
+        self.assertEqual(len(activated), 1)
+        rows = conn.execute("SELECT * FROM incidents WHERE signal_type='platform_dns_failopen'").fetchall()
+        self.assertEqual(len(rows), 1)
+        self.assertIsNone(rows[0]["device_id"])
+        state = conn.execute("SELECT * FROM dns_failopen_state WHERE id=1").fetchone()
+        self.assertEqual(state["active"], 1)
+
+    def test_repeated_outage_extends_rather_than_duplicates_the_incident(self):
+        conn = fixtures.temp_db()
+        health._dns_resolves = lambda host: False
+        dns_failopen.activate = lambda: None
+        now = time.time()
+        health.check_dns_failopen(conn, now)
+        health.check_dns_failopen(conn, now + 15)
+        health.check_dns_failopen(conn, now + 25)
+        rows = conn.execute("SELECT * FROM incidents WHERE signal_type='platform_dns_failopen'").fetchall()
+        self.assertEqual(len(rows), 1, "must extend the open incident, not raise a new one every cycle")
+
+    def test_recovery_deactivates_and_clears_state(self):
+        conn = fixtures.temp_db()
+        health._dns_resolves = lambda host: False
+        dns_failopen.activate = lambda: None
+        now = time.time()
+        health.check_dns_failopen(conn, now)
+        health.check_dns_failopen(conn, now + 15)  # now active
+
+        deactivated = []
+        dns_failopen.deactivate = lambda: deactivated.append(1)
+        health._dns_resolves = lambda host: True
+        health.check_dns_failopen(conn, now + 20)
+
+        self.assertEqual(len(deactivated), 1)
+        state = conn.execute("SELECT * FROM dns_failopen_state WHERE id=1").fetchone()
+        self.assertEqual(state["active"], 0)
+        self.assertIsNone(state["down_since"])
+
+    def test_recovery_before_the_grace_period_never_touches_the_firewall(self):
+        # A blip that self-heals in a couple of seconds should raise no
+        # incident and call neither activate() nor deactivate() - nothing
+        # was ever actually redirected, so there's nothing to undo.
+        conn = fixtures.temp_db()
+        health._dns_resolves = lambda host: False
+        activated, deactivated = [], []
+        dns_failopen.activate = lambda: activated.append(1)
+        now = time.time()
+        health.check_dns_failopen(conn, now)
+
+        dns_failopen.deactivate = lambda: deactivated.append(1)
+        health._dns_resolves = lambda host: True
+        health.check_dns_failopen(conn, now + 2)
+
+        self.assertEqual(activated, [])
+        self.assertEqual(deactivated, [], "down_since alone (no activation) needs no deactivate() call")
+        state = conn.execute("SELECT * FROM dns_failopen_state WHERE id=1").fetchone()
+        self.assertIsNone(state["down_since"])
+
+
+class RunDnsFailopenIfDueTests(unittest.TestCase):
+    def setUp(self):
+        # Avoid a real, slow `dig` call against an unreachable 10.10.0.1
+        # from the Mac - this class only exercises the throttle gate.
+        self._orig_resolves = health._dns_resolves
+        health._dns_resolves = lambda host: True
+
+    def tearDown(self):
+        health._dns_resolves = self._orig_resolves
+
+    def test_does_not_run_again_before_the_interval_elapses(self):
+        conn = fixtures.temp_db()
+        now = time.time()
+        ran = health.run_dns_failopen_if_due(conn, now)
+        self.assertTrue(ran)
+        ran_again = health.run_dns_failopen_if_due(conn, now + 1)
+        self.assertFalse(ran_again, "must be throttled - ingest.py's own loop runs every 2s")
+
+    def test_runs_again_once_the_interval_has_elapsed(self):
+        conn = fixtures.temp_db()
+        now = time.time()
+        health.run_dns_failopen_if_due(conn, now)
+        ran = health.run_dns_failopen_if_due(conn, now + 999)
+        self.assertTrue(ran)
 
 
 class RunIfDueTests(unittest.TestCase):

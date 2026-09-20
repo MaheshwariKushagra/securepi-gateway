@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-SecurePi Gateway - platform health supervisor (ENHANCEMENT-PLAN.md step
-3.5).
+SecurePi Gateway - platform health supervisor (ENHANCEMENT-PLAN.md steps
+3.5 and 3.6).
 
 Every signal in app/correlation.py asks "is a DEVICE doing something
 suspicious"; this asks "is the GATEWAY ITSELF healthy enough to trust
@@ -34,6 +34,13 @@ underlying problem is actually fixed. This module never marks one
 resolved itself, matching every other signal's own behavior - it only
 ever raises/extends an incident while a problem is real, never closes
 one out from underneath an operator.
+
+check_dns_failopen() (step 3.6) is the one exception to "this module
+only observes and reports": when AdGuard stops answering DNS, it
+actively redirects plaintext DNS to a public upstream resolver via
+app/dns_failopen.py, so the network keeps working while the incident
+above is still open. That firewall change - not the incident - is what
+reverts itself automatically once AdGuard recovers.
 """
 
 import os
@@ -42,6 +49,7 @@ import subprocess
 import time
 
 import correlation
+import dns_failopen
 import retention
 import settings
 
@@ -49,6 +57,8 @@ SERVICES_LIST_PATH = "/opt/securepi/services.list"
 DB_PATH = "/opt/securepi/securepi.db"
 DB_DIR = os.path.dirname(DB_PATH)
 WAN_PROBE_HOST = "1.1.1.1"
+DNS_PROBE_DOMAIN = "example.com"
+DNS_PROBE_TIMEOUT_S = 2
 
 
 def _services_to_check():
@@ -234,6 +244,105 @@ def run_if_due(conn, now=None):
     check_platform_health(conn, now)
     conn.execute(
         "INSERT INTO signal_state (signal_type, last_run_ts) VALUES ('platform_health', ?)"
+        " ON CONFLICT(signal_type) DO UPDATE SET last_run_ts=excluded.last_run_ts",
+        (now,),
+    )
+    conn.commit()
+    return True
+
+
+def _dns_resolves(host):
+    """A real query, not just 'is AdGuard's process active' - a hung-
+    but-still-running AdGuard would pass systemctl's own is-active check
+    (check_services above) but not actually answer anything, exactly
+    the same 'active is not the same as working' distinction
+    check_staleness already draws. Uses `dig`, already installed on the
+    gateway (bind9-dnsutils) - the same 'shell out to a standard system
+    tool rather than add a Python package' approach check_wan's own
+    ping call already takes."""
+    try:
+        result = subprocess.run(
+            ["dig", "+time=%d" % DNS_PROBE_TIMEOUT_S, "+tries=1", "+short",
+             "@%s" % host, DNS_PROBE_DOMAIN],
+            capture_output=True, text=True, timeout=DNS_PROBE_TIMEOUT_S + 2)
+    except (OSError, subprocess.TimeoutExpired):
+        return False
+    return result.returncode == 0 and result.stdout.strip() != ""
+
+
+def check_dns_failopen(conn, now):
+    """ENHANCEMENT-PLAN.md step 3.6 (F§8.4): if AdGuard stops actually
+    answering DNS queries, redirect plaintext DNS to a public upstream
+    resolver after a short grace period - long enough that AdGuard's
+    own `Restart=always` (10s) usually fixes a simple crash on its own
+    first - so LAN clients keep resolving names (unfiltered, but
+    working) instead of the whole network going dark. Reverts itself
+    the moment AdGuard is confirmed answering again: DNS service itself
+    needs no operator action to come back, even though the incident
+    this raises still needs a manual resolve like every other platform
+    incident (see this module's own docstring on why none of these
+    auto-resolve) - "automatic recovery" in the plan's own wording means
+    the network, not the audit trail.
+
+    `down_since` and `active` are deliberately two different things: a
+    brief outage under the grace period sets `down_since` (tracking how
+    long it's been going on) without ever setting `active` (nothing has
+    actually been redirected yet) - so a blip that self-heals in a
+    couple of seconds raises no incident and touches no firewall rule
+    at all."""
+    row = conn.execute("SELECT * FROM dns_failopen_state WHERE id=1").fetchone()
+    resolving = _dns_resolves(dns_failopen.GATEWAY_IP)
+
+    if resolving:
+        if row["down_since"] is not None:
+            conn.execute("UPDATE dns_failopen_state SET down_since=NULL WHERE id=1")
+        if row["active"]:
+            dns_failopen.deactivate()
+            conn.execute("UPDATE dns_failopen_state SET active=0, changed_at=? WHERE id=1", (now,))
+        if row["down_since"] is not None or row["active"]:
+            conn.commit()
+        return
+
+    down_since = row["down_since"]
+    if down_since is None:
+        conn.execute("UPDATE dns_failopen_state SET down_since=? WHERE id=1", (now,))
+        conn.commit()
+        return
+
+    grace = settings.get(conn, "dns_failopen_after_seconds")
+    if now - down_since < grace:
+        return
+
+    dns_failopen.activate()
+    if not row["active"]:
+        conn.execute("UPDATE dns_failopen_state SET active=1, changed_at=? WHERE id=1", (now,))
+    correlation.raise_incident(
+        conn, None, "platform_dns_failopen", "high",
+        "DNS fail-open active - AdGuard not answering queries",
+        "AdGuard Home has not answered a real DNS query in over %ds. Plaintext DNS for the "
+        "project LAN is being redirected to a public upstream resolver (%s) so devices keep "
+        "resolving names - unfiltered - until AdGuard recovers." % (int(grace), dns_failopen.UPSTREAM_RESOLVER),
+        now, now, [],
+    )
+    conn.commit()
+
+
+def run_dns_failopen_if_due(conn, now=None):
+    """Its own throttle, deliberately faster than run_if_due()'s general
+    health_check_interval_seconds - the ~30s 'clients still resolve'
+    exit criterion has no room to wait out a slower shared cycle."""
+    now = now if now is not None else time.time()
+    interval = settings.get(conn, "dns_failopen_check_interval_seconds")
+    row = conn.execute("SELECT last_run_ts FROM signal_state WHERE signal_type='dns_failopen_check'").fetchone()
+    last_run = row["last_run_ts"] if row else 0
+    if now - last_run < interval:
+        return False
+    try:
+        check_dns_failopen(conn, now)
+    except Exception as exc:
+        print("dns failopen check failed: %s" % exc, flush=True)
+    conn.execute(
+        "INSERT INTO signal_state (signal_type, last_run_ts) VALUES ('dns_failopen_check', ?)"
         " ON CONFLICT(signal_type) DO UPDATE SET last_run_ts=excluded.last_run_ts",
         (now,),
     )

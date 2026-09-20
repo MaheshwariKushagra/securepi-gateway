@@ -1165,6 +1165,24 @@ def api_device_series(device_id: int, range: str = Query("24h")):
     }
 
 
+@app.get("/api/dns-status")
+def api_dns_status():
+    """ENHANCEMENT-PLAN.md step 3.6: is DNS currently fail-open (AdGuard
+    not answering, plaintext DNS redirected to a public upstream
+    resolver). Reads app/health.py's own live status table directly -
+    this console runs unprivileged (step 3.3) and cannot ask nftables
+    itself, and this row is written only by the (root) ingest process,
+    never by this app."""
+    row = db().execute("SELECT * FROM dns_failopen_state WHERE id=1").fetchone()
+    active = bool(row["active"]) if row else False
+    changed_at = row["changed_at"] if row else None
+    return {
+        "active": active,
+        "since": time.strftime("%H:%M:%S", time.localtime(changed_at)) if active and changed_at else None,
+        "age": _age(time.time() - changed_at) if active and changed_at else None,
+    }
+
+
 @app.get("/api/system")
 def api_system():
     """Pipeline health: is ingest keeping up, and is each detection signal

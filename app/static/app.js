@@ -123,6 +123,7 @@ function tick() {
     refresh();
     refreshSystem();
     refreshNotifications();
+    refreshDnsStatus();
 }
 
 /* --------------------------------------------------------------- toasts */
@@ -426,6 +427,24 @@ async function refreshSystem() {
             }
         }
     } catch (err) { console.error("system refresh failed", err); }
+}
+
+/* ------------------------------------------------------------ dns fail-open */
+
+async function refreshDnsStatus() {
+    try {
+        const res = await fetch("/api/dns-status");
+        const d = await res.json();
+        const banner = $("#degradedBanner");
+        const text = $("#degradedBannerText");
+        if (!banner) return;
+        banner.hidden = !d.active;
+        if (d.active && text) {
+            text.textContent = "DNS protection degraded - AdGuard isn't answering" +
+                (d.since ? ` (since ${d.since})` : "") +
+                " - plaintext DNS is running unfiltered through a public resolver.";
+        }
+    } catch (err) { console.error("dns status refresh failed", err); }
 }
 
 /* --------------------------------------------------------------- charts */

@@ -203,7 +203,13 @@ async def do_login(request: Request):
         response = RedirectResponse(url=next_path, status_code=303)
         response.set_cookie(
             key=session_auth.SESSION_COOKIE, value=token, httponly=True,
-            samesite="strict", secure=False,  # secure=True once step 3.2 (TLS) lands
+            samesite="strict",
+            # Step 3.2 made the real gateway HTTPS-only, so this is always
+            # True there - a plain HTTP request can no longer even reach
+            # this code. Derived from the request rather than hardcoded so
+            # docs/demo/serve.py's local, plain-HTTP screenshot tool (never
+            # a real security boundary) keeps working without a special case.
+            secure=(request.url.scheme == "https"),
             max_age=settings.get(conn, "session_absolute_timeout_seconds"),
         )
         return response

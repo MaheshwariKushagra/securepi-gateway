@@ -685,9 +685,23 @@ To view it without joining `SecurePi-Test`, use the management link (Internet Sh
 Cat7/USB-C adapter must be on):
 
 ```bash
-./mac-tunnel.sh start      # then open http://localhost:8000
+./mac-tunnel.sh start      # then open https://localhost:8000
 ./mac-tunnel.sh stop
 ```
+
+**HTTPS only (step 3.2).** The console has its own TLS certificate, from a CA that exists only to
+vouch for this console - separate from the CA used for HTTPS ad inspection (`dpi/deploy-dpi.sh`).
+The first visit shows a certificate warning unless that CA is trusted first, once:
+
+```bash
+scp maheshwari@192.168.2.5:/opt/securepi-tls/ca.crt /tmp/securepi-console-ca.crt
+sudo security add-trusted-cert -d -r trustRoot -k /Library/Keychains/System.keychain /tmp/securepi-console-ca.crt
+```
+
+Regenerate the certificate (10-year CA, 825-day leaf - the longest Apple's ATS will trust) with
+`gateway/generate-console-tls.sh`; it refuses to overwrite an existing CA without `--force`, since
+that would silently break trust on every device that already installed it. Plain HTTP to port 8000
+no longer gets a response at all, not a redirect - that's what "HTTPS only" means here.
 
 **Logging in.** A session login at `/login` (one shared account, username `securepi` in the audit
 log; step 3.1 replaced the earlier HTTP Basic Auth). The password is stored only on the gateway, at

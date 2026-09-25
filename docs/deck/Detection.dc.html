@@ -15,18 +15,18 @@
 </helmet>
 <div style="width:1280px;height:720px;position:relative;overflow:hidden;background:#0b111c;color:#e8eef7;font-family:'IBM Plex Sans',system-ui,sans-serif;">
   <div style="position:absolute;inset:0;background:radial-gradient(700px 420px at 85% -14%, rgba(245,165,36,0.10), transparent 60%);"></div>
-  <div style="position:relative;height:100%;padding:56px 72px;display:flex;flex-direction:column;">
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:24px;">
+  <div style="position:relative;height:100%;padding:22px 60px;display:flex;flex-direction:column;">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
       <div style="display:flex;align-items:center;gap:11px;font-family:'IBM Plex Mono',monospace;font-size:13px;letter-spacing:2px;color:#9fb0c8;">
         <span style="width:9px;height:9px;border-radius:50%;background:#f5a524;box-shadow:0 0 10px #f5a524;"></span>DETECTION ENGINE
       </div>
       <div style="font-family:'IBM Plex Mono',monospace;font-size:13px;color:#6b7d99;">05 / 11</div>
     </div>
 
-    <h2 style="font-family:'Space Grotesk',sans-serif;font-weight:700;font-size:40px;line-height:1.06;letter-spacing:-0.8px;margin:0 0 6px;">
+    <h2 style="font-family:'Space Grotesk',sans-serif;font-weight:700;font-size:35px;line-height:1.06;letter-spacing:-0.8px;margin:0 0 6px;">
       14 windowed queries, re-run every 15 seconds.
     </h2>
-    <p style="font-size:17px;color:#9fb0c8;margin:0 0 26px;max-width:920px;line-height:1.5;">
+    <p style="font-size:16px;color:#9fb0c8;margin:0 0 16px;max-width:920px;line-height:1.5;">
       No in-memory counters &mdash; state is bounded by each query's time range, so every detection is
       reproducible by hand. Repeat detections merge into one incident; related incidents link into a campaign.
     </p>
@@ -34,10 +34,10 @@
     <div style="flex:1;display:flex;gap:22px;">
       <!-- left: funnel + campaign -->
       <div style="width:340px;display:flex;flex-direction:column;gap:16px;">
-        <div style="border:1px solid #22304a;border-radius:16px;padding:22px;background:linear-gradient(180deg,#111a28,#0f1826);">
+        <div style="border:1px solid #22304a;border-radius:14px;padding:17px;background:linear-gradient(180deg,#111a28,#0f1826);">
           <div style="font-size:13px;color:#9fb0c8;margin-bottom:14px;">Over a clean 24-hour window</div>
           <div style="display:flex;align-items:baseline;gap:8px;">
-            <span style="font-family:'Space Grotesk',sans-serif;font-weight:700;font-size:40px;color:#f5a524;">15,884</span>
+            <span style="font-family:'Space Grotesk',sans-serif;font-weight:700;font-size:35px;color:#f5a524;">15,884</span>
             <span style="font-size:15px;color:#9fb0c8;">raw events</span>
           </div>
           <div style="margin:10px 0;display:flex;align-items:center;gap:10px;color:#6b7d99;">
@@ -45,7 +45,7 @@
             <span style="font-family:'IBM Plex Mono',monospace;font-size:12px;letter-spacing:1px;">merge &amp; correlate</span>
           </div>
           <div style="display:flex;align-items:baseline;gap:8px;">
-            <span style="font-family:'Space Grotesk',sans-serif;font-weight:700;font-size:40px;color:#2fbf71;">10</span>
+            <span style="font-family:'Space Grotesk',sans-serif;font-weight:700;font-size:35px;color:#2fbf71;">10</span>
             <span style="font-size:15px;color:#9fb0c8;">incidents</span>
           </div>
           <div style="margin-top:14px;padding-top:14px;border-top:1px solid #22304a;font-size:13px;color:#c7d3e5;">

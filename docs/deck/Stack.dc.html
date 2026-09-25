@@ -15,44 +15,44 @@
 </helmet>
 <div style="width:1280px;height:720px;position:relative;overflow:hidden;background:#0b111c;color:#e8eef7;font-family:'IBM Plex Sans',system-ui,sans-serif;">
   <div style="position:absolute;inset:0;background:radial-gradient(720px 440px at 75% -16%, rgba(79,156,249,0.11), transparent 60%);"></div>
-  <div style="position:relative;height:100%;padding:56px 72px;display:flex;flex-direction:column;">
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:24px;">
+  <div style="position:relative;height:100%;padding:22px 60px;display:flex;flex-direction:column;">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
       <div style="display:flex;align-items:center;gap:11px;font-family:'IBM Plex Mono',monospace;font-size:13px;letter-spacing:2px;color:#9fb0c8;">
         <span style="width:9px;height:9px;border-radius:50%;background:#4f9cf9;box-shadow:0 0 10px #4f9cf9;"></span>TECHNOLOGY &amp; CHOICES
       </div>
       <div style="font-family:'IBM Plex Mono',monospace;font-size:13px;color:#6b7d99;">10 / 11</div>
     </div>
 
-    <h2 style="font-family:'Space Grotesk',sans-serif;font-weight:700;font-size:40px;line-height:1.06;letter-spacing:-0.8px;margin:0 0 8px;">
+    <h2 style="font-family:'Space Grotesk',sans-serif;font-weight:700;font-size:35px;line-height:1.06;letter-spacing:-0.8px;margin:0 0 8px;">
       Deliberately boring where it counts.
     </h2>
-    <p style="font-size:17px;color:#9fb0c8;margin:0 0 28px;max-width:900px;line-height:1.5;">
+    <p style="font-size:16px;color:#9fb0c8;margin:0 0 16px;max-width:900px;line-height:1.5;">
       No build step, no SPA framework, no Docker &mdash; the small RAM budget ruled it out from day one.
       Every layer was chosen so a reviewer can inspect it.
     </p>
 
-    <div style="flex:1;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px;">
-      <div style="border:1px solid #22304a;border-radius:13px;padding:18px 20px;background:#0f1826;display:flex;gap:16px;align-items:flex-start;">
+    <div style="flex:1;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:11px;">
+      <div style="border:1px solid #22304a;border-radius:12px;padding:14px 18px;background:#0f1826;display:flex;gap:16px;align-items:flex-start;">
         <div style="font-family:'IBM Plex Mono',monospace;font-size:11px;color:#4f9cf9;min-width:78px;padding-top:2px;">HOST</div>
         <div><div style="font-weight:600;font-size:15.5px;">Ubuntu Server 24.04 LTS &middot; x86-64, 3.6&nbsp;GiB</div><div style="font-size:13px;color:#9fb0c8;margin-top:3px;">A laptop-class box: x86 packages, an SSD, and a built-in battery</div></div>
       </div>
-      <div style="border:1px solid #22304a;border-radius:13px;padding:18px 20px;background:#0f1826;display:flex;gap:16px;align-items:flex-start;">
+      <div style="border:1px solid #22304a;border-radius:12px;padding:14px 18px;background:#0f1826;display:flex;gap:16px;align-items:flex-start;">
         <div style="font-family:'IBM Plex Mono',monospace;font-size:11px;color:#2fbf71;min-width:78px;padding-top:2px;">NETWORK</div>
         <div><div style="font-weight:600;font-size:15.5px;">hostapd &middot; nftables &middot; AdGuard Home DHCP</div><div style="font-size:13px;color:#9fb0c8;margin-top:3px;">Router, access point, NAT and firewall on one host</div></div>
       </div>
-      <div style="border:1px solid #22304a;border-radius:13px;padding:18px 20px;background:#0f1826;display:flex;gap:16px;align-items:flex-start;">
+      <div style="border:1px solid #22304a;border-radius:12px;padding:14px 18px;background:#0f1826;display:flex;gap:16px;align-items:flex-start;">
         <div style="font-family:'IBM Plex Mono',monospace;font-size:11px;color:#f5a524;min-width:78px;padding-top:2px;">SENSING</div>
         <div><div style="font-weight:600;font-size:15.5px;">Suricata 7 &middot; AdGuard Home &middot; mitmproxy 12</div><div style="font-size:13px;color:#9fb0c8;margin-top:3px;">IDS flows &amp; alerts, DNS decisions, selective TLS inspection</div></div>
       </div>
-      <div style="border:1px solid #22304a;border-radius:13px;padding:18px 20px;background:#0f1826;display:flex;gap:16px;align-items:flex-start;">
+      <div style="border:1px solid #22304a;border-radius:12px;padding:14px 18px;background:#0f1826;display:flex;gap:16px;align-items:flex-start;">
         <div style="font-family:'IBM Plex Mono',monospace;font-size:11px;color:#8b6cf0;min-width:78px;padding-top:2px;">STORAGE</div>
         <div><div style="font-weight:600;font-size:15.5px;">SQLite in WAL mode &middot; one events table</div><div style="font-size:13px;color:#9fb0c8;margin-top:3px;">No UNIONs in detection queries; readers never block the writer</div></div>
       </div>
-      <div style="border:1px solid #22304a;border-radius:13px;padding:18px 20px;background:#0f1826;display:flex;gap:16px;align-items:flex-start;">
+      <div style="border:1px solid #22304a;border-radius:12px;padding:14px 18px;background:#0f1826;display:flex;gap:16px;align-items:flex-start;">
         <div style="font-family:'IBM Plex Mono',monospace;font-size:11px;color:#4f9cf9;min-width:78px;padding-top:2px;">DETECTION</div>
         <div><div style="font-weight:600;font-size:15.5px;">Plain Python &amp; windowed SQL &mdash; no framework</div><div style="font-size:13px;color:#9fb0c8;margin-top:3px;">Every detection is a query anyone can run by hand to check it</div></div>
       </div>
-      <div style="border:1px solid #22304a;border-radius:13px;padding:18px 20px;background:#0f1826;display:flex;gap:16px;align-items:flex-start;">
+      <div style="border:1px solid #22304a;border-radius:12px;padding:14px 18px;background:#0f1826;display:flex;gap:16px;align-items:flex-start;">
         <div style="font-family:'IBM Plex Mono',monospace;font-size:11px;color:#2fbf71;min-width:78px;padding-top:2px;">CONSOLE</div>
         <div><div style="font-weight:600;font-size:15.5px;">FastAPI &middot; Jinja2 &middot; vanilla JS &middot; Chart.js 4</div><div style="font-size:13px;color:#9fb0c8;margin-top:3px;">One hand-written stylesheet; Basic-Auth middleware, fail-closed</div></div>
       </div>

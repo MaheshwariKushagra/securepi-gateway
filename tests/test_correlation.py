@@ -661,8 +661,8 @@ class BeaconSignalTests(unittest.TestCase):
     def test_timing_comes_from_flow_start_not_the_logging_time(self):
         # Step 7.2 finding: the battery's 10 s beacon (10% jitter) was never
         # detected live. Suricata logs a flow only after it times out, in
-        # batches whenever its flow manager wakes, so the logged ts values
-        # bunch up and the regularity score collapsed to about 0.3. Here
+        # batches whenever its flow manager wakes: live, the logged gaps ran
+        # 5-15 s and the score was 0.73, under the 0.8 threshold. Here
         # the connections are regular but each is logged 60-90 s later at
         # a flow-manager tick (every 20 s) - scored on flow_start it fires.
         import random

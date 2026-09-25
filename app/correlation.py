@@ -990,7 +990,8 @@ def beacon_signal(conn):
     # is still picked up; the timing is judged on flow_start (when the
     # connection began). Suricata logs flows in batches after they time
     # out, so ts gaps are the flow manager's rhythm, not the beacon's - a
-    # 10 s beacon scored 0.3 on ts (step 7.2 finding). Rows from before
+    # 10 s beacon's logged gaps ran 5-15 s and it scored 0.73 against the
+    # 0.8 threshold (step 7.2 finding, measured live). Rows from before
     # flow_start existed fall back to ts.
     rows = conn.execute(
         """SELECT id, device_id, dest_ip, dest_port, COALESCE(flow_start, ts) started,

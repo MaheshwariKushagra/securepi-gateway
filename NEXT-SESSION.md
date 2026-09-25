@@ -317,12 +317,15 @@ hosts were detected (results in `EVALUATION-RESULTS-2.md` §Stage 7 and
 `eval/results/replay-ctu13-*.json`). Inputs stay out of git; `eval/README.md`
 says how to set them up on a fresh Mac.
 
-**The determinism check found the likely cause of the beacon miss.** A flow
+**The determinism check found the cause of the beacon miss** (confirmed on
+the smoke test's live data: logged gaps 5-15 s for a 10 s beacon, score 0.73
+against 0.8). A flow
 record's `ts` is when Suricata *logged* the flow, in batches after it timed
 out, and `beacon_signal` measured intervals from it. Ingest now stores
 `events.flow_start` (new column, applied by the migration list when ingest
 starts), and the beacon signal times from that. It's committed and tested,
-but **not deployed and not yet confirmed live**.
+but **not deployed yet** - the battery's beacon runs after deploying are the
+end-to-end check.
 
 **Next steps, in order:**
 1. Bring up the management link (the gateway was unreachable this session -

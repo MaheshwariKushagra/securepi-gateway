@@ -666,9 +666,11 @@ batches, whenever its flow-manager thread wakes up.
   After this, repeated runs give an identical result sha256.
 - **In the engine (live bug):** `beacon_signal` measured the gaps between
   connections from that same logging time. So the gaps it saw were the flow
-  manager's rhythm, not the beacon's. A 10 s beacon's timing score collapsed,
-  leaving at most 0.3 from size alone against a 0.8 threshold. This very
-  likely explains why the smoke test's beacon was never detected. Ingest now
+  manager's rhythm, not the beacon's. **Confirmed on the live data:** the
+  smoke test's beacon sent a connection every 10 s ±10% (score 0.96 on those
+  times), but the ten logged times on the gateway had gaps of 5.0-14.9 s, and
+  the engine's own `_beacon_score()` gives them 0.73, under the 0.8
+  threshold. That is why the smoke test's beacon was never detected. Ingest now
   also stores when each flow *started* (`events.flow_start`, a new column
   added by migration), and the beacon signal times from it. The window still
   uses the logging time, so a late-logged flow isn't lost. There is a

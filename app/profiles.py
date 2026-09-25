@@ -252,13 +252,20 @@ def client_settings(profile, catalog, now_struct, paused=False):
     """The AdGuard client fields this profile means at this moment - the
     orchestrator's desired state for one device's client entry.
 
-    `paused` is a per-device "pause filtering for N minutes" (step 4.3),
-    which turns filtering off on top of whatever the profile says."""
+    `paused` is a per-device "pause filtering for N minutes" (step 4.3).
+    It clears the blocked services and safe search too, not just the
+    blocklists: checked live, AdGuard's per-client filtering_enabled=false
+    only switches off blocklist matching - a paused Kids device still had
+    TikTok blocked and Google rewritten to safe search. A pause is for
+    "let this device reach everything for a few minutes", so it has to
+    turn all three off."""
     services = set(expand_services(profile.get("blocked_services") or [], catalog))
     sched = profile.get("schedule")
     if sched and in_window(sched, now_struct):
         services.update(expand_services(sched["services"], catalog))
     safe = bool(profile.get("safe_search"))
+    if paused:
+        services, safe = set(), False
     return {
         "filtering_enabled": bool(profile.get("filtering")) and not paused,
         "safesearch_enabled": safe,

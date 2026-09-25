@@ -38,6 +38,7 @@ stderr/exit code straight back through.
 """
 
 import json
+import os
 import subprocess
 
 HELPER = "/usr/local/sbin/securepi-web-helper"
@@ -47,9 +48,19 @@ class QuarantineError(Exception):
     """The privileged helper could not be reached, or rejected a request."""
 
 
+def _helper_argv(verb):
+    """The console (unprivileged) reaches the helper through its sudoers
+    rule. The engine already runs as root, so it calls the helper directly:
+    going through sudo there would only add a PAM session line to the
+    journal for every call, every 15-second orchestrator cycle."""
+    if os.geteuid() == 0:
+        return [HELPER, verb]
+    return ["sudo", HELPER, verb]
+
+
 def _run(verb, *args):
     try:
-        return subprocess.run(["sudo", HELPER, verb] + list(args), capture_output=True, text=True, timeout=5)
+        return subprocess.run(_helper_argv(verb) + list(args), capture_output=True, text=True, timeout=5)
     except (OSError, subprocess.TimeoutExpired) as e:
         raise QuarantineError("could not run the privileged helper: %s" % e)
 

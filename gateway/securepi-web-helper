@@ -44,7 +44,9 @@ Added in ENHANCEMENT-PLAN.md step 4.2 (MAC-keyed, timed quarantine and
   blocked-ip-delete <ip>              remove <ip> from inet filter blocked_ip
   blocked-ip-list                     list inet filter blocked_ip (JSON)
 
-Every call is logged to the system journal via syslog (auth facility),
+Every call that changes something, and every rejected call, is logged
+to the system journal via syslog (auth facility) - read-only *-list
+calls are not (see main()),
 independent of and in addition to the web app's own audit_log table -
 this is the half of the audit trail that exists even if the database
 itself were somehow bypassed.
@@ -227,7 +229,13 @@ def main(argv):
         print("REJECTED: %s" % e, file=sys.stderr)
         return 1
 
-    syslog.syslog(syslog.LOG_INFO, "%s %s" % (verb, args))
+    # Changes are logged; the read-only *-list verbs are not. The
+    # orchestrator (step 4.1) reads every set each 15-second cycle, and
+    # logging those reads would bury the calls that actually changed the
+    # firewall under thousands of identical lines a day. Rejected input
+    # is always logged, above, whatever the verb.
+    if not verb.endswith("-list"):
+        syslog.syslog(syslog.LOG_INFO, "%s %s" % (verb, args))
     try:
         result = subprocess.run([NFT] + nft_argv, capture_output=True, text=True, timeout=5)
     except (OSError, subprocess.TimeoutExpired) as e:

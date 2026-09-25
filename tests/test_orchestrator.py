@@ -373,11 +373,18 @@ class ProfileAndPauseTests(OrchestratorTestCase):
     def test_pause_turns_filtering_off_and_auto_resumes(self):
         self.create("profile", 1, "kids")
         self.create("pause", 1, minutes=15)
-        self.assertFalse(self.b.client_list[0]["filtering_enabled"])
-        self.assertTrue(self.b.client_list[0]["safesearch_enabled"])  # the rest of the profile stays
+        cl = self.b.client_list[0]
+        # A pause turns off blocklists, blocked services AND safe search -
+        # AdGuard's filtering_enabled alone leaves the other two applying.
+        self.assertFalse(cl["filtering_enabled"])
+        self.assertEqual(cl["blocked_services"], [])
+        self.assertFalse(cl["safesearch_enabled"])
         self.clock.t += 15 * 60 + 1
         self.reconcile()
-        self.assertTrue(self.b.client_list[0]["filtering_enabled"])
+        cl = self.b.client_list[0]
+        self.assertTrue(cl["filtering_enabled"])
+        self.assertTrue(cl["safesearch_enabled"])      # the profile comes back in full
+        self.assertIn("betway", cl["blocked_services"])
 
     def test_removing_a_profile_resets_the_device_to_standard(self):
         p = self.create("profile", 1, "iot")

@@ -911,7 +911,11 @@ class BehavioralBaselineSignalTests(unittest.TestCase):
         self._seed_history(conn, 1, hour_of_day, now, days=10, avg_bytes=10 * 1024 * 1024)
         # Current hour: far above the ~10MB/hour baseline.
         current_hour_start = correlation._hour_start(now)
-        fixtures.insert_flow(conn, 1, "1.1.1.1", 443, current_hour_start + 60,
+        # Halfway between the top of the hour and now, never after now: a
+        # fixed "+60s" put the flow in the future (so the signal, which
+        # only counts up to now, never saw it) whenever the suite ran in
+        # the first minute of an hour.
+        fixtures.insert_flow(conn, 1, "1.1.1.1", 443, current_hour_start + (now - current_hour_start) / 2,
                               bytes_toclient=200 * 1024 * 1024, bytes_toserver=1024)
         self.assertEqual(correlation.behavioral_baseline_signal(conn), 1)
 
@@ -922,7 +926,7 @@ class BehavioralBaselineSignalTests(unittest.TestCase):
         hour_of_day = time.localtime(correlation._hour_start(now)).tm_hour
         self._seed_history(conn, 1, hour_of_day, now, days=3, avg_bytes=10 * 1024 * 1024)  # < BASELINE_MIN_SAMPLES
         current_hour_start = correlation._hour_start(now)
-        fixtures.insert_flow(conn, 1, "1.1.1.1", 443, current_hour_start + 60,
+        fixtures.insert_flow(conn, 1, "1.1.1.1", 443, current_hour_start + (now - current_hour_start) / 2,
                               bytes_toclient=200 * 1024 * 1024, bytes_toserver=1024)
         self.assertEqual(correlation.behavioral_baseline_signal(conn), 0)
 
@@ -934,7 +938,7 @@ class BehavioralBaselineSignalTests(unittest.TestCase):
         self._seed_history(conn, 1, hour_of_day, now, days=10, avg_bytes=1024)  # tiny baseline
         current_hour_start = correlation._hour_start(now)
         # A big jump relative to baseline, but still under BASELINE_MIN_BYTES_FLOOR overall.
-        fixtures.insert_flow(conn, 1, "1.1.1.1", 443, current_hour_start + 60,
+        fixtures.insert_flow(conn, 1, "1.1.1.1", 443, current_hour_start + (now - current_hour_start) / 2,
                               bytes_toclient=2000, bytes_toserver=0)
         self.assertEqual(correlation.behavioral_baseline_signal(conn), 0)
 
@@ -945,7 +949,7 @@ class BehavioralBaselineSignalTests(unittest.TestCase):
         hour_of_day = time.localtime(correlation._hour_start(now)).tm_hour
         self._seed_history(conn, 1, hour_of_day, now, days=10, avg_bytes=10 * 1024 * 1024)
         current_hour_start = correlation._hour_start(now)
-        fixtures.insert_flow(conn, 1, "1.1.1.1", 443, current_hour_start + 60,
+        fixtures.insert_flow(conn, 1, "1.1.1.1", 443, current_hour_start + (now - current_hour_start) / 2,
                               bytes_toclient=6 * 1024 * 1024, bytes_toserver=1024)
         self.assertEqual(correlation.behavioral_baseline_signal(conn), 0)
 

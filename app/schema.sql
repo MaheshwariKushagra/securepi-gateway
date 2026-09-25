@@ -99,6 +99,7 @@ CREATE TABLE IF NOT EXISTS events (
     pkts_toclient  INTEGER,
     flow_state     TEXT,
     flow_age       INTEGER,
+    flow_start     REAL,               -- when the flow began; ts is when it was logged
 
     -- DNS
     dns_type       TEXT,               -- 'query' or 'answer'

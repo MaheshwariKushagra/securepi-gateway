@@ -1,0 +1,48 @@
+{
+ "capture": "botnet-capture-20110816-donbot.pcap",
+ "capture_seconds": 7215.7,
+ "capture_sha256": "28b49ca3e483a37c445474451b0cbe71cfa5a366cab67371031782b7a628d580",
+ "engine_steps": 501,
+ "events": 4896,
+ "incidents_by_type": {
+  "beacon": 1,
+  "brute_force": 1,
+  "ids_other": 1,
+  "network_sweep": 1,
+  "slow_network_sweep": 1
+ },
+ "licence": "CC BY 2.0 (https://creativecommons.org/licenses/by/2.0/). Garcia, S., Grill, M., Stiborek, J. and Zunino, A. (2014) 'An empirical comparison of botnet detection methods', Computers and Security 45, pp. 100-123",
+ "result_sha256": "4c2f512f16914f507712fce0f5749ee58373b74b5038bc10774979ec2e4d1a9a",
+ "rules": "suricata.rules",
+ "rules_sha256": "82aa107f079b2b1122e210260d0c24bb6fbb4cbe0b85ef373cd51b825c3caaef",
+ "runs": [
+  {
+   "correct": true,
+   "detected": true,
+   "expect": true,
+   "host": "147.32.84.165",
+   "incidents_on_host": [
+    "beacon",
+    "brute_force",
+    "ids_other",
+    "network_sweep",
+    "slow_network_sweep"
+   ],
+   "run": 1,
+   "signal": "any",
+   "ttd_s": 64.1
+  }
+ ],
+ "signal_failures": {},
+ "source": "CTU-13 dataset, scenario 6 (CTU-Malware-Capture-Botnet-47, DonBot), Stratosphere Laboratory, Czech Technical University in Prague",
+ "summary": {
+  "any": {
+   "correct": 1,
+   "detected": 1,
+   "runs": 1,
+   "ttd_max_s": 64.1,
+   "ttd_median_s": 64.1
+  }
+ },
+ "suricata": "This is Suricata version 8.0.7 RELEASE"
+}

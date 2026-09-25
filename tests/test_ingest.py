@@ -99,6 +99,17 @@ class FlattenSuricataTests(unittest.TestCase):
         self.assertEqual(row["bytes_toserver"], 800)
         self.assertIsInstance(row["ts"], float)
 
+    def test_flow_start_is_kept_apart_from_the_logging_time(self):
+        # Step 7.2: ts is when Suricata logged the flow (after it timed
+        # out); flow_start is when the connection began.
+        row = ingest.flatten_suricata(fixtures.make_eve_flow(
+            timestamp="2026-09-14T10:01:10.000000+0000", start="2026-09-14T10:00:00.000000+0000"))
+        self.assertEqual(row["ts"] - row["flow_start"], 70.0)
+
+    def test_flow_without_a_start_leaves_flow_start_out(self):
+        row = ingest.flatten_suricata(fixtures.make_eve_flow())
+        self.assertNotIn("flow_start", row)
+
     def test_dns_event(self):
         row = ingest.flatten_suricata(fixtures.make_eve_dns_query(rrname="example.com"))
         self.assertEqual(row["event_type"], "dns")

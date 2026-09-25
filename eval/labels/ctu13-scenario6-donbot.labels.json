@@ -1,0 +1,9 @@
+{
+ "pcap": "botnet-capture-20110816-donbot.pcap",
+ "source": "CTU-13 dataset, scenario 6 (CTU-Malware-Capture-Botnet-47, DonBot), Stratosphere Laboratory, Czech Technical University in Prague",
+ "url": "https://mcfp.felk.cvut.cz/publicDatasets/CTU-Malware-Capture-Botnet-47/",
+ "licence": "CC BY 2.0 (https://creativecommons.org/licenses/by/2.0/). Garcia, S., Grill, M., Stiborek, J. and Zunino, A. (2014) 'An empirical comparison of botnet detection methods', Computers and Security 45, pp. 100-123",
+ "sha256": "28b49ca3e483a37c445474451b0cbe71cfa5a366cab67371031782b7a628d580",
+ "hosts": {"147.32.84.165": "CTU-13 infected host (DonBot)"},
+ "runs": [{"signal": "any", "run": 1, "host": "147.32.84.165", "t_start": null, "t_end": null, "expect": true}]
+}

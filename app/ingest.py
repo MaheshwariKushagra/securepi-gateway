@@ -252,6 +252,11 @@ SCHEMA_MIGRATIONS = [
            last_digest_at   REAL
        )""",
     "INSERT OR IGNORE INTO notify_state (id, last_incident_id, last_digest_at) VALUES (1, NULL, NULL)",
+    # Step 7.2: when a flow STARTED. `ts` on a flow record is when Suricata
+    # logged it - after the flow timed out, in batches whenever its flow
+    # manager wakes - so the gaps between ts values aren't the gaps between
+    # connections. beacon_signal() needs the real ones.
+    "ALTER TABLE events ADD COLUMN flow_start REAL",
 ]
 
 # How long to wait between passes over the log files. Two seconds keeps the
@@ -411,6 +416,8 @@ def flatten_suricata(event):
         row["pkts_toclient"] = flow.get("pkts_toclient")
         row["flow_state"] = flow.get("state")
         row["flow_age"] = flow.get("age")
+        if flow.get("start"):
+            row["flow_start"] = to_epoch(flow["start"])
 
     dns = event.get("dns") or {}
     if dns:
@@ -461,7 +468,7 @@ def insert_events(conn, rows):
         "src_ip", "src_port", "dest_ip", "dest_port", "proto", "app_proto",
         "flow_id", "community_id",
         "bytes_toserver", "bytes_toclient", "pkts_toserver", "pkts_toclient",
-        "flow_state", "flow_age",
+        "flow_state", "flow_age", "flow_start",
         "dns_type", "dns_rrname", "dns_rrtype", "dns_rcode",
         "tls_sni", "tls_version", "tls_ja3",
         "alert_signature", "alert_category", "alert_severity", "alert_signature_id",

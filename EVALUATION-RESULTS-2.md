@@ -634,3 +634,63 @@ A webhook channel on the gateway pointed at a small listener on the Mac (`192.16
 | Clean-up | Channel removed (the listener was temporary); #201, #206, #207 resolved with a note |
 
 Telegram and SMTP were not sent live (no accounts were set up for this). Their exact requests are unit-tested (`RequestShapeTests`), and they share the same dispatch path the webhook check proved.
+
+## Stage 7
+
+In progress. 7.2's battery (`gateway/battery.py`) has had one smoke run so far
+(`eval/results/battery-smoke-20260926-011621.log`); the five-run battery is
+still to do. The table of detection rates goes here when it has run.
+
+### 7.1 — PCAP replay pipeline
+
+`tools/replay.py` runs a capture through Suricata on the Mac with the
+gateway's own rules, then through `app/ingest.py`'s real parser into a fresh
+database, then runs `app/correlation.py`'s real engine every 15 s on a
+simulated clock stepping through capture time. Nothing in `app/` is changed
+for it. Inputs, and how to set them up, are in `eval/README.md`; 15 tests in
+`tests/test_replay.py`.
+
+**Determinism check - the first attempt failed, and it found a real bug.**
+Two replays of the same capture gave different results: one raised a beacon
+incident, the other didn't, and the detection time moved from 214 s to 259 s.
+Suricata's output was the same flow for flow. Only each flow record's
+`timestamp` differed, by a median 44 s and up to 6 minutes. That field is
+when Suricata *logged* the flow, which happens after the flow times out, in
+batches, whenever its flow-manager thread wakes up.
+
+- **In the replay:** a flow's timestamp is now set to when the flow times out
+  (its last packet plus the timeout in `tools/replay-suricata.yaml`), and ties
+  sort without Suricata's random `flow_id`. The live gateway adds a few seconds
+  of flow-manager delay on top, which a replay can't reproduce, so replay
+  detection times are slightly optimistic. The timezone is pinned to UTC.
+  After this, repeated runs give an identical result sha256.
+- **In the engine (live bug):** `beacon_signal` measured the gaps between
+  connections from that same logging time. So the gaps it saw were the flow
+  manager's rhythm, not the beacon's. A 10 s beacon's timing score collapsed,
+  leaving at most 0.3 from size alone against a 0.8 threshold. This very
+  likely explains why the smoke test's beacon was never detected. Ingest now
+  also stores when each flow *started* (`events.flow_start`, a new column
+  added by migration), and the beacon signal times from it. The window still
+  uses the logging time, so a late-logged flow isn't lost. There is a
+  regression test (fails before the fix, passes after). **To be confirmed
+  live** by the battery's beacon runs after `make deploy`.
+
+**Signals a replay can't judge**, because their inputs aren't in a capture:
+threat_intel (feed table), malicious_domain and adblock_ineffective (AdGuard's
+block decisions), new_device (the device registry) and volume_anomaly (7 days
+of hourly rollups). Runs labelled with these are reported as "not replayable",
+not scored as misses; the live battery measures them.
+
+**Public captures (CTU-13, CC BY 2.0 - citation in `eval/README.md`).**
+Suricata 8.0.7, the gateway's rule set as copied on 26 September 2026. Each
+capture was replayed three times, with the same result sha256 each time.
+
+| Capture | Events | Capture length | Infected host detected | First incident after | Incidents raised | Result sha256 (first 12) |
+|---|---|---|---|---|---|---|
+| Scenario 6, DonBot | 4,896 | 2 h 0 min | yes | 64 s | beacon, brute_force, network_sweep, slow_network_sweep, ids_other | `4c2f512f1691` |
+| Scenario 7, Sogou | 249 | 14.5 min | yes | 20 s | network_sweep, slow_network_sweep, ids_other | `b0de6dfc0b76` |
+
+Full results: `eval/results/replay-ctu13-donbot.json` and `replay-ctu13-sogou.json`.
+These captures are labelled only at the host level ("this host is
+infected"), so they show detection, not per-signal precision. That needs the
+battery's own labelled capture, which is still to be replayed.

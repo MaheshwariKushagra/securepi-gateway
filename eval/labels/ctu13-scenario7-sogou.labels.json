@@ -1,0 +1,9 @@
+{
+ "pcap": "botnet-capture-20110816-sogou.pcap",
+ "source": "CTU-13 dataset, scenario 7 (CTU-Malware-Capture-Botnet-48, Sogou), Stratosphere Laboratory, Czech Technical University in Prague",
+ "url": "https://mcfp.felk.cvut.cz/publicDatasets/CTU-Malware-Capture-Botnet-48/",
+ "licence": "CC BY 2.0 (https://creativecommons.org/licenses/by/2.0/). Garcia, S., Grill, M., Stiborek, J. and Zunino, A. (2014) 'An empirical comparison of botnet detection methods', Computers and Security 45, pp. 100-123",
+ "sha256": "ff5c18adaa6a4681df1db43d0eac10d05e65d51931d5380ca54ceff0d005d2c5",
+ "hosts": {"147.32.84.165": "CTU-13 infected host (Sogou)"},
+ "runs": [{"signal": "any", "run": 1, "host": "147.32.84.165", "t_start": null, "t_end": null, "expect": true}]
+}

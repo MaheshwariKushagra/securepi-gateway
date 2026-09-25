@@ -1,0 +1,44 @@
+{
+ "capture": "botnet-capture-20110816-sogou.pcap",
+ "capture_seconds": 873.3,
+ "capture_sha256": "ff5c18adaa6a4681df1db43d0eac10d05e65d51931d5380ca54ceff0d005d2c5",
+ "engine_steps": 78,
+ "events": 249,
+ "incidents_by_type": {
+  "ids_other": 1,
+  "network_sweep": 1,
+  "slow_network_sweep": 1
+ },
+ "licence": "CC BY 2.0 (https://creativecommons.org/licenses/by/2.0/). Garcia, S., Grill, M., Stiborek, J. and Zunino, A. (2014) 'An empirical comparison of botnet detection methods', Computers and Security 45, pp. 100-123",
+ "result_sha256": "b0de6dfc0b76d1e7ac0624d3f1ea56fc3ce16500113ee28f5850aa1dcbbe3b8a",
+ "rules": "suricata.rules",
+ "rules_sha256": "82aa107f079b2b1122e210260d0c24bb6fbb4cbe0b85ef373cd51b825c3caaef",
+ "runs": [
+  {
+   "correct": true,
+   "detected": true,
+   "expect": true,
+   "host": "147.32.84.165",
+   "incidents_on_host": [
+    "ids_other",
+    "network_sweep",
+    "slow_network_sweep"
+   ],
+   "run": 1,
+   "signal": "any",
+   "ttd_s": 20.4
+  }
+ ],
+ "signal_failures": {},
+ "source": "CTU-13 dataset, scenario 7 (CTU-Malware-Capture-Botnet-48, Sogou), Stratosphere Laboratory, Czech Technical University in Prague",
+ "summary": {
+  "any": {
+   "correct": 1,
+   "detected": 1,
+   "runs": 1,
+   "ttd_max_s": 20.4,
+   "ttd_median_s": 20.4
+  }
+ },
+ "suricata": "This is Suricata version 8.0.7 RELEASE"
+}

@@ -658,6 +658,30 @@ class BeaconSignalTests(unittest.TestCase):
         score = float(row["description"].split("regularity score of ")[1].split(" ")[0])
         self.assertGreaterEqual(score, 0.8, "the exit criterion's own numeric target")
 
+    def test_timing_comes_from_flow_start_not_the_logging_time(self):
+        # Step 7.2 finding: the battery's 10 s beacon (10% jitter) was never
+        # detected live. Suricata logs a flow only after it times out, in
+        # batches whenever its flow manager wakes, so the logged ts values
+        # bunch up and the regularity score collapsed to about 0.3. Here
+        # the connections are regular but each is logged 60-90 s later at
+        # a flow-manager tick (every 20 s) - scored on flow_start it fires.
+        import random
+        rng = random.Random(5)
+        conn = fixtures.temp_db()
+        fixtures.insert_device(conn, 1)
+        now = time.time()
+        start = now - 300
+        for _ in range(20):
+            start += 10 * (1 + rng.uniform(-0.10, 0.10))
+            logged = start + 60 + rng.uniform(0, 30)
+            logged -= logged % 20
+            fixtures.insert_flow(conn, 1, "203.0.113.55", 4444, logged, flow_start=start,
+                                  bytes_toserver=60, bytes_toclient=40)
+        timestamps = [r["ts"] for r in conn.execute("SELECT ts FROM events")]
+        self.assertLess(correlation._beacon_score(timestamps, [100] * len(timestamps)), 0.8,
+                        "the logging times alone must not look like a beacon, or this test proves nothing")
+        self.assertEqual(correlation.beacon_signal(conn), 1)
+
     def test_does_not_fire_on_irregular_human_like_traffic(self):
         import random
         rng = random.Random(7)

@@ -60,12 +60,12 @@ def insert_device(conn, device_id, hostname=None, friendly_name=None,
 
 
 def insert_flow(conn, device_id, dest_ip, dest_port, ts,
-                 src_ip="10.10.0.50", bytes_toclient=0, bytes_toserver=0):
+                 src_ip="10.10.0.50", bytes_toclient=0, bytes_toserver=0, flow_start=None):
     conn.execute(
         "INSERT INTO events (ts, ts_iso, source, event_type, src_ip, dest_ip, dest_port,"
-        " device_id, bytes_toclient, bytes_toserver, blocked)"
-        " VALUES (?, 'test', 'suricata', 'flow', ?, ?, ?, ?, ?, ?, 0)",
-        (ts, src_ip, dest_ip, dest_port, device_id, bytes_toclient, bytes_toserver),
+        " device_id, bytes_toclient, bytes_toserver, blocked, flow_start)"
+        " VALUES (?, 'test', 'suricata', 'flow', ?, ?, ?, ?, ?, ?, 0, ?)",
+        (ts, src_ip, dest_ip, dest_port, device_id, bytes_toclient, bytes_toserver, flow_start),
     )
     conn.commit()
 
@@ -141,9 +141,9 @@ def insert_device_hourly(conn, device_id, hour_start, bytes_down, bytes_up):
 
 
 def make_eve_flow(src_ip="10.10.0.50", dest_ip="93.184.216.34", dest_port=443,
-                   bytes_toclient=1000, bytes_toserver=200, timestamp=None):
+                   bytes_toclient=1000, bytes_toserver=200, timestamp=None, start=None):
     """A synthetic Suricata eve.json 'flow' record, shaped like a real one."""
-    return {
+    record = {
         "timestamp": timestamp or "2026-09-14T10:00:00.000000+0000",
         "event_type": "flow",
         "src_ip": src_ip, "src_port": 51000, "dest_ip": dest_ip, "dest_port": dest_port,
@@ -154,6 +154,9 @@ def make_eve_flow(src_ip="10.10.0.50", dest_ip="93.184.216.34", dest_port=443,
             "pkts_toserver": 10, "pkts_toclient": 12, "state": "closed", "age": 3,
         },
     }
+    if start:
+        record["flow"]["start"] = start
+    return record
 
 
 def make_eve_dns_query(src_ip="10.10.0.50", rrname="example.com", timestamp=None):

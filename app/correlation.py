@@ -986,8 +986,14 @@ def beacon_signal(conn):
     min_connections = settings.get(conn, "beacon_min_connections")
     threshold = settings.get(conn, "beacon_score_threshold")
 
+    # The window is on ts (when the flow was logged), so a flow logged late
+    # is still picked up; the timing is judged on flow_start (when the
+    # connection began). Suricata logs flows in batches after they time
+    # out, so ts gaps are the flow manager's rhythm, not the beacon's - a
+    # 10 s beacon scored 0.3 on ts (step 7.2 finding). Rows from before
+    # flow_start existed fall back to ts.
     rows = conn.execute(
-        """SELECT id, device_id, dest_ip, dest_port, ts,
+        """SELECT id, device_id, dest_ip, dest_port, COALESCE(flow_start, ts) started,
                   COALESCE(bytes_toserver, 0) + COALESCE(bytes_toclient, 0) total_bytes
              FROM events
             WHERE event_type='flow' AND device_id IS NOT NULL AND ts > ?""",
@@ -1004,7 +1010,7 @@ def beacon_signal(conn):
     for (device_id, dest_ip, dest_port), group in groups.items():
         if len(group) < min_connections:
             continue
-        timestamps = [r["ts"] for r in group]
+        timestamps = [r["started"] for r in group]
         sizes = [r["total_bytes"] for r in group]
         score = _beacon_score(timestamps, sizes)
         if score < threshold:

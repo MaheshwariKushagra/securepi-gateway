@@ -310,32 +310,37 @@ own DNS records (Suricata sees `ap0`), without double-counting the logged ones.
 Two new tests. The battery's DNS run now uses `mask.icloud.com`. Deploy with
 `make deploy` next session, then run the battery.
 
-**7.1 replay - `tools/replay-suricata.yaml` committed; `tools/replay.py` drafted,
-not committed yet.** The draft is on disk (not pushed), along with CTU-13 labels
-in `eval/labels/`. It already does the three things the replay needs:
-reshaping Suricata 8's DNS v3 records to the v2 layout `flatten_suricata()`
-reads, a simulated clock stepping 15 s through capture time, and
-`pcap-file.checksum-checks=no`. One test run on the CTU-13 Donbot capture
-detected the infected host (beacon, brute_force, network_sweep,
-slow_network_sweep, ids_other). It still needs review, a determinism check
-(two runs → same `result_sha256`), a replay of the battery pcap, and tests.
-Inputs are kept out of git (`eval/pcaps/`, `eval/rules/` ignored): Homebrew
-Suricata 8.0.7 is installed on the Mac, the gateway's ruleset was copied to
-`eval/rules/`, and the CTU-13 captures (CC BY 2.0) are in `eval/pcaps/public/`
-with their sha256 in the labels files.
+**7.1 replay - done (26 September 2026, second session).** `tools/replay.py`
+is reviewed, tested (`tests/test_replay.py`) and deterministic: each CTU-13
+capture replayed three times with the same result sha256, and both infected
+hosts were detected (results in `EVALUATION-RESULTS-2.md` §Stage 7 and
+`eval/results/replay-ctu13-*.json`). Inputs stay out of git; `eval/README.md`
+says how to set them up on a fresh Mac.
+
+**The determinism check found the likely cause of the beacon miss.** A flow
+record's `ts` is when Suricata *logged* the flow, in batches after it timed
+out, and `beacon_signal` measured intervals from it. Ingest now stores
+`events.flow_start` (new column, applied by the migration list when ingest
+starts), and the beacon signal times from that. It's committed and tested,
+but **not deployed and not yet confirmed live**.
 
 **Next steps, in order:**
-1. `make deploy` (the dns_bypass fix), then check journals.
-2. Investigate the beacon miss from the smoke test.
-3. `sudo python3 /opt/securepi-eval/battery.py --runs 5` (~25 min; copy the
-   updated battery.py over first). Afterwards: remove any leftover
+1. Bring up the management link (the gateway was unreachable this session -
+   Internet Sharing), then `./session-start.sh`.
+2. `make deploy` - ships both the dns_bypass fix and the flow_start/beacon fix.
+   Check the journals, and check that the migration added the column:
+   `sudo sqlite3 /opt/securepi/securepi.db "PRAGMA table_info(events)" | grep flow_start`
+3. Copy the updated `gateway/battery.py` to `/opt/securepi-eval/` and run
+   `sudo python3 /opt/securepi-eval/battery.py --runs 5` (~25 min). The beacon
+   runs are the live confirmation of the fix. Afterwards: remove any leftover
    .231-.246 addresses, resolve the battery devices' incidents, point
    10.10.0.1 back at device 4 (the script does this itself on a clean finish).
    **Kill processes with bracketed patterns** (`pkill -f "[h]ttp.server"`) and
    never a bare `http.server` - that also kills `securepi-ca-server` and
-   `securepi-static`, which happened tonight and were restarted.
-4. Finish and commit `tools/replay.py`; replay the battery pcap and both CTU
-   captures; record results in `EVALUATION-RESULTS-2.md` §Stage 7.
+   `securepi-static`.
+4. Copy the battery's pcap and labels.json to `eval/pcaps/` and `eval/labels/`,
+   replay it, and compare per-signal against the live battery. Record both in
+   `EVALUATION-RESULTS-2.md` §Stage 7.
 5. Still pending from 4.2: the real-phone DHCP-renewal quarantine check (see above).
 6. Decide whether to rewrite the pushed commits that carry a `Co-Authored-By`
    line (`220e03b`, `31b70f6`, `684d2e2` and earlier ones). New commits no longer

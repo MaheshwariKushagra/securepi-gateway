@@ -1,0 +1,16 @@
+== step 7.2 detection battery, 1 runs per signal, 20260926-011621
+   23 blocked domains confirmed for malicious_domain
+registry: new device battery-new-device-1 (02:00:00:7e:01:79)
+  threat_intel        run 1 (10.10.0.1): detected in 13.6s
+  malicious_domain    run 1 (10.10.0.1): detected in 14.1s
+  dns_tunneling       run 1 (10.10.0.1): detected in 13.5s
+  dga                 run 1 (10.10.0.1): detected in 12.6s
+  new_device          run 1 (02:00:00:7e:01:79): detected in 33.1s
+  port_scan           run 1 (10.10.0.231): detected in 78.2s
+  dns_bypass          run 1 (10.10.0.1): NOT DETECTED
+  brute_force         run 1 (10.10.0.231): detected in 76.6s
+  beacon              run 1 (10.10.0.231): NOT DETECTED
+  network_sweep       run 1 (10.10.0.231): detected in 91.1s
+  ids_alert           run 1 (10.10.0.231): detected in 14.1s
+  campaign            run 1 (10.10.0.231): detected in 261.0s
+  benign              run 1 (10.10.0.246): NOT DETECTED

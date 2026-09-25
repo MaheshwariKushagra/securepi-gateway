@@ -267,6 +267,34 @@ class DnsBypassSignalTests(unittest.TestCase):
             fixtures.insert_dns_query(conn, 1, "use-application-dns.net", now - 10, blocked=1)
         self.assertEqual(correlation.dns_bypass_signal(conn), 1)
 
+    def _suricata_dns(self, conn, rrname, ts, dns_type="query"):
+        conn.execute(
+            "INSERT INTO events (ts, ts_iso, source, event_type, src_ip, device_id, dns_type, dns_rrname)"
+            " VALUES (?, 'test', 'suricata', 'dns', '10.10.0.50', 1, ?, ?)", (ts, dns_type, rrname))
+        conn.commit()
+
+    def test_firefox_canary_is_counted_from_suricata_dns(self):
+        # Step 7.2 finding: AdGuard never logs use-application-dns.net, so
+        # in the real pipeline the evidence only exists as Suricata DNS.
+        # Suricata 7 logs a request as "query"; 8's format says "request".
+        conn = fixtures.temp_db()
+        fixtures.insert_device(conn, 1)
+        now = time.time()
+        for i, t in enumerate(("query", "request", "query")):
+            self._suricata_dns(conn, "use-application-dns.net", now - 10 + i, t)
+        self.assertEqual(correlation.dns_bypass_signal(conn), 1)
+
+    def test_logged_canaries_are_not_counted_twice_from_suricata(self):
+        # mask.icloud.com IS in AdGuard's log, so Suricata's copy of the
+        # same query must not add a second count: 2 real queries stay 2.
+        conn = fixtures.temp_db()
+        fixtures.insert_device(conn, 1)
+        now = time.time()
+        for i in range(2):
+            fixtures.insert_dns_query(conn, 1, "mask.icloud.com", now - 10 + i, blocked=1)
+            self._suricata_dns(conn, "mask.icloud.com", now - 10 + i)
+        self.assertEqual(correlation.dns_bypass_signal(conn), 0)
+
     def test_fires_on_enough_known_doh_sni_matches_alone(self):
         conn = fixtures.temp_db()
         fixtures.insert_device(conn, 1)

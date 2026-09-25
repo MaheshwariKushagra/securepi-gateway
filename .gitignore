@@ -33,3 +33,9 @@ docs/demo/*.log
 # Python bytecode
 __pycache__/
 *.pyc
+
+# Step 7.1 replay inputs: the ET Open ruleset copied from the gateway and
+# third-party captures (CTU-13) - never pushed. eval/results/ is committed.
+eval/pcaps/
+eval/rules/
+eval/replay-out/

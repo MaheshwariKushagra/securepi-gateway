@@ -474,6 +474,14 @@ def slow_scan_signal(conn):
 # own note above.
 
 CANARY_DOMAINS = ("use-application-dns.net", "mask.icloud.com", "mask-h2.icloud.com")
+# Checked live (26 September 2026, step 7.2): AdGuard Home answers the
+# Firefox canary through our $dnsrewrite rule but never writes it to its
+# query log (the iCloud canaries ARE logged, reason "RewriteRule"), so an
+# AdGuard-sourced dns_query event for it can never exist. Suricata captures
+# ap0 and logs every DNS request a device sends the gateway, so for this
+# one domain the signal counts Suricata's own DNS records instead - only
+# this one, so the logged canaries aren't counted twice.
+CANARY_DOMAINS_NOT_IN_ADGUARD_LOG = ("use-application-dns.net",)
 # Curated, not exhaustive - the same "short, defensible list beats a large
 # opaque one" reasoning brute_force_signal's AUTH_PORTS gives. Widening
 # this is cheap (just add a hostname) and doesn't need a redeploy of
@@ -491,6 +499,7 @@ def dns_bypass_signal(conn):
     threshold = settings.get(conn, "dns_bypass_threshold")
 
     canary_placeholders = ",".join("?" for _ in CANARY_DOMAINS)
+    suricata_placeholders = ",".join("?" for _ in CANARY_DOMAINS_NOT_IN_ADGUARD_LOG)
     sni_placeholders = ",".join("?" for _ in KNOWN_DOH_PROVIDER_SNIS)
     rows = conn.execute(
         f"""
@@ -500,12 +509,14 @@ def dns_bypass_signal(conn):
            AND (
                 (source='nftables' AND event_type='bypass_attempt')
              OR (event_type='dns_query' AND dns_rrname IN ({canary_placeholders}))
+             OR (source='suricata' AND event_type='dns' AND dns_type IN ('query','request')
+                 AND dns_rrname IN ({suricata_placeholders}))
              OR (event_type='tls' AND tls_sni IN ({sni_placeholders}))
            )
          GROUP BY device_id
         HAVING n >= ?
         """,
-        (since, *CANARY_DOMAINS, *KNOWN_DOH_PROVIDER_SNIS, threshold),
+        (since, *CANARY_DOMAINS, *CANARY_DOMAINS_NOT_IN_ADGUARD_LOG, *KNOWN_DOH_PROVIDER_SNIS, threshold),
     ).fetchall()
 
     fired = 0
@@ -516,10 +527,12 @@ def dns_bypass_signal(conn):
                      AND (
                           (source='nftables' AND event_type='bypass_attempt')
                        OR (event_type='dns_query' AND dns_rrname IN ({canary_placeholders}))
+                       OR (source='suricata' AND event_type='dns' AND dns_type IN ('query','request')
+                           AND dns_rrname IN ({suricata_placeholders}))
                        OR (event_type='tls' AND tls_sni IN ({sni_placeholders}))
                      )
                      ORDER BY ts""",
-                (r["device_id"], since, *CANARY_DOMAINS, *KNOWN_DOH_PROVIDER_SNIS),
+                (r["device_id"], since, *CANARY_DOMAINS, *CANARY_DOMAINS_NOT_IN_ADGUARD_LOG, *KNOWN_DOH_PROVIDER_SNIS),
             )
         ]
         # A short breakdown by kind, so the incident says WHICH mechanism
@@ -533,10 +546,12 @@ def dns_bypass_signal(conn):
         ).fetchall()
         by_canary = conn.execute(
             f"""SELECT dns_rrname reason, count(*) n FROM events
-                 WHERE device_id=? AND ts > ? AND event_type='dns_query'
-                   AND dns_rrname IN ({canary_placeholders})
+                 WHERE device_id=? AND ts > ?
+                   AND ((event_type='dns_query' AND dns_rrname IN ({canary_placeholders}))
+                     OR (source='suricata' AND event_type='dns' AND dns_type IN ('query','request')
+                         AND dns_rrname IN ({suricata_placeholders})))
                  GROUP BY dns_rrname""",
-            (r["device_id"], since, *CANARY_DOMAINS),
+            (r["device_id"], since, *CANARY_DOMAINS, *CANARY_DOMAINS_NOT_IN_ADGUARD_LOG),
         ).fetchall()
         by_sni = conn.execute(
             f"""SELECT tls_sni reason, count(*) n FROM events

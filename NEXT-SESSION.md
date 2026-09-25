@@ -6,7 +6,7 @@
 ./session-start.sh
 ```
 
-This brings up the Mac's SSH tunnel to the console (`http://localhost:8000`),
+This brings up the Mac's SSH tunnel to the console (`https://localhost:8000` — HTTPS-only since step 3.2),
 runs a full gateway status check, and confirms nothing is uncommitted or
 unpushed. Do this before anything else — it answers "did we forget to turn
 something back on" in one command.
@@ -75,8 +75,8 @@ compact summary. Results from Stage 1 onward are in `EVALUATION-RESULTS-2.md`.
 | **0** | Housekeeping — planning docs archived, `make deploy`/`make status`, baseline snapshot | **Complete** |
 | **1** | Foundation & correctness — test suite, retention, real-time ingest, audit coverage | **Complete** |
 | **2** | **Detection breadth** — scan family, DNS-bypass hardening, IDS alerts, threat intel, DNS tunnelling/DGA, C2 beaconing, suppression rules, campaign correlation + ATT&CK kill chain | **Complete** |
-| 3 | Hardening & reliability — session auth, TLS, privilege separation, health supervision, fail-open DNS | Not started — **recommended next stage**, see below |
-| 4 | Response & orchestration — policy profiles, timed quarantine, notifications | Not started |
+| **3** | Hardening & reliability — session auth, TLS, privilege separation, security self-review, health supervision, fail-open DNS | **Complete** |
+| 4 | Response & orchestration — policy orchestrator, timed quarantine, filtering profiles, device trust, notifications | **In progress** — see below |
 | **5** | Ad blocking & privacy filtering (5.11 scoped to Path 1; Path 2 deferred with reasoning recorded) | **Complete** |
 | **6** | Intelligence & console — behavioural baselines, device fingerprinting, settings, incident workbench, hunt/explorer, weekly report, responsive layout | **Complete** |
 | 7 | Evaluation 2.0 — expanded benchmark battery | Not started |
@@ -86,7 +86,7 @@ Stages 5 and 6 were built before Stages 1–2 deliberately, then Stages 1 and 2
 were completed in later sessions — each such out-of-order decision is recorded
 with its reasoning in `ENHANCEMENT-PLAN.md` rather than left implicit.
 
-### What Stage 2 added (this session, 14 September 2026)
+### What Stage 2 added (14 September 2026)
 
 Ten new correlation signals beyond the original six, closing the plan's own
 "never cut" detection core:
@@ -198,11 +198,43 @@ open campaign appears as a "Chain" row. The same stale claim in the
 docstrings of `webapp.py`'s `_related_open_incidents` and `playbooks.py` was
 corrected too.
 
-### Recommended next step: Stage 3 (Hardening & reliability)
+### What Stage 3 added (20–21 September 2026)
 
-Session authentication, TLS on the console, privilege separation (the web
-app currently calls `nft` directly), a health supervisor, and fail-open DNS.
-None of it depends on anything still missing from Stage 4.
+Every step was deployed to the live gateway and verified there — see
+`EVALUATION-RESULTS-2.md` §3.1–§3.6 for exactly what was observed.
+
+- **3.1 Session login** replaces Basic Auth: PBKDF2-hashed password,
+  HttpOnly `SameSite=Strict` cookie, login rate limit, Origin check on every
+  write, idle + absolute timeout. `Origin: null` is treated as same-origin
+  (fix `84dbadf`).
+- **3.2 HTTPS only** on the console, from its own CA (separate from the DPI
+  CA). Plain HTTP gets no response. To stop the browser warning on the Mac,
+  trust `/opt/securepi-tls/ca.crt` once — the command is in `README.md`.
+- **3.3 Privilege separation:** `securepi-web` runs as an unprivileged user.
+  Quarantine and enroll/unenroll go through `securepi-web-helper`, the only
+  thing the sudoers rule allows. Password files moved to `/etc/securepi/`.
+- **3.4 Security self-review** → `docs/SECURITY-REVIEW.md`. mitmproxy no
+  longer listens on the WAN, and SSH password login is off (keys only).
+- **3.5 Health supervisor** (`app/health.py`, run from ingest's loop): a
+  stopped service, disk pressure, DB growth or a WAN outage becomes a
+  platform incident.
+- **3.6 Fail-open DNS** (`app/dns_failopen.py`): if AdGuard stops
+  answering, plaintext DNS on `ap0` is redirected to a public resolver and
+  the console shows a "protection degraded" banner; it reverts on recovery.
+
+The console password is now a one-way hash — `sudo cat`-ing the file no
+longer gives you something you can log in with. Resetting it is the
+emergency SSH procedure in `README.md`.
+
+Test suite: **303**, all passing.
+
+### Next: Stage 4 (Response & orchestration)
+
+4.1 policy orchestrator (apply → read back → roll back, drift detection),
+4.2 MAC-keyed timed quarantine + block domain/IP from an incident, 4.3
+filtering profiles / blocked-service schedules / pause filtering, 4.4 device
+trust states, 4.5 notifications. The root helper from 3.3 gains a verb for
+IP blocking in 4.2.
 
 ### Known real bugs found and fixed (for context, not action)
 

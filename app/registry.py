@@ -144,8 +144,12 @@ def resolve_device(conn, mac, hostname, now):
             return row["id"]
 
     # 3. Genuinely new.
+    # trust='unknown' is written explicitly rather than left to the column
+    # default: a database migrated from before step 4.4 has 'approved' as
+    # its default (existing devices were grandfathered in), and a device
+    # the registry has never seen before must never inherit that.
     cur = conn.execute(
-        "INSERT INTO devices (hostname, first_seen, last_seen) VALUES (?, ?, ?)",
+        "INSERT INTO devices (hostname, first_seen, last_seen, trust) VALUES (?, ?, ?, 'unknown')",
         (hostname or None, now, now),
     )
     print("registry: new device %s (%s)" % (hostname or "unnamed", mac), flush=True)

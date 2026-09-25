@@ -43,6 +43,11 @@ LIVE_STATUSES = ("new", "investigating")
 # meant to dominate the score.
 CAMPAIGN_BONUS = 25
 
+# Incidents that record something the gateway DID, not something the
+# device did (step 4.2's automatic quarantine). Counting one would score
+# the same campaign twice - once as evidence and again as the response to it.
+NOT_RISK_EVIDENCE = ("auto_quarantine",)
+
 
 def _decay(age_seconds):
     return 0.5 ** (age_seconds / HALF_LIFE_SECONDS)
@@ -52,10 +57,11 @@ def device_risk(conn, device_id, now=None):
     """Returns {"score": 0-100, "band": ..., "breakdown": [...]}."""
     now = now if now is not None else time.time()
     placeholders = ",".join("?" * len(LIVE_STATUSES))
+    excluded = ",".join("?" * len(NOT_RISK_EVIDENCE))
     rows = conn.execute(
         "SELECT id, title, severity, last_seen FROM incidents"
-        " WHERE device_id=? AND status IN (%s)" % placeholders,
-        (device_id, *LIVE_STATUSES)).fetchall()
+        " WHERE device_id=? AND status IN (%s) AND signal_type NOT IN (%s)" % (placeholders, excluded),
+        (device_id, *LIVE_STATUSES, *NOT_RISK_EVIDENCE)).fetchall()
 
     breakdown = []
     total = 0.0

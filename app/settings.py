@@ -291,6 +291,65 @@ SETTINGS_SCHEMA = {
                 "AdGuard's own automatic restart (10s) usually gets a chance to fix things first, "
                 "short enough that the ~30s exit criterion still has margin (step 3.6).",
     },
+    # ---- Stage 4: response and notifications. `group` puts each on its
+    # own card in the console instead of the detection-thresholds list;
+    # `dedicated` means the generic settings endpoint refuses to change it,
+    # because it has its own endpoint with extra safety checks.
+    "auto_quarantine_enabled": {
+        "default": False, "type": bool, "group": "response",
+        "label": "Auto-quarantine high-confidence campaigns",
+        "help": "When on, a campaign that spans at least the configured number of distinct ATT&CK "
+                "tactics quarantines its device automatically for a fixed time (step 4.2). Off by "
+                "default - an automatic block on a false positive cuts a real device off.",
+    },
+    "auto_quarantine_min_tactics": {
+        "default": 3, "type": int, "min": 2, "max": 5, "group": "response",
+        "label": "Auto-quarantine: minimum distinct tactics",
+        "help": "How many distinct ATT&CK tactics a campaign must span before it counts as "
+                "high-confidence enough to act on without a person (the plan's scan -> brute "
+                "force -> beacon example is three).",
+    },
+    "auto_quarantine_minutes": {
+        "default": 60, "type": int, "min": 5, "max": 10080, "group": "response",
+        "label": "Auto-quarantine duration (minutes)",
+        "help": "How long an automatic quarantine lasts before it lifts on its own. An operator "
+                "can release it sooner or extend it from the device page.",
+    },
+    "restrict_unknown_devices": {
+        "default": False, "type": bool, "group": "response", "dedicated": True,
+        "label": "Restrict unknown devices",
+        "help": "When on, a device the gateway hasn't seen before has no internet access until it's "
+                "approved (step 4.4). It can still reach the gateway itself - DHCP, DNS and this "
+                "console - so approving it from that same device always works.",
+    },
+    "notify_rate_limit_per_hour": {
+        "default": 10, "type": int, "min": 1, "max": 200, "group": "notifications",
+        "label": "Notifications per channel per hour",
+        "help": "At most this many individual notifications per channel in any hour. Anything past "
+                "the limit waits for the next digest instead of being dropped (step 4.5).",
+    },
+    "notify_quiet_hours_enabled": {
+        "default": False, "type": bool, "group": "notifications",
+        "label": "Quiet hours",
+        "help": "During quiet hours only high-severity incidents are sent straight away. Everything "
+                "else waits and arrives as one digest when quiet hours end.",
+    },
+    "notify_quiet_start_hour": {
+        "default": 22, "type": int, "min": 0, "max": 23, "group": "notifications",
+        "label": "Quiet hours start (hour, 0-23)",
+        "help": "Local gateway time. Quiet hours may cross midnight (22 to 7 is overnight).",
+    },
+    "notify_quiet_end_hour": {
+        "default": 7, "type": int, "min": 0, "max": 23, "group": "notifications",
+        "label": "Quiet hours end (hour, 0-23)",
+        "help": "Local gateway time. The hour quiet hours end, exclusive.",
+    },
+    "notify_digest_minutes": {
+        "default": 60, "type": int, "min": 5, "max": 1440, "group": "notifications",
+        "label": "Digest interval (minutes)",
+        "help": "How often held notifications (quiet hours, rate limit) are collected into one "
+                "summary message, once sending is allowed again.",
+    },
 }
 
 
@@ -317,6 +376,10 @@ def validate(key, value):
     if key not in SETTINGS_SCHEMA:
         raise SettingsError("unknown setting: %s" % key)
     spec = SETTINGS_SCHEMA[key]
+    if spec["type"] is bool:
+        if not isinstance(value, bool):
+            raise SettingsError("%s must be true or false" % key)
+        return value
     # bool is a subclass of int in Python - explicitly reject it for an
     # int/float setting, since True/False silently passing as 1/0 would
     # be a confusing way to set a threshold.
@@ -364,5 +427,8 @@ def all_settings(conn):
             "help": spec["help"],
             "min": spec.get("min"),
             "max": spec.get("max"),
+            "type": spec["type"].__name__,
+            "group": spec.get("group", "detection"),
+            "dedicated": bool(spec.get("dedicated")),
         }
     return out

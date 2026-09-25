@@ -3,34 +3,64 @@
 <div class="page-head">
     <div class="page-title">
         <h1>Settings</h1>
-        <p class="page-sub">Detection thresholds, audit log, password, attributions</p>
+        <p class="page-sub">Detection thresholds, notifications, retention, audit log, password, attributions</p>
     </div>
 </div>
 
-<div class="card" style="margin-bottom:16px">
-    <div class="card-head"><h2>Detection Thresholds</h2>
-        <span class="spacer"></span><span class="subtle">step 6.3 - a small, honest subset of what's actually tunable</span></div>
-    <div class="card-body tight" id="settingsThresholds"><div class="empty">Loading…</div></div>
+<nav class="subnav" aria-label="Sections">
+    <a href="#sec-notify">Notifications</a>
+    <a href="#sec-thresholds">Detection thresholds</a>
+    <a href="#sec-retention">Retention</a>
+    <a href="#sec-password">Password</a>
+    <a href="#sec-audit">Audit log</a>
+    <a href="#sec-attributions">Attributions</a>
+</nav>
+
+<div class="card" id="sec-notify" style="margin-bottom:16px">
+    <div class="card-head"><h2><svg class="icon" width="15" height="15"><use href="#i-send"/></svg>Notification Channels</h2>
+        <span class="spacer"></span>
+        <button class="btn primary icon-label" id="channelAdd">
+            <svg class="icon" width="14" height="14" style="color:#fff"><use href="#i-plus"/></svg> Add channel
+        </button></div>
+    <div class="card-body tight" id="settingsChannels"><div class="empty">Loading…</div></div>
     <div class="card-foot">
-        Only these four thresholds are console-tunable today - every other constant in this
-        project (window durations, the Tier 2 addon's pinning/effectiveness thresholds) is
-        still hardcoded in its own file. Changing a threshold here takes effect on the
-        correlation engine's very next cycle, no restart needed.
+        One message per incident per channel - an incident that keeps growing is never re-sent. By default a
+        message carries the title, severity, device and a link back here; turn on "include details" for a
+        channel to also send the description, which can contain domains and IP addresses. Channel secrets
+        (bot tokens, passwords, signing keys) are stored on the gateway and never shown again after saving.
     </div>
 </div>
 
 <div class="grid c2e">
     <div class="card">
-        <div class="card-head"><h2>Data Retention</h2></div>
-        <div class="card-body fill" id="settingsRetention"><div class="empty">Loading…</div></div>
+        <div class="card-head"><h2>Delivery Rules</h2>
+            <span class="spacer"></span><span class="chip nocap" id="quietNowChip" hidden>quiet hours now</span></div>
+        <div class="card-body tight" id="settingsNotifyRules"><div class="empty">Loading…</div></div>
     </div>
     <div class="card">
-        <div class="card-head"><h2>Notification Channels</h2></div>
-        <div class="card-body fill" id="settingsChannels"><div class="empty">Loading…</div></div>
+        <div class="card-head"><h2>Recent Notifications</h2></div>
+        <div class="card-body tight feed fill" id="settingsNotifyRecent"><div class="empty">Loading…</div></div>
     </div>
 </div>
 
-<div class="card" style="margin-bottom:16px">
+<div class="card" id="sec-thresholds" style="margin-bottom:16px">
+    <div class="card-head"><h2>Detection Thresholds</h2>
+        <span class="spacer"></span><span class="subtle">take effect on the engine's next cycle</span></div>
+    <div class="card-body tight" id="settingsThresholds"><div class="empty">Loading…</div></div>
+    <div class="card-foot">
+        Detection thresholds and windows for every signal, plus session and health-check timing. A change
+        takes effect on the correlation engine's next cycle - no restart needed - and is recorded in the
+        audit log with its reason. Response and notification settings live on their own cards.
+    </div>
+</div>
+
+<div class="card" id="sec-retention" style="margin-bottom:16px">
+    <div class="card-head"><h2>Data Retention</h2>
+        <span class="spacer"></span><span class="subtle" id="settingsRetentionLast"></span></div>
+    <div class="card-body tight" id="settingsRetention"><div class="empty">Loading…</div></div>
+</div>
+
+<div class="card" id="sec-password" style="margin-bottom:16px">
     <div class="card-head"><h2><svg class="icon" width="15" height="15"><use href="#i-lock"/></svg>Console Password</h2></div>
     <div class="card-body">
         <div class="toolbar" style="align-items:flex-end">
@@ -50,13 +80,13 @@
     </div>
 </div>
 
-<div class="card" style="margin-bottom:16px">
+<div class="card" id="sec-audit" style="margin-bottom:16px">
     <div class="card-head"><h2>Audit Log</h2>
         <span class="spacer"></span><span class="subtle">every recorded console action, newest first</span></div>
     <div class="card-body tight feed tall" id="settingsAudit"><div class="empty">Loading…</div></div>
 </div>
 
-<div class="card">
+<div class="card" id="sec-attributions">
     <div class="card-head"><h2>Attributions</h2>
         <span class="spacer"></span><span class="subtle">third-party components this project uses</span></div>
     <div class="table-scroll" id="settingsAttributions"><div class="empty">Loading…</div></div>

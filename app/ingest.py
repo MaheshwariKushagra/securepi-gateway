@@ -177,6 +177,81 @@ SCHEMA_MIGRATIONS = [
            changed_at REAL
        )""",
     "INSERT OR IGNORE INTO dns_failopen_state (id, active, down_since, changed_at) VALUES (1, 0, NULL, NULL)",
+    # ENHANCEMENT-PLAN.md Stage 4. The trust column's DEFAULT here is
+    # 'approved', not schema.sql's 'unknown', on purpose: this ALTER only
+    # ever runs once, against a database that already has devices, and
+    # those devices were on the network before trust states existed - so
+    # they're grandfathered in rather than suddenly treated as strangers.
+    # registry.py sets 'unknown' explicitly for every device it creates
+    # from now on, so this default never applies to a new device.
+    "ALTER TABLE devices ADD COLUMN trust TEXT NOT NULL DEFAULT 'approved'",
+    """CREATE TABLE IF NOT EXISTS policies (
+           id               INTEGER PRIMARY KEY,
+           kind             TEXT NOT NULL,
+           device_id        INTEGER REFERENCES devices(id),
+           target           TEXT,
+           reason           TEXT NOT NULL,
+           source           TEXT NOT NULL,
+           created_by       TEXT NOT NULL,
+           created_at       REAL NOT NULL,
+           expires_at       REAL,
+           status           TEXT NOT NULL,
+           ended_at         REAL,
+           ended_by         TEXT,
+           ended_reason     TEXT,
+           applied_state    TEXT,
+           last_verified_at REAL,
+           last_error       TEXT
+       )""",
+    "CREATE INDEX IF NOT EXISTS idx_policies_status ON policies(status, kind)",
+    "CREATE INDEX IF NOT EXISTS idx_policies_device ON policies(device_id)",
+    """CREATE TABLE IF NOT EXISTS orchestrator_state (
+           id         INTEGER PRIMARY KEY CHECK (id = 1),
+           applied    TEXT NOT NULL DEFAULT '{}',
+           boot_id    TEXT,
+           last_run   REAL,
+           last_ok    REAL,
+           last_error TEXT,
+           domains    TEXT NOT NULL DEFAULT '{}',
+           extra      TEXT NOT NULL DEFAULT '{}'
+       )""",
+    "INSERT OR IGNORE INTO orchestrator_state (id) VALUES (1)",
+    """CREATE TABLE IF NOT EXISTS filter_profiles (
+           key        TEXT PRIMARY KEY,
+           config     TEXT NOT NULL,
+           updated_at REAL NOT NULL
+       )""",
+    """CREATE TABLE IF NOT EXISTS notification_channels (
+           id            INTEGER PRIMARY KEY,
+           kind          TEXT NOT NULL,
+           name          TEXT NOT NULL,
+           config        TEXT NOT NULL,
+           min_severity  TEXT NOT NULL DEFAULT 'medium',
+           enabled       INTEGER NOT NULL DEFAULT 1,
+           created_at    REAL NOT NULL,
+           updated_at    REAL NOT NULL,
+           last_sent_at  REAL,
+           last_error    TEXT,
+           last_error_at REAL
+       )""",
+    """CREATE TABLE IF NOT EXISTS notifications (
+           id          INTEGER PRIMARY KEY,
+           channel_id  INTEGER NOT NULL REFERENCES notification_channels(id),
+           incident_id INTEGER REFERENCES incidents(id),
+           ts          REAL NOT NULL,
+           status      TEXT NOT NULL,
+           attempts    INTEGER NOT NULL DEFAULT 0,
+           title       TEXT,
+           detail      TEXT,
+           UNIQUE (channel_id, incident_id)
+       )""",
+    "CREATE INDEX IF NOT EXISTS idx_notifications_channel_ts ON notifications(channel_id, ts)",
+    """CREATE TABLE IF NOT EXISTS notify_state (
+           id               INTEGER PRIMARY KEY CHECK (id = 1),
+           last_incident_id INTEGER,
+           last_digest_at   REAL
+       )""",
+    "INSERT OR IGNORE INTO notify_state (id, last_incident_id, last_digest_at) VALUES (1, NULL, NULL)",
 ]
 
 # How long to wait between passes over the log files. Two seconds keeps the

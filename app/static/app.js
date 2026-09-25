@@ -869,6 +869,11 @@ function renderDevices(live) {
         <tr class="clickable" onclick="location.href='/devices/${d.id}'" data-key="${d.id}">
             <td style="white-space:nowrap"><span class="status-dot ${d.online ? "online" : "offline"}" title="${d.online ? "online" : "offline"}"></span><span class="row-title">${esc(d.name)}</span>
                 ${d.is_test ? '<span class="chip neutral" style="margin-left:6px">test</span>' : ""}
+                ${d.quarantined ? '<span class="chip high nocap dot" style="margin-left:6px">quarantined</span>' : ""}
+                ${d.trust === "unknown" && !d.is_test ? '<span class="chip medium nocap" style="margin-left:6px" title="Not approved yet">unknown</span>' : ""}
+                ${d.trust === "blocked" ? '<span class="chip high nocap" style="margin-left:6px">blocked</span>' : ""}
+                ${d.profile && d.profile !== "standard" ? `<span class="chip neutral nocap" style="margin-left:6px">${esc(d.profile_label)}</span>` : ""}
+                ${d.paused ? '<span class="chip medium nocap" style="margin-left:6px">filtering paused</span>' : ""}
                 ${d.hostname && d.hostname !== d.name ? `<div class="row-sub mono" style="padding-left:16px">${esc(d.hostname)}</div>` : ""}</td>
             <td class="mono dim">${esc(d.ip || "—")}</td>
             <td>${d.randomized ? '<span class="chip neutral" title="Uses a randomized MAC">randomized</span>' : '<span class="dim">hardware</span>'}${d.mac_count > 1 ? `<span class="dim"> ·${d.mac_count} MACs</span>` : ""}</td>
@@ -1217,85 +1222,6 @@ function initDeviceActivity() {
         });
     });
     load(SP.range);
-}
-
-function initDeviceFiltering() {
-    const wrap = $("#deviceFiltering");
-    if (!wrap) return;
-    const deviceId = wrap.dataset.deviceId;
-    const btn = $("#deviceFilterToggle");
-
-    async function load() {
-        try {
-            const res = await fetch(`/api/devices/${deviceId}/filtering`);
-            if (!res.ok) throw new Error("request failed");
-            const data = await res.json();
-            btn.textContent = data.filtering_enabled ? "Enabled" : "Disabled";
-            btn.classList.toggle("on", data.filtering_enabled);
-            btn.dataset.enabled = data.filtering_enabled ? "1" : "0";
-        } catch (err) {
-            btn.textContent = "Unavailable";
-        }
-    }
-
-    btn.addEventListener("click", async () => {
-        const enabled = btn.dataset.enabled !== "1";
-        try {
-            const res = await fetch(`/api/devices/${deviceId}/filtering`, {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ enabled }),
-            });
-            if (!res.ok) throw new Error("request failed");
-            toast("Filtering updated", enabled ? "Enabled for this device" : "Disabled for this device", "ok");
-            load();
-        } catch (err) {
-            toast("Update failed", "Could not reach AdGuard Home.", "high");
-        }
-    });
-
-    load();
-}
-
-function initDeviceQuarantine() {
-    const wrap = $("#deviceQuarantine");
-    if (!wrap) return;
-    const deviceId = wrap.dataset.deviceId;
-    const btn = $("#deviceQuarantineToggle");
-
-    async function load() {
-        try {
-            const res = await fetch(`/api/devices/${deviceId}/quarantine`);
-            if (!res.ok) throw new Error("request failed");
-            const data = await res.json();
-            btn.textContent = data.quarantined ? "Quarantined · Release" : "Quarantine device";
-            btn.classList.toggle("danger", data.quarantined);
-            btn.dataset.quarantined = data.quarantined ? "1" : "0";
-        } catch (err) {
-            btn.textContent = "Unavailable";
-        }
-    }
-
-    btn.addEventListener("click", async () => {
-        const quarantined = btn.dataset.quarantined !== "1";
-        try {
-            const res = await fetch(`/api/devices/${deviceId}/quarantine`, {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ quarantined }),
-            });
-            if (!res.ok) throw new Error("request failed");
-            toast(quarantined ? "Device quarantined" : "Quarantine released",
-                  quarantined ? "All network traffic from this device is now blocked at the gateway."
-                              : "Network access has been restored.",
-                  quarantined ? "high" : "ok");
-            load();
-        } catch (err) {
-            toast("Update failed", "Could not reach the firewall.", "high");
-        }
-    });
-
-    load();
 }
 
 function humanizeSeconds(s) {
@@ -1938,7 +1864,7 @@ function initSettings() {
             const res = await fetch("/api/settings");
             if (!res.ok) throw new Error("request failed");
             const d = await res.json();
-            wrap.innerHTML = Object.entries(d.settings).map(([key, s]) => `
+            wrap.innerHTML = Object.entries(d.settings).filter(([, s]) => s.group === "detection").map(([key, s]) => `
                 <div class="filter-row setting-row" data-key="${esc(key)}">
                     <div class="setting-label">
                         <div class="row-title">${esc(s.label)}</div>
@@ -1995,30 +1921,6 @@ function initSettings() {
             }
         }
     });
-
-    async function loadRetention() {
-        const el = $("#settingsRetention");
-        if (!el) return;
-        try {
-            const res = await fetch("/api/settings/retention");
-            const d = await res.json();
-            el.innerHTML = `<div class="callout warn">${esc(d.note)}</div>`;
-        } catch (err) {
-            el.innerHTML = `<div class="empty">Could not load</div>`;
-        }
-    }
-
-    async function loadChannels() {
-        const el = $("#settingsChannels");
-        if (!el) return;
-        try {
-            const res = await fetch("/api/settings/channels");
-            const d = await res.json();
-            el.innerHTML = `<div class="callout warn">${esc(d.note)}</div>`;
-        } catch (err) {
-            el.innerHTML = `<div class="empty">Could not load</div>`;
-        }
-    }
 
     async function loadAudit() {
         const el = $("#settingsAudit");
@@ -2085,8 +1987,6 @@ function initSettings() {
     }
 
     loadThresholds();
-    loadRetention();
-    loadChannels();
     loadAudit();
     loadAttributions();
 }
@@ -2744,9 +2644,1283 @@ function cmdkGo(idx) {
 
 /* ----------------------------------------------------------------- boot */
 
+/* ================================================================ Stage 4
+   Response and policy orchestration (ENHANCEMENT-PLAN.md steps 4.1-4.5):
+   the dialog every response action uses, device trust / quarantine /
+   profile / pause controls, the incident page's Respond card, the Response
+   page, filtering profiles, network-wide pause and notification channels.
+   Every change goes through the policy orchestrator's own endpoints, which
+   verify it took and roll it back if it didn't - so the UI only ever shows
+   the server's answer, never an optimistic guess. */
+
+/* JSON request helper. Throws an Error carrying the server's own reason
+   (FastAPI's `detail`), so a toast can say exactly why something failed. */
+async function api(url, body, method) {
+    const opts = (body === undefined && !method) ? {} : {
+        method: method || "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body || {}),
+    };
+    const res = await fetch(url, opts);
+    let data = null;
+    try { data = await res.json(); } catch (e) { /* empty body */ }
+    if (!res.ok) {
+        let msg = `request failed (${res.status})`;
+        if (data && data.detail) {
+            msg = typeof data.detail === "string" ? data.detail
+                : (Array.isArray(data.detail) && data.detail[0] && data.detail[0].msg) || msg;
+        }
+        throw new Error(msg);
+    }
+    return data;
+}
+
+/* "42m", "3h 10m", "2d 4h" - for policy countdowns. */
+function fmtLeft(s) {
+    if (s == null) return "";
+    if (s < 60) return "<1m";
+    const m = Math.floor(s / 60), h = Math.floor(m / 60), d = Math.floor(h / 24);
+    if (d) return `${d}d ${h % 24}h`;
+    if (h) return `${h}h ${m % 60}m`;
+    return `${m}m`;
+}
+
+function fmtAgo(s) {
+    if (s == null) return "never";
+    if (s < 60) return `${s}s ago`;
+    if (s < 3600) return `${Math.floor(s / 60)}m ago`;
+    return `${Math.floor(s / 3600)}h ago`;
+}
+
+const DURATIONS = [
+    { minutes: 15, label: "15 minutes" }, { minutes: 60, label: "1 hour" },
+    { minutes: 1440, label: "24 hours" }, { minutes: 0, label: "Until released" },
+];
+const PAUSES = [{ minutes: 5, label: "5 minutes" }, { minutes: 15, label: "15 minutes" }, { minutes: 60, label: "1 hour" }];
+
+/* A dropdown built on the existing row-menu component (and its global
+   open/close delegate). Each item carries data-<attr>=value. */
+function menuHtml(label, items, attr, cls) {
+    return `<div class="row-menu">
+        <button class="btn ${cls || ""}" data-toggle-menu>${label}
+            <svg class="icon" width="12" height="12"><use href="#i-chevron-down"/></svg></button>
+        <div class="row-menu-list">${items.map(i =>
+            `<button data-${attr}="${esc(i.value)}">${esc(i.label)}</button>`).join("")}</div>
+    </div>`;
+}
+
+/* ---------------------------------------------------------------- dialog */
+
+/* A promise-based modal for anything that needs a reason, a choice or a
+   confirmation - replaces window.prompt() for every Stage 4 action (a
+   browser dialog blocks the whole page and can't show context).
+   fields: [{name, label, type, value, options, required, hint, placeholder,
+             min, max, showWhen: {name, in: [...]}}]
+   Resolves with {name: value} or null if cancelled. */
+function spDialog(opts) {
+    return new Promise(resolve => {
+        const overlay = document.createElement("div");
+        overlay.className = "sp-dialog-overlay";
+        const fieldHtml = (f) => {
+            const id = `spf-${f.name}`;
+            const show = f.showWhen ? ` data-show-name="${esc(f.showWhen.name)}" data-show-in="${esc(f.showWhen.in.join(","))}"` : "";
+            const hint = f.hint ? `<span class="field-hint">${f.hint}</span>` : "";
+            let input;
+            if (f.type === "select") {
+                input = `<select class="input" id="${id}" name="${esc(f.name)}">${f.options.map(o =>
+                    `<option value="${esc(o.value)}" ${String(o.value) === String(f.value ?? "") ? "selected" : ""}>${esc(o.label)}</option>`).join("")}</select>`;
+            } else if (f.type === "textarea") {
+                input = `<textarea class="input" id="${id}" name="${esc(f.name)}" rows="3" placeholder="${esc(f.placeholder || "")}">${esc(f.value || "")}</textarea>`;
+            } else if (f.type === "checkbox") {
+                return `<label class="check-field"${show}><input type="checkbox" name="${esc(f.name)}" ${f.value ? "checked" : ""}>
+                    <span><span class="check-label">${esc(f.label)}</span>${hint}</span></label>`;
+            } else if (f.type === "html") {
+                return `<div class="field"${show}>${f.html}</div>`;
+            } else {
+                input = `<input class="input" id="${id}" name="${esc(f.name)}" type="${f.type || "text"}"
+                    value="${esc(f.value ?? "")}" placeholder="${esc(f.placeholder || "")}"
+                    ${f.min != null ? `min="${f.min}"` : ""} ${f.max != null ? `max="${f.max}"` : ""} autocomplete="off">`;
+            }
+            return `<label class="field"${show} for="${id}"><span class="field-label">${esc(f.label)}${f.required ? "" : ' <span class="dim">optional</span>'}</span>${input}${hint}</label>`;
+        };
+        overlay.innerHTML = `
+            <form class="sp-dialog ${opts.tone ? "tone-" + opts.tone : ""}" role="dialog" aria-modal="true" aria-labelledby="spDialogTitle" novalidate>
+                <div class="sp-dialog-head">
+                    ${opts.icon ? `<span class="sp-dialog-icon"><svg class="icon" width="17" height="17"><use href="#${opts.icon}"/></svg></span>` : ""}
+                    <div><h3 id="spDialogTitle">${esc(opts.title)}</h3>
+                    ${opts.description ? `<p>${opts.description}</p>` : ""}</div>
+                </div>
+                <div class="sp-dialog-body">${(opts.fields || []).map(fieldHtml).join("")}</div>
+                <div class="sp-dialog-error" hidden></div>
+                <div class="sp-dialog-foot">
+                    <button type="button" class="btn ghost" data-cancel>Cancel</button>
+                    <button type="submit" class="btn ${opts.tone === "danger" ? "danger" : "primary"}">${esc(opts.confirm || "Confirm")}</button>
+                </div>
+            </form>`;
+        document.body.appendChild(overlay);
+        const form = overlay.querySelector("form");
+        const errEl = overlay.querySelector(".sp-dialog-error");
+
+        function applyShowWhen() {
+            $$("[data-show-name]", form).forEach(el => {
+                const ctl = form.elements[el.dataset.showName];
+                const val = ctl ? ctl.value : "";
+                el.hidden = !el.dataset.showIn.split(",").includes(val);
+            });
+        }
+        applyShowWhen();
+        form.addEventListener("change", applyShowWhen);
+
+        const previouslyFocused = document.activeElement;
+        function close(result) {
+            overlay.classList.add("closing");
+            document.removeEventListener("keydown", onKey, true);
+            setTimeout(() => overlay.remove(), 160);
+            if (previouslyFocused && previouslyFocused.focus) previouslyFocused.focus();
+            resolve(result);
+        }
+        function onKey(e) { if (e.key === "Escape") { e.preventDefault(); close(null); } }
+        document.addEventListener("keydown", onKey, true);
+        overlay.addEventListener("mousedown", (e) => { if (e.target === overlay) close(null); });
+        form.querySelector("[data-cancel]").addEventListener("click", () => close(null));
+        form.addEventListener("submit", (e) => {
+            e.preventDefault();
+            const values = {};
+            for (const f of opts.fields || []) {
+                if (f.type === "html") continue;
+                const wrap = form.querySelector(`[name="${f.name}"]`);
+                if (!wrap) continue;
+                const hidden = wrap.closest("[data-show-name]") && wrap.closest("[data-show-name]").hidden;
+                let v = f.type === "checkbox" ? wrap.checked : wrap.value.trim();
+                if (f.type === "number" && v !== "") v = Number(v);
+                if (f.required && !hidden && (v === "" || v == null)) {
+                    errEl.textContent = `${f.label} is required.`;
+                    errEl.hidden = false;
+                    wrap.focus();
+                    return;
+                }
+                if (!hidden) values[f.name] = v;
+            }
+            if (opts.collect) {
+                const extra = opts.collect(form);
+                if (extra && extra.error) { errEl.textContent = extra.error; errEl.hidden = false; return; }
+                Object.assign(values, extra);
+            }
+            close(values);
+        });
+        if (opts.onRender) opts.onRender(form);
+        requestAnimationFrame(() => {
+            const first = form.querySelector("input:not([type=checkbox]), select, textarea");
+            (first || form.querySelector("[type=submit]")).focus();
+        });
+    });
+}
+
+function reasonField(value, hint) {
+    return { name: "reason", label: "Reason", type: "text", value: value || "", required: true,
+             hint: hint || "Recorded with the policy and in the audit log." };
+}
+
+/* Everything on a device page that reads enforcement state listens for this,
+   so one change (say, blocking the device) refreshes every card it affects. */
+function deviceChanged() { document.dispatchEvent(new CustomEvent("sp:device-changed")); }
+
+/* ------------------------------------------------------------ device trust */
+
+const TRUST_META = {
+    approved: { label: "Approved", cls: "ok" },
+    unknown:  { label: "Unknown",  cls: "medium" },
+    blocked:  { label: "Blocked",  cls: "high" },
+};
+
+function initDeviceTrust() {
+    const wrap = $("#deviceTrust");
+    if (!wrap) return;
+    const deviceId = wrap.dataset.deviceId;
+    const name = ($(".hero h1") || {}).textContent || "this device";
+    let trust = wrap.dataset.trust;
+    let restrict = false;
+
+    function render() {
+        const m = TRUST_META[trust] || TRUST_META.unknown;
+        const chip = $("#deviceTrustChip");
+        chip.className = `chip dot nocap ${m.cls}`;
+        chip.textContent = m.label;
+        const desc = {
+            approved: "A known device - normal access.",
+            unknown: restrict
+                ? "Restricted until approved. It can still reach DHCP, DNS and this console."
+                : "Not approved yet. Unknown devices keep normal access while \"Restrict unknown devices\" is off.",
+            blocked: "No internet access until approved. It keeps DHCP, DNS and this console.",
+        }[trust];
+        $("#deviceTrustDesc").textContent = desc;
+        const actions = $("#deviceTrustActions");
+        if (trust === "unknown") {
+            actions.innerHTML = `<button class="btn success" data-trust-set="approved">Approve</button>
+                                 <button class="btn" data-trust-set="blocked">Block</button>`;
+        } else if (trust === "blocked") {
+            actions.innerHTML = `<button class="btn success" data-trust-set="approved">Unblock</button>`;
+        } else {
+            actions.innerHTML = menuHtml("Change", [
+                { value: "blocked", label: "Block this device" }, { value: "unknown", label: "Mark as unknown" }],
+                "trust-set", "");
+        }
+    }
+
+    async function set(next) {
+        let reason = "";
+        if (next === "blocked") {
+            const v = await spDialog({
+                title: `Block ${name}?`, tone: "danger", icon: "i-ban", confirm: "Block device",
+                description: "Cuts off all internet traffic from this device at the firewall until it's approved. " +
+                    "It can still get an address, resolve names and open this console.",
+                fields: [reasonField("")],
+            });
+            if (!v) return;
+            reason = v.reason;
+        }
+        try {
+            const d = await api(`/api/devices/${deviceId}/trust`, { trust: next, reason });
+            trust = d.trust;
+            render();
+            toast(next === "approved" ? "Device approved" : next === "blocked" ? "Device blocked" : "Marked as unknown",
+                  next === "blocked" ? "All traffic from this device is now dropped at the gateway." : name,
+                  next === "blocked" ? "high" : "ok");
+            deviceChanged();
+        } catch (err) {
+            toast("Could not change trust", err.message, "high");
+        }
+    }
+
+    wrap.addEventListener("click", (e) => {
+        const b = e.target.closest("[data-trust-set]");
+        if (b) set(b.dataset.trustSet);
+    });
+
+    api("/api/trust").then(t => { restrict = t.restrict_unknown; render(); }).catch(() => render());
+    render();
+}
+
+/* ----------------------------------------------------- device quarantine */
+
+function initDeviceQuarantine() {
+    const wrap = $("#deviceQuarantine");
+    if (!wrap) return;
+    const deviceId = wrap.dataset.deviceId;
+    const compact = wrap.dataset.compact === "1";
+    const actions = $("#deviceQuarantineActions");
+    const desc = $("#deviceQuarantineDesc");
+
+    async function load() {
+        let d;
+        try {
+            d = await api(`/api/devices/${deviceId}/quarantine`);
+        } catch (err) {
+            actions.innerHTML = `<button class="btn" disabled>Unavailable</button>`;
+            if (desc) desc.textContent = err.message;
+            return;
+        }
+        const manual = d.policies.filter(p => p.source !== "trust");
+        if (!d.quarantined) {
+            if (desc) desc.innerHTML = `Full access. Quarantine drops all traffic from this device's
+                ${d.macs.length === 1 ? "MAC" : `${d.macs.length} MACs`} at the firewall, so it holds across DHCP renewals.`;
+            actions.innerHTML = menuHtml(`<svg class="icon" width="14" height="14"><use href="#i-ban"/></svg> Quarantine`,
+                DURATIONS.map(x => ({ value: x.minutes, label: x.label })), "quarantine-for", "");
+            return;
+        }
+        const left = d.expires_in_s != null ? ` · ${fmtLeft(d.expires_in_s)} left` : "";
+        const by = d.policies.map(p => p.source_label).filter((v, i, a) => a.indexOf(v) === i).join(", ");
+        const enforced = d.enforced
+            ? `<span class="text-ok">enforced at the firewall</span>`
+            : `<span class="text-high">not yet enforced - see the Response page</span>`;
+        if (desc) desc.innerHTML = `<span class="text-high">Quarantined</span>${left} · ${esc(by)} · ${enforced}`;
+        if (!manual.length) {
+            actions.innerHTML = compact
+                ? `<button class="btn danger" disabled title="Approve the device to lift this">Restricted · unknown device</button>`
+                : `<span class="dim" style="font-size:11.5px">Approve the device to lift this</span>`;
+            return;
+        }
+        const release = `<button class="btn success" data-quarantine-release>Release</button>`;
+        if (compact) {
+            actions.innerHTML = `<button class="btn danger" data-quarantine-release title="Release quarantine">
+                Quarantined${left.replace(" · ", " · ")} · Release</button>`;
+        } else {
+            actions.innerHTML = menuHtml("Extend", DURATIONS.slice(0, 3).map(x => ({ value: x.minutes, label: `${x.label} from now` })),
+                "quarantine-extend", "") + release;
+        }
+        actions.dataset.policyId = manual[0].id;
+    }
+
+    wrap.addEventListener("click", async (e) => {
+        const q = e.target.closest("[data-quarantine-for]");
+        if (q) {
+            const minutes = Number(q.dataset.quarantineFor);
+            const v = await spDialog({
+                title: "Quarantine this device", tone: "danger", icon: "i-ban", confirm: "Quarantine",
+                description: `All internet traffic from this device is dropped at the gateway ${minutes
+                    ? `for <b>${esc(DURATIONS.find(x => x.minutes === minutes).label)}</b>, then released automatically`
+                    : "<b>until you release it</b>"}. It can still reach the gateway's DHCP, DNS and this console.`,
+                fields: [reasonField("")],
+            });
+            if (!v) return;
+            try {
+                await api(`/api/devices/${deviceId}/quarantine`, { quarantined: true, minutes: minutes || null, reason: v.reason });
+                toast("Device quarantined", minutes ? `Released automatically in ${fmtLeft(minutes * 60)}.` : "Until you release it.", "high");
+                deviceChanged();
+            } catch (err) {
+                toast("Quarantine failed", err.message, "high");
+            }
+            return;
+        }
+        const ext = e.target.closest("[data-quarantine-extend]");
+        if (ext) {
+            try {
+                await api(`/api/policies/${actions.dataset.policyId}/extend`, { minutes: Number(ext.dataset.quarantineExtend) });
+                toast("Quarantine extended", `Now ends in ${fmtLeft(Number(ext.dataset.quarantineExtend) * 60)}.`, "ok");
+                deviceChanged();
+            } catch (err) {
+                toast("Could not extend", err.message, "high");
+            }
+            return;
+        }
+        if (e.target.closest("[data-quarantine-release]")) {
+            try {
+                const d = await api(`/api/devices/${deviceId}/quarantine`, { quarantined: false, reason: "released from the console" });
+                toast(d.trust_based ? "Released - still restricted" : "Quarantine released",
+                      d.trust_based ? "The device is unknown or blocked; approve it to restore access." : "Network access restored.",
+                      d.trust_based ? "medium" : "ok");
+                deviceChanged();
+            } catch (err) {
+                toast("Release failed", err.message, "high");
+            }
+        }
+    });
+
+    document.addEventListener("sp:device-changed", load);
+    load();
+    setInterval(() => { if (!document.hidden) load(); }, 30000);
+}
+
+/* --------------------------------------------- device profile and pause */
+
+function initDeviceFiltering() {
+    const wrap = $("#deviceFiltering");
+    if (!wrap) return;
+    const deviceId = wrap.dataset.deviceId;
+    const pick = $("#deviceProfilePick");
+    const desc = $("#deviceFilteringDesc");
+    const pauseEl = $("#devicePauseActions");
+    let profiles = [];
+    let current = null;
+
+    async function load() {
+        try {
+            const [p, f] = await Promise.all([
+                profiles.length ? Promise.resolve({ profiles }) : api("/api/profiles"),
+                api(`/api/devices/${deviceId}/filtering`),
+            ]);
+            profiles = p.profiles;
+            current = f;
+            pick.innerHTML = profiles.map(x => `<option value="${esc(x.key)}" ${x.key === f.profile ? "selected" : ""}>${esc(x.label)}</option>`).join("");
+            let text = esc(f.profile_label);
+            if (f.schedule_label) text += ` · schedule ${esc(f.schedule_label)}${f.schedule_active ? ' <span class="text-medium">(active now)</span>' : ""}`;
+            if (f.paused) text = `<span class="text-medium">Paused · ${fmtLeft(f.pause_remaining_s)} left</span> · ${text}`;
+            else if (f.managed && f.filtering_enabled === false && f.profile !== "unrestricted") {
+                text += ` · <span class="text-high">AdGuard reports filtering off - the orchestrator will correct it</span>`;
+            }
+            desc.innerHTML = text;
+            if (f.paused) {
+                pauseEl.innerHTML = `<button class="btn" data-device-resume>Resume</button>`;
+            } else if (f.profile === "unrestricted") {
+                pauseEl.innerHTML = "";
+            } else {
+                pauseEl.innerHTML = menuHtml(`<svg class="icon" width="13" height="13"><use href="#i-pause"/></svg> Pause`,
+                    PAUSES.map(x => ({ value: x.minutes, label: x.label })), "device-pause", "");
+            }
+        } catch (err) {
+            desc.textContent = err.message;
+        }
+    }
+
+    pick.addEventListener("change", async () => {
+        const key = pick.value;
+        const label = pick.options[pick.selectedIndex].text;
+        if (key === "unrestricted") {
+            const v = await spDialog({
+                title: "Turn DNS filtering off for this device?", tone: "danger", confirm: "Turn off filtering",
+                description: "Ads, trackers and known-malicious domains will resolve normally for this device. " +
+                    "Quarantine, detection and incident alerts still apply.",
+                fields: [reasonField("")],
+            });
+            if (!v) { pick.value = current.profile; return; }
+            return apply(key, label, v.reason);
+        }
+        apply(key, label, `profile set to ${label} from the console`);
+    });
+
+    async function apply(key, label, reason) {
+        pick.disabled = true;
+        try {
+            await api(`/api/devices/${deviceId}/profile`, { profile: key, reason });
+            toast("Profile applied", `${label} - verified in AdGuard Home.`, "ok");
+            deviceChanged();
+        } catch (err) {
+            toast("Profile not applied", err.message, "high");
+            pick.value = current.profile;
+        } finally {
+            pick.disabled = false;
+        }
+    }
+
+    wrap.addEventListener("click", async (e) => {
+        const p = e.target.closest("[data-device-pause]");
+        if (p) {
+            try {
+                await api(`/api/devices/${deviceId}/pause`, { minutes: Number(p.dataset.devicePause), reason: "paused from the device page" });
+                toast("Filtering paused", `Resumes automatically in ${fmtLeft(Number(p.dataset.devicePause) * 60)}.`, "medium");
+                deviceChanged();
+            } catch (err) { toast("Could not pause", err.message, "high"); }
+            return;
+        }
+        if (e.target.closest("[data-device-resume]")) {
+            try {
+                await api(`/api/devices/${deviceId}/resume`, {});
+                toast("Filtering resumed", "", "ok");
+                deviceChanged();
+            } catch (err) { toast("Could not resume", err.message, "high"); }
+        }
+    });
+
+    document.addEventListener("sp:device-changed", load);
+    load();
+}
+
+/* ------------------------------------------------- device active policies */
+
+function policyChipCls(kind) {
+    return { quarantine: "high", block_ip: "high", block_domain: "medium", allow_domain: "ok",
+             pause: "medium", enroll: "low", profile: "neutral", native_profile: "neutral" }[kind] || "neutral";
+}
+
+function policyTargetHtml(p) {
+    if (p.kind === "quarantine") return `<span class="dim">all traffic</span>`;
+    if (p.kind === "pause") return `<span class="dim">DNS filtering</span>`;
+    if (p.kind === "enroll") return `<span class="dim">HTTPS ad removal</span>`;
+    if (p.kind === "profile" || p.kind === "native_profile") return esc(p.target_label);
+    return `<span class="mono">${esc(p.target)}</span>`;
+}
+
+function policyVerifiedHtml(p) {
+    if (p.last_error) return `<span class="text-high" title="${esc(p.last_error)}">check failed</span>`;
+    if (p.verified_age_s == null) return `<span class="dim">pending</span>`;
+    return `<span class="text-ok" title="Read back from the firewall / AdGuard">✓</span> <span class="dim">${fmtAgo(p.verified_age_s)}</span>`;
+}
+
+async function endPolicyFlow(p, onDone) {
+    if (p.source === "trust") {
+        toast("Approve the device instead", "This restriction comes from the device's trust state.", "medium");
+        return;
+    }
+    const v = await spDialog({
+        title: `End this ${p.kind_label.toLowerCase()}?`, confirm: "End policy",
+        description: `${esc(p.kind_label)} · ${policyTargetHtml(p)}${p.device_name ? ` · ${esc(p.device_name)}` : " · every device"}`,
+        fields: [{ name: "reason", label: "Reason", type: "text", required: false, value: "" }],
+    });
+    if (!v) return;
+    try {
+        await api(`/api/policies/${p.id}/end`, { reason: v.reason || "" });
+        toast("Policy ended", "Removed and verified.", "ok");
+        if (onDone) onDone();
+    } catch (err) {
+        toast("Could not end policy", err.message, "high");
+    }
+}
+
+function initDevicePolicies() {
+    const wrap = $("#devicePolicies");
+    if (!wrap) return;
+    const deviceId = wrap.dataset.deviceId;
+    const body = $("#devicePoliciesBody");
+    let rows = [];
+
+    async function load() {
+        try {
+            rows = (await api(`/api/policies?device_id=${deviceId}`)).policies;
+        } catch (err) {
+            body.innerHTML = `<div class="empty">${esc(err.message)}</div>`;
+            return;
+        }
+        const count = $("#devicePoliciesCount");
+        count.hidden = !rows.length;
+        count.textContent = rows.length;
+        if (!rows.length) {
+            body.innerHTML = `<div class="empty"><span class="empty-icon">✓</span>Nothing enforced on this device beyond the network defaults</div>`;
+            return;
+        }
+        body.innerHTML = rows.map(p => `
+            <div class="list-row policy-row" data-key="${p.id}">
+                <span class="chip ${policyChipCls(p.kind)} nocap">${esc(p.kind_label)}</span>
+                <span class="grow">${policyTargetHtml(p)} <span class="dim">· ${esc(p.source_label)}</span></span>
+                <span class="dim num">${p.remaining_s != null ? fmtLeft(p.remaining_s) + " left" : "no end"}</span>
+                <span class="num">${policyVerifiedHtml(p)}</span>
+                ${p.source === "trust" ? "" : `<button class="btn ghost" data-end-policy="${p.id}" title="End this policy">End</button>`}
+            </div>`).join("");
+        markNewRows(body, ".policy-row", true);
+    }
+
+    body.addEventListener("click", (e) => {
+        const b = e.target.closest("[data-end-policy]");
+        if (!b) return;
+        const p = rows.find(r => String(r.id) === b.dataset.endPolicy);
+        if (p) endPolicyFlow(p, deviceChanged);
+    });
+    document.addEventListener("sp:device-changed", load);
+    load();
+    setInterval(() => { if (!document.hidden) load(); }, 30000);
+}
+
+/* -------------------------------------------------- incident Respond card */
+
+function initIncidentResponse() {
+    const card = $("#incidentResponse");
+    if (!card) return;
+    const incidentId = card.dataset.incidentId;
+    const deviceId = card.dataset.deviceId;
+    const deviceName = card.dataset.deviceName;
+    const body = $("#incidentResponseBody");
+    const title = ($(".hero h1") || {}).textContent || `incident #${incidentId}`;
+    const defaultReason = `response to incident #${incidentId}: ${title}`.slice(0, 200);
+
+    async function load() {
+        let d;
+        try {
+            d = await api(`/api/incidents/${incidentId}/response`);
+        } catch (err) {
+            body.innerHTML = `<div class="empty">${esc(err.message)}</div>`;
+            return;
+        }
+        const sections = [];
+        if (d.device_id != null) {
+            let contain;
+            if (!d.device_has_mac) {
+                contain = `<span class="dim">No MAC known for this device, so it can't be quarantined at the firewall.</span>`;
+            } else if (d.device_quarantined) {
+                contain = `<span class="chip high nocap dot">Quarantined</span> <a class="link" href="/devices/${d.device_id}">manage on the device page →</a>`;
+            } else {
+                contain = `<div class="btn-group">${DURATIONS.map(x =>
+                    `<button class="btn" data-resp-quarantine="${x.minutes}">${x.minutes ? esc(x.label.replace(" minutes", " min").replace(" hours", " h").replace(" hour", " h")) : "Until released"}</button>`).join("")}</div>`;
+            }
+            let trust = "";
+            if (d.device_trust === "unknown") {
+                trust = `<div class="resp-row"><div class="resp-label"><div class="row-title">Trust</div>
+                    <div class="row-sub">${esc(d.device_name)} is not approved yet</div></div>
+                    <div class="resp-actions"><button class="btn success" data-resp-trust="approved">Approve device</button>
+                    <button class="btn" data-resp-trust="blocked">Block device</button></div></div>`;
+            }
+            sections.push(`<div class="resp-row"><div class="resp-label"><div class="row-title">Quarantine ${esc(d.device_name)}</div>
+                <div class="row-sub">cut off all its internet traffic, keyed on MAC</div></div>
+                <div class="resp-actions">${contain}</div></div>${trust}`);
+        }
+        const target = (kind, v, scopeDevice) => v.blocked_by
+            ? `<span class="chip ok nocap dot">blocked${v.scope === "device" ? " for this device" : ""}</span>`
+            : (kind === "domain"
+                ? `${d.device_id != null ? `<button class="btn" data-resp-block="block_domain" data-scope="device" data-target="${esc(v.value)}">This device</button>` : ""}
+                   <button class="btn" data-resp-block="block_domain" data-scope="network" data-target="${esc(v.value)}">Every device</button>`
+                : `<button class="btn" data-resp-block="block_ip" data-scope="network" data-target="${esc(v.value)}">Block for every device</button>`);
+        if (d.domains.length) {
+            sections.push(`<div class="section-label" style="margin:14px 0 4px">Domains in the evidence</div>` + d.domains.map(v => `
+                <div class="resp-row"><div class="resp-label"><span class="mono">${esc(v.value)}</span>
+                    <span class="dim"> · ${v.events} event${v.events === 1 ? "" : "s"}</span></div>
+                    <div class="resp-actions">${target("domain", v)}</div></div>`).join(""));
+        }
+        if (d.ips.length) {
+            sections.push(`<div class="section-label" style="margin:14px 0 4px">Internet addresses in the evidence</div>` + d.ips.map(v => `
+                <div class="resp-row"><div class="resp-label"><span class="mono">${esc(v.value)}</span>
+                    <span class="dim"> · ${v.events} event${v.events === 1 ? "" : "s"}</span></div>
+                    <div class="resp-actions">${target("ip", v)}</div></div>`).join(""));
+        }
+        if (!d.domains.length && !d.ips.length) {
+            sections.push(`<p class="note" style="margin-top:10px">The evidence has no internet domain or address to block - LAN
+                addresses (like the target of a scan) are left out on purpose.</p>`);
+        }
+        if (d.policies.length) {
+            sections.push(`<div class="section-label" style="margin:14px 0 4px">Taken from this incident</div>` + d.policies.map(p => `
+                <div class="resp-row"><div class="resp-label"><span class="chip ${policyChipCls(p.kind)} nocap">${esc(p.kind_label)}</span>
+                    ${policyTargetHtml(p)} <span class="dim">· ${esc(p.created)}</span></div>
+                    <div class="resp-actions"><span class="status-pill ${p.status === "active" ? "investigating" : "resolved"}">${esc(p.status)}</span></div></div>`).join(""));
+        }
+        body.innerHTML = sections.join("");
+    }
+
+    body.addEventListener("click", async (e) => {
+        const q = e.target.closest("[data-resp-quarantine]");
+        if (q) {
+            const minutes = Number(q.dataset.respQuarantine);
+            const v = await spDialog({
+                title: `Quarantine ${deviceName}`, tone: "danger", icon: "i-ban", confirm: "Quarantine",
+                description: minutes ? `Released automatically after ${esc(DURATIONS.find(x => x.minutes === minutes).label)}.` : "Until you release it.",
+                fields: [reasonField(defaultReason)],
+            });
+            if (!v) return;
+            try {
+                await api("/api/policies", { kind: "quarantine", device_id: Number(deviceId), minutes: minutes || null,
+                                             reason: v.reason, incident_id: Number(incidentId) });
+                toast("Device quarantined", deviceName, "high");
+                load(); deviceChanged();
+            } catch (err) { toast("Quarantine failed", err.message, "high"); }
+            return;
+        }
+        const b = e.target.closest("[data-resp-block]");
+        if (b) {
+            const everyone = b.dataset.scope === "network";
+            const v = await spDialog({
+                title: `Block ${b.dataset.target}`, icon: "i-ban", confirm: "Block",
+                description: everyone ? "Blocked for every device on the network." : `Blocked for ${esc(deviceName)} only.`,
+                fields: [
+                    { name: "minutes", label: "For", type: "select", value: "0", required: true, options: [
+                        { value: "0", label: "Until removed" }, { value: "60", label: "1 hour" },
+                        { value: "1440", label: "24 hours" }, { value: "10080", label: "7 days" }] },
+                    reasonField(defaultReason)],
+            });
+            if (!v) return;
+            try {
+                await api("/api/policies", {
+                    kind: b.dataset.respBlock, target: b.dataset.target, reason: v.reason,
+                    device_id: everyone ? null : Number(deviceId), minutes: Number(v.minutes) || null,
+                    incident_id: Number(incidentId) });
+                toast("Blocked", b.dataset.target, "ok");
+                load();
+            } catch (err) { toast("Block failed", err.message, "high"); }
+            return;
+        }
+        const t = e.target.closest("[data-resp-trust]");
+        if (t) {
+            try {
+                await api(`/api/devices/${deviceId}/trust`, { trust: t.dataset.respTrust, reason: defaultReason });
+                toast(t.dataset.respTrust === "approved" ? "Device approved" : "Device blocked", deviceName,
+                      t.dataset.respTrust === "approved" ? "ok" : "high");
+                load(); deviceChanged();
+            } catch (err) { toast("Could not change trust", err.message, "high"); }
+        }
+    });
+    document.addEventListener("sp:device-changed", load);
+    load();
+}
+
+/* ------------------------------------------------------------ response page */
+
+let responseState = { filter: "", policies: [] };
+
+const POLICY_FILTERS = {
+    quarantine: k => k === "quarantine",
+    block: k => ["block_ip", "block_domain", "allow_domain"].includes(k),
+    filtering: k => ["profile", "pause", "native_profile"].includes(k),
+    enroll: k => k === "enroll",
+};
+
+function renderPolicyTable() {
+    const el = $("#policyTable");
+    if (!el) return;
+    const f = POLICY_FILTERS[responseState.filter];
+    const rows = responseState.policies.filter(p => !f || f(p.kind));
+    if (!rows.length) {
+        el.innerHTML = `<div class="empty"><span class="empty-icon">✓</span>${responseState.filter
+            ? "No active policies of this kind" : "Nothing is being enforced beyond the network defaults"}</div>`;
+        return;
+    }
+    el.innerHTML = `<table><thead><tr><th>Policy</th><th>Target</th><th>Device</th><th>Source</th>
+        <th class="num">Ends</th><th class="num">Verified</th><th></th></tr></thead><tbody>${rows.map(p => `
+        <tr data-key="${p.id}">
+            <td style="white-space:nowrap"><span class="chip ${policyChipCls(p.kind)} nocap">${esc(p.kind_label)}</span></td>
+            <td class="truncate" title="${esc(p.reason)}">${policyTargetHtml(p)}<div class="row-sub">${esc(p.reason)}</div></td>
+            <td>${p.device_id != null ? `<a class="link" href="/devices/${p.device_id}">${esc(p.device_name)}</a>` : '<span class="dim">every device</span>'}</td>
+            <td class="dim" style="white-space:nowrap">${esc(p.source_label)}</td>
+            <td class="num" style="white-space:nowrap">${p.remaining_s != null ? fmtLeft(p.remaining_s) : '<span class="dim">—</span>'}</td>
+            <td class="num" style="white-space:nowrap">${policyVerifiedHtml(p)}</td>
+            <td class="num" style="width:1%">${p.source === "trust" ? "" : `
+                <div class="row-menu"><button class="icon-btn row-menu-btn" data-toggle-menu aria-label="Policy actions">
+                    <svg class="icon" width="15" height="15"><use href="#i-more"/></svg></button>
+                    <div class="row-menu-list">
+                        ${p.expires_at ? `<button data-policy-extend="${p.id}" data-minutes="60">Extend 1 hour from now</button>
+                                          <button data-policy-extend="${p.id}" data-minutes="1440">Extend 24 hours from now</button>
+                                          <div class="divider"></div>` : ""}
+                        <button data-policy-end="${p.id}">End policy</button>
+                    </div></div>`}</td>
+        </tr>`).join("")}</tbody></table>`;
+    markNewRows($("#policyTable tbody"), "tr[data-key]", true);
+}
+
+async function refreshResponse() {
+    if (!$("#policyTable")) return;
+    const [st, act, ended, sets, trust] = await Promise.all([
+        api("/api/orchestrator/status"), api("/api/policies?status=active"),
+        api("/api/policies?status=ended&limit=25"), api("/api/settings"), api("/api/trust"),
+    ]);
+    responseState.policies = act.policies;
+    renderPolicyTable();
+
+    const quarantined = new Set(act.policies.filter(p => p.kind === "quarantine").map(p => p.device_id));
+    animateNumber($("#kpiPolicies"), st.total_active);
+    const KPI_KIND = { quarantine: "quarantine", block_ip: "IP block", block_domain: "domain block", allow_domain: "allow",
+                       profile: "profile", pause: "pause", enroll: "inspection", native_profile: "telemetry block" };
+    $("#kpiPoliciesSub").textContent = Object.entries(st.counts)
+        .map(([k, n]) => `${n} ${KPI_KIND[k] || k}${n === 1 || k === "enroll" ? "" : "s"}`).join(" · ") || "nothing beyond the defaults";
+    animateNumber($("#kpiQuarantined"), quarantined.size);
+    $("#kpiQuarantinedSub").textContent = `${act.policies.filter(p => p.kind === "quarantine" && p.source.startsWith("auto:")).length} by auto-response`;
+    animateNumber($("#kpiDrift"), st.drift_24h);
+    $("#kpiDriftSub").textContent = `${st.rollbacks_24h} rollback${st.rollbacks_24h === 1 ? "" : "s"} in 24h`;
+    const o = st.status;
+    $("#kpiOrch").innerHTML = o.healthy ? `<span class="text-ok">Healthy</span>` : `<span class="text-high">${o.last_run ? "Degraded" : "Not run yet"}</span>`;
+    $("#kpiOrchSub").textContent = o.last_run ? `last cycle ${fmtAgo(o.last_run_age_s)}` : "waiting for the engine";
+
+    $("#orchDomains").innerHTML = Object.entries(o.domains).map(([k, dm]) => `
+        <div class="list-row"><span class="status-dot ${dm.ok ? "online" : dm.checked_at ? "failed" : "offline"}"></span>
+            <span class="grow">${esc(dm.label)}${dm.error ? `<div class="row-sub text-high" title="${esc(dm.error)}">${esc(dm.error)}</div>` : ""}</span>
+            <span class="dim num">${dm.checked_at ? fmtAgo(Math.round(Date.now() / 1000 - dm.checked_at)) : "not checked"}</span></div>`).join("");
+
+    const actEl = $("#orchActivity");
+    actEl.innerHTML = st.activity.length ? st.activity.map(a => `
+        <div class="audit-row compact" data-key="${esc(a.ts + a.action)}"><span class="mono dim">${esc(a.age)}</span>
+            <span class="type-tag ${a.action.includes("drift") || a.action.includes("rolled_back") ? "alert" : ""}">${esc(a.action.replace("policy.", "").replace(/_/g, " "))}</span>
+            <span class="desc" title="${esc(a.detail || "")}">${esc(a.detail || a.target || "")}</span>
+            <span class="detail">${esc(a.actor)}</span></div>`).join("")
+        : `<div class="empty">No orchestrator activity yet</div>`;
+    markNewRows(actEl, ".audit-row", true);
+
+    $("#policyEnded").innerHTML = ended.policies.length ? `<table class="compact"><tbody>${ended.policies.map(p => `
+        <tr><td style="width:1%;white-space:nowrap"><span class="chip ${policyChipCls(p.kind)} nocap">${esc(p.kind_label)}</span></td>
+            <td class="truncate">${policyTargetHtml(p)} ${p.device_name ? `<span class="dim">· ${esc(p.device_name)}</span>` : ""}
+                <div class="row-sub" title="${esc(p.ended_reason || p.last_error || "")}">${esc(p.ended_reason || p.last_error || "")}</div></td>
+            <td style="width:1%"><span class="status-pill ${p.status === "failed" ? "new" : "resolved"}">${esc(p.status)}</span></td>
+            <td class="num dim" style="white-space:nowrap">${esc(p.ended || p.created)}</td></tr>`).join("")}</tbody></table>`
+        : `<div class="empty">Nothing has ended yet</div>`;
+
+    renderAutoResponse(sets.settings);
+    renderTrustCard(trust);
+}
+
+function renderAutoResponse(s) {
+    const on = s.auto_quarantine_enabled.value;
+    const chip = $("#autoResponseChip");
+    chip.className = `chip nocap dot ${on ? "ok" : "neutral"}`;
+    chip.textContent = on ? "On" : "Off";
+    $("#autoResponseBody").innerHTML = `
+        <p class="note" style="margin-bottom:12px">When a campaign links incidents across at least
+            <b>${s.auto_quarantine_min_tactics.value}</b> distinct ATT&amp;CK tactics, its device is quarantined for
+            <b>${fmtLeft(s.auto_quarantine_minutes.value * 60)}</b> without waiting for a person. Each campaign is acted on
+            once, and only campaigns that start after this is switched on.</p>
+        <div class="toolbar">
+            <button class="btn ${on ? "danger" : "primary"}" data-auto-toggle="${on ? 0 : 1}">${on ? "Turn off" : "Turn on"}</button>
+            <label class="field inline"><span class="field-label">Tactics</span>
+                <input class="input" type="number" id="autoMinTactics" min="2" max="5" value="${s.auto_quarantine_min_tactics.value}" style="width:72px;min-width:0"></label>
+            <label class="field inline"><span class="field-label">Minutes</span>
+                <input class="input" type="number" id="autoMinutes" min="5" max="10080" value="${s.auto_quarantine_minutes.value}" style="width:92px;min-width:0"></label>
+            <button class="btn" data-auto-save>Save</button>
+        </div>`;
+}
+
+function renderTrustCard(t) {
+    const chip = $("#trustChip");
+    chip.className = `chip nocap dot ${t.restrict_unknown ? "ok" : "neutral"}`;
+    chip.textContent = t.restrict_unknown ? "Restricting unknown devices" : "Unknown devices allowed";
+    $("#trustBody").innerHTML = `
+        <div class="stats boxed" style="margin-bottom:12px">
+            <div class="stat"><div class="stat-label">Approved</div><div class="stat-value">${t.counts.approved}</div></div>
+            <div class="stat"><div class="stat-label">Unknown</div><div class="stat-value ${t.counts.unknown ? "text-medium" : ""}">${t.counts.unknown}</div></div>
+            <div class="stat"><div class="stat-label">Blocked</div><div class="stat-value ${t.counts.blocked ? "text-high" : ""}">${t.counts.blocked}</div></div>
+        </div>
+        <div class="toolbar" style="margin-bottom:${t.unknown.length ? 10 : 0}px">
+            <button class="btn ${t.restrict_unknown ? "" : "primary"}" data-restrict-toggle="${t.restrict_unknown ? 0 : 1}">
+                ${t.restrict_unknown ? "Stop restricting unknown devices" : "Restrict unknown devices"}</button>
+            <span class="note">A restricted device keeps DHCP, DNS and this console, so it can always be approved.</span>
+        </div>
+        ${t.unknown.map(d => `
+            <div class="list-row"><span class="grow"><a class="link" href="/devices/${d.id}">${esc(d.name)}</a>
+                <span class="dim"> · first seen ${esc(d.first_seen_age)} ago</span>
+                ${d.restricted ? '<span class="chip medium nocap" style="margin-left:6px">restricted</span>' : ""}</span>
+                <button class="btn success" data-trust-device="${d.id}" data-trust="approved">Approve</button>
+                <button class="btn" data-trust-device="${d.id}" data-trust="blocked">Block</button></div>`).join("")}`;
+}
+
+function initResponsePage() {
+    if (!$("#policyTable")) return;
+    const reload = () => refreshResponse().catch(err => toast("Could not load", err.message, "high"));
+
+    $("#policyFilter").addEventListener("click", (e) => {
+        const b = e.target.closest("button[data-filter]");
+        if (!b) return;
+        $$("#policyFilter button").forEach(x => x.classList.toggle("active", x === b));
+        responseState.filter = b.dataset.filter;
+        renderPolicyTable();
+    });
+
+    $("#orchVerify").addEventListener("click", async (e) => {
+        const btn = e.currentTarget;
+        btn.disabled = true;
+        try {
+            const d = await api("/api/orchestrator/reconcile", {});
+            const s = d.summary;
+            toast(Object.keys(s.errors).length ? "Verified with errors" : "Everything verified",
+                  s.drift.length ? `${s.drift.length} change(s) outside the console were put back.` : "Every enforcement point matches the console.",
+                  Object.keys(s.errors).length ? "high" : "ok");
+            reload();
+        } catch (err) { toast("Verify failed", err.message, "high"); }
+        finally { btn.disabled = false; }
+    });
+
+    $("#policyAdd").addEventListener("click", async () => {
+        let devices = [];
+        try { devices = (await api("/api/devices")).devices; } catch (e) { /* network-wide still works */ }
+        const v = await spDialog({
+            title: "Block or allow", icon: "i-ban", confirm: "Apply",
+            description: "Applied through the orchestrator and read back before it counts as done.",
+            fields: [
+                { name: "kind", label: "Action", type: "select", value: "block_domain", required: true, options: [
+                    { value: "block_domain", label: "Block a domain (and its subdomains)" },
+                    { value: "allow_domain", label: "Allow a domain (overrides blocklists)" },
+                    { value: "block_ip", label: "Block an internet address (every device)" }] },
+                { name: "target", label: "Domain or address", type: "text", required: true, placeholder: "tracker.example.com or 203.0.113.9" },
+                { name: "device_id", label: "Applies to", type: "select", value: "", required: false,
+                  showWhen: { name: "kind", in: ["block_domain", "allow_domain"] },
+                  options: [{ value: "", label: "Every device" }].concat(devices.map(d => ({ value: d.id, label: d.name }))) },
+                { name: "minutes", label: "For", type: "select", value: "0", required: true, options: [
+                    { value: "0", label: "Until removed" }, { value: "60", label: "1 hour" },
+                    { value: "1440", label: "24 hours" }, { value: "10080", label: "7 days" }] },
+                reasonField(""),
+            ],
+        });
+        if (!v) return;
+        try {
+            await api("/api/policies", { kind: v.kind, target: v.target, reason: v.reason,
+                device_id: v.kind === "block_ip" || !v.device_id ? null : Number(v.device_id),
+                minutes: Number(v.minutes) || null });
+            toast("Applied and verified", v.target, "ok");
+            reload();
+        } catch (err) { toast("Not applied", err.message, "high"); }
+    });
+
+    document.addEventListener("click", async (e) => {
+        const end = e.target.closest("[data-policy-end]");
+        if (end) {
+            const p = responseState.policies.find(r => String(r.id) === end.dataset.policyEnd);
+            if (p) endPolicyFlow(p, reload);
+            return;
+        }
+        const ext = e.target.closest("[data-policy-extend]");
+        if (ext) {
+            try {
+                await api(`/api/policies/${ext.dataset.policyExtend}/extend`, { minutes: Number(ext.dataset.minutes) });
+                toast("Extended", "", "ok");
+                reload();
+            } catch (err) { toast("Could not extend", err.message, "high"); }
+            return;
+        }
+        const at = e.target.closest("[data-auto-toggle]");
+        if (at) {
+            const on = at.dataset.autoToggle === "1";
+            const v = await spDialog({
+                title: on ? "Turn on auto-response?" : "Turn off auto-response?", tone: on ? "danger" : "",
+                confirm: on ? "Turn on" : "Turn off",
+                description: on ? "A false-positive campaign will cut a real device off without anyone deciding to. " +
+                    "It's released automatically when the time runs out, and can be released sooner from its device page." : "",
+                fields: [reasonField("")],
+            });
+            if (!v) return;
+            try {
+                await api("/api/settings/auto_quarantine_enabled", { value: on, reason: v.reason });
+                toast(on ? "Auto-response on" : "Auto-response off", "", on ? "medium" : "ok");
+                reload();
+            } catch (err) { toast("Could not change setting", err.message, "high"); }
+            return;
+        }
+        if (e.target.closest("[data-auto-save]")) {
+            const v = await spDialog({ title: "Save auto-response settings", fields: [reasonField("")] });
+            if (!v) return;
+            try {
+                await api("/api/settings/auto_quarantine_min_tactics", { value: parseInt($("#autoMinTactics").value, 10), reason: v.reason });
+                await api("/api/settings/auto_quarantine_minutes", { value: parseInt($("#autoMinutes").value, 10), reason: v.reason });
+                toast("Saved", "", "ok");
+                reload();
+            } catch (err) { toast("Could not save", err.message, "high"); }
+            return;
+        }
+        const rt = e.target.closest("[data-restrict-toggle]");
+        if (rt) {
+            const on = rt.dataset.restrictToggle === "1";
+            const trust = await api("/api/trust");
+            const v = await spDialog({
+                title: on ? "Restrict unknown devices?" : "Stop restricting unknown devices?",
+                confirm: on ? "Restrict" : "Stop restricting", tone: on ? "danger" : "",
+                description: on
+                    ? "From now on, a device the gateway hasn't seen before has no internet access until you approve it. " +
+                      "It can still get an address, resolve names and open this console - so approving it from the device itself works."
+                    : "Unknown devices get normal access again. Blocked devices stay blocked.",
+                fields: on ? [{ name: "approve", type: "checkbox", value: true,
+                    label: `Approve the ${trust.counts.unknown} unknown device${trust.counts.unknown === 1 ? "" : "s"} already on the network first`,
+                    hint: "Recommended - otherwise they lose access the moment this is switched on." }] : [],
+            });
+            if (!v) return;
+            try {
+                const d = await api("/api/trust/restrict", { enabled: on, approve_existing: on ? !!v.approve : false });
+                toast(on ? "Unknown devices restricted" : "Restriction off",
+                      on && d.approved ? `${d.approved} existing device(s) approved first.` : "", "ok");
+                reload();
+            } catch (err) { toast("Could not change setting", err.message, "high"); }
+            return;
+        }
+        const td = e.target.closest("[data-trust-device]");
+        if (td) {
+            try {
+                await api(`/api/devices/${td.dataset.trustDevice}/trust`, { trust: td.dataset.trust, reason: "from the Response page" });
+                toast(td.dataset.trust === "approved" ? "Approved" : "Blocked", "", td.dataset.trust === "approved" ? "ok" : "high");
+                reload();
+            } catch (err) { toast("Could not change trust", err.message, "high"); }
+        }
+    });
+
+    reload();
+}
+
+/* ------------------------------------------------- filtering: profiles */
+
+const GROUP_LABELS = {
+    ai: "AI assistants", cdn: "CDNs", dating: "Dating", gambling: "Gambling", gaming: "Gaming", hosting: "File hosting",
+    messenger: "Messaging", privacy: "VPN & privacy relays", shopping: "Shopping", social_network: "Social media",
+    software: "App stores & software", streaming: "Video & music streaming", other: "Other",
+};
+
+function servicesSummary(list) {
+    if (!list.length) return "none";
+    return list.map(s => s.startsWith("group:") ? (GROUP_LABELS[s.slice(6)] || s.slice(6)) : s).join(", ");
+}
+
+function initProfiles() {
+    const el = $("#profileList");
+    if (!el) return;
+    let data = null;
+
+    async function load() {
+        try { data = await api("/api/profiles"); } catch (err) {
+            el.innerHTML = `<div class="empty">${esc(err.message)}</div>`;
+            return;
+        }
+        el.innerHTML = data.profiles.map(p => `
+            <div class="profile-row">
+                <div class="profile-main">
+                    <div class="row-title">${esc(p.label)}
+                        ${p.customized ? '<span class="chip low nocap" style="margin-left:6px">edited</span>' : ""}
+                        ${p.devices ? `<span class="chip neutral nocap" style="margin-left:6px">${p.devices} device${p.devices === 1 ? "" : "s"}</span>` : ""}</div>
+                    <div class="row-sub">${esc(p.description)}</div>
+                    <div class="profile-facts">
+                        ${!p.filtering ? '<span class="fact"><b>Filtering</b> off</span>' : ""}
+                        ${p.safe_search ? '<span class="fact"><b>Safe search</b> on</span>' : ""}
+                        ${p.blocked_services.length ? `<span class="fact"><b>Always blocked</b> ${esc(servicesSummary(p.blocked_services))}${p.blocked_count != null ? ` <span class="dim">(${p.blocked_count} services)</span>` : ""}</span>` : ""}
+                        ${p.schedule ? `<span class="fact"><b>${esc(p.schedule.start)}–${esc(p.schedule.end)}</b> ${esc(servicesSummary(p.schedule.services))}
+                            ${p.schedule_active ? '<span class="chip medium nocap" style="margin-left:4px">active now</span>' : ""}</span>` : ""}
+                        ${p.native_trackers ? '<span class="fact"><b>Vendor telemetry</b> blocked</span>' : ""}
+                    </div>
+                </div>
+                <div class="profile-actions">${p.editable ? `<button class="btn" data-profile-edit="${esc(p.key)}">Edit</button>
+                    ${p.customized ? `<button class="btn ghost" data-profile-reset="${esc(p.key)}">Reset</button>` : ""}` : ""}</div>
+            </div>`).join("");
+    }
+
+    function groupChecks(name, selected) {
+        return `<div class="check-grid">${data.service_groups.map(g => `
+            <label class="check-chip"><input type="checkbox" data-group-check="${name}" value="group:${esc(g.id)}"
+                ${selected.includes("group:" + g.id) ? "checked" : ""}>
+                <span>${esc(GROUP_LABELS[g.id] || g.id)} <span class="dim">${g.services.length}</span></span></label>`).join("")}</div>`;
+    }
+
+    el.addEventListener("click", async (e) => {
+        const r = e.target.closest("[data-profile-reset]");
+        if (r) {
+            try { await api(`/api/profiles/${r.dataset.profileReset}/reset`, {}); toast("Profile reset", "", "ok"); load(); }
+            catch (err) { toast("Could not reset", err.message, "high"); }
+            return;
+        }
+        const b = e.target.closest("[data-profile-edit]");
+        if (!b) return;
+        const p = data.profiles.find(x => x.key === b.dataset.profileEdit);
+        const alwaysGroups = p.blocked_services.filter(s => s.startsWith("group:"));
+        const alwaysSingles = p.blocked_services.filter(s => !s.startsWith("group:"));
+        const sched = p.schedule || { start: "21:00", end: "07:00", services: [] };
+        const v = await spDialog({
+            title: `Edit ${p.label}`, confirm: "Save and apply",
+            description: `Applies to ${p.devices} device${p.devices === 1 ? "" : "s"} on this profile within seconds.`,
+            fields: [
+                { name: "safe_search", label: "Enforce safe search on every search engine and YouTube", type: "checkbox", value: p.safe_search },
+                { name: "always_html", type: "html", html: `<span class="field-label">Always blocked - categories</span>${groupChecks("always", alwaysGroups)}` },
+                { name: "singles", label: "Always blocked - individual services", type: "text", value: alwaysSingles.join(", "),
+                  placeholder: "tiktok, snapchat", hint: "AdGuard service ids, comma-separated." },
+                { name: "sched_on", label: "Also block some services during a daily window", type: "checkbox", value: !!p.schedule },
+                { name: "sched_html", type: "html", html: `<div class="toolbar" style="margin-bottom:8px">
+                    <label class="field inline"><span class="field-label">From</span><input class="input" type="time" id="schedStart" value="${esc(sched.start)}" style="min-width:0;width:120px"></label>
+                    <label class="field inline"><span class="field-label">Until</span><input class="input" type="time" id="schedEnd" value="${esc(sched.end)}" style="min-width:0;width:120px"></label>
+                    <span class="note">A window like 21:00–07:00 runs overnight.</span></div>
+                    <span class="field-label">Blocked during the window</span>${groupChecks("sched", sched.services)}` },
+                reasonField(""),
+            ],
+            collect: (form) => {
+                const always = $$('[data-group-check="always"]:checked', form).map(x => x.value);
+                const singles = form.elements.singles.value.split(",").map(x => x.trim().toLowerCase()).filter(Boolean);
+                const out = { blocked_services: always.concat(singles) };
+                if (form.elements.sched_on.checked) {
+                    const services = $$('[data-group-check="sched"]:checked', form).map(x => x.value);
+                    if (!services.length) return { error: "Pick at least one category to block during the window." };
+                    out.schedule = { start: $("#schedStart", form).value, end: $("#schedEnd", form).value, services };
+                } else {
+                    out.clear_schedule = true;
+                }
+                return out;
+            },
+        });
+        if (!v) return;
+        try {
+            await api(`/api/profiles/${p.key}`, { safe_search: v.safe_search, blocked_services: v.blocked_services,
+                schedule: v.schedule || null, clear_schedule: !!v.clear_schedule, reason: v.reason });
+            toast("Profile saved", `${p.label} - applied to its devices.`, "ok");
+            load();
+        } catch (err) { toast("Not saved", err.message, "high"); }
+    });
+
+    load();
+}
+
+/* ----------------------------------------------- filtering: network pause */
+
+function initNetworkPause() {
+    const el = $("#networkPause");
+    if (!el) return;
+
+    async function load() {
+        try {
+            const d = await api("/api/filtering/pause");
+            el.innerHTML = d.paused
+                ? `<span class="chip medium nocap dot">Paused · ${fmtLeft(d.remaining_s)} left</span>
+                   <button class="btn" data-net-resume>Resume now</button>`
+                : menuHtml(`<svg class="icon" width="13" height="13"><use href="#i-pause"/></svg> Pause for everyone`,
+                           PAUSES.map(x => ({ value: x.minutes, label: x.label })), "net-pause", "");
+        } catch (err) { el.innerHTML = ""; }
+    }
+
+    el.addEventListener("click", async (e) => {
+        const p = e.target.closest("[data-net-pause]");
+        if (p) {
+            const minutes = Number(p.dataset.netPause);
+            const v = await spDialog({
+                title: `Pause filtering for every device for ${fmtLeft(minutes * 60)}?`, tone: "danger", icon: "i-pause",
+                confirm: "Pause filtering",
+                description: "Ads, trackers and known-malicious domains resolve normally on the whole network until it resumes. " +
+                    "AdGuard Home resumes on its own when the time is up.",
+                fields: [reasonField("")],
+            });
+            if (!v) return;
+            try {
+                await api("/api/filtering/pause", { minutes, reason: v.reason });
+                toast("Filtering paused", `Resumes automatically in ${fmtLeft(minutes * 60)}.`, "medium");
+                load();
+            } catch (err) { toast("Could not pause", err.message, "high"); }
+            return;
+        }
+        if (e.target.closest("[data-net-resume]")) {
+            try { await api("/api/filtering/resume", {}); toast("Filtering resumed", "", "ok"); load(); }
+            catch (err) { toast("Could not resume", err.message, "high"); }
+        }
+    });
+    load();
+    setInterval(() => { if (!document.hidden) load(); }, 20000);
+}
+
+/* ---------------------------------------------- settings: notifications */
+
+const CHANNEL_META = {
+    ntfy: { label: "ntfy", summary: c => `${c.server}/${c.topic}` },
+    telegram: { label: "Telegram", summary: c => `chat ${c.chat_id}` },
+    email: { label: "Email", summary: c => `${c.recipient} via ${c.host}:${c.port}` },
+    webhook: { label: "Webhook", summary: c => c.url + (c.secret ? " · signed" : "") },
+};
+
+/* Renders a group of settings as editable rows - numbers get an input and
+   Save, true/false settings get an on/off button. Used for delivery rules;
+   the detection thresholds list keeps its own original renderer. */
+function renderSettingGroup(el, settingsMap, group, onSaved) {
+    const rows = Object.entries(settingsMap).filter(([, s]) => s.group === group && !s.dedicated);
+    el.innerHTML = rows.map(([key, s]) => `
+        <div class="filter-row setting-row" data-key="${esc(key)}">
+            <div class="setting-label"><div class="row-title">${esc(s.label)}</div>
+                <div class="row-sub" title="${esc(s.help)}">${esc(s.help)}</div></div>
+            ${s.type === "bool"
+                ? `<button class="btn ${s.value ? "on" : ""}" data-bool-toggle="${s.value ? 0 : 1}">${s.value ? "On" : "Off"}</button>`
+                : `<input class="input" type="number" step="1" value="${s.value}" min="${s.min ?? ""}" max="${s.max ?? ""}" data-setting-input aria-label="${esc(s.label)}" style="width:90px;min-width:0">
+                   <button class="btn" data-group-save>Save</button>`}
+        </div>`).join("");
+    el.onclick = async (e) => {
+        const row = e.target.closest(".setting-row");
+        if (!row) return;
+        let value;
+        if (e.target.closest("[data-bool-toggle]")) value = e.target.closest("[data-bool-toggle]").dataset.boolToggle === "1";
+        else if (e.target.closest("[data-group-save]")) value = parseInt(row.querySelector("[data-setting-input]").value, 10);
+        else return;
+        if (typeof value === "number" && Number.isNaN(value)) { toast("Enter a whole number", "", "high"); return; }
+        const v = await spDialog({ title: `Change ${settingsMap[row.dataset.key].label.toLowerCase()}`, fields: [reasonField("")] });
+        if (!v) return;
+        try {
+            await api(`/api/settings/${row.dataset.key}`, { value, reason: v.reason });
+            toast("Saved", settingsMap[row.dataset.key].label, "ok");
+            onSaved();
+        } catch (err) { toast("Could not save", err.message, "high"); }
+    };
+}
+
+function initNotifications() {
+    const el = $("#settingsChannels");
+    if (!el) return;
+
+    async function loadChannels() {
+        let d;
+        try { d = await api("/api/notifications/channels"); } catch (err) {
+            el.innerHTML = `<div class="empty">${esc(err.message)}</div>`;
+            return;
+        }
+        if (!d.channels.length) {
+            el.innerHTML = `<div class="empty"><span class="empty-icon"><svg class="icon" width="18" height="18"><use href="#i-send"/></svg></span>
+                No channels yet - incidents are only visible here and in the gateway's journal.</div>`;
+            return;
+        }
+        el.innerHTML = d.channels.map(c => `
+            <div class="filter-row channel-row" data-key="${c.id}" data-channel="${c.id}">
+                <span class="chip neutral nocap">${esc(CHANNEL_META[c.kind].label)}</span>
+                <div class="grow"><div class="row-title">${esc(c.name)}${c.config.include_details ? ' <span class="chip low nocap" style="margin-left:4px">details</span>' : ""}</div>
+                    <div class="row-sub mono">${esc(CHANNEL_META[c.kind].summary(c.config))}</div>
+                    ${c.last_error && (!c.last_sent_at || c.last_error_at > c.last_sent_at)
+                        ? `<div class="row-sub text-high" title="${esc(c.last_error)}">Last attempt failed: ${esc(c.last_error)}</div>`
+                        : c.last_sent_at ? `<div class="row-sub">Last sent ${esc(new Date(c.last_sent_at * 1000).toLocaleString())}</div>` : ""}</div>
+                <select class="input" data-channel-sev aria-label="Minimum severity" style="min-width:0;width:auto">
+                    ${["low", "medium", "high"].map(s => `<option value="${s}" ${c.min_severity === s ? "selected" : ""}>${s} and above</option>`).join("")}</select>
+                <button class="btn ${c.enabled ? "on" : ""}" data-channel-toggle>${c.enabled ? "On" : "Off"}</button>
+                <button class="btn" data-channel-test>Send test</button>
+                <button class="btn ghost" data-channel-remove title="Remove channel">Remove</button>
+            </div>`).join("");
+        markNewRows(el, ".channel-row", false);
+    }
+
+    async function loadRules() {
+        const d = await api("/api/settings");
+        renderSettingGroup($("#settingsNotifyRules"), d.settings, "notifications", () => { loadRules(); loadRecent(); });
+    }
+
+    async function loadRecent() {
+        const box = $("#settingsNotifyRecent");
+        try {
+            const d = await api("/api/notifications/recent");
+            $("#quietNowChip").hidden = !d.quiet_now;
+            const tone = { sent: "ok", failed: "high", held: "medium", digested: "neutral", skipped: "neutral" };
+            box.innerHTML = d.notifications.length ? d.notifications.map(n => `
+                <div class="audit-row compact" data-key="${n.id}"><span class="mono dim">${esc(n.age)}</span>
+                    <span class="chip ${tone[n.status] || "neutral"} nocap">${esc(n.status)}</span>
+                    <span class="desc" title="${esc(n.detail || n.title || "")}">${n.incident_id
+                        ? `<a class="link" href="/incidents/${n.incident_id}">${esc(n.title || "")}</a>` : esc(n.title || "")}</span>
+                    <span class="detail">${esc(n.channel)}</span></div>`).join("")
+                : `<div class="empty">Nothing sent yet</div>`;
+            markNewRows(box, ".audit-row", true);
+        } catch (err) { box.innerHTML = `<div class="empty">${esc(err.message)}</div>`; }
+    }
+
+    el.addEventListener("change", async (e) => {
+        const sel = e.target.closest("[data-channel-sev]");
+        if (!sel) return;
+        const id = sel.closest("[data-channel]").dataset.channel;
+        try { await api(`/api/notifications/channels/${id}`, { min_severity: sel.value }); toast("Saved", "", "ok"); }
+        catch (err) { toast("Could not save", err.message, "high"); }
+    });
+
+    el.addEventListener("click", async (e) => {
+        const row = e.target.closest("[data-channel]");
+        if (!row) return;
+        const id = row.dataset.channel;
+        if (e.target.closest("[data-channel-toggle]")) {
+            const on = !e.target.closest("[data-channel-toggle]").classList.contains("on");
+            try { await api(`/api/notifications/channels/${id}`, { enabled: on }); loadChannels(); }
+            catch (err) { toast("Could not change", err.message, "high"); }
+        } else if (e.target.closest("[data-channel-test]")) {
+            const btn = e.target.closest("[data-channel-test]");
+            btn.disabled = true;
+            try { await api(`/api/notifications/channels/${id}/test`, {}); toast("Test sent", "Check the channel for it.", "ok"); }
+            catch (err) { toast("Test failed", err.message, "high"); }
+            finally { btn.disabled = false; loadChannels(); }
+        } else if (e.target.closest("[data-channel-remove]")) {
+            const v = await spDialog({ title: "Remove this channel?", tone: "danger", confirm: "Remove",
+                description: "Its saved settings and secrets are deleted from the gateway.", fields: [] });
+            if (!v) return;
+            try { await api(`/api/notifications/channels/${id}/remove`, {}); toast("Channel removed", "", "ok"); loadChannels(); }
+            catch (err) { toast("Could not remove", err.message, "high"); }
+        }
+    });
+
+    $("#channelAdd").addEventListener("click", async () => {
+        const kinds = ["ntfy", "telegram", "email", "webhook"];
+        const when = (k) => ({ name: "kind", in: [k] });
+        const v = await spDialog({
+            title: "Add a notification channel", icon: "i-send", confirm: "Add channel",
+            description: "Send a test from the list afterwards to confirm it works.",
+            fields: [
+                { name: "kind", label: "Type", type: "select", value: "ntfy", required: true,
+                  options: kinds.map(k => ({ value: k, label: CHANNEL_META[k].label })) },
+                { name: "name", label: "Name", type: "text", required: true, placeholder: "My phone" },
+                { name: "server", label: "ntfy server", type: "text", value: "https://ntfy.sh", required: true, showWhen: when("ntfy"),
+                  hint: "Public ntfy.sh or your own server." },
+                { name: "topic", label: "Topic", type: "text", required: true, showWhen: when("ntfy"),
+                  hint: "On a public server, anyone who knows the topic can read it - use a long random one." },
+                { name: "token", label: "Access token", type: "password", showWhen: when("ntfy") },
+                { name: "bot_token", label: "Bot token", type: "password", required: true, showWhen: when("telegram"),
+                  hint: "From @BotFather, like 123456789:AA..." },
+                { name: "chat_id", label: "Chat id", type: "text", required: true, showWhen: when("telegram") },
+                { name: "host", label: "SMTP server", type: "text", required: true, showWhen: when("email"), placeholder: "smtp.gmail.com" },
+                { name: "port", label: "Port", type: "number", value: 587, required: true, showWhen: when("email") },
+                { name: "security", label: "Security", type: "select", value: "starttls", required: true, showWhen: when("email"),
+                  options: [{ value: "starttls", label: "STARTTLS (port 587)" }, { value: "ssl", label: "SSL/TLS (port 465)" }, { value: "none", label: "None" }] },
+                { name: "username", label: "Username", type: "text", showWhen: when("email") },
+                { name: "password", label: "Password", type: "password", showWhen: when("email"), hint: "For Gmail, an app password." },
+                { name: "sender", label: "From address", type: "email", required: true, showWhen: when("email") },
+                { name: "recipient", label: "To address", type: "email", required: true, showWhen: when("email") },
+                { name: "url", label: "Webhook URL", type: "url", required: true, showWhen: when("webhook") },
+                { name: "secret", label: "Signing secret", type: "password", showWhen: when("webhook"),
+                  hint: "If set, each request carries X-SecurePi-Signature: sha256=HMAC of the body." },
+                { name: "min_severity", label: "Send incidents of at least", type: "select", value: "medium", required: true,
+                  options: [{ value: "low", label: "Low" }, { value: "medium", label: "Medium" }, { value: "high", label: "High" }] },
+                { name: "include_details", label: "Include incident details (can contain domains and IP addresses)", type: "checkbox", value: false },
+            ],
+        });
+        if (!v) return;
+        const { kind, name, min_severity, ...config } = v;
+        try {
+            await api("/api/notifications/channels", { kind, name, min_severity, config });
+            toast("Channel added", "Use Send test to check it.", "ok");
+            loadChannels();
+        } catch (err) { toast("Channel not added", err.message, "high"); }
+    });
+
+    loadChannels();
+    loadRules();
+    loadRecent();
+    setInterval(() => { if (!document.hidden) loadRecent(); }, 20000);
+}
+
+function initRetention() {
+    const el = $("#settingsRetention");
+    if (!el) return;
+    api("/api/settings/retention").then(d => {
+        $("#settingsRetentionLast").textContent = d.last_run ? `last run ${d.last_run}` : "not run yet";
+        el.innerHTML = `<table class="compact"><tbody>${d.rows.map(r => `
+            <tr><td class="truncate">${esc(r.what)}</td>
+                <td class="num">${r.days == null ? '<span class="dim">kept forever</span>' : `${r.days} days`}</td></tr>`).join("")}</tbody></table>`;
+    }).catch(err => { el.innerHTML = `<div class="empty">${esc(err.message)}</div>`; });
+}
+
 function refresh() {
     const page = document.body.dataset.page;
-    const fn = { dashboard: refreshDashboard, devices: refreshDevices, incidents: refreshIncidents }[page];
+    const fn = { dashboard: refreshDashboard, devices: refreshDevices, incidents: refreshIncidents,
+                 response: refreshResponse }[page];
     if (fn) fn().catch(err => console.error("refresh failed", err));
 }
 
@@ -2760,8 +3934,10 @@ document.addEventListener("DOMContentLoaded", () => {
     initDeviceBaseline();
     initDeviceFingerprint();
     initDeviceActivity();
+    initDeviceTrust();
     initDeviceFiltering();
     initDeviceQuarantine();
+    initDevicePolicies();
     initDeviceDpi();
     initDeviceBlocked();
     initDevicePrivacy();
@@ -2776,6 +3952,12 @@ document.addEventListener("DOMContentLoaded", () => {
     initWeeklyReport();
     initIncidentNotes();
     initIncidentBlockDomain();
+    initIncidentResponse();
+    initResponsePage();
+    initProfiles();
+    initNetworkPause();
+    initNotifications();
+    initRetention();
 
     // Global row-action delegate: works across incidents list + detail page.
     // Registered on the capture phase because row markup calls

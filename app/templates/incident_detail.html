@@ -21,17 +21,12 @@
             </div>
         </div>
         <div class="hero-actions">
-            {% if device and device.has_ip %}
-            <div id="deviceQuarantine" data-device-id="{{ device.id }}">
-                <button class="btn" id="deviceQuarantineToggle">Loading…</button>
+            {% if device and device.has_mac %}
+            <div id="deviceQuarantine" data-device-id="{{ device.id }}" data-compact="1">
+                <span class="control-actions" id="deviceQuarantineActions"><button class="btn" disabled>Loading…</button></span>
             </div>
             {% endif %}
             <div id="incidentActions" data-incident-id="{{ incident.id }}">
-                {% if top_domain and device %}
-                <button class="btn" id="incidentBlockDomain" data-device-id="{{ device.id }}" data-domain="{{ top_domain }}">
-                    <svg class="icon" width="14" height="14"><use href="#i-ban"/></svg> Block {{ top_domain }}
-                </button>
-                {% endif %}
                 {% if incident.status != 'investigating' %}
                 <button class="btn" data-set-status="investigating" data-incident-id="{{ incident.id }}">Investigate</button>
                 {% endif %}
@@ -108,6 +103,15 @@
             shows as a "Chain" row in {% if device %}<a class="link" href="/devices/{{ device.id }}">this device's risk score</a>{% else %}the device's risk score{% endif %}.
         </div>
     </div>
+</div>
+
+<div class="card" style="margin-bottom:16px" id="incidentResponse" data-incident-id="{{ incident.id }}"
+     {% if device %}data-device-id="{{ device.id }}" data-device-name="{{ device.name }}" data-trust="{{ device.trust }}"{% endif %}
+     data-signal="{{ incident.signal_type }}">
+    <div class="card-head"><h2><svg class="icon" width="15" height="15"><use href="#i-zap"/></svg>Respond</h2>
+        <span class="spacer"></span>
+        <span class="subtle">applied through the policy orchestrator - verified, audited, reversible</span></div>
+    <div class="card-body" id="incidentResponseBody"><div class="empty">Loading…</div></div>
 </div>
 
 <div class="card" style="margin-bottom:16px">

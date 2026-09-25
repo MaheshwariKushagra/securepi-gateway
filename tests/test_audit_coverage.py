@@ -37,6 +37,15 @@ WEBAPP_PATH = os.path.join(REPO_ROOT, "app", "webapp.py")
 # rather than silently excluded from this test's scan.
 EXPLICITLY_UNAUDITED_OK = set()
 
+# Calls that write their own audit row, so an endpoint that makes one is
+# audited even without a direct audit.log() in its own body. Stage 4:
+# app/orchestrator.py's create_policy()/end_policy() write policy.create /
+# policy.remove / policy.rolled_back themselves, with the actor webapp.py
+# passes in, and _create_policy()/_end_policy() are webapp.py's own thin
+# wrappers around exactly those two (they only map errors to HTTP codes).
+# api_device_filtering_set calls api_device_profile_set, which calls them.
+AUDITING_CALLS = ("audit.log(", "_create_policy(", "_end_policy(", "api_device_profile_set(")
+
 ENDPOINT_PATTERN = re.compile(
     # (?:async )? - step 3.1 added this project's first `async def` write
     # endpoint (POST /login). Without this, the scanner below silently
@@ -59,7 +68,7 @@ def _find_endpoints(source):
         body = source[start:end]
         endpoints.append({
             "method": m.group(1), "path": m.group(2), "name": m.group(3),
-            "audited": "audit.log(" in body,
+            "audited": any(call in body for call in AUDITING_CALLS),
         })
     return endpoints
 

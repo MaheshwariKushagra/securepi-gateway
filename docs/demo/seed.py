@@ -209,6 +209,22 @@ for did, sig, sev, title, status, ago, n, desc in HIST:
                         t, t + 400, t + 20, t + 3 * H, n))
     audit.log(conn, "securepi", "incident.status_change", str(cur.lastrowid), "new -> %s" % status)
 
+# ---- Stage 4: the established devices are approved; the attacker below stays
+# 'unknown' (the registry's default for a device it has never seen before).
+conn.execute("UPDATE devices SET trust='approved'")
+# A few response policies, as desired state only - serve.py's orchestrator
+# loop applies them to its in-memory firewall/AdGuard stand-ins on its first
+# cycle, exactly as the real engine would after a reboot.
+for kind, dev, target, mins, reason in [
+    ("profile", 5, "iot", None, "smart TV - no reason to reach social, gaming or VPN services"),
+    ("profile", 4, "kids", None, "shared family phone"),
+    ("allow_domain", 3, "clients4.google.com", 60, "Google login loop - unbreak for an hour"),
+    ("block_ip", None, "185.220.101.4", None, "Tor exit seen in a threat-intel match"),
+]:
+    conn.execute("INSERT INTO policies (kind, device_id, target, reason, source, created_by, created_at,"
+                 " expires_at, status) VALUES (?, ?, ?, ?, 'console', 'securepi', ?, ?, 'active')",
+                 (kind, dev, target, reason, NOW - 3 * H, NOW + mins * 60 if mins else None))
+
 # ---- The live attack: an unknown device joins, scans the NAS, then brute-forces SSH
 atk_first = NOW - 14 * 60
 insert_device(ATTACKER, atk_first)

@@ -156,5 +156,48 @@ class UnknownVerbTests(unittest.TestCase):
             self.assertNotIn("netdev", argv)
 
 
+class Stage4VerbTests(unittest.TestCase):
+    """ENHANCEMENT-PLAN.md step 4.2: MAC-keyed quarantine and IP blocks."""
+
+    def test_quarantine_mac_add_without_and_with_a_timeout(self):
+        self.assertEqual(
+            helper.build_nft_argv("quarantine-mac-add", ["aa:bb:cc:dd:ee:ff"]),
+            ["add", "element", "inet", "filter", "quarantine_mac", "{ aa:bb:cc:dd:ee:ff }"])
+        self.assertEqual(
+            helper.build_nft_argv("quarantine-mac-add", ["aa:bb:cc:dd:ee:ff", "3660"]),
+            ["add", "element", "inet", "filter", "quarantine_mac", "{ aa:bb:cc:dd:ee:ff timeout 3660s }"])
+
+    def test_blocked_ip_verbs(self):
+        self.assertEqual(helper.build_nft_argv("blocked-ip-add", ["203.0.113.9", "120"]),
+                         ["add", "element", "inet", "filter", "blocked_ip", "{ 203.0.113.9 timeout 120s }"])
+        self.assertEqual(helper.build_nft_argv("blocked-ip-delete", ["203.0.113.9"]),
+                         ["delete", "element", "inet", "filter", "blocked_ip", "{ 203.0.113.9 }"])
+        self.assertEqual(helper.build_nft_argv("blocked-ip-list", []),
+                         ["-j", "list", "set", "inet", "filter", "blocked_ip"])
+
+    def test_malformed_macs_are_rejected(self):
+        for bad in ("AA:BB:CC:DD:EE:FF", "aa:bb:cc:dd:ee", "aa-bb-cc-dd-ee-ff", "aa:bb:cc:dd:ee:ff }",
+                    "aa:bb:cc:dd:ee:ff; flush ruleset", ""):
+            with self.assertRaises(helper.RejectedInput, msg=bad):
+                helper.build_nft_argv("quarantine-mac-add", [bad])
+
+    def test_blocked_ip_refuses_ipv6_and_junk(self):
+        for bad in ("2001:db8::1", "10.10.0.1/24", "1.2.3.4 }", "x"):
+            with self.assertRaises(helper.RejectedInput, msg=bad):
+                helper.build_nft_argv("blocked-ip-add", [bad])
+
+    def test_timeout_seconds_are_bounded(self):
+        for bad in ("59", "2592001", "-5", "60s", "1e9"):
+            with self.assertRaises(helper.RejectedInput, msg=bad):
+                helper.build_nft_argv("quarantine-mac-add", ["aa:bb:cc:dd:ee:ff", bad])
+        helper.build_nft_argv("quarantine-mac-add", ["aa:bb:cc:dd:ee:ff", "2592000"])
+
+    def test_wrong_argument_counts_are_rejected(self):
+        with self.assertRaises(helper.RejectedInput):
+            helper.build_nft_argv("quarantine-mac-list", ["x"])
+        with self.assertRaises(helper.RejectedInput):
+            helper.build_nft_argv("blocked-ip-add", ["1.2.3.4", "60", "extra"])
+
+
 if __name__ == "__main__":
     unittest.main()

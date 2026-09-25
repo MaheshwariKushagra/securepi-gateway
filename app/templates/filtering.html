@@ -6,12 +6,14 @@
         <p class="page-sub">DNS filtering, blocklists and per-device policy</p>
     </div>
     <div class="page-actions">
+        <span id="networkPause" class="control-actions"></span>
         <button class="btn" id="filteringMasterToggle">Loading…</button>
     </div>
 </div>
 
 <nav class="subnav" aria-label="Sections">
     <a href="#sec-check">Domain check</a>
+    <a href="#sec-profiles">Profiles</a>
     <a href="#sec-analytics">Analytics</a>
     <a href="#sec-resolver">Resolver</a>
     <a href="#sec-tier2">Tier 2</a>
@@ -32,6 +34,18 @@
         </div>
     </div>
     <div class="card-body tight" id="checkResult" style="border-top:0"></div>
+</div>
+
+<div class="card" id="sec-profiles" style="margin-bottom:16px">
+    <div class="card-head"><h2>Profiles &amp; Schedules</h2>
+        <span class="spacer"></span><span class="subtle">per-device filtering, assigned from each device's page</span></div>
+    <div class="card-body tight" id="profileList"><div class="empty">Loading…</div></div>
+    <div class="card-foot">
+        AdGuard Home applies blocklists to every device; what a profile changes per device is safe search,
+        which services are blocked (always, or only during a daily window), and whether vendor-telemetry
+        rules apply. A schedule starts within one engine cycle (15&nbsp;s) of its start time. Blocked services
+        take effect as each device's own DNS cache expires.
+    </div>
 </div>
 
 <div class="card" id="sec-analytics" style="margin-bottom:16px">

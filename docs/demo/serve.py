@@ -16,6 +16,7 @@ if not os.path.exists(RULE_STATS):
         f.write("{}")
 
 import adguard, dpi_enroll, quarantine, correlation, rollup  # noqa: E402
+import firewall_sets, notify, orchestrator  # noqa: E402
 
 # ---- AdGuard Home stand-in
 iso = lambda h: (datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(hours=h)).isoformat()
@@ -30,11 +31,46 @@ USER_RULES = ["@@||clients4.google.com^$client='Galaxy-S23'  # unbreak", "||tele
 CLIENTS = [{"name": "Galaxy-S23", "ids": ["ca:25:11:6e:0b:31", "10.10.0.31"], "filtering_enabled": True}]
 
 
+PROTECTION = {"enabled": True, "until": None}
+CATALOG = [(sid, gid) for gid, ids in {
+    "gaming": ["steam", "roblox", "epic_games", "minecraft", "playstation", "xboxlive", "twitch"],
+    "social_network": ["tiktok", "instagram", "facebook", "snapchat", "reddit", "twitter", "onlyfans", "4chan"],
+    "gambling": ["betway", "betfair"], "dating": ["tinder", "grindr"],
+    "messenger": ["whatsapp", "telegram", "discord", "signal"], "shopping": ["amazon", "temu"],
+    "ai": ["chatgpt", "claude"], "privacy": ["proton", "icloud_private_relay"],
+    "streaming": ["youtube", "netflix", "spotify"]}.items() for sid in ids]
+
+
 def fake_request(method, path, body=None):
     if path.startswith("/control/filtering/status"):
         return {"enabled": True, "interval": 24, "filters": FILTERS, "user_rules": USER_RULES}
+    if path.startswith("/control/filtering/set_rules"):
+        USER_RULES[:] = body["rules"]
+        return None
+    if path == "/control/clients/add":
+        CLIENTS.append(dict(body))
+        return None
+    if path == "/control/clients/update":
+        for i, c in enumerate(CLIENTS):
+            if c["name"] == body["name"]:
+                CLIENTS[i] = dict(body["data"])
+        return None
+    if path == "/control/clients/delete":
+        CLIENTS[:] = [c for c in CLIENTS if c["name"] != body["name"]]
+        return None
     if path.startswith("/control/clients"):
         return {"clients": CLIENTS}
+    if path.startswith("/control/status"):
+        left = max(0, int(((PROTECTION["until"] or 0) - time.time()) * 1000))
+        if not PROTECTION["enabled"] and PROTECTION["until"] and left == 0:
+            PROTECTION.update(enabled=True, until=None)  # AdGuard's own auto-resume
+        return {"protection_enabled": PROTECTION["enabled"], "protection_disabled_duration": left}
+    if path.startswith("/control/protection"):
+        PROTECTION["enabled"] = body["enabled"]
+        PROTECTION["until"] = time.time() + body.get("duration", 0) / 1000.0 if not body["enabled"] else None
+        return None
+    if path.startswith("/control/blocked_services/all"):
+        return {"blocked_services": [{"id": sid, "group_id": gid} for sid, gid in CATALOG]}
     if path.startswith("/control/dns_info"):
         return {"upstream_dns": ["tls://1.1.1.1", "tls://9.9.9.9"], "fallback_dns": ["https://dns.quad9.net/dns-query"],
                 "upstream_mode": "parallel", "cache_enabled": True, "cache_optimistic": True,
@@ -45,8 +81,35 @@ def fake_request(method, path, body=None):
 
 
 adguard._request = fake_request
-dpi_enroll.enrolled = lambda: [{"ip": "10.10.0.31", "expires_in_s": 19 * 3600 + 1240}]
-quarantine.quarantined_ips = lambda: ["10.10.0.66"]
+quarantine.quarantined_ips = lambda: []
+
+# ---- nftables stand-ins: each set is {element: absolute expiry or None},
+# reported back as seconds left, the way `nft -j list set` does.
+SETS = {"mac": {}, "ip": {}, "enrolled": {"10.10.0.31": time.time() + 19 * 3600 + 1240}}
+
+
+def _left(name):
+    now = time.time()
+    for k, v in list(SETS[name].items()):
+        if v is not None and v <= now:
+            del SETS[name][k]  # the kernel's own timeout
+    return {k: (None if v is None else int(v - now)) for k, v in SETS[name].items()}
+
+
+def _adder(name):
+    return lambda value, seconds=None: SETS[name].__setitem__(value, None if seconds is None else time.time() + seconds)
+
+
+firewall_sets.quarantined_macs = lambda: _left("mac")
+firewall_sets.quarantine_mac = _adder("mac")
+firewall_sets.release_mac = lambda mac: SETS["mac"].pop(mac, None)
+firewall_sets.blocked_ips = lambda: _left("ip")
+firewall_sets.block_ip = _adder("ip")
+firewall_sets.unblock_ip = lambda ip: SETS["ip"].pop(ip, None)
+dpi_enroll.enrolled = lambda: [{"ip": k, "expires_in_s": v} for k, v in _left("enrolled").items()]
+dpi_enroll.enroll = lambda ip, hours=24: SETS["enrolled"].__setitem__(ip, time.time() + hours * 3600)
+dpi_enroll.unenroll = lambda ip: SETS["enrolled"].pop(ip, None)
+orchestrator.LOCK_PATH = os.path.join(HERE, "orchestrator.lock")
 
 # ---- Load webapp.py with its gateway paths pointed at the repo / demo DB
 src = open(os.path.join(REPO, "app/webapp.py")).read()
@@ -81,6 +144,8 @@ def engine_loop():
         c.row_factory = sqlite3.Row
         rollup.rollup_closed_hours(c)
         correlation.run_all(c)
+        orchestrator.reconcile(c)
+        notify.dispatch(c)
         now = time.time()
         c.execute("UPDATE ingest_stats SET last_run=? WHERE id=1", (now,))
         c.execute("INSERT OR REPLACE INTO signal_state VALUES ('privacy_scope', ?)", (now - 240,))

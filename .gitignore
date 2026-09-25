@@ -24,7 +24,12 @@ querylog*
 
 # Demo console build artefacts (docs/demo/)
 docs/demo/securepi.db*
+docs/demo/orchestrator.lock
 docs/demo/dpi-rule-stats.json
 docs/demo/node_modules/
 docs/demo/package*.json
 docs/demo/*.log
+
+# Python bytecode
+__pycache__/
+*.pyc

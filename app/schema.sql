@@ -30,7 +30,13 @@ CREATE TABLE IF NOT EXISTS devices (
     friendly_name  TEXT,               -- set by hand in the console; wins over hostname
     first_seen     REAL NOT NULL,
     last_seen      REAL NOT NULL,
-    is_active      INTEGER NOT NULL DEFAULT 1
+    is_active      INTEGER NOT NULL DEFAULT 1,
+    -- ENHANCEMENT-PLAN.md step 4.4: 'approved' | 'unknown' | 'blocked'.
+    -- A device the registry creates is 'unknown' (registry.py sets it
+    -- explicitly). Devices that already existed when this column was added
+    -- to a live database were grandfathered in as 'approved' - see the
+    -- migration in app/ingest.py.
+    trust          TEXT NOT NULL DEFAULT 'unknown'
 );
 
 CREATE INDEX IF NOT EXISTS idx_devices_hostname ON devices(hostname);
@@ -514,5 +520,124 @@ CREATE TABLE IF NOT EXISTS dns_failopen_state (
     changed_at  REAL
 );
 
+-- ---------------------------------------------------------------- policies --
+-- ENHANCEMENT-PLAN.md step 4.1: the console's desired state. One row per
+-- thing the operator (or an automatic response) wants enforced: a
+-- quarantine, a blocked IP or domain, an allowed domain, a filtering
+-- profile, a pause, a Tier 2 enrollment, a vendor-telemetry block list.
+-- app/orchestrator.py turns the active rows into nftables set elements and
+-- AdGuard Home settings, reads them back to check they took, and puts
+-- them back if something outside the console changes them.
+--
+--   kind       quarantine | block_ip | block_domain | allow_domain |
+--              profile | pause | enroll | native_profile
+--   device_id  the device it applies to; NULL means every device
+--   target     an IP, domain, profile key or vendor key (NULL for
+--              quarantine and pause)
+--   source     'console', 'incident:<id>', 'trust', 'auto:campaign:<id>',
+--              'adopted' (found in place, not created by the console) or
+--              'migrated' (converted from a pre-4.1 rule)
+--   status     active | failed (never took effect, rolled back) |
+--              expired | removed | replaced (superseded by a newer one)
+--   applied_state  kind-specific JSON the orchestrator needs later, e.g.
+--              the IP an enrollment was last applied to
+CREATE TABLE IF NOT EXISTS policies (
+    id               INTEGER PRIMARY KEY,
+    kind             TEXT NOT NULL,
+    device_id        INTEGER REFERENCES devices(id),
+    target           TEXT,
+    reason           TEXT NOT NULL,
+    source           TEXT NOT NULL,
+    created_by       TEXT NOT NULL,
+    created_at       REAL NOT NULL,
+    expires_at       REAL,
+    status           TEXT NOT NULL,
+    ended_at         REAL,
+    ended_by         TEXT,
+    ended_reason     TEXT,
+    applied_state    TEXT,
+    last_verified_at REAL,
+    last_error       TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_policies_status ON policies(status, kind);
+CREATE INDEX IF NOT EXISTS idx_policies_device ON policies(device_id);
+
+-- One row (id=1): what the orchestrator last applied to each enforcement
+-- point, as JSON. Comparing the live state against THIS (not against the
+-- desired state) is how it tells "someone changed it outside the console"
+-- (drift) apart from "a policy expired or a schedule window opened" (a
+-- planned change). boot_id is the kernel's own per-boot id, so an empty
+-- nftables set after a reboot is recorded as a restore, not as drift.
+CREATE TABLE IF NOT EXISTS orchestrator_state (
+    id         INTEGER PRIMARY KEY CHECK (id = 1),
+    applied    TEXT NOT NULL DEFAULT '{}',
+    boot_id    TEXT,
+    last_run   REAL,
+    last_ok    REAL,
+    last_error TEXT,
+    domains    TEXT NOT NULL DEFAULT '{}',
+    extra      TEXT NOT NULL DEFAULT '{}'
+);
+
+-- ---------------------------------------------------------- filter_profiles --
+-- Step 4.3: operator edits to a built-in filtering profile
+-- (app/profiles.py BUILTIN_PROFILES). Only edited profiles have a row;
+-- `config` holds just the changed fields, laid over the built-in values.
+CREATE TABLE IF NOT EXISTS filter_profiles (
+    key        TEXT PRIMARY KEY,
+    config     TEXT NOT NULL,
+    updated_at REAL NOT NULL
+);
+
+-- ----------------------------------------------------- notification_channels --
+-- Step 4.5: where incident notifications go. `config` is JSON and holds the
+-- channel's secrets (a Telegram bot token, an SMTP password, a webhook
+-- signing secret). The API never returns them - app/notify.py masks every
+-- secret field before anything leaves the gateway.
+CREATE TABLE IF NOT EXISTS notification_channels (
+    id            INTEGER PRIMARY KEY,
+    kind          TEXT NOT NULL,        -- ntfy | telegram | email | webhook
+    name          TEXT NOT NULL,
+    config        TEXT NOT NULL,
+    min_severity  TEXT NOT NULL DEFAULT 'medium',
+    enabled       INTEGER NOT NULL DEFAULT 1,
+    created_at    REAL NOT NULL,
+    updated_at    REAL NOT NULL,
+    last_sent_at  REAL,
+    last_error    TEXT,
+    last_error_at REAL
+);
+
+-- One row per (channel, incident): the "one notification per incident, not
+-- one per cycle" guarantee is the UNIQUE constraint. digest rows
+-- (incident_id NULL) record each digest message sent.
+--   status  sent | failed | held (quiet hours or rate limit - waits for
+--           the next digest) | digested | skipped
+CREATE TABLE IF NOT EXISTS notifications (
+    id          INTEGER PRIMARY KEY,
+    channel_id  INTEGER NOT NULL REFERENCES notification_channels(id),
+    incident_id INTEGER REFERENCES incidents(id),
+    ts          REAL NOT NULL,
+    status      TEXT NOT NULL,
+    attempts    INTEGER NOT NULL DEFAULT 0,
+    title       TEXT,
+    detail      TEXT,
+    UNIQUE (channel_id, incident_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_notifications_channel_ts ON notifications(channel_id, ts);
+
+-- One row (id=1): the highest incident id already considered for
+-- notification, so a restart never re-sends history and a fresh install
+-- doesn't send every old incident at once.
+CREATE TABLE IF NOT EXISTS notify_state (
+    id               INTEGER PRIMARY KEY CHECK (id = 1),
+    last_incident_id INTEGER,
+    last_digest_at   REAL
+);
+
 INSERT OR IGNORE INTO ingest_stats (id) VALUES (1);
+INSERT OR IGNORE INTO orchestrator_state (id) VALUES (1);
+INSERT OR IGNORE INTO notify_state (id, last_incident_id, last_digest_at) VALUES (1, NULL, NULL);
 INSERT OR IGNORE INTO dns_failopen_state (id, active, down_since, changed_at) VALUES (1, 0, NULL, NULL);

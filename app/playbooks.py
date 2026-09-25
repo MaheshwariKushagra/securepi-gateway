@@ -501,6 +501,38 @@ PLAYBOOKS = {
             "no manual step needed for that part. Resolve this incident once you've confirmed "
             "filtering is actually back, not just that AdGuard is running.",
     },
+    "policy_drift": {
+        "what_it_means": "Something outside the console changed a response policy's enforcement - "
+            "a quarantine or IP block removed from nftables by hand, a rule deleted or a device's "
+            "settings edited in AdGuard Home's own UI. The orchestrator put it back the way the "
+            "console says it should be (step 4.1); the description lists exactly what changed.",
+        "how_to_check": "Settings -> Audit Log shows each 'policy.drift_corrected' row. On the "
+            "gateway, `sudo journalctl -t securepi-web-helper` shows every firewall change made "
+            "through the console's helper - a change missing from it was made some other way.",
+        "recommended_action": "If you made the change on purpose, make it from the console instead "
+            "(or remove the policy there), otherwise the orchestrator will keep undoing it. If "
+            "nobody did, find out who has root or AdGuard access. Resolve once explained.",
+    },
+    "policy_enforcement_failed": {
+        "what_it_means": "The orchestrator could not check or apply one or more response policies "
+            "- usually because AdGuard Home's API or the firewall helper didn't answer. Until it "
+            "recovers, a quarantine, block or profile may not be in force.",
+        "how_to_check": "The Response page shows which enforcement point is failing and its "
+            "error. `sudo securepi status` shows whether AdGuardHome and nftables are running.",
+        "recommended_action": "Fix the underlying service; the orchestrator retries every cycle and "
+            "re-applies everything on its own once it can. Resolve once the Response page shows "
+            "every enforcement point healthy again.",
+    },
+    "auto_quarantine": {
+        "what_it_means": "Auto-response (Settings -> Response, off by default) quarantined this "
+            "device because one of its campaigns spanned enough distinct ATT&CK tactics to count "
+            "as high-confidence. The device has no internet access until the quarantine ends.",
+        "how_to_check": "Open the campaign's incidents from this device's page and decide whether "
+            "the chain (for example scan -> brute force -> beacon) is real.",
+        "recommended_action": "If it's a false positive, release the quarantine from the device "
+            "page and mark the campaign's incidents false positive. If it's real, extend the "
+            "quarantine or block the device, and investigate before releasing it.",
+    },
 }
 
 

@@ -158,7 +158,7 @@ def describe_rule(rule):
     if "^$client=" in body:
         body, _, client_name = body.partition("^$client=")
         body += "^"
-        scope = "device: %s" % client_name
+        scope = "device: %s" % unquote_client(client_name)
     if body.startswith("@@||") and body.endswith("^"):
         return {"rule": rule, "domain": body[4:-1], "action": "allow", "scope": scope}
     if body.startswith("||") and body.endswith("^"):
@@ -375,11 +375,11 @@ def remove_client_rule_group(client_name, tag):
 def device_scoped_rules(client_name):
     """Every allow/block rule that was scoped to this one device, newest
     first, for the "recently allowed/blocked for this device" panel."""
-    marker = "$client=%s" % client_name
+    markers = ("$client=%s" % client_name, "$client=%s" % quote_client(client_name))
     out = []
     for r in user_rules():
         base, _, comment = r.partition("  #")
-        if marker not in base:
+        if not any(base.endswith(m) for m in markers):
             continue
         desc = describe_rule(base)
         desc["rule"] = r
@@ -454,3 +454,123 @@ def set_dns_tuning(upstream_dns=None, fallback_dns=None, cache_optimistic=None,
         current["upstream_mode"] = upstream_mode
     _request("POST", "/control/dns_config", current)
     return current
+
+
+# ------------------------------------------------- orchestrator (Stage 4) --
+#
+# The functions below are what app/orchestrator.py (ENHANCEMENT-PLAN.md
+# step 4.1) uses to read and write AdGuard's state as a whole, so it can
+# compare what's there with what the console wants and put it right.
+#
+# A real bug found while building this (26 September 2026): AdGuard does
+# NOT ignore text after "#" on a rule line. add_client_rule() above stores
+# its expiry and tag as a trailing "  # securepi-..." comment, and a rule
+# written that way never matches anything - checked live with
+# check_host() for four rule shapes: with the comment, none of them
+# blocked; without it, they did. So the orchestrator writes plain rules
+# with no comment at all, and remembers which ones are its own in its own
+# state table instead of marking the rule text.
+
+def quote_client(name):
+    """A $client= value, quoted and escaped the way AdGuard's rule syntax
+    requires for a name with spaces or punctuation: single quotes around
+    it, and a backslash before any quote, comma or pipe inside it. The
+    quoted form was checked live to match (see the note above)."""
+    escaped = ""
+    for ch in name:
+        if ch in "'\",|":
+            escaped += "\\" + ch
+        else:
+            escaped += ch
+    return "'%s'" % escaped
+
+
+def unquote_client(value):
+    """The reverse of quote_client, for showing a rule's device name."""
+    value = value.strip()
+    if len(value) >= 2 and value[0] == value[-1] and value[0] in "'\"":
+        value = value[1:-1]
+    out, escape = "", False
+    for ch in value:
+        if escape:
+            out += ch
+            escape = False
+        elif ch == "\\":
+            escape = True
+        else:
+            out += ch
+    return out
+
+
+def domain_rule(domain, action, client_name=None):
+    """One plain rule line: block or allow `domain` and every subdomain,
+    for one client or (client_name None) for every device."""
+    prefix = "@@" if action == "allow" else ""
+    rule = "%s||%s^" % (prefix, domain)
+    if client_name:
+        rule += "$client=%s" % quote_client(client_name)
+    return rule
+
+
+def set_user_rules(rules):
+    """Replace the whole custom-rules list in one request."""
+    _request("POST", "/control/filtering/set_rules", {"rules": list(rules)})
+
+
+def list_clients():
+    """Every persistent client, as AdGuard returns it."""
+    return (_request("GET", "/control/clients") or {}).get("clients") or []
+
+
+def add_client(obj):
+    _request("POST", "/control/clients/add", obj)
+
+
+def update_client(name, obj):
+    _request("POST", "/control/clients/update", {"name": name, "data": obj})
+
+
+def delete_client(name):
+    _request("POST", "/control/clients/delete", {"name": name})
+
+
+def protection_status():
+    """(enabled, milliseconds left on a timed pause or 0) from AdGuard's
+    own status endpoint - the network-wide "pause filtering" state."""
+    st = _request("GET", "/control/status") or {}
+    return bool(st.get("protection_enabled", True)), int(st.get("protection_disabled_duration") or 0)
+
+
+def set_protection(enabled, duration_ms=None):
+    """Turn network-wide filtering on or off. With `duration_ms`, AdGuard
+    pauses it for that long and turns it back on by itself - the
+    orchestrator still checks, but the pause ends even if it doesn't."""
+    body = {"enabled": bool(enabled)}
+    if not enabled and duration_ms:
+        body["duration"] = int(duration_ms)
+    _request("POST", "/control/protection", body)
+
+
+_catalog_cache = {"at": 0, "catalog": {}}
+
+
+def service_catalog(max_age_s=3600):
+    """{service_id: group_id} for every service AdGuard can block, e.g.
+    {"steam": "gaming", "tiktok": "social_network"}. Cached for an hour -
+    it only changes when AdGuard itself is upgraded."""
+    now = time.time()
+    if _catalog_cache["catalog"] and now - _catalog_cache["at"] < max_age_s:
+        return _catalog_cache["catalog"]
+    data = _request("GET", "/control/blocked_services/all") or {}
+    catalog = {sv["id"]: sv.get("group_id") for sv in data.get("blocked_services") or []}
+    _catalog_cache.update(at=now, catalog=catalog)
+    return catalog
+
+
+def service_groups():
+    """[(group_id, [service ids])] in AdGuard's own order - for the
+    console's profile editor."""
+    groups = {}
+    for sid, gid in service_catalog().items():
+        groups.setdefault(gid or "other", []).append(sid)
+    return sorted(groups.items())

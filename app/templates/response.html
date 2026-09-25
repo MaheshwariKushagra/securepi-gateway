@@ -1,0 +1,87 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="page-head">
+    <div class="page-title">
+        <h1>Response</h1>
+        <p class="page-sub">Everything the gateway is enforcing right now, and proof it is still in place</p>
+    </div>
+    <div class="page-actions">
+        <button class="btn icon-label" id="orchVerify" title="Read every enforcement point back now instead of waiting for the next 15-second cycle">
+            <svg class="icon" width="14" height="14"><use href="#i-refresh"/></svg> Verify now
+        </button>
+    </div>
+</div>
+
+<div class="kpis" id="responseKpis">
+    <div class="kpi"><div class="kpi-top"><span class="kpi-label">Active policies</span>
+        <span class="kpi-icon"><svg class="icon" width="15" height="15"><use href="#i-zap"/></svg></span></div>
+        <div class="kpi-main"><span class="kpi-value" id="kpiPolicies">—</span></div>
+        <div class="kpi-sub" id="kpiPoliciesSub">&nbsp;</div></div>
+    <div class="kpi"><div class="kpi-top"><span class="kpi-label">Devices quarantined</span>
+        <span class="kpi-icon"><svg class="icon" width="15" height="15"><use href="#i-ban"/></svg></span></div>
+        <div class="kpi-main"><span class="kpi-value" id="kpiQuarantined">—</span></div>
+        <div class="kpi-sub" id="kpiQuarantinedSub">&nbsp;</div></div>
+    <div class="kpi"><div class="kpi-top"><span class="kpi-label">Drift corrected · 24h</span>
+        <span class="kpi-icon"><svg class="icon" width="15" height="15"><use href="#i-arrows"/></svg></span></div>
+        <div class="kpi-main"><span class="kpi-value" id="kpiDrift">—</span></div>
+        <div class="kpi-sub" id="kpiDriftSub">&nbsp;</div></div>
+    <div class="kpi"><div class="kpi-top"><span class="kpi-label">Orchestrator</span>
+        <span class="kpi-icon"><svg class="icon" width="15" height="15"><use href="#i-pulse"/></svg></span></div>
+        <div class="kpi-main"><span class="kpi-value" id="kpiOrch">—</span></div>
+        <div class="kpi-sub" id="kpiOrchSub">&nbsp;</div></div>
+</div>
+
+<div class="card" style="margin-bottom:16px">
+    <div class="card-head"><h2>Active Policies</h2>
+        <span class="spacer"></span>
+        <div class="seg" id="policyFilter" role="group" aria-label="Filter policies">
+            <button class="active" data-filter="">All</button>
+            <button data-filter="quarantine">Quarantine</button>
+            <button data-filter="block">Blocks &amp; allows</button>
+            <button data-filter="filtering">Filtering</button>
+            <button data-filter="enroll">Inspection</button>
+        </div>
+        <button class="btn primary icon-label" id="policyAdd" style="margin-left:8px">
+            <svg class="icon" width="14" height="14" style="color:#fff"><use href="#i-plus"/></svg> Block
+        </button>
+    </div>
+    <div class="table-scroll" id="policyTable"><div class="empty">Loading…</div></div>
+    <div class="card-foot">
+        Every row is desired state. The orchestrator applies it, reads the firewall and AdGuard Home back
+        to confirm it took, and rolls the change back if it didn't. Each engine cycle (15&nbsp;s) it checks
+        again and puts back anything changed outside the console. "Verified" is when that last succeeded.
+    </div>
+</div>
+
+<div class="grid c2e">
+    <div class="card">
+        <div class="card-head"><h2>Enforcement Points</h2>
+            <span class="spacer"></span><span class="subtle">last read-back</span></div>
+        <div class="card-body tight" id="orchDomains"><div class="empty">Loading…</div></div>
+    </div>
+    <div class="card">
+        <div class="card-head"><h2>Orchestrator Activity</h2>
+            <span class="spacer"></span><span class="subtle">applies, expiries, drift, rollbacks</span></div>
+        <div class="card-body tight feed fill" id="orchActivity"><div class="empty">Loading…</div></div>
+    </div>
+</div>
+
+<div class="grid c2e">
+    <div class="card" id="autoResponseCard">
+        <div class="card-head"><h2>Auto-response</h2>
+            <span class="spacer"></span><span class="chip nocap" id="autoResponseChip">—</span></div>
+        <div class="card-body" id="autoResponseBody"><div class="empty">Loading…</div></div>
+    </div>
+    <div class="card" id="trustCard">
+        <div class="card-head"><h2>Device Trust</h2>
+            <span class="spacer"></span><span class="chip nocap" id="trustChip">—</span></div>
+        <div class="card-body" id="trustBody"><div class="empty">Loading…</div></div>
+    </div>
+</div>
+
+<div class="card">
+    <div class="card-head"><h2>Recently Ended</h2>
+        <span class="spacer"></span><span class="subtle">expired, released, replaced or rolled back</span></div>
+    <div class="table-scroll" id="policyEnded"><div class="empty">Loading…</div></div>
+</div>
+{% endblock %}

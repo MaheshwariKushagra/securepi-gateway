@@ -45,6 +45,10 @@
     <symbol id="i-ban" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><line x1="5.6" y1="5.6" x2="18.4" y2="18.4"/></symbol>
     <symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><polyline points="12,7 12,12 15.5,14"/></symbol>
     <symbol id="i-lock" viewBox="0 0 24 24"><rect x="4.5" y="10.5" width="15" height="10" rx="2"/><path d="M8 10.5 V7.5 a4 4 0 0 1 8 0 V10.5"/></symbol>
+    <symbol id="i-zap" viewBox="0 0 24 24"><polygon points="13,2.5 4.5,13.5 11,13.5 10,21.5 19.5,10.5 13,10.5"/></symbol>
+    <symbol id="i-send" viewBox="0 0 24 24"><line x1="21" y1="3" x2="10.5" y2="13.5"/><polygon points="21,3 14.5,21 10.5,13.5 3,9.5"/></symbol>
+    <symbol id="i-plus" viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></symbol>
+    <symbol id="i-refresh" viewBox="0 0 24 24"><polyline points="20,5 20,10 15,10"/><path d="M19.5 10 A8 8 0 1 0 20 14"/></symbol>
     <symbol id="i-pause" viewBox="0 0 24 24"><line x1="9" y1="5" x2="9" y2="19"/><line x1="15" y1="5" x2="15" y2="19"/></symbol>
     <symbol id="i-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><line x1="12" y1="2.5" x2="12" y2="4.5"/><line x1="12" y1="19.5" x2="12" y2="21.5"/><line x1="2.5" y1="12" x2="4.5" y2="12"/><line x1="19.5" y1="12" x2="21.5" y2="12"/><line x1="5.3" y1="5.3" x2="6.7" y2="6.7"/><line x1="17.3" y1="17.3" x2="18.7" y2="18.7"/><line x1="5.3" y1="18.7" x2="6.7" y2="17.3"/><line x1="17.3" y1="6.7" x2="18.7" y2="5.3"/></symbol>
     <symbol id="i-moon" viewBox="0 0 24 24"><path d="M20 14.5 A8.5 8.5 0 1 1 9.5 4 A6.5 6.5 0 0 0 20 14.5 Z"/></symbol>
@@ -85,6 +89,8 @@
             <a href="/incidents" class="{{ 'active' if active=='incidents' }}" title="Incidents">
                 <svg class="icon" width="17" height="17"><use href="#i-alert"/></svg><span>Incidents</span>
                 <span class="nav-badge" id="navIncidentBadge" hidden>0</span></a>
+            <a href="/response" class="{{ 'active' if active=='response' }}" title="Response">
+                <svg class="icon" width="17" height="17"><use href="#i-zap"/></svg><span>Response</span></a>
             <div class="nav-section">Investigate</div>
             <a href="/hunt" class="{{ 'active' if active=='hunt' }}" title="Hunt">
                 <svg class="icon" width="17" height="17"><use href="#i-search"/></svg><span>Hunt</span></a>
@@ -109,7 +115,8 @@
 
     {% set sections = {
         'dashboard': ('Dashboard', '/'), 'devices': ('Devices', '/devices'),
-        'incidents': ('Incidents', '/incidents'), 'filtering': ('Filtering', '/filtering'),
+        'incidents': ('Incidents', '/incidents'), 'response': ('Response', '/response'),
+        'filtering': ('Filtering', '/filtering'),
         'hunt': ('Hunt', '/hunt'), 'reports': ('Reports', '/reports/weekly'),
         'settings': ('Settings', '/settings') } %}
     {% set section = sections.get(active) %}

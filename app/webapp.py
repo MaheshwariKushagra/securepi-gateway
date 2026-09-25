@@ -87,8 +87,12 @@ import adguard
 import audit
 import dpi_enroll
 import fingerprint
+import firewall_sets
 import native_trackers
+import notify
+import orchestrator
 import playbooks
+import profiles
 import quarantine
 import risk
 import session_auth
@@ -423,6 +427,71 @@ class SavedSearchCreate(BaseModel):
 
 class QuarantineUpdate(BaseModel):
     quarantined: bool
+    # Stage 4 (step 4.2): optional. No minutes means until released; a
+    # reason is recorded with the policy either way.
+    minutes: Optional[int] = Field(default=None, ge=5, le=43200)
+    reason: str = "quarantined from the console"
+
+
+class PolicyCreate(BaseModel):
+    kind: str
+    device_id: Optional[int] = None
+    target: Optional[str] = None
+    minutes: Optional[int] = Field(default=None, ge=1, le=43200)
+    reason: str
+    incident_id: Optional[int] = None
+
+
+class PolicyEnd(BaseModel):
+    reason: str = ""
+
+
+class PolicyExtend(BaseModel):
+    minutes: int = Field(ge=5, le=43200)
+    reason: str = "extended from the console"
+
+
+class TrustUpdate(BaseModel):
+    trust: str
+    reason: str = ""
+
+
+class RestrictUnknownUpdate(BaseModel):
+    enabled: bool
+    # Lockout-safe switch-on (step 4.4): approve every device already on
+    # the network first, so turning this on never cuts off a device that
+    # was working a moment ago.
+    approve_existing: bool = True
+
+
+class ProfileAssign(BaseModel):
+    profile: str
+    reason: str = "profile set from the console"
+
+
+class PauseRequest(BaseModel):
+    minutes: int = Field(ge=1, le=1440)
+    reason: str = "paused from the console"
+
+
+class ProfileEdit(BaseModel):
+    safe_search: Optional[bool] = None
+    blocked_services: Optional[list] = None
+    schedule: Optional[dict] = None
+    clear_schedule: bool = False
+    reason: str = ""
+
+
+class ChannelCreate(BaseModel):
+    kind: str
+    name: str
+    config: dict
+    min_severity: str = "medium"
+
+
+class ChannelUpdate(BaseModel):
+    enabled: Optional[bool] = None
+    min_severity: Optional[str] = None
 
 
 class FilteringToggle(BaseModel):
@@ -942,8 +1011,19 @@ def api_devices():
             "SELECT count(*) n, COALESCE(sum(severity='high'),0) high"
             "  FROM incidents WHERE device_id=? AND status='new'", (d["id"],)).fetchone()
         r = risk.device_risk(c, d["id"], now)
+        # Stage 4: what the console is enforcing on this device, from the
+        # policies table (the device page reads the live firewall state).
+        pol = {row["kind"]: row for row in c.execute(
+            "SELECT kind, target, expires_at FROM policies WHERE status='active' AND device_id=?"
+            " AND kind IN ('quarantine','profile','pause')", (d["id"],))}
         out.append({
             "id": d["id"], "name": device_label(d),
+            "trust": d["trust"],
+            "quarantined": "quarantine" in pol,
+            "profile": pol["profile"]["target"] if "profile" in pol else profiles.DEFAULT_PROFILE,
+            "profile_label": profiles.BUILTIN_PROFILES[pol["profile"]["target"]]["label"]
+                             if "profile" in pol else profiles.BUILTIN_PROFILES[profiles.DEFAULT_PROFILE]["label"],
+            "paused": "pause" in pol,
             "hostname": d["hostname"], "ip": ip["ip"] if ip else None,
             "mac_count": macs["n"] or 0, "randomized": bool(macs["r"]),
             "down": agg["down"], "down_h": humanize_bytes(agg["down"]),
@@ -1471,37 +1551,34 @@ def api_filtering_querylog(domain: str = Query(""), device_id: str = Query(""),
 
 @app.get("/api/devices/{device_id}/filtering")
 def api_device_filtering_status(device_id: int):
+    """The device's filtering profile and pause state (step 4.3), plus
+    whether AdGuard currently has filtering on for it - read live, so a
+    change made in AdGuard itself shows up here too."""
     c = db()
     d = c.execute("SELECT 1 FROM devices WHERE id=?", (device_id,)).fetchone()
     if d is None:
         raise HTTPException(404, "device not found")
+    view = _device_filtering_view(c, device_id, time.time())
     identifiers, current_ip = device_identifiers(c, device_id)
+    view["ip"] = current_ip
     if not identifiers:
-        return {"managed": False, "filtering_enabled": True, "ip": None}
+        view.update(managed=False, filtering_enabled=True)
+        return view
     try:
-        status = adguard.client_filtering_status(identifiers)
+        view.update(adguard.client_filtering_status(identifiers))
     except adguard.AdGuardError as e:
         raise HTTPException(502, str(e))
-    status["ip"] = current_ip
-    return status
+    return view
 
 
 @app.post("/api/devices/{device_id}/filtering")
 def api_device_filtering_set(device_id: int, body: DeviceFilterUpdate):
-    c = db()
-    d = c.execute("SELECT * FROM devices WHERE id=?", (device_id,)).fetchone()
-    if d is None:
-        raise HTTPException(404, "device not found")
-    identifiers, current_ip = device_identifiers(c, device_id)
-    if not identifiers:
-        raise HTTPException(400, "device has no known address to apply a policy to")
-    try:
-        adguard.set_client_filtering(identifiers, device_label(d), body.enabled)
-    except adguard.AdGuardError as e:
-        raise HTTPException(502, str(e))
-    audit.log(c, CONSOLE_USERNAME, "device.filtering_set", target=str(device_id),
-              detail="enabled=%s" % body.enabled)
-    return {"id": device_id, "filtering_enabled": body.enabled}
+    """The original on/off switch, kept for compatibility: since step 4.3
+    "off" is the Unrestricted profile and "on" is back to Standard, both
+    applied through the orchestrator."""
+    return api_device_profile_set(device_id, ProfileAssign(
+        profile=profiles.DEFAULT_PROFILE if body.enabled else "unrestricted",
+        reason="filtering switched %s from the console" % ("on" if body.enabled else "off")))
 
 
 @app.get("/api/filtering/check")
@@ -1665,74 +1742,48 @@ def api_native_profiles():
 
 @app.get("/api/devices/{device_id}/filtering/profiles")
 def api_device_profiles(device_id: int):
-    """Which native-tracker profiles are currently applied to this device,
-    derived from the tag on its own $client-scoped block rules - there is
-    no separate table for this, the same way temporary allow rules track
-    their own expiry in their comment rather than a database row."""
+    """Which vendor-telemetry profiles are applied to this device - one
+    orchestrator policy each (step 4.1), plus a note if its filtering
+    profile is Strict privacy, which applies all of them."""
     c = db()
-    d = c.execute("SELECT * FROM devices WHERE id=?", (device_id,)).fetchone()
-    if d is None:
+    if c.execute("SELECT 1 FROM devices WHERE id=?", (device_id,)).fetchone() is None:
         raise HTTPException(404, "device not found")
-    try:
-        rules = adguard.device_scoped_rules(device_label(d))
-    except adguard.AdGuardError as e:
-        raise HTTPException(502, str(e))
-    applied = {}
-    for r in rules:
-        if r["tag"] and r["tag"] in native_trackers.NATIVE_PROFILES:
-            applied.setdefault(r["tag"], 0)
-            applied[r["tag"]] += 1
-    return {"applied": [
-        {"vendor": v, "label": native_trackers.NATIVE_PROFILES[v]["label"], "rule_count": n}
-        for v, n in applied.items()
-    ]}
+    applied = []
+    for r in orchestrator.active_policies(c, "native_profile", device_id):
+        prof = native_trackers.profile(r["target"])
+        if prof:
+            applied.append({"vendor": r["target"], "label": prof["label"], "rule_count": len(prof["domains"]),
+                            "policy_id": r["id"]})
+    strict = any(r["target"] == "strict_privacy" for r in orchestrator.active_policies(c, "profile", device_id))
+    return {"applied": applied, "via_strict_privacy": strict}
 
 
 @app.post("/api/devices/{device_id}/filtering/profile")
 def api_device_apply_profile(device_id: int, body: NativeProfileRequest):
-    """Apply a native-tracker profile to one device: a $client-scoped block
-    rule per domain in the profile, tagged so it can be found and removed
-    as a group later. See ENHANCEMENT-PLAN.md step 5.5 - and its own
-    caution about not trusting these domain lists on a real device without
-    checking first."""
+    """Apply a vendor-telemetry profile to one device: a $client-scoped
+    block rule per domain, as one orchestrator policy (step 4.1). See
+    ENHANCEMENT-PLAN.md step 5.5 for why these lists are kept small."""
+    c = db()
+    if c.execute("SELECT 1 FROM devices WHERE id=?", (device_id,)).fetchone() is None:
+        raise HTTPException(404, "device not found")
     prof = native_trackers.profile(body.vendor)
     if prof is None:
         raise HTTPException(400, "unknown vendor profile: %s" % body.vendor)
-    c = db()
-    d = c.execute("SELECT * FROM devices WHERE id=?", (device_id,)).fetchone()
-    if d is None:
-        raise HTTPException(404, "device not found")
-    name = device_label(d)
-    added = 0
-    try:
-        for domain in prof["domains"]:
-            rule = adguard.add_client_rule(name, domain, "block", tag=body.vendor)
-            if rule:
-                added += 1
-    except adguard.AdGuardError as e:
-        raise HTTPException(502, str(e))
-    print("filtering: applied native profile '%s' (%d domains) to device %d (%s)" % (
-        body.vendor, len(prof["domains"]), device_id, name), flush=True)
-    audit.log(c, CONSOLE_USERNAME, "filtering.apply_native_profile", target=name,
-              detail="vendor=%s domains=%d" % (body.vendor, len(prof["domains"])))
-    return {"ok": True, "vendor": body.vendor, "domains": prof["domains"]}
+    p = _create_policy(c, "native_profile", device_id, body.vendor, None,
+                       "vendor telemetry block list applied from the console")
+    return {"ok": True, "vendor": body.vendor, "domains": prof["domains"], "policy_id": p["id"]}
 
 
 @app.post("/api/devices/{device_id}/filtering/profile/remove")
 def api_device_remove_profile(device_id: int, body: NativeProfileRequest):
     c = db()
-    d = c.execute("SELECT * FROM devices WHERE id=?", (device_id,)).fetchone()
-    if d is None:
+    if c.execute("SELECT 1 FROM devices WHERE id=?", (device_id,)).fetchone() is None:
         raise HTTPException(404, "device not found")
-    name = device_label(d)
-    try:
-        removed = adguard.remove_client_rule_group(name, body.vendor)
-    except adguard.AdGuardError as e:
-        raise HTTPException(502, str(e))
-    print("filtering: removed native profile '%s' (%d rules) from device %d (%s)" % (
-        body.vendor, removed, device_id, name), flush=True)
-    audit.log(c, CONSOLE_USERNAME, "filtering.remove_native_profile", target=name,
-              detail="vendor=%s rules_removed=%d" % (body.vendor, removed))
+    removed = 0
+    for r in orchestrator.active_policies(c, "native_profile", device_id):
+        if r["target"] == body.vendor:
+            _end_policy(c, r["id"], "removed from the console")
+            removed += 1
     return {"ok": True, "vendor": body.vendor, "removed": removed}
 
 
@@ -2099,46 +2150,49 @@ def api_device_dpi_status(device_id: int):
     c = db()
     if c.execute("SELECT 1 FROM devices WHERE id=?", (device_id,)).fetchone() is None:
         raise HTTPException(404, "device not found")
-    ip_row = c.execute(
-        "SELECT ip FROM device_ips WHERE device_id=? ORDER BY last_seen DESC LIMIT 1",
-        (device_id,)).fetchone()
-    if ip_row is None:
+    ip = orchestrator.device_ip(c, device_id)
+    if ip is None:
         return {"enrolled": False, "ip": None, "expires_in_s": None}
     try:
         rows = {e["ip"]: e for e in dpi_enroll.enrolled()}
     except dpi_enroll.DpiEnrollError as e:
         raise HTTPException(502, str(e))
-    row = rows.get(ip_row["ip"])
+    row = rows.get(ip)
+    pol = orchestrator.active_policies(c, "enroll", device_id)
     return {
-        "enrolled": row is not None, "ip": ip_row["ip"],
-        "expires_in_s": row["expires_in_s"] if row else None,
+        "enrolled": row is not None, "ip": ip,
+        "expires_in_s": int(pol[0]["expires_at"] - time.time()) if pol else (row["expires_in_s"] if row else None),
+        "policy_id": pol[0]["id"] if pol else None,
     }
 
 
 @app.post("/api/devices/{device_id}/dpi")
 def api_device_dpi_set(device_id: int, body: DpiEnrollRequest):
-    """Enroll or unenroll one device for Tier 2 (HTTPS ad removal) - the
-    console's replacement for the `sudo securepi enroll/unenroll` CLI. See
-    ENHANCEMENT-PLAN.md step 5.6a."""
+    """Enroll or unenroll one device for Tier 2 (HTTPS ad removal), now as
+    an orchestrator policy (step 4.1): the enrollment follows the device
+    to a new IP after a DHCP renewal, and ends on time. It is never
+    re-added if something else turns it off - see orchestrator.py."""
     c = db()
     if c.execute("SELECT 1 FROM devices WHERE id=?", (device_id,)).fetchone() is None:
         raise HTTPException(404, "device not found")
-    ip_row = c.execute(
-        "SELECT ip FROM device_ips WHERE device_id=? ORDER BY last_seen DESC LIMIT 1",
-        (device_id,)).fetchone()
-    if ip_row is None:
-        raise HTTPException(400, "device has no known IP address to enforce against")
-    try:
-        if body.enrolled:
-            dpi_enroll.enroll(ip_row["ip"], hours=body.hours)
-        else:
-            dpi_enroll.unenroll(ip_row["ip"])
-    except dpi_enroll.DpiEnrollError as e:
-        raise HTTPException(502, str(e))
-    audit.log(c, CONSOLE_USERNAME, "device.dpi_set", target=str(device_id),
-              detail="enrolled=%s%s" % (body.enrolled, " for %dh" % body.hours if body.enrolled else ""))
-    return {"id": device_id, "enrolled": body.enrolled, "ip": ip_row["ip"],
-            "expires_in_s": body.hours * 3600 if body.enrolled else None}
+    if body.enrolled:
+        p = _create_policy(c, "enroll", device_id, None, time.time() + body.hours * 3600,
+                           "HTTPS ad removal enabled from the console for %dh" % body.hours)
+        return {"id": device_id, "enrolled": True, "ip": orchestrator.device_ip(c, device_id),
+                "expires_in_s": body.hours * 3600, "policy_id": p["id"]}
+    for r in orchestrator.active_policies(c, "enroll", device_id):
+        _end_policy(c, r["id"], "unenrolled from the console")
+    # Also clear an enrollment the orchestrator doesn't know about yet
+    # (made with the CLI in the last few seconds), so "unenroll" always
+    # means off.
+    ip = orchestrator.device_ip(c, device_id)
+    if ip:
+        try:
+            dpi_enroll.unenroll(ip)
+        except dpi_enroll.DpiEnrollError as e:
+            raise HTTPException(502, str(e))
+    audit.log(c, CONSOLE_USERNAME, "device.dpi_set", target=str(device_id), detail="enrolled=False")
+    return {"id": device_id, "enrolled": False, "ip": ip, "expires_in_s": None}
 
 
 @app.get("/api/devices/{device_id}/blocked")
@@ -2170,50 +2224,43 @@ def api_device_blocked(device_id: int, limit: int = Query(25)):
 
 @app.get("/api/devices/{device_id}/filtering/rules")
 def api_device_filtering_rules(device_id: int):
-    """Allow/block rules scoped to just this device - see adguard.py's
-    add_client_rule and device_scoped_rules."""
+    """Allow/block rules for this device: the orchestrator's policies
+    (step 4.1), plus any older rule still sitting in AdGuard that names
+    this device."""
     c = db()
     d = c.execute("SELECT * FROM devices WHERE id=?", (device_id,)).fetchone()
     if d is None:
         raise HTTPException(404, "device not found")
-    try:
-        adguard.sweep_expired_client_rules()
-        rules = adguard.device_scoped_rules(device_label(d))
-    except adguard.AdGuardError as e:
-        raise HTTPException(502, str(e))
-    return {"rules": rules}
+    now = time.time()
+    rows = c.execute("SELECT * FROM policies WHERE status='active' AND kind IN ('allow_domain','block_domain')"
+                     " AND device_id=? ORDER BY id DESC", (device_id,)).fetchall()
+    return {"rules": [
+        {"policy_id": r["id"], "domain": r["target"], "action": "allow" if r["kind"] == "allow_domain" else "block",
+         "scope": "device", "expires_at": r["expires_at"], "reason": r["reason"],
+         "remaining_s": int(r["expires_at"] - now) if r["expires_at"] else None}
+        for r in rows
+    ]}
 
 
 @app.post("/api/devices/{device_id}/filtering/allow")
 def api_device_allow_domain(device_id: int, body: DeviceRuleRequest):
     """One-click 'unbreak this site for this device' - a per-device allow
-    rule, optionally temporary, always with a reason recorded. See
-    ENHANCEMENT-PLAN.md step 5.2."""
+    rule, optionally temporary, always with a reason recorded (step 5.2),
+    applied through the orchestrator since step 4.1. Before that, a
+    temporary allow carried its expiry as a "# ..." comment on the rule
+    line, which AdGuard does not ignore: the rule never matched (found
+    and fixed in Stage 4 - see adguard.py)."""
     c = db()
-    d = c.execute("SELECT * FROM devices WHERE id=?", (device_id,)).fetchone()
-    if d is None:
+    if c.execute("SELECT 1 FROM devices WHERE id=?", (device_id,)).fetchone() is None:
         raise HTTPException(404, "device not found")
-    domain = body.domain.strip().lstrip("*.").lower()
-    if not domain:
-        raise HTTPException(400, "domain is required")
-    if not body.reason.strip():
-        raise HTTPException(400, "a reason is required")
+    if not body.hours or not 1 <= body.hours <= 720:
+        raise HTTPException(400, "hours must be from 1 to 720")
     expires_at = (time.time() + body.hours * 3600) if body.temporary else None
-    try:
-        adguard.sweep_expired_client_rules()
-        rule = adguard.add_client_rule(device_label(d), domain, "allow", expires_at)
-    except adguard.AdGuardError as e:
-        raise HTTPException(502, str(e))
-    # The real audit_log table (ENHANCEMENT-PLAN.md step 1.5) was built
-    # as step 6.3's own prerequisite - see app/audit.py. print() stays
-    # too: it's still useful to someone watching `journalctl -f` live,
-    # which querying a table isn't.
-    print("filtering: allowed %s for device %d (%s) - %s%s" % (
-        domain, device_id, device_label(d), body.reason,
-        " [temporary, %dh]" % body.hours if body.temporary else ""), flush=True)
-    audit.log(c, CONSOLE_USERNAME, "filtering.allow", target="device %d: %s" % (device_id, domain),
-              detail=body.reason + (" [temporary, %dh]" % body.hours if body.temporary else ""))
-    return {"ok": True, "rule": rule, "domain": domain, "expires_at": expires_at}
+    p = _create_policy(c, "allow_domain", device_id, body.domain, expires_at,
+                       body.reason + (" [temporary, %dh]" % body.hours if body.temporary else ""))
+    print("filtering: allowed %s for device %d - %s%s" % (
+        p["target"], device_id, body.reason, " [temporary, %dh]" % body.hours if body.temporary else ""), flush=True)
+    return {"ok": True, "policy_id": p["id"], "domain": p["target"], "expires_at": expires_at}
 
 
 @app.post("/api/devices/{device_id}/filtering/block")
@@ -2221,23 +2268,11 @@ def api_device_block_domain(device_id: int, body: DeviceBlockRequest):
     """The reverse of allow above: block one domain for one device only,
     without touching the network-wide blocklists."""
     c = db()
-    d = c.execute("SELECT * FROM devices WHERE id=?", (device_id,)).fetchone()
-    if d is None:
+    if c.execute("SELECT 1 FROM devices WHERE id=?", (device_id,)).fetchone() is None:
         raise HTTPException(404, "device not found")
-    domain = body.domain.strip().lstrip("*.").lower()
-    if not domain:
-        raise HTTPException(400, "domain is required")
-    if not body.reason.strip():
-        raise HTTPException(400, "a reason is required")
-    try:
-        rule = adguard.add_client_rule(device_label(d), domain, "block")
-    except adguard.AdGuardError as e:
-        raise HTTPException(502, str(e))
-    print("filtering: blocked %s for device %d (%s) - %s" % (
-        domain, device_id, device_label(d), body.reason), flush=True)
-    audit.log(c, CONSOLE_USERNAME, "filtering.block", target="device %d: %s" % (device_id, domain),
-              detail=body.reason)
-    return {"ok": True, "rule": rule, "domain": domain}
+    p = _create_policy(c, "block_domain", device_id, body.domain, None, body.reason)
+    print("filtering: blocked %s for device %d - %s" % (p["target"], device_id, body.reason), flush=True)
+    return {"ok": True, "policy_id": p["id"], "domain": p["target"]}
 
 
 @app.get("/api/devices/{device_id}/privacy")
@@ -2400,6 +2435,9 @@ def api_settings_password(body: PasswordChange):
 
 @app.post("/api/settings/{key}")
 def api_settings_set(key: str, body: SettingUpdate):
+    spec = settings.SETTINGS_SCHEMA.get(key)
+    if spec and spec.get("dedicated"):
+        raise HTTPException(400, "%s has its own control in the console - change it there" % key)
     if not body.reason.strip():
         raise HTTPException(400, "a reason is required")
     c = db()
@@ -2429,31 +2467,27 @@ def api_settings_reset(key: str):
 
 @app.get("/api/settings/retention")
 def api_settings_retention():
-    """Honest placeholder: Stage 1's F3 ("Retention + hourly rollups")
-    hasn't been built. Nothing in this codebase currently deletes a raw
-    event or an old device_hourly row - the database only ever grows.
-    Surfaced as a real API response rather than a Settings control that
-    would silently do nothing, so the console never implies a retention
-    policy is enforced when none is."""
-    return {
-        "implemented": False,
-        "note": "No retention policy is enforced yet - raw events and hourly rollups are kept "
-                "indefinitely. This is Stage 1's F3, not yet built.",
-    }
+    """What app/retention.py (step 1.3) actually keeps, read from its own
+    constants so this can't drift from the code. This used to be a
+    "not yet implemented" placeholder written before step 1.3 existed."""
+    import retention
+    c = db()
+    last = c.execute("SELECT last_run_ts FROM signal_state WHERE signal_type='retention'").fetchone()
+    rows = [{"what": "%s events" % k.replace("_", " "), "days": v} for k, v in sorted(retention.EVENT_RETENTION_DAYS.items())]
+    rows.append({"what": "all other events", "days": retention.DEFAULT_EVENT_RETENTION_DAYS})
+    rows.append({"what": "hourly device rollups", "days": retention.DEVICE_HOURLY_RETENTION_DAYS})
+    rows.append({"what": "incidents", "days": retention.INCIDENT_RETENTION_DAYS})
+    rows.append({"what": "audit log", "days": None})
+    return {"implemented": True, "rows": rows,
+            "last_run": time.strftime("%Y-%m-%d %H:%M", time.localtime(last[0])) if last else None}
 
 
 @app.get("/api/settings/channels")
 def api_settings_channels():
-    """Same honesty as retention above: Stage 4's R3 (notification
-    channels - ntfy/Telegram/email/webhook) hasn't been built. Every
-    "notify" this project currently does is a print() into the systemd
-    journal."""
-    return {
-        "implemented": False,
-        "channels": [],
-        "note": "No notification channels are configured yet - incidents are visible in the "
-                "console and the systemd journal only. This is Stage 4's R3, not yet built.",
-    }
+    """Kept for older front-end code: notification channels are real since
+    step 4.5 - see /api/notifications/channels."""
+    c = db()
+    return {"implemented": True, "channels": notify.list_channels(c)}
 
 
 @app.get("/api/audit")
@@ -2479,41 +2513,588 @@ def api_attributions():
 
 @app.get("/api/devices/{device_id}/quarantine")
 def api_device_quarantine_status(device_id: int):
+    """Quarantine state for one device: what the console wants (its active
+    quarantine policies) AND what the firewall actually holds right now,
+    read live - the same "never show a cached answer" rule this endpoint
+    always followed, now checked against the MAC-keyed set (step 4.2)."""
     c = db()
     if c.execute("SELECT 1 FROM devices WHERE id=?", (device_id,)).fetchone() is None:
         raise HTTPException(404, "device not found")
-    ip_row = c.execute(
-        "SELECT ip FROM device_ips WHERE device_id=? ORDER BY last_seen DESC LIMIT 1",
-        (device_id,)).fetchone()
-    if ip_row is None:
-        return {"quarantined": False, "ip": None}
+    now = time.time()
+    policies = [_policy_view(c, r, now) for r in orchestrator.active_policies(c, "quarantine", device_id)]
+    macs = orchestrator.device_macs(c, device_id)
     try:
-        quarantined = quarantine.is_quarantined(ip_row["ip"])
-    except quarantine.QuarantineError as e:
+        live = firewall_sets.quarantined_macs()
+    except firewall_sets.FirewallSetError as e:
         raise HTTPException(502, str(e))
-    return {"quarantined": quarantined, "ip": ip_row["ip"]}
+    enforced = [m for m in macs if m in live]
+    return {
+        "quarantined": bool(policies), "enforced": bool(enforced) and len(enforced) == len(macs),
+        "macs": macs, "ip": orchestrator.device_ip(c, device_id), "policies": policies,
+        "trust_based": any(p["source"] == "trust" for p in policies),
+        "expires_in_s": min((p["remaining_s"] for p in policies if p["remaining_s"] is not None), default=None)
+                        if all(p["remaining_s"] is not None for p in policies) and policies else None,
+    }
 
 
 @app.post("/api/devices/{device_id}/quarantine")
 def api_device_quarantine_set(device_id: int, body: QuarantineUpdate):
+    """Quarantine (optionally for a fixed time) or release a device, through
+    the policy orchestrator (step 4.1/4.2). Releasing ends every quarantine
+    policy a person or auto-response created; a trust-based restriction is
+    ended by approving the device instead, so it's left in place and the
+    response says so."""
     c = db()
     if c.execute("SELECT 1 FROM devices WHERE id=?", (device_id,)).fetchone() is None:
         raise HTTPException(404, "device not found")
-    ip_row = c.execute(
-        "SELECT ip FROM device_ips WHERE device_id=? ORDER BY last_seen DESC LIMIT 1",
-        (device_id,)).fetchone()
-    if ip_row is None:
-        raise HTTPException(400, "device has no known IP address to enforce against")
+    now = time.time()
+    if body.quarantined:
+        expires = now + body.minutes * 60 if body.minutes else None
+        p = _create_policy(c, "quarantine", device_id, None, expires, body.reason)
+        print("quarantine: device %d quarantined%s - %s" % (
+            device_id, " for %d min" % body.minutes if body.minutes else "", body.reason), flush=True)
+        return {"id": device_id, "quarantined": True, "policy": p}
+    ended = 0
+    for r in orchestrator.active_policies(c, "quarantine", device_id):
+        if r["source"] == "trust":
+            continue
+        _end_policy(c, r["id"], body.reason if body.reason != "quarantined from the console" else "released")
+        ended += 1
+    trust_left = any(r["source"] == "trust" for r in orchestrator.active_policies(c, "quarantine", device_id))
+    return {"id": device_id, "quarantined": trust_left, "released": ended, "trust_based": trust_left}
+
+
+# ------------------------------------------------ policies (Stage 4) --
+
+KIND_LABELS = {
+    "quarantine": "Quarantine", "block_ip": "Block IP", "block_domain": "Block domain",
+    "allow_domain": "Allow domain", "profile": "Filtering profile", "pause": "Pause filtering",
+    "enroll": "HTTPS inspection", "native_profile": "Vendor telemetry block",
+}
+
+
+def _source_label(source):
+    if source == "console":
+        return "Console"
+    if source == "trust":
+        return "Device trust"
+    if source == "adopted":
+        return "Found in place"
+    if source == "migrated":
+        return "Migrated rule"
+    if source.startswith("incident:"):
+        return "Incident #%s" % source.split(":", 1)[1]
+    if source.startswith("auto:campaign:"):
+        return "Auto-response (campaign #%s)" % source.rsplit(":", 1)[1]
+    return source
+
+
+def _policy_view(c, row, now):
+    p = orchestrator.policy_dict(row, now)
+    p["kind_label"] = KIND_LABELS.get(p["kind"], p["kind"])
+    p["source_label"] = _source_label(p["source"])
+    if p["device_id"] is not None:
+        d = c.execute("SELECT * FROM devices WHERE id=?", (p["device_id"],)).fetchone()
+        p["device_name"] = device_label(d) if d else "device %d" % p["device_id"]
+    else:
+        p["device_name"] = None
+    if p["kind"] == "profile":
+        prof = profiles.BUILTIN_PROFILES.get(p["target"])
+        p["target_label"] = prof["label"] if prof else p["target"]
+    elif p["kind"] == "native_profile":
+        prof = native_trackers.profile(p["target"])
+        p["target_label"] = prof["label"] if prof else p["target"]
+    else:
+        p["target_label"] = p["target"]
+    p["verified_age_s"] = int(now - p["last_verified_at"]) if p["last_verified_at"] else None
+    p["created"] = time.strftime("%Y-%m-%d %H:%M", time.localtime(p["created_at"]))
+    if p["ended_at"]:
+        p["ended"] = time.strftime("%Y-%m-%d %H:%M", time.localtime(p["ended_at"]))
+    return p
+
+
+def _create_policy(c, kind, device_id, target, expires_at, reason, source="console"):
+    """orchestrator.create_policy with its errors mapped to HTTP ones. The
+    orchestrator writes the audit row itself (policy.create, or
+    policy.rolled_back if the change didn't take)."""
     try:
-        if body.quarantined:
-            quarantine.quarantine(ip_row["ip"])
-        else:
-            quarantine.release(ip_row["ip"])
-    except quarantine.QuarantineError as e:
+        return _policy_view(c, orchestrator._row(c, orchestrator.create_policy(
+            c, kind, device_id, target, expires_at, reason, actor=CONSOLE_USERNAME, source=source)["id"]),
+            time.time())
+    except orchestrator.PolicyError as e:
+        raise HTTPException(400, str(e))
+    except orchestrator.PolicyApplyError as e:
         raise HTTPException(502, str(e))
-    audit.log(c, CONSOLE_USERNAME, "device.quarantine_set", target=str(device_id),
-              detail="quarantined=%s" % body.quarantined)
-    return {"id": device_id, "quarantined": body.quarantined, "ip": ip_row["ip"]}
+    except orchestrator.OrchestratorBusy as e:
+        raise HTTPException(503, str(e))
+
+
+def _end_policy(c, policy_id, reason=""):
+    try:
+        return orchestrator.end_policy(c, policy_id, actor=CONSOLE_USERNAME, reason=reason)
+    except orchestrator.PolicyError as e:
+        raise HTTPException(400, str(e))
+    except orchestrator.PolicyApplyError as e:
+        raise HTTPException(502, str(e))
+    except orchestrator.OrchestratorBusy as e:
+        raise HTTPException(503, str(e))
+
+
+@app.get("/api/policies")
+def api_policies(status: str = Query("active"), device_id: int = Query(0), limit: int = Query(200)):
+    """Active policies, or the most recent ended ones (status=ended)."""
+    c = db()
+    now = time.time()
+    sql = "SELECT * FROM policies"
+    where, args = [], []
+    if status == "active":
+        where.append("status='active'")
+    elif status == "ended":
+        where.append("status != 'active'")
+    if device_id:
+        where.append("device_id=?")
+        args.append(device_id)
+    if where:
+        sql += " WHERE " + " AND ".join(where)
+    sql += " ORDER BY %s DESC LIMIT ?" % ("id" if status == "active" else "COALESCE(ended_at, created_at)")
+    args.append(min(limit, 500))
+    return {"policies": [_policy_view(c, r, now) for r in c.execute(sql, args).fetchall()]}
+
+
+@app.post("/api/policies")
+def api_policy_create(body: PolicyCreate):
+    """Create any kind of policy - the Response page and the incident
+    page's response actions use this directly."""
+    c = db()
+    source = "console"
+    if body.incident_id is not None:
+        if c.execute("SELECT 1 FROM incidents WHERE id=?", (body.incident_id,)).fetchone() is None:
+            raise HTTPException(404, "incident not found")
+        source = "incident:%d" % body.incident_id
+    expires = time.time() + body.minutes * 60 if body.minutes else None
+    p = _create_policy(c, body.kind, body.device_id, body.target, expires, body.reason, source)
+    if body.incident_id is not None:
+        # Also on the incident's own timeline, next to its status changes.
+        audit.log(c, CONSOLE_USERNAME, "incident.response", target=str(body.incident_id),
+                  detail="%s %s (policy #%d)" % (p["kind_label"], p["target_label"] or p["device_name"] or "", p["id"]))
+    return {"policy": p}
+
+
+@app.post("/api/policies/{policy_id}/end")
+def api_policy_end(policy_id: int, body: PolicyEnd):
+    c = db()
+    row = orchestrator._row(c, policy_id)
+    if row is None:
+        raise HTTPException(404, "policy not found")
+    if row["source"] == "trust":
+        raise HTTPException(400, "this restriction comes from the device's trust state - approve the device to lift it")
+    _end_policy(c, policy_id, body.reason)
+    return {"policy": _policy_view(c, orchestrator._row(c, policy_id), time.time())}
+
+
+@app.post("/api/policies/{policy_id}/extend")
+def api_policy_extend(policy_id: int, body: PolicyExtend):
+    """Replace a timed policy with the same one lasting `minutes` from now."""
+    c = db()
+    row = orchestrator._row(c, policy_id)
+    if row is None or row["status"] != "active":
+        raise HTTPException(404, "no active policy with that id")
+    if row["source"] == "trust":
+        raise HTTPException(400, "a trust-based restriction has no end time to extend")
+    p = _create_policy(c, row["kind"], row["device_id"], row["target"], time.time() + body.minutes * 60,
+                       "%s (extended from policy #%d)" % (body.reason, policy_id), row["source"])
+    return {"policy": p}
+
+
+@app.get("/api/orchestrator/status")
+def api_orchestrator_status():
+    """Orchestrator health, counts, and its recent activity (drift fixes,
+    rollbacks, expiries) for the Response page."""
+    c = db()
+    now = time.time()
+    st = orchestrator.status(c, now)
+    counts = {r["kind"]: r["n"] for r in c.execute(
+        "SELECT kind, count(*) AS n FROM policies WHERE status='active' GROUP BY kind")}
+    activity = [
+        {"ts": time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(r["ts"])), "age": _age(now - r["ts"]),
+         "actor": r["actor"], "action": r["action"], "target": r["target"], "detail": r["detail"]}
+        for r in c.execute("SELECT * FROM audit_log WHERE action LIKE 'policy.%' ORDER BY id DESC LIMIT 40")
+    ]
+    drift_24h = c.execute("SELECT count(*) FROM audit_log WHERE action='policy.drift_corrected' AND ts > ?",
+                          (now - 86400,)).fetchone()[0]
+    rollbacks_24h = c.execute("SELECT count(*) FROM audit_log WHERE action='policy.rolled_back' AND ts > ?",
+                              (now - 86400,)).fetchone()[0]
+    return {"status": st, "counts": counts, "total_active": sum(counts.values()),
+            "drift_24h": drift_24h, "rollbacks_24h": rollbacks_24h, "activity": activity}
+
+
+@app.post("/api/orchestrator/reconcile")
+def api_orchestrator_reconcile():
+    """"Verify now": run one orchestrator cycle straight away instead of
+    waiting for the engine's next one."""
+    c = db()
+    try:
+        summary = orchestrator.reconcile(c)
+    except orchestrator.OrchestratorBusy as e:
+        raise HTTPException(503, str(e))
+    audit.log(c, CONSOLE_USERNAME, "orchestrator.verify", target="orchestrator",
+              detail="drift fixed: %d, errors: %d" % (len(summary["drift"]), len(summary["errors"])))
+    return {"summary": summary, "status": orchestrator.status(c)}
+
+
+# -------------------------------------------------- device trust (4.4) --
+
+TRUST_STATES = ("approved", "unknown", "blocked")
+
+
+@app.post("/api/devices/{device_id}/trust")
+def api_device_trust(device_id: int, body: TrustUpdate):
+    c = db()
+    d = c.execute("SELECT * FROM devices WHERE id=?", (device_id,)).fetchone()
+    if d is None:
+        raise HTTPException(404, "device not found")
+    if body.trust not in TRUST_STATES:
+        raise HTTPException(400, "trust must be one of: %s" % ", ".join(TRUST_STATES))
+    if body.trust == "blocked" and not orchestrator.device_macs(c, device_id):
+        raise HTTPException(400, "this device has no known MAC address, so it can't be blocked at the firewall")
+    before = d["trust"]
+    c.execute("UPDATE devices SET trust=? WHERE id=?", (body.trust, device_id))
+    c.commit()
+    audit.log(c, CONSOLE_USERNAME, "device.trust_set", target=str(device_id),
+              detail="%s -> %s%s" % (before, body.trust, (" - " + body.reason) if body.reason else ""))
+    try:
+        orchestrator.reconcile(c)
+    except orchestrator.OrchestratorBusy:
+        pass  # the engine's next cycle applies it
+    return {"id": device_id, "trust": body.trust, "quarantine": api_device_quarantine_status(device_id)}
+
+
+@app.get("/api/trust")
+def api_trust_summary():
+    c = db()
+    now = time.time()
+    counts = {r["trust"]: r["n"] for r in c.execute("SELECT trust, count(*) AS n FROM devices GROUP BY trust")}
+    unknown = [
+        {"id": r["id"], "name": device_label(r), "hostname": r["hostname"],
+         "first_seen_age": _age(now - r["first_seen"]), "last_seen_age": _age(now - r["last_seen"]),
+         "restricted": c.execute("SELECT 1 FROM policies WHERE status='active' AND kind='quarantine'"
+                                 " AND source='trust' AND device_id=?", (r["id"],)).fetchone() is not None}
+        for r in c.execute("SELECT * FROM devices WHERE trust='unknown' ORDER BY last_seen DESC LIMIT 50")
+    ]
+    return {"restrict_unknown": settings.get(c, "restrict_unknown_devices"),
+            "counts": {t: counts.get(t, 0) for t in TRUST_STATES}, "unknown": unknown}
+
+
+@app.post("/api/trust/restrict")
+def api_trust_restrict(body: RestrictUnknownUpdate):
+    """Turn "restrict unknown devices" on or off (step 4.4). The generic
+    settings endpoint refuses this key on purpose: switching it on goes
+    through here so every device already on the network can be approved
+    first, in the same step. A restricted device can always still reach
+    the gateway itself (the quarantine rule only matches forwarded traffic),
+    so approving it from the device that needs approving works too."""
+    c = db()
+    approved = 0
+    if body.enabled and body.approve_existing:
+        approved = c.execute("UPDATE devices SET trust='approved' WHERE trust='unknown'").rowcount
+        c.commit()
+    settings.set_value(c, "restrict_unknown_devices", body.enabled)
+    audit.log(c, CONSOLE_USERNAME, "trust.restrict_unknown", target="restrict_unknown_devices",
+              detail="enabled=%s, approved %d existing device(s) first" % (body.enabled, approved))
+    try:
+        orchestrator.reconcile(c)
+    except orchestrator.OrchestratorBusy:
+        pass
+    return {"enabled": body.enabled, "approved": approved, "trust": api_trust_summary()}
+
+
+# -------------------------------------------- profiles and pause (4.3) --
+
+def _catalog_or_empty():
+    try:
+        return adguard.service_catalog()
+    except adguard.AdGuardError:
+        return {}
+
+
+@app.get("/api/profiles")
+def api_profiles():
+    c = db()
+    catalog = _catalog_or_empty()
+    now_local = time.localtime()
+    counts = {r["target"]: r["n"] for r in c.execute(
+        "SELECT target, count(*) AS n FROM policies WHERE status='active' AND kind='profile' GROUP BY target")}
+    out = []
+    for p in profiles.all_profiles(c):
+        sched = p.get("schedule")
+        out.append({
+            "key": p["key"], "label": p["label"], "description": p["description"],
+            "filtering": p["filtering"], "safe_search": p["safe_search"],
+            "blocked_services": p["blocked_services"], "schedule": sched,
+            "schedule_label": profiles.describe_schedule(sched),
+            "schedule_active": profiles.in_window(sched, now_local) if sched else False,
+            "native_trackers": p["native_trackers"], "customized": p["customized"],
+            "editable": p["key"] not in ("standard", "unrestricted"),
+            "blocked_count": len(profiles.expand_services(p["blocked_services"], catalog)) if catalog else None,
+            "devices": counts.get(p["key"], 0),
+        })
+    groups = {}
+    for sid, gid in sorted(catalog.items()):
+        groups.setdefault(gid or "other", []).append(sid)
+    return {"profiles": out, "service_groups": [{"id": g, "services": v} for g, v in sorted(groups.items())]}
+
+
+@app.post("/api/profiles/{key}")
+def api_profile_edit(key: str, body: ProfileEdit):
+    c = db()
+    if key == "standard":
+        raise HTTPException(400, "Standard means the network's own defaults, so it isn't editable - "
+                                 "use another profile for devices that need more")
+    edit = {}
+    if body.safe_search is not None:
+        edit["safe_search"] = body.safe_search
+    if body.blocked_services is not None:
+        edit["blocked_services"] = body.blocked_services
+    if body.clear_schedule:
+        edit["schedule"] = None
+    elif body.schedule is not None:
+        edit["schedule"] = body.schedule
+    try:
+        prof = profiles.save_edit(c, key, edit)
+    except profiles.ProfileError as e:
+        raise HTTPException(400, str(e))
+    audit.log(c, CONSOLE_USERNAME, "profile.edit", target=key,
+              detail=json.dumps(edit, sort_keys=True) + ((" - " + body.reason) if body.reason else ""))
+    try:
+        orchestrator.reconcile(c)  # devices on this profile pick the change up now
+    except orchestrator.OrchestratorBusy:
+        pass
+    return {"profile": prof}
+
+
+@app.post("/api/profiles/{key}/reset")
+def api_profile_reset(key: str):
+    c = db()
+    try:
+        profiles.reset_profile(c, key)
+    except profiles.ProfileError as e:
+        raise HTTPException(400, str(e))
+    audit.log(c, CONSOLE_USERNAME, "profile.reset", target=key, detail="back to built-in defaults")
+    try:
+        orchestrator.reconcile(c)
+    except orchestrator.OrchestratorBusy:
+        pass
+    return {"profile": profiles.get_profile(c, key)}
+
+
+def _device_filtering_view(c, device_id, now):
+    prof_p = orchestrator.active_policies(c, "profile", device_id)
+    pause_p = orchestrator.active_policies(c, "pause", device_id)
+    key = prof_p[0]["target"] if prof_p else profiles.DEFAULT_PROFILE
+    prof = profiles.get_profile(c, key)
+    return {
+        "profile": key, "profile_label": prof["label"], "profile_policy_id": prof_p[0]["id"] if prof_p else None,
+        "schedule_label": profiles.describe_schedule(prof.get("schedule")),
+        "schedule_active": profiles.in_window(prof.get("schedule"), time.localtime(now)),
+        "paused": bool(pause_p),
+        "pause_policy_id": pause_p[0]["id"] if pause_p else None,
+        "pause_remaining_s": int(pause_p[0]["expires_at"] - now) if pause_p else None,
+    }
+
+
+@app.post("/api/devices/{device_id}/profile")
+def api_device_profile_set(device_id: int, body: ProfileAssign):
+    """Give a device a filtering profile. Standard is "no profile policy":
+    choosing it ends the device's current profile, which puts its AdGuard
+    settings back to the network defaults."""
+    c = db()
+    if c.execute("SELECT 1 FROM devices WHERE id=?", (device_id,)).fetchone() is None:
+        raise HTTPException(404, "device not found")
+    if body.profile not in profiles.BUILTIN_PROFILES:
+        raise HTTPException(400, "unknown profile: %s" % body.profile)
+    if body.profile == profiles.DEFAULT_PROFILE:
+        for r in orchestrator.active_policies(c, "profile", device_id):
+            _end_policy(c, r["id"], "set back to Standard")
+    else:
+        _create_policy(c, "profile", device_id, body.profile, None, body.reason)
+    return _device_filtering_view(c, device_id, time.time())
+
+
+@app.post("/api/devices/{device_id}/pause")
+def api_device_pause(device_id: int, body: PauseRequest):
+    c = db()
+    if c.execute("SELECT 1 FROM devices WHERE id=?", (device_id,)).fetchone() is None:
+        raise HTTPException(404, "device not found")
+    _create_policy(c, "pause", device_id, None, time.time() + body.minutes * 60, body.reason)
+    return _device_filtering_view(c, device_id, time.time())
+
+
+@app.post("/api/devices/{device_id}/resume")
+def api_device_resume(device_id: int):
+    c = db()
+    for r in orchestrator.active_policies(c, "pause", device_id):
+        _end_policy(c, r["id"], "resumed early")
+    return _device_filtering_view(c, device_id, time.time())
+
+
+@app.get("/api/filtering/pause")
+def api_network_pause_status():
+    c = db()
+    now = time.time()
+    rows = [r for r in orchestrator.active_policies(c, "pause") if r["device_id"] is None]
+    try:
+        enabled, remaining_ms = adguard.protection_status()
+    except adguard.AdGuardError:
+        enabled, remaining_ms = None, None
+    return {"paused": bool(rows), "policy_id": rows[0]["id"] if rows else None,
+            "remaining_s": int(rows[0]["expires_at"] - now) if rows else None,
+            "adguard_protection_enabled": enabled}
+
+
+@app.post("/api/filtering/pause")
+def api_network_pause(body: PauseRequest):
+    """Pause DNS filtering for every device (step 4.3). AdGuard's own timer
+    also ends the pause, so it resumes on time even if the orchestrator
+    isn't running."""
+    c = db()
+    _create_policy(c, "pause", None, None, time.time() + body.minutes * 60, body.reason)
+    return api_network_pause_status()
+
+
+@app.post("/api/filtering/resume")
+def api_network_resume():
+    c = db()
+    for r in orchestrator.active_policies(c, "pause"):
+        if r["device_id"] is None:
+            _end_policy(c, r["id"], "resumed early")
+    return api_network_pause_status()
+
+
+# ------------------------------------------------ incident response (4.2) --
+
+def _incident_response_options(c, incident_id):
+    """What an operator could block, from an incident's own evidence: the
+    destination domains and IPs its linked events point at, most frequent
+    first, with any policy already covering each one."""
+    inc = c.execute("SELECT * FROM incidents WHERE id=?", (incident_id,)).fetchone()
+    if inc is None:
+        return None
+    domains = c.execute(
+        "SELECT lower(COALESCE(e.dns_rrname, e.tls_sni)) AS d, count(*) AS n FROM incident_events ie"
+        " JOIN events e ON e.id = ie.event_id WHERE ie.incident_id=? AND COALESCE(e.dns_rrname, e.tls_sni)"
+        " IS NOT NULL GROUP BY d ORDER BY n DESC LIMIT 5", (incident_id,)).fetchall()
+    ips = c.execute(
+        "SELECT e.dest_ip AS ip, count(*) AS n FROM incident_events ie JOIN events e ON e.id = ie.event_id"
+        " WHERE ie.incident_id=? AND e.dest_ip IS NOT NULL GROUP BY e.dest_ip ORDER BY n DESC LIMIT 8",
+        (incident_id,)).fetchall()
+    out_domains, out_ips = [], []
+    for r in domains:
+        try:
+            d = orchestrator.normalize_domain(r["d"])
+        except orchestrator.PolicyError:
+            continue
+        covered = c.execute("SELECT id, device_id FROM policies WHERE status='active' AND kind='block_domain'"
+                            " AND target=? AND (device_id IS NULL OR device_id IS ?)",
+                            (d, inc["device_id"])).fetchone()
+        out_domains.append({"value": d, "events": r["n"], "blocked_by": covered["id"] if covered else None,
+                            "scope": ("network" if covered and covered["device_id"] is None else "device")
+                            if covered else None})
+    for r in ips:
+        try:
+            ip = orchestrator.normalize_block_ip(r["ip"])
+        except orchestrator.PolicyError:
+            continue  # a LAN address, e.g. the victim of a scan - not something to block
+        covered = c.execute("SELECT id FROM policies WHERE status='active' AND kind='block_ip' AND target=?",
+                            (ip,)).fetchone()
+        out_ips.append({"value": ip, "events": r["n"], "blocked_by": covered["id"] if covered else None})
+    return {"device_id": inc["device_id"], "domains": out_domains, "ips": out_ips}
+
+
+@app.get("/api/incidents/{incident_id}/response")
+def api_incident_response(incident_id: int):
+    c = db()
+    opts = _incident_response_options(c, incident_id)
+    if opts is None:
+        raise HTTPException(404, "incident not found")
+    now = time.time()
+    opts["policies"] = [_policy_view(c, r, now) for r in c.execute(
+        "SELECT * FROM policies WHERE source=? ORDER BY id DESC", ("incident:%d" % incident_id,))]
+    if opts["device_id"] is not None:
+        d = c.execute("SELECT * FROM devices WHERE id=?", (opts["device_id"],)).fetchone()
+        opts["device_name"] = device_label(d) if d else None
+        opts["device_trust"] = d["trust"] if d else None
+        opts["device_quarantined"] = bool(orchestrator.active_policies(c, "quarantine", opts["device_id"]))
+        opts["device_has_mac"] = bool(orchestrator.device_macs(c, opts["device_id"]))
+    return opts
+
+
+# ----------------------------------------------------- notifications (4.5) --
+
+@app.get("/api/notifications/channels")
+def api_notification_channels():
+    c = db()
+    return {"channels": notify.list_channels(c), "kinds": list(notify.KINDS)}
+
+
+@app.post("/api/notifications/channels")
+def api_notification_channel_add(body: ChannelCreate):
+    c = db()
+    try:
+        cid = notify.add_channel(c, body.kind, body.name, body.config, body.min_severity)
+    except notify.NotifyError as e:
+        raise HTTPException(400, str(e))
+    # The channel's settings are deliberately NOT in the audit detail -
+    # they include its secrets.
+    audit.log(c, CONSOLE_USERNAME, "notify.channel_add", target="channel:%d" % cid,
+              detail="%s '%s', min severity %s" % (body.kind, body.name, body.min_severity))
+    return {"id": cid, "channels": notify.list_channels(c)}
+
+
+@app.post("/api/notifications/channels/{channel_id}")
+def api_notification_channel_update(channel_id: int, body: ChannelUpdate):
+    c = db()
+    try:
+        notify.update_channel(c, channel_id, enabled=body.enabled, min_severity=body.min_severity)
+    except notify.NotifyError as e:
+        raise HTTPException(400, str(e))
+    audit.log(c, CONSOLE_USERNAME, "notify.channel_update", target="channel:%d" % channel_id,
+              detail="enabled=%s min_severity=%s" % (body.enabled, body.min_severity))
+    return {"channels": notify.list_channels(c)}
+
+
+@app.post("/api/notifications/channels/{channel_id}/remove")
+def api_notification_channel_remove(channel_id: int):
+    c = db()
+    try:
+        notify.remove_channel(c, channel_id)
+    except notify.NotifyError as e:
+        raise HTTPException(404, str(e))
+    audit.log(c, CONSOLE_USERNAME, "notify.channel_remove", target="channel:%d" % channel_id)
+    return {"channels": notify.list_channels(c)}
+
+
+@app.post("/api/notifications/channels/{channel_id}/test")
+def api_notification_channel_test(channel_id: int):
+    c = db()
+    try:
+        notify.send_test(c, channel_id)
+    except notify.NotifyError as e:
+        audit.log(c, CONSOLE_USERNAME, "notify.test", target="channel:%d" % channel_id, detail="failed: %s" % e)
+        raise HTTPException(502, str(e))
+    audit.log(c, CONSOLE_USERNAME, "notify.test", target="channel:%d" % channel_id, detail="sent")
+    return {"ok": True, "channels": notify.list_channels(c)}
+
+
+@app.get("/api/notifications/recent")
+def api_notifications_recent(limit: int = Query(40)):
+    c = db()
+    now = time.time()
+    return {"notifications": [
+        {"id": r["id"], "channel": r["channel_name"], "kind": r["channel_kind"], "incident_id": r["incident_id"],
+         "status": r["status"], "attempts": r["attempts"], "title": r["title"], "detail": r["detail"],
+         "age": _age(now - r["ts"]), "ts": time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(r["ts"]))}
+        for r in notify.recent(c, limit)
+    ], "quiet_now": notify.in_quiet_hours(c, now)}
 
 
 # ---------------------------------------------------------------- pages --
@@ -2540,6 +3121,12 @@ def page_incidents(request: Request):
 def page_filtering(request: Request):
     return templates.TemplateResponse("filtering.html", {
         "request": request, "active": "filtering", "title": "Filtering"})
+
+
+@app.get("/response", response_class=HTMLResponse)
+def page_response(request: Request):
+    return templates.TemplateResponse("response.html", {
+        "request": request, "active": "response", "title": "Response"})
 
 
 @app.get("/settings", response_class=HTMLResponse)
@@ -2719,6 +3306,7 @@ def page_device_detail(request: Request, device_id: int):
             "down_h": humanize_bytes(agg["down"]), "up_h": humanize_bytes(agg["up"]),
             "dns": agg["dns"], "blocked": agg["blocked"],
             "tls": agg["tls"], "events": agg["events"],
+            "trust": d["trust"],
         },
         "macs": macs, "ips": ips, "top_sni": top_sni, "top_blocked": top_blocked,
         "incidents": incidents, "timeline": timeline, "risk": dev_risk,
@@ -2740,7 +3328,8 @@ def page_incident_detail(request: Request, incident_id: int):
             ip_row = c.execute(
                 "SELECT ip FROM device_ips WHERE device_id=? ORDER BY last_seen DESC LIMIT 1",
                 (d["id"],)).fetchone()
-            dev = {"id": d["id"], "name": device_label(d), "has_ip": ip_row is not None}
+            dev = {"id": d["id"], "name": device_label(d), "has_ip": ip_row is not None,
+                   "trust": d["trust"], "has_mac": bool(orchestrator.device_macs(c, d["id"]))}
 
     evidence = [_event_row(r) for r in c.execute(
         "SELECT e.*, NULL hostname, NULL friendly_name FROM incident_events ie"

@@ -93,20 +93,30 @@
     <div class="stack">
         <div class="card">
             <div class="card-head"><h2>Controls</h2>
-                <span class="spacer"></span><span class="subtle">applied at the gateway</span></div>
-            <div class="control-row" id="deviceFiltering" data-device-id="{{ device.id }}">
+                <span class="spacer"></span><span class="subtle" id="deviceControlsVerified">applied at the gateway</span></div>
+            <div class="control-row" id="deviceTrust" data-device-id="{{ device.id }}" data-trust="{{ device.trust }}">
                 <div class="control-text">
-                    <div class="control-title">DNS filtering</div>
-                    <div class="control-desc">Blocklists and custom rules for this device</div>
+                    <div class="control-title">Trust <span class="chip dot nocap" id="deviceTrustChip" style="margin-left:6px"></span></div>
+                    <div class="control-desc" id="deviceTrustDesc"></div>
                 </div>
-                <button class="btn" id="deviceFilterToggle">Loading…</button>
+                <div class="control-actions" id="deviceTrustActions"></div>
             </div>
             <div class="control-row" id="deviceQuarantine" data-device-id="{{ device.id }}">
                 <div class="control-text">
                     <div class="control-title">Network access</div>
-                    <div class="control-desc">Quarantine blocks all traffic from this device</div>
+                    <div class="control-desc" id="deviceQuarantineDesc">Quarantine blocks all traffic from this device</div>
                 </div>
-                <button class="btn" id="deviceQuarantineToggle">Loading…</button>
+                <div class="control-actions" id="deviceQuarantineActions"><button class="btn" disabled>Loading…</button></div>
+            </div>
+            <div class="control-row wrap" id="deviceFiltering" data-device-id="{{ device.id }}">
+                <div class="control-text">
+                    <div class="control-title">DNS filtering profile</div>
+                    <div class="control-desc" id="deviceFilteringDesc">Loading…</div>
+                </div>
+                <div class="control-actions">
+                    <select class="input" id="deviceProfilePick" aria-label="Filtering profile" style="min-width:150px"><option>Loading…</option></select>
+                    <span id="devicePauseActions"></span>
+                </div>
             </div>
             <div class="control-row" id="deviceDpi" data-device-id="{{ device.id }}">
                 <div class="control-text">
@@ -126,6 +136,12 @@
                 </div>
                 <div id="deviceProfilesApplied" style="margin-top:8px"></div>
             </div>
+        </div>
+
+        <div class="card" id="devicePolicies" data-device-id="{{ device.id }}">
+            <div class="card-head"><h2>Active Policies</h2><span class="count-pill" id="devicePoliciesCount" hidden>0</span>
+                <span class="spacer"></span><a class="subtle link" href="/response">all policies →</a></div>
+            <div class="card-body tight" id="devicePoliciesBody"><div class="empty">Loading…</div></div>
         </div>
 
         <div class="card">

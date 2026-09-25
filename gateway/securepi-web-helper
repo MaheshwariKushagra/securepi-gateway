@@ -33,6 +33,17 @@ Verbs (each maps to exactly one nft invocation):
   enrolled-list                list ip nat enrolled (JSON)
   enrolled-flush               remove every element from ip nat enrolled
 
+Added in ENHANCEMENT-PLAN.md step 4.2 (MAC-keyed, timed quarantine and
+"block this IP" from an incident), both called by app/orchestrator.py:
+  quarantine-mac-add <mac> [seconds]  add <mac> to inet filter quarantine_mac,
+                                      optionally with a kernel-side expiry
+  quarantine-mac-delete <mac>         remove <mac> from inet filter quarantine_mac
+  quarantine-mac-list                 list inet filter quarantine_mac (JSON)
+  blocked-ip-add <ip> [seconds]       add <ip> to inet filter blocked_ip,
+                                      optionally with a kernel-side expiry
+  blocked-ip-delete <ip>              remove <ip> from inet filter blocked_ip
+  blocked-ip-list                     list inet filter blocked_ip (JSON)
+
 Every call is logged to the system journal via syslog (auth facility),
 independent of and in addition to the web app's own audit_log table -
 this is the half of the audit trail that exists even if the database
@@ -40,6 +51,7 @@ itself were somehow bypassed.
 """
 
 import ipaddress
+import re
 import subprocess
 import sys
 import syslog
@@ -52,6 +64,13 @@ NFT = "/usr/sbin/nft"
 # ever comes from the caller.
 _QUARANTINE = ("inet", "filter", "quarantine")
 _ENROLLED = ("ip", "nat", "enrolled")
+_QUARANTINE_MAC = ("inet", "filter", "quarantine_mac")
+_BLOCKED_IP = ("inet", "filter", "blocked_ip")
+
+# Six colon-separated pairs of hex digits, and nothing else - the only
+# shape nft's ether_addr type accepts, checked here so a malformed value
+# never reaches nft at all.
+_MAC_RE = re.compile(r"^[0-9a-f]{2}(:[0-9a-f]{2}){5}$")
 
 
 class RejectedInput(Exception):
@@ -75,6 +94,38 @@ def _require_hours(value):
     if not value.isdigit() or not (1 <= int(value) <= 720):
         raise RejectedInput("hours must be a whole number from 1 to 720: %r" % value)
     return value
+
+
+def _require_mac(value):
+    if not _MAC_RE.match(value):
+        raise RejectedInput("not a valid MAC address (expected aa:bb:cc:dd:ee:ff, lowercase): %r" % value)
+    return value
+
+
+def _require_ipv4(value):
+    # The blocked_ip set is `type ipv4_addr`, so an IPv6 address would be
+    # refused by nft anyway - rejecting it here gives a clearer message.
+    try:
+        ipaddress.IPv4Address(value)
+    except ValueError:
+        raise RejectedInput("not a valid IPv4 address: %r" % value)
+    return value
+
+
+def _require_seconds(value):
+    # 60 seconds to 30 days - the same upper bound _require_hours uses, so
+    # nothing this console asks for can create a set element that
+    # effectively never expires by accident.
+    if not value.isdigit() or not (60 <= int(value) <= 720 * 3600):
+        raise RejectedInput("seconds must be a whole number from 60 to 2592000: %r" % value)
+    return value
+
+
+def _element(value, seconds):
+    # With no timeout, the element stays until it's deleted.
+    if seconds is None:
+        return "{ %s }" % value
+    return "{ %s timeout %ss }" % (value, seconds)
 
 
 def build_nft_argv(verb, args):
@@ -130,6 +181,35 @@ def build_nft_argv(verb, args):
             raise RejectedInput("enrolled-flush takes no arguments")
         family, table, set_name = _ENROLLED
         return ["flush", "set", family, table, set_name]
+
+    if verb in ("quarantine-mac-add", "blocked-ip-add"):
+        if len(args) not in (1, 2):
+            raise RejectedInput("%s takes one or two arguments (an address, then optional seconds)" % verb)
+        if verb == "quarantine-mac-add":
+            value = _require_mac(args[0])
+            family, table, set_name = _QUARANTINE_MAC
+        else:
+            value = _require_ipv4(args[0])
+            family, table, set_name = _BLOCKED_IP
+        seconds = _require_seconds(args[1]) if len(args) == 2 else None
+        return ["add", "element", family, table, set_name, _element(value, seconds)]
+
+    if verb in ("quarantine-mac-delete", "blocked-ip-delete"):
+        if len(args) != 1:
+            raise RejectedInput("%s takes exactly one argument (an address)" % verb)
+        if verb == "quarantine-mac-delete":
+            value = _require_mac(args[0])
+            family, table, set_name = _QUARANTINE_MAC
+        else:
+            value = _require_ipv4(args[0])
+            family, table, set_name = _BLOCKED_IP
+        return ["delete", "element", family, table, set_name, "{ %s }" % value]
+
+    if verb in ("quarantine-mac-list", "blocked-ip-list"):
+        if len(args) != 0:
+            raise RejectedInput("%s takes no arguments" % verb)
+        family, table, set_name = _QUARANTINE_MAC if verb == "quarantine-mac-list" else _BLOCKED_IP
+        return ["-j", "list", "set", family, table, set_name]
 
     raise RejectedInput("unknown verb: %r" % verb)
 

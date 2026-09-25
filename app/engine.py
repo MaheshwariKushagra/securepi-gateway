@@ -2,6 +2,8 @@
 """SecurePi Gateway - runs the correlation engine on a fixed interval."""
 import time
 import correlation
+import notify
+import orchestrator
 import rollup
 import retention
 
@@ -25,4 +27,22 @@ if __name__ == "__main__":
         fired = sum(v for v in results.values() if v)
         if fired:
             print("incidents raised/updated this cycle: %s" % results, flush=True)
+        # Stage 4: the policy orchestrator runs after the signals, so an
+        # auto-response to a campaign raised this cycle happens this cycle
+        # too, and notifications run last, so they include any incident the
+        # orchestrator itself just raised (drift, auto-quarantine). Each is
+        # wrapped on its own: a failure in one must never stop detection.
+        try:
+            summary = orchestrator.reconcile(conn)
+            if summary["expired"] or summary["trust"] or summary["auto"] or summary["drift"] \
+                    or summary["errors"] or summary["restored"]:
+                print("orchestrator: %s" % summary, flush=True)
+        except Exception as exc:
+            print("orchestrator error: %s" % exc, flush=True)
+        try:
+            sent = notify.dispatch(conn)
+            if any(sent.values()):
+                print("notifications: %s" % sent, flush=True)
+        except Exception as exc:
+            print("notification error: %s" % exc, flush=True)
         time.sleep(INTERVAL_SECONDS)

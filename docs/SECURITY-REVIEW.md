@@ -269,6 +269,68 @@ uplink (`wlp2s0`, the home Wi-Fi) versus the isolated project LAN (`ap0`,
   `systemd-resolved`'s stub listeners on loopback) was already correctly
   scoped to an internal interface or loopback — checked, not assumed.
 
+## 8. Stage 4 additions (26 September 2026)
+
+Stage 4 added new privileged operations, outbound network connections and
+stored secrets, so each was reviewed on the same terms as sections 1-7.
+
+**Privileged surface.** The helper gained six verbs (`quarantine-mac-add/
+-delete/-list`, `blocked-ip-add/-delete/-list`). Each hardcodes its family,
+table and set, as before. A MAC must match `^[0-9a-f]{2}(:[0-9a-f]{2}){5}$`,
+an IP must parse as IPv4, and a timeout must be 60 s to 30 days. Tested with
+injection-shaped input (`"aa:bb:…; flush ruleset"`, `"1.2.3.4 }"`) on the
+Mac and live, where the input was rejected and logged. The orchestrator
+also refuses to block LAN, loopback, link-local, multicast and reserved
+addresses before the helper is ever called. The sudoers rule is unchanged:
+still the one program.
+
+**Stored secrets.** Notification channel secrets (a Telegram bot token, an
+SMTP password, a webhook signing key) are in the `notification_channels`
+table. The API never returns them: `notify.masked_config()` replaces each
+secret field with `••••` plus at most its last four characters, and it is
+the only form a channel leaves the gateway in. Adding a channel writes an
+audit row with its type and name only, never its settings. The database is
+`root:securepi` 664, the same trust boundary as the password files in
+`/etc/securepi`.
+
+**Backups of that database were world-readable - fixed.** Every
+`securepi.db` copy taken before a deploy (eleven of them, in `/opt/securepi`
+and the new `/opt/securepi-backups`) was mode 644. Copies from step 3.1 on
+include live session tokens, and all of them include the network's device
+and DNS history. Any local account could read them. All are now 600 and
+`/opt/securepi-backups` is 700; a non-root read was confirmed refused.
+Future backups should keep the same modes (`sudo install -m 600` or a
+`chmod` straight after the copy).
+
+**Outbound connections.** Notifications are the first feature that sends
+data off the gateway on an operator's behalf. HTTPS certificates are
+verified (`ssl.create_default_context()`). A channel only sends the
+incident title, severity, device name and a console link unless its
+"include details" option is on. Webhook bodies can be signed
+(HMAC-SHA256, `X-SecurePi-Signature`). A channel URL can point anywhere,
+including the gateway itself or the LAN. That is a request-forgery path,
+but only for someone already signed in to the console, who can do far more
+directly. It is recorded here rather than restricted.
+
+**XSS in the new console code.** Every server-supplied string in the new
+pages goes through `esc()`, including policy reasons, device names, channel
+summaries and audit details. Raw HTML is only ever built from constants in
+`app.js`. The new dialog replaces `window.prompt()`, which had no XSS
+exposure but blocked the page.
+
+**Races.** The console and the engine both change the same nftables sets
+and AdGuard rule list, and they're serialised by an exclusive `flock` on
+`/opt/securepi/orchestrator.lock`. Without it, a reconcile could remove a
+quarantine the console had applied a moment earlier. `securepi-web` could
+hold the lock indefinitely and stall the engine's reconcile, but that
+process already has every privilege it would take to cause the same harm
+another way.
+
+**Lockout.** "Restrict unknown devices" and "Block" only drop *forwarded*
+traffic from `ap0`. The input chain (DHCP, DNS, the console) and the
+management link are untouched, so no trust setting can lock the operator
+out of the console.
+
 ## Not fixed, named rather than implied
 
 - **The framework-level `pip-audit` findings in §6** (fastapi, starlette,

@@ -17,7 +17,8 @@ const PAGES = [
   { name: 'dashboard', path: '/', wait: 3500, h: 1180 },
   { name: 'device-detail', path: '/devices/3', wait: 3500, h: 1000 },
   { name: 'incidents', path: '/incidents', wait: 2500, h: 760 },
-  { name: 'incident-detail', path: '/incidents/7', wait: 2500, h: 1000 },
+  { name: 'incident-detail', path: '/incidents/13', wait: 2500, h: 1000 },
+  { name: 'response', path: '/response', wait: 3000, h: 1120 },
   { name: 'filtering', path: '/filtering', wait: 3500, h: 900 },
   { name: 'settings', path: '/settings', wait: 2500, h: 700 },
   { name: 'mobile', path: '/', wait: 3500, mobile: true },
@@ -30,13 +31,19 @@ const PAGES = [
     headless: 'new',
     args: ['--hide-scrollbars', '--no-first-run', '--disable-features=BraveRewards'],
   });
+  // Sign in once through the real login form (step 3.1 replaced Basic
+  // Auth with a session cookie); every page below shares the session.
+  const login = await browser.newPage();
+  await login.goto(BASE + '/login', { waitUntil: 'networkidle0' });
+  await login.type('input[name=password]', 'demo');
+  await Promise.all([login.waitForNavigation({ waitUntil: 'networkidle0' }), login.click('button[type=submit]')]);
+  await login.close();
   for (const p of PAGES) {
     if (only.length && !only.includes(p.name)) continue;
     const page = await browser.newPage();
     // The console remembers its theme in localStorage, which every page in
     // this browser shares - so set it explicitly for each capture.
     await page.evaluateOnNewDocument(t => { try { localStorage.setItem('sp.theme', t); } catch (e) {} }, p.theme || 'dark');
-    await page.authenticate({ username: 'securepi', password: 'demo' });
     if (p.mobile) await page.setViewport({ width: 390, height: 844, deviceScaleFactor: 2, isMobile: true });
     else await page.setViewport({ width: 1440, height: p.h || 960, deviceScaleFactor: 2 });
     page.on('pageerror', e => console.log(p.name, 'PAGEERROR', e.message));

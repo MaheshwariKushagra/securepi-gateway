@@ -11,7 +11,7 @@ Built as a final-year engineering project, deployed on real hardware, and measur
 
 ![Python](https://img.shields.io/badge/Python-3.12-3776AB?style=for-the-badge&logo=python&logoColor=white) ![FastAPI](https://img.shields.io/badge/FastAPI-console-009688?style=for-the-badge&logo=fastapi&logoColor=white) ![Suricata](https://img.shields.io/badge/Suricata-IDS-EF3B2D?style=for-the-badge) ![AdGuard Home](https://img.shields.io/badge/AdGuard_Home-DNS-68BC71?style=for-the-badge&logo=adguard&logoColor=white) ![mitmproxy](https://img.shields.io/badge/mitmproxy-selective_DPI-2B6CB0?style=for-the-badge) ![Ubuntu](https://img.shields.io/badge/Ubuntu-24.04_LTS-E95420?style=for-the-badge&logo=ubuntu&logoColor=white)
 
-![Tests](https://img.shields.io/badge/tests-206_passing-2fbf71?style=flat-square) ![Detection signals](https://img.shields.io/badge/detection_signals-14-4f9cf9?style=flat-square) ![ATT&CK](https://img.shields.io/badge/MITRE_ATT%26CK-mapped-7b5cf0?style=flat-square) ![Stages complete](https://img.shields.io/badge/roadmap-stages_0%C2%B71%C2%B72%C2%B75%C2%B76_complete-2fbf71?style=flat-square) ![No Docker](https://img.shields.io/badge/footprint-3.6_GiB_RAM,_no_Docker-8d99ad?style=flat-square)
+![Tests](https://img.shields.io/badge/tests-362_passing-2fbf71?style=flat-square) ![Detection signals](https://img.shields.io/badge/detection_signals-14-4f9cf9?style=flat-square) ![ATT&CK](https://img.shields.io/badge/MITRE_ATT%26CK-mapped-7b5cf0?style=flat-square) ![Stages complete](https://img.shields.io/badge/roadmap-stages_0%E2%80%936_complete-2fbf71?style=flat-square) ![No Docker](https://img.shields.io/badge/footprint-3.6_GiB_RAM,_no_Docker-8d99ad?style=flat-square)
 
 <br>
 
@@ -51,9 +51,10 @@ ATT&CK kill chain, so **15,884 raw events became 10 incidents** over a real
 
 ### Respond
 A **security operations console** with a live dashboard, an incident workbench
-(evidence chain, ATT&CK tags, playbooks, notes), threat hunting, per-device policy,
-one-click **quarantine**, explainable risk scores, a weekly PDF report and a full
-audit trail.
+(evidence chain, ATT&CK tags, playbooks, notes), threat hunting, timed **MAC-keyed
+quarantine**, IP and domain blocks from an incident, filtering profiles and schedules,
+device trust, notifications, and a **policy orchestrator** that verifies every change
+and puts back anything altered outside the console.
 
 </td>
 </tr>
@@ -75,7 +76,7 @@ audit trail.
 | **DNS rules enforced** | **656,735** across 5 curated lists | Live AdGuard Home |
 | **Memory under attack load** | **40%** of 3.6 GiB used, over 2 GiB free | [Evaluation §5](EVALUATION-RESULTS.md) |
 | **Throughput headroom** | Limited by the WAN (~30 Mbps). The inspection path itself ran at **39.9 Gbps** on virtual links | [Evaluation §6](EVALUATION-RESULTS.md) |
-| **Automated tests** | **206** unit tests (`make test`), all on synthetic data | [`tests/`](tests) |
+| **Automated tests** | **362** unit tests (`make test`), all on synthetic data | [`tests/`](tests) |
 
 ---
 
@@ -93,11 +94,16 @@ audit trail.
   <br><sub><b>Network overview</b>: KPI tiles with sparklines and meters, throughput, DNS allowed vs blocked, a severity donut, detections by signal, top talkers, blocked and contacted domains, live event stream, weekly activity heatmap and pipeline health.</sub>
 </p>
 
+<p align="center">
+  <img src="docs/assets/screenshots/response.png" alt="Response page" width="100%">
+</p>
+<p align="center"><sub><b>Response</b>: every policy the gateway is enforcing (quarantines, blocks, allows, profiles, pauses, inspection), where each came from, when it ends and when it was last read back from nftables or AdGuard. Beside it: the health of each enforcement point, the orchestrator's own activity (drift repaired, rollbacks, expiries), auto-response and device trust.</sub></p>
+
 <table>
 <tr>
 <td width="50%" valign="top">
 <img src="docs/assets/screenshots/incident-detail.png" alt="Incident workbench">
-<p align="center"><sub><b>Incident workbench</b>: a summary header with severity, status, MITRE ATT&CK tag and one-click triage and quarantine, then what was detected and why, a three-step playbook, related incidents and the evidence chain.</sub></p>
+<p align="center"><sub><b>Incident workbench</b>: a summary header with severity, status, MITRE ATT&CK tag and one-click triage and timed quarantine, then what was detected and why, a Respond card that blocks the domains and addresses in the evidence for one device or everyone, a three-step playbook and the evidence chain.</sub></p>
 </td>
 <td width="50%" valign="top">
 <img src="docs/assets/screenshots/incidents.png" alt="Incident queue">
@@ -107,7 +113,7 @@ audit trail.
 <tr>
 <td width="50%" valign="top">
 <img src="docs/assets/screenshots/device-detail.png" alt="Device detail">
-<p align="center"><sub><b>Device profile</b>: traffic history, identity kept across MAC randomization, fingerprint (type, vendor, OS and confidence), behavioural baseline, risk score, and a Controls panel for filtering, quarantine and Tier 2 enrollment.</sub></p>
+<p align="center"><sub><b>Device profile</b>: traffic history, identity kept across MAC randomization, fingerprint (type, vendor, OS and confidence), behavioural baseline, risk score, and Controls for trust, timed quarantine, filtering profile and pause, and Tier 2 enrollment, plus every policy active on the device.</sub></p>
 </td>
 <td width="50%" valign="top">
 <img src="docs/assets/screenshots/filtering.png" alt="Filtering">
@@ -326,7 +332,7 @@ sequenceDiagram
     end
     rect rgb(46, 17, 21)
     O->>D: review evidence chain + T1110 playbook
-    O->>N: Quarantine (add IP to set)
+    O->>N: Quarantine (add MAC to set, verified)
     N-->>A: forward chain drops all traffic
     O->>D: status investigating, note, audit_log
     end
@@ -599,7 +605,7 @@ devices on the network**. Full method and raw figures: [`EVALUATION-RESULTS.md`]
 > - **A real bug found during evaluation:** `new_device_signal` used a persisted watermark that meant new devices were almost never detected. It was fixed, verified live, and is now covered by regression tests.
 > - **\*Malicious-domain latency** was originally limited by AdGuard only flushing its on-disk query log every 1,000 queries. Ingest now polls AdGuard's API in real time instead (step 1.4).
 > - **One false positive** on a real phone: ordinary ad-SDK background traffic crossed a *raw-count* threshold. The signal now counts **distinct** domains (step 1.6).
-> - **Quarantine is keyed on IP**, so a DHCP renewal can move a quarantined device to a new address. Matching on MAC in PREROUTING is future work, noted in [`app/quarantine.py`](app/quarantine.py).
+> - **Two earlier features had silently stopped working, found while building Stage 4:** AdGuard does not ignore a trailing `# comment` on a rule line, so step 5.2's temporary allows and 5.5's vendor-telemetry rules never matched; and step 2.2's firewall change was never saved as the boot-time `/etc/nftables.conf`, so reboots dropped the DNS-bypass logging. Both fixed and verified live ([Evaluation 2 §Stage 4](EVALUATION-RESULTS-2.md)).
 
 ---
 
@@ -613,8 +619,8 @@ is in [`ENHANCEMENT-PLAN.md`](ENHANCEMENT-PLAN.md).
 | **0** | Housekeeping | ![Complete](https://img.shields.io/badge/-complete-2fbf71?style=flat-square) |
 | **1** | **Foundation and correctness**: test suite, retention, real-time ingest, audit coverage, detection-accuracy fixes, AP client isolation | ![Complete](https://img.shields.io/badge/-complete-2fbf71?style=flat-square) |
 | **2** | **Detection breadth**: network sweep, DNS bypass hardening, IDS alerts, threat intel, DNS tunnelling/DGA, C2 beaconing, suppression rules, campaigns | ![Complete](https://img.shields.io/badge/-complete-2fbf71?style=flat-square) |
-| **3** | Hardening and reliability: session auth, TLS, health supervision | ![Not started](https://img.shields.io/badge/-not_started-5a6679?style=flat-square) |
-| **4** | Response and orchestration: policy profiles, timed quarantine, notifications | ![Not started](https://img.shields.io/badge/-not_started-5a6679?style=flat-square) |
+| **3** | **Hardening and reliability**: session auth, TLS, privilege separation, security review, health supervision, fail-open DNS | ![Complete](https://img.shields.io/badge/-complete-2fbf71?style=flat-square) |
+| **4** | **Response and orchestration**: policy orchestrator with read-back and drift repair, MAC-keyed timed quarantine, IP/domain blocks, auto-response, filtering profiles and schedules, device trust, notifications | ![Complete](https://img.shields.io/badge/-complete-2fbf71?style=flat-square) |
 | **5** | **Ad blocking and privacy filtering**: telemetry, unbreak workflow, analytics, list health, Tier 2 lifecycle, privacy canary, pinning bypass, watchdog | ![Complete](https://img.shields.io/badge/-complete-2fbf71?style=flat-square) |
 | **6** | **Intelligence and console**: baselines, fingerprinting, settings, incident workbench, hunt, weekly report, responsive layout | ![Complete](https://img.shields.io/badge/-complete-2fbf71?style=flat-square) |
 | **7** | Evaluation 2.0: expanded benchmark battery, 7-day continuous run | ![Not started](https://img.shields.io/badge/-not_started-5a6679?style=flat-square) |
@@ -635,13 +641,15 @@ securepi-gateway/
 │   ├── registry.py           Device identity across MAC randomization
 │   ├── correlation.py        The six detection signals + incident dedup
 │   ├── engine.py             15-second loop: signals, rollups, retention
-│   ├── risk.py · playbooks.py · fingerprint.py · quarantine.py · retention.py
+│   ├── orchestrator.py       Desired state → nftables + AdGuard, verified, drift repaired
+│   ├── profiles.py · notify.py   Filtering profiles and schedules · incident notifications
+│   ├── risk.py · playbooks.py · fingerprint.py · firewall_sets.py · retention.py
 │   ├── webapp.py             FastAPI console (pages + JSON API)
 │   ├── schema.sql            The whole data model, with the reasoning in comments
 │   ├── templates/  static/   Jinja2 pages, vanilla JS, one stylesheet
 ├── dpi/                      Selective HTTPS inspection (mitmproxy addon, rules, canary)
 ├── gateway/                  nftables, hostapd, `securepi` CLI, evaluation harness
-├── tests/                    206 unit tests on synthetic fixtures (`make test`)
+├── tests/                    362 unit tests on synthetic fixtures (`make test`)
 └── docs/
     ├── assets/               Banner, social preview, screenshots
     └── demo/                 Synthetic-data console used for the screenshots
@@ -661,7 +669,7 @@ make test        # python3 -m unittest discover -s tests -p 'test_*.py' -v
 ```bash
 cd docs/demo
 python3 seed.py && python3 serve.py
-# open http://127.0.0.1:8765  (user: securepi, password: demo)
+# open http://127.0.0.1:8765  (password: demo)
 ```
 
 See [`docs/demo/README.md`](docs/demo/README.md) for regenerating the screenshots.

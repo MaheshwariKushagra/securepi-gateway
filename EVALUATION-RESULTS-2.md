@@ -559,3 +559,78 @@ A `dns_failopen_state` table (one row, `active`/`down_since`/`changed_at`) is th
 | Journal, `securepi-ingest`/`securepi-web`/`AdGuardHome`, across the whole test | Clean - only expected `AdGuard API unreachable ... falling back to file tailing` messages from `app/adguard.py`'s own pre-existing graceful-degradation path while AdGuard was deliberately down, no tracebacks |
 
 **Not fully verified, named rather than implied:** the redirect rule's effect on an actual `ap0`-connected client's DNS query was not tested with a real Wi-Fi device - `securepi status` showed 0 clients connected this session, and the project's own test harness (`ns_attacker`/`ns_victim`) is deliberately built on a separate `br-test` bridge, "entirely separate from the production ap0/hostapd network" (its own setup script's words), so it cannot generate `ap0`-sourced traffic to test this specific path. Rather than risk attaching a virtual interface to the live, production Wi-Fi AP interface to simulate one - a state-changing experiment on the one interface actual devices depend on, for a rule whose match criteria were independently confirmed correct by direct inspection - this was left as a real gap: the detection, activation, deactivation, incident, and console-banner machinery are all live-verified end to end; the very last hop (a real phone's DNS query actually being answered by 1.1.1.1 instead of timing out) is not. Confirmed instead, as strong indirect evidence: the rule's match/target syntax is byte-for-byte what a manual read of `nft`'s own documentation and the existing, already-proven `dpi-redirect` rule's shape would predict, and the two conditions (`daddr != 10.10.0.1` for the existing rules, `daddr 10.10.0.1` for this one) cannot both match the same packet.
+
+---
+
+## Stage 4
+
+Response and policy orchestration, built and verified 25–26 September 2026. Every check below ran on the live gateway against the test harness's `[TEST HARNESS] test-victim` device (id 5, MAC `02:00:00:00:00:12`, IP `10.10.0.221`), never a real person's device. The console's password is a one-way hash since step 3.1, so instead of signing in over HTTP these checks ran the real orchestrator code on the gateway **as the unprivileged `securepi-web` user** - the console's own privileges and code path, minus only the HTTP layer. That layer, and every new console page, was exercised end to end in a headless browser against the demo console (`docs/demo/serve.py`) instead: quarantine through the dialog, adding a webhook channel and sending a signed test, the profile editor, the Response page, dark and light themes, and phone width. No page errors.
+
+`make test`: **362** passing (was 303) - `tests/test_orchestrator.py` (39), `tests/test_notify.py` (14), six new helper-verb tests, plus the flaky-test fix below.
+
+### Four real bugs found, none guessed
+
+1. **AdGuard does not ignore a trailing `# comment` on a rule line.** Steps 5.2 and 5.5 stored a temporary allow's expiry and a vendor list's tag as `  # securepi-expires:…` / `  # securepi-tag:…` after the rule, on the assumption that AdGuard ignores it. Checked live with `check_host` on four rule shapes: every rule with the comment matched **nothing**, the same rules without it matched. So every temporary "unbreak" and every vendor-telemetry block applied since those steps was stored but never enforced. There were none live at the time. The orchestrator now writes plain rules and remembers which are its own in `orchestrator_state`. `migrate_legacy_rules()` converts any old commented line into a real policy and removes the broken line. The quoted form `$client='[TEST HARNESS] test-victim'` was confirmed to match (victim blocked, another client not).
+2. **Step 2.2's firewall change was never made permanent.** The live forward chain had no `log prefix` on the three DNS-bypass reject rules, and `/etc/nftables.conf` (what `nftables.service` loads at boot) was dated 13 September - the pre-2.2 file. Step 2.2 had copied the new file to `/opt/securepi/nftables.conf` and loaded it with `nft -f`, but never installed it at `/etc`, so the reboots on 20, 21 and 25 September each put the old rules back. From then on the nftables half of `dns_bypass` detection was silently off (the DoH-set refresh kept working - 709 entries). Fixed in the same install as step 4.2's new sets: the repo file is now both `/etc/nftables.conf` and `/opt/securepi/nftables.conf`, and they're identical.
+3. **A per-device pause didn't pause everything.** AdGuard's per-client `filtering_enabled=false` switches off blocklist matching only: with it off, a Kids device still had TikTok blocked (`FilteredBlockedService`) and Google rewritten (`FilteredSafeSearch`), while `doubleclick.net` resolved. A pause now clears the device's blocked services and safe search as well, and restores the whole profile when it ends.
+4. **Journal flooding from read-back.** The orchestrator reads three nftables sets every 15-second cycle through the helper, and each read went through `sudo` (a PAM session opened and closed) and wrote a helper log line - about 24 journal lines every 30 seconds. The engine already runs as root, so it now calls the helper directly, and the helper no longer logs the read-only `*-list` verbs (changes and rejected input are still logged). Measured after: 2 lines in 30 seconds.
+
+A pre-existing test flake was also fixed: four behavioural-baseline tests put their flow 60 s past the top of the hour, which is in the future during the first minute of every hour. The suite happened to run at 19:00:56 UTC, where the positive test failed and the three negative ones passed only because they saw nothing.
+
+### Deploy
+
+Backups first in `/opt/securepi-backups/`: the live ruleset (`nft list ruleset`), `/etc/nftables.conf`, the helper and a full `securepi.db` copy (SQLite online backup). Then `nft -c -f` on the new file, and a **dead-man switch** (`systemd-run --on-active=180` restoring the saved ruleset) before `nft -f /etc/nftables.conf`. The DoH set was refreshed straight after (the reload resets it to its seed). SSH, the console (HTTP 200) and DNS were re-checked from the Mac, then the switch was cancelled. Nothing was enrolled, quarantined or failed-open at the time, so the reload lost no runtime state. Then the helper, then `make deploy` of the expected 21 files, with `.bak-4-<timestamp>` copies of every changed one. Migrations ran on the ingest restart. Every existing device came through as `approved` (13 devices). The engine created `orchestrator.lock` on its first cycle, and that cycle read back all six enforcement points with no errors.
+
+### 4.1 — Policy orchestrator
+
+| Check | Result |
+|---|---|
+| Injected failure: AdGuard accepts a client update but doesn't keep it (Kids profile on the victim) | `PolicyApplyError: read-back did not match what was applied (Device filtering settings (AdGuard)) - rolled back, nothing was changed`. The client object was identical before and after. Policy recorded as `failed` |
+| Injected failure: the firewall accepts a quarantine add but doesn't keep it | Same shape of error for `Quarantine (firewall)`. `quarantine_mac` unchanged, no active quarantine policy left behind |
+| Real apply: block `sp-drift-test.example` for the victim only | Rule `\|\|sp-drift-test.example^$client='[TEST HARNESS] test-victim'` in AdGuard; `check_host` from the victim → `FilteredBlackList`, from another client → `NotFilteredNotFound` |
+| Out-of-band change: that rule deleted directly through AdGuard's own API | Restored within 1 s (the engine's next cycle happened to land right away). Audit row `policy.drift_corrected` - "1 rule(s) removed or edited in AdGuard: …". Platform incident #201 "A response policy was changed outside the console" |
+
+### 4.2 — Response actions
+
+| Check | Result |
+|---|---|
+| The new rules loaded | `iifname "ap0" ether saddr @quarantine_mac … drop` and `iifname "ap0" ip daddr @blocked_ip … drop` accepted by the kernel in the `inet` forward chain |
+| New helper verbs as `securepi-web` | Add/list/delete round trips for both sets. `quarantine-mac-add "…; flush ruleset"` → `REJECTED`, logged. Old verbs unaffected |
+| Timed quarantine (120 s) + block IP (120 s) | Kernel held both with 178 s left (policy + the 60 s backstop margin). Both policies `expired` by the orchestrator **11 s** after their time, both sets empty |
+| Auto-response on a synthetic scan → brute force → beacon chain on the victim | The real engine built campaign #3 "Discovery -> Credential Access -> Command and Control"; the orchestrator created `auto:campaign:3` (5 min, by `auto-response`) and raised incident "…test-victim was quarantined automatically". The kernel entry was extended to the longer of the two overlapping quarantines. The synthetic incidents and campaign were deleted afterwards, as in 2.8 |
+
+**Not verified live, named rather than implied:** "survives a DHCP renewal" needs a real device whose traffic arrives on `ap0` - the harness namespaces sit on `br-test`, which never touches the `iifname "ap0"` rules (the same limitation 3.6 and 5.7 record). No device was connected to SecurePi-Test this session. What *is* established: quarantine is keyed on MAC, the orchestrator follows a device's new MACs (unit-tested), and a new IP changes nothing about the set (unit-tested). Still to run: connect a phone, quarantine it for 15 min, force a renewal (toggle Wi-Fi), and confirm the `quarantined-mac` rule's counter rises and the phone stays offline until expiry.
+
+### 4.3 — Filtering profiles
+
+Kids on the victim, with its schedule edited for the test to block `group:gaming` from 00:38 (two minutes ahead):
+
+| Check | Result |
+|---|---|
+| Read back after apply | `filtering_enabled` true, safe search on, 13 blocked services, `steam` not yet among them |
+| `check_host` from the victim before the window | `amemv.com` (TikTok, always) → `FilteredBlockedService`; `www.google.com` → `FilteredSafeSearch`; `dota2.wmsj.cn` (a Steam service domain) → `NotFilteredNotFound` |
+| Window opens at 00:38:00 | `dota2.wmsj.cn` → `FilteredBlockedService` at **00:38:01**. Recorded as a planned change, not drift |
+| Pause for 60 s (after bug 3's fix) | During: all three domains `NotFilteredNotFound`. After: back to `FilteredBlackList` / `FilteredBlockedService` / `FilteredSafeSearch`, policy `expired` 13 s after its time |
+| Clean-up | Kids reset to its defaults; the victim's client back to standard (filtering on, no services, no safe search); AdGuard's custom rules back to the original three `$dnsrewrite` lines |
+
+### 4.4 — Device trust
+
+| Check | Result |
+|---|---|
+| Restrict unknown devices on; the registry creates a new device (synthetic harness MAC `02:00:00:00:4e:01`) | Created as `unknown` at 00:43:40 |
+| Restricted | MAC in `quarantine_mac` at 00:43:44 - within one engine cycle - by policy `source=trust`, "unknown device - restricted until approved" |
+| Approved | Out of the set on the same call; policy `removed`, "trust is now approved" |
+
+The device was kept, renamed `[TEST HARNESS] live 4.4 new device`, the same way step 6's evaluation devices were. "Restrict unknown devices" was switched back off.
+
+### 4.5 — Notifications
+
+A webhook channel on the gateway pointed at a small listener on the Mac (`192.168.2.1`, over the management cable - nothing sent to a third-party service).
+
+| Check | Result |
+|---|---|
+| Send test | Received, `X-SecurePi-Signature` HMAC-SHA256 verified against the body. The API showed the secret only as `••••-key` |
+| Three harness port scans 20 s apart | Incident #206 (port scan) grew to 80 events over several cycles and #207 (slow port scan) was raised. The Mac received **exactly two** webhooks, one per incident. `notifications` held one `sent` row each |
+| Clean-up | Channel removed (the listener was temporary); #201, #206, #207 resolved with a note |
+
+Telegram and SMTP were not sent live (no accounts were set up for this). Their exact requests are unit-tested (`RequestShapeTests`), and they share the same dispatch path the webhook check proved.

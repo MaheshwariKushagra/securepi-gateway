@@ -76,7 +76,7 @@ compact summary. Results from Stage 1 onward are in `EVALUATION-RESULTS-2.md`.
 | **1** | Foundation & correctness — test suite, retention, real-time ingest, audit coverage | **Complete** |
 | **2** | **Detection breadth** — scan family, DNS-bypass hardening, IDS alerts, threat intel, DNS tunnelling/DGA, C2 beaconing, suppression rules, campaign correlation + ATT&CK kill chain | **Complete** |
 | **3** | Hardening & reliability — session auth, TLS, privilege separation, security self-review, health supervision, fail-open DNS | **Complete** |
-| 4 | Response & orchestration — policy orchestrator, timed quarantine, filtering profiles, device trust, notifications | **In progress** — see below |
+| **4** | Response & orchestration — policy orchestrator, MAC-keyed timed quarantine, IP/domain blocks, auto-response, filtering profiles & schedules, device trust, notifications | **Complete** (one real-device check pending, see below) |
 | **5** | Ad blocking & privacy filtering (5.11 scoped to Path 1; Path 2 deferred with reasoning recorded) | **Complete** |
 | **6** | Intelligence & console — behavioural baselines, device fingerprinting, settings, incident workbench, hunt/explorer, weekly report, responsive layout | **Complete** |
 | 7 | Evaluation 2.0 — expanded benchmark battery | Not started |
@@ -228,13 +228,60 @@ emergency SSH procedure in `README.md`.
 
 Test suite: **303**, all passing.
 
-### Next: Stage 4 (Response & orchestration)
+### What Stage 4 added (25–26 September 2026)
 
-4.1 policy orchestrator (apply → read back → roll back, drift detection),
-4.2 MAC-keyed timed quarantine + block domain/IP from an incident, 4.3
-filtering profiles / blocked-service schedules / pause filtering, 4.4 device
-trust states, 4.5 notifications. The root helper from 3.3 gains a verb for
-IP blocking in 4.2.
+Everything the console enforces is now a row in the `policies` table, applied
+by `app/orchestrator.py`, read back from nftables/AdGuard, and rolled back if it
+didn't take. Every engine cycle it also expires timed policies, follows DHCP
+renewals, and repairs anything changed outside the console (audit row +
+`policy_drift` incident). The new **Response** page (sidebar) shows all of it.
+Full live results: `EVALUATION-RESULTS-2.md` §Stage 4.
+
+- **4.1 Orchestrator.** Console and engine share one `flock`
+  (`/opt/securepi/orchestrator.lock`). Tier 2 enrollment is the exception:
+  it's never re-added if something else turned it off.
+- **4.2 Response.** Quarantine is keyed on **MAC** (`inet filter
+  quarantine_mac`, kernel timeout as a backstop) and can be timed. Block
+  IP (`blocked_ip`) and block domain from an incident's Respond card.
+  Auto-quarantine for 3-tactic campaigns is **off** by default (Response page).
+- **4.3 Profiles.** Standard/Kids/IoT/Strict privacy/Unrestricted on each
+  device page, editable on Filtering → Profiles. Daily service-block
+  schedules, pause 5/15/60 min per device or for everyone.
+- **4.4 Trust.** Approved/unknown/blocked. "Restrict unknown devices" is
+  **off**. Turning it on approves the devices already present first.
+- **4.5 Notifications.** Settings → Notification Channels (ntfy,
+  Telegram, email, signed webhook). None configured on the gateway yet.
+
+**Things a future change needs to know:**
+- **Firewall file.** `/etc/nftables.conf` is now the repo's
+  `gateway/nftables.conf` (it had been stuck at the pre-2.2 version, so reboots
+  kept dropping the DNS-bypass log prefixes). Any future firewall change must
+  be installed there too, not only loaded with `nft -f`.
+- **AdGuard rules can't carry comments.** A trailing `# ...` makes the rule
+  match nothing. The orchestrator tracks its own rules in
+  `orchestrator_state`; don't tag rule text.
+- **Don't use `filtering_enabled` alone to "turn filtering off".** It
+  leaves blocked services and safe search applying.
+- **Backups of `securepi.db` must be mode 600.** They contain session
+  tokens and channel secrets; the old ones were 644 (fixed).
+- The console password is a one-way hash, so live checks run the orchestrator
+  as `sudo -u securepi-web python3 ...` on the gateway rather than over HTTP.
+
+**Pending: one real-device check (4.2).** "Quarantine survives a DHCP renewal"
+needs a phone on SecurePi-Test (the harness can't reach `ap0`). Connect it,
+quarantine it for 15 min from its device page, toggle its Wi-Fi off and on,
+and confirm it stays offline, then comes back on its own when the time is up
+(`sudo nft list chain inet filter forward` - the `quarantined-mac` counter
+should rise).
+
+Test suite: **362**, all passing.
+
+### Next: Stage 7 (Evaluation 2.0)
+
+7-day continuous run, PCAP replay, detection battery with precision/recall,
+ad-blocking benchmark, chaos tests, performance, usability study. Stage 4's
+features are now in scope for 7.7's chaos tests (orchestrator drift repair,
+fail-open with policies active).
 
 ### Known real bugs found and fixed (for context, not action)
 

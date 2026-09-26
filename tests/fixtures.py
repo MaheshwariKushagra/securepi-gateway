@@ -13,9 +13,9 @@ Two kinds of fixture live here, matching what 1.1's own row asks for:
    signals directly against a real, schema-correct in-memory SQLite
    database - the same pattern this project's own throwaway session smoke
    tests already used successfully, made permanent here.
-2. Synthetic eve.json / AdGuard querylog generators (`make_eve_flow`,
+2. Synthetic eve.json / DNS-filter querylog generators (`make_eve_flow`,
    `make_eve_dns_query`, `make_eve_alert`, `make_agh_entry`) - raw,
-   Suricata- and AdGuard-shaped dictionaries for tests that exercise
+   IDS- and DNS-filter-shaped dictionaries for tests that exercise
    `app/ingest.py`'s own parsing (`flatten_suricata`, `flatten_agh`)
    rather than the database layer. No real device data anywhere - every
    IP, MAC and domain below is either a private-range placeholder or an
@@ -142,7 +142,7 @@ def insert_device_hourly(conn, device_id, hour_start, bytes_down, bytes_up):
 
 def make_eve_flow(src_ip="10.10.0.50", dest_ip="93.184.216.34", dest_port=443,
                    bytes_toclient=1000, bytes_toserver=200, timestamp=None, start=None):
-    """A synthetic Suricata eve.json 'flow' record, shaped like a real one."""
+    """A synthetic IDS eve.json 'flow' record, shaped like a real one."""
     record = {
         "timestamp": timestamp or "2026-09-14T10:00:00.000000+0000",
         "event_type": "flow",
@@ -160,8 +160,8 @@ def make_eve_flow(src_ip="10.10.0.50", dest_ip="93.184.216.34", dest_port=443,
 
 
 def make_eve_dns_query(src_ip="10.10.0.50", rrname="example.com", timestamp=None):
-    """A synthetic Suricata eve.json 'dns' query record (source='suricata',
-    NOT the AdGuard-sourced dns_query type - see flatten_suricata/flatten_agh)."""
+    """A synthetic IDS eve.json 'dns' query record (source='suricata',
+    NOT the DNS-filter-sourced dns_query type - see flatten_suricata/flatten_agh)."""
     return {
         "timestamp": timestamp or "2026-09-14T10:00:00.000000+0000",
         "event_type": "dns",
@@ -188,7 +188,7 @@ def make_eve_alert(src_ip="10.10.0.50", dest_ip="203.0.113.5", signature="ET TES
 def make_agh_entry(client_ip="10.10.0.50", domain="ads.example.com",
                     blocked=True, timestamp=None, cached=False,
                     upstream="tls://1.1.1.1", elapsed_ns=5_000_000):
-    """A synthetic AdGuard Home querylog.json line, shaped like a real one."""
+    """A synthetic DNS-filter querylog.json line, shaped like a real one."""
     entry = {
         "T": timestamp or "2026-09-14T10:00:00.5Z",
         "QH": domain, "QT": "A", "QC": "IN",
@@ -214,7 +214,7 @@ def make_agh_api_entry(client_ip="10.10.0.50", domain="ads.example.com",
     """A synthetic /control/querylog API entry - a DIFFERENT shape from
     the on-disk file (make_agh_entry above). Fields and their real
     values (including the exact two 'reason' strings used below) were
-    confirmed live against the real gateway's real AdGuard API before
+    confirmed live against the real gateway's real DNS-filter API before
     being encoded here, not guessed - see app/ingest.py's
     flatten_agh_api docstring."""
     if reason is None:

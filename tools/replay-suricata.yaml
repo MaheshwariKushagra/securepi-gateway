@@ -1,8 +1,8 @@
 %YAML 1.1
 ---
-# Suricata settings for tools/replay.py (ENHANCEMENT-PLAN.md step 7.1).
+# IDS settings for tools/replay.py (ENHANCEMENT-PLAN.md step 7.1).
 # Deliberately small: only what the replay needs, so a replay run doesn't
-# depend on whichever defaults a particular Suricata install ships with.
+# depend on whichever defaults a particular IDS install ships with.
 # The rule file and classification file are passed on the command line.
 vars:
   address-groups:
@@ -61,8 +61,8 @@ app-layer:
     ssh: {enabled: yes}
     smtp: {enabled: yes}
 
-# The gateway (Suricata 7) also keeps these defaults; stated here so a
-# Suricata 8 replay times flows out the same way.
+# The gateway (IDS version 7) also keeps these defaults; stated here so a
+# An IDS version 8 replay times flows out the same way.
 flow-timeouts:
   default: {new: 30, established: 300, closed: 0}
   tcp: {new: 60, established: 600, closed: 60}

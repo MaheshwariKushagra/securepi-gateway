@@ -26,7 +26,7 @@ Routes:
   /api/devices       device inventory
   /api/incidents     incident queue, filterable
   /api/events        recent event stream
-  /api/filtering/*   AdGuard Home blocklists, rules and per-device policy
+  /api/filtering/*   DNS-filter blocklists, rules and per-device policy
   /api/filtering/check              "why is this blocked?" - test a domain
   /api/filtering/analytics          network-wide ad-blocking analytics
   /api/filtering/lists/health       blocklist staleness and per-list contribution
@@ -542,7 +542,7 @@ def device_label(row):
 
 
 def device_identifiers(c, device_id):
-    """Every identifier AdGuard could use to recognise this device: every MAC
+    """Every identifier the DNS filter could use to recognise this device: every MAC
     it has ever used, plus its current IP. Passed to adguard.py's per-device
     functions so a device's filtering setting survives a DHCP renewal or a
     MAC rotation instead of being silently orphaned on the old address (see
@@ -723,7 +723,7 @@ def _percentile(sorted_values, pct):
 
 def _dns_latency_percentiles(c, start, end, sample_limit=5000):
     """p50/p95 DNS resolution latency (step 5.5c), from dns_elapsed_ms
-    captured on every AdGuard query since step 5.1. Only meaningful for
+    captured on every DNS-filter query since step 5.1. Only meaningful for
     NOT-cached answers - a cache hit's latency says more about SQLite than
     about the upstream resolver, so it's excluded here rather than
     diluting the figure."""
@@ -1257,7 +1257,7 @@ def api_device_series(device_id: int, range: str = Query("24h")):
 
 @app.get("/api/dns-status")
 def api_dns_status():
-    """ENHANCEMENT-PLAN.md step 3.6: is DNS currently fail-open (AdGuard
+    """ENHANCEMENT-PLAN.md step 3.6: is DNS currently fail-open (the DNS filter
     not answering, plaintext DNS redirected to a public upstream
     resolver). Reads app/health.py's own live status table directly -
     this console runs unprivileged (step 3.3) and cannot ask nftables
@@ -1444,8 +1444,8 @@ def api_rename_device(device_id: int, body: DeviceUpdate):
 
 # ------------------------------------------------------------- filtering --
 #
-# DNS filtering itself lives entirely in AdGuard Home; this app only gives
-# it a console. Every write here calls straight through to AdGuard's own
+# DNS filtering itself lives entirely in the DNS filter; this app only gives
+# it a console. Every write here calls straight through to the DNS filter's own
 # control API (see adguard.py) rather than caching or shadowing its state,
 # so the console can never drift out of sync with what the resolver is
 # actually doing.
@@ -1508,7 +1508,7 @@ def api_filtering_remove_list(body: BlocklistUrl):
     return {"ok": True}
 
 
-# Both endpoints below read AdGuard's whole rule list, change it, and
+# Both endpoints below read the DNS filter's whole rule list, change it, and
 # write the whole list back. The orchestrator does exactly the same with
 # its policy rules, so each one holds the orchestrator's lock while it
 # works (Audit.md H10). Without it, two writers could each read the list,
@@ -1520,7 +1520,7 @@ def api_filtering_add_rule(body: RuleAdd):
         raise HTTPException(400, "action must be 'block' or 'allow'")
     # The same domain check the orchestrator applies to policy rules - it
     # also stops rule syntax ("^", "|", "$client=", newlines) being
-    # smuggled into AdGuard's rule list through the domain field.
+    # smuggled into the DNS filter's rule list through the domain field.
     try:
         domain = orchestrator.normalize_domain(body.domain)
     except orchestrator.PolicyError as e:
@@ -1557,7 +1557,7 @@ def api_filtering_remove_rule(body: RuleRemove):
 def api_filtering_querylog(domain: str = Query(""), device_id: str = Query(""),
                             blocked: str = Query(""), limit: int = Query(50, ge=1)):
     """Query log search, served from our own ingested events rather than
-    AdGuard's own log - we already store every DNS lookup with the device
+    the DNS filter's own log - we already store every DNS lookup with the device
     it resolved for, so this needs no second source of truth."""
     c = db()
     sql = ("SELECT e.*, d.hostname, d.friendly_name FROM events e"
@@ -1582,8 +1582,8 @@ def api_filtering_querylog(domain: str = Query(""), device_id: str = Query(""),
 @app.get("/api/devices/{device_id}/filtering")
 def api_device_filtering_status(device_id: int):
     """The device's filtering profile and pause state (step 4.3), plus
-    whether AdGuard currently has filtering on for it - read live, so a
-    change made in AdGuard itself shows up here too."""
+    whether the DNS filter currently has filtering on for it - read live, so a
+    change made in the DNS filter itself shows up here too."""
     c = db()
     d = c.execute("SELECT 1 FROM devices WHERE id=?", (device_id,)).fetchone()
     if d is None:
@@ -1613,7 +1613,7 @@ def api_device_filtering_set(device_id: int, body: DeviceFilterUpdate):
 
 @app.get("/api/filtering/check")
 def api_filtering_check(domain: str = Query(...), device_id: int = Query(None)):
-    """The console's "why is this blocked?" tool: ask AdGuard how it would
+    """The console's "why is this blocked?" tool: ask the DNS filter how it would
     resolve `domain` right now, exactly as if the query came from the given
     device (or network-wide, if no device is given)."""
     domain = domain.strip().lstrip("*.").lower()
@@ -1702,7 +1702,7 @@ def api_filtering_lists_health():
     synthetic reconstruction would be; it just means blocks recorded before
     5.1 was deployed (dns_filter_list_id IS NULL) aren't attributed to any
     list. What this method genuinely cannot answer - the *overlap* between
-    lists, and AdGuard's memory use with lists toggled - is named in
+    lists, and the DNS filter's memory use with lists toggled - is named in
     "deferred_note" below rather than guessed at.
     """
     try:
@@ -1751,7 +1751,7 @@ def api_filtering_lists_health():
         "deferred_note": (
             "Contribution is each list's share of blocks we've actually observed and "
             "matched back to it, not a true unique-blocks count. The list-overlap matrix "
-            "and AdGuard's memory-vs-rules-toggled measurement from the original plan need "
+            "and the DNS filter's memory-vs-rules-toggled measurement from the original plan need "
             "a controlled toggle experiment against a non-production instance - deferred to "
             "Stage 7's evaluation campaign rather than run against the live filter here."),
     }
@@ -1819,7 +1819,7 @@ def api_device_remove_profile(device_id: int, body: NativeProfileRequest):
 
 @app.get("/api/filtering/resolver")
 def api_filtering_resolver(range: str = Query("24h")):
-    """Resolver quality (step 5.5c): the current AdGuard resolver config,
+    """Resolver quality (step 5.5c): the current DNS-filter resolver config,
     and DNS latency actually measured from this network's own traffic -
     not a synthetic benchmark. Read-only; see api_apply_resolver_tuning
     for the one endpoint that can change any of this."""
@@ -2265,7 +2265,7 @@ def api_device_blocked(device_id: int, limit: int = Query(25, ge=1)):
 @app.get("/api/devices/{device_id}/filtering/rules")
 def api_device_filtering_rules(device_id: int):
     """Allow/block rules for this device: the orchestrator's policies
-    (step 4.1), plus any older rule still sitting in AdGuard that names
+    (step 4.1), plus any older rule still sitting in the DNS filter that names
     this device."""
     c = db()
     d = c.execute("SELECT * FROM devices WHERE id=?", (device_id,)).fetchone()
@@ -2288,7 +2288,7 @@ def api_device_allow_domain(device_id: int, body: DeviceRuleRequest):
     rule, optionally temporary, always with a reason recorded (step 5.2),
     applied through the orchestrator since step 4.1. Before that, a
     temporary allow carried its expiry as a "# ..." comment on the rule
-    line, which AdGuard does not ignore: the rule never matched (found
+    line, which the DNS filter does not ignore: the rule never matched (found
     and fixed in Stage 4 - see adguard.py)."""
     c = db()
     if c.execute("SELECT 1 FROM devices WHERE id=?", (device_id,)).fetchone() is None:
@@ -2348,7 +2348,7 @@ def api_device_privacy(device_id: int):
 # fingerprinting, hunt/explorer. Reads correlation.py's own signal
 # (behavioral_baseline_signal) and app/rollup.py's device_hourly table -
 # this app never recomputes the baseline itself, the same "one source of
-# truth" discipline the filtering endpoints already follow for AdGuard.
+# truth" discipline the filtering endpoints already follow for the DNS filter.
 
 @app.get("/api/devices/{device_id}/baseline")
 def api_device_baseline(device_id: int):
@@ -2560,7 +2560,7 @@ def api_attributions():
 #
 # Enforcement lives entirely in the `inet filter quarantine` nftables set;
 # this app never caches whether a device is quarantined, for the same reason
-# filtering doesn't cache AdGuard's state (see above).
+# filtering doesn't cache the DNS filter's state (see above).
 
 @app.get("/api/devices/{device_id}/quarantine")
 def api_device_quarantine_status(device_id: int):
@@ -2956,7 +2956,7 @@ def _device_filtering_view(c, device_id, now):
 @app.post("/api/devices/{device_id}/profile")
 def api_device_profile_set(device_id: int, body: ProfileAssign):
     """Give a device a filtering profile. Standard is "no profile policy":
-    choosing it ends the device's current profile, which puts its AdGuard
+    choosing it ends the device's current profile, which puts its DNS filter
     settings back to the network defaults."""
     c = db()
     if c.execute("SELECT 1 FROM devices WHERE id=?", (device_id,)).fetchone() is None:
@@ -3004,7 +3004,7 @@ def api_network_pause_status():
 
 @app.post("/api/filtering/pause")
 def api_network_pause(body: PauseRequest):
-    """Pause DNS filtering for every device (step 4.3). AdGuard's own timer
+    """Pause DNS filtering for every device (step 4.3). The DNS filter's own timer
     also ends the pause, so it resumes on time even if the orchestrator
     isn't running."""
     c = db()
@@ -3261,7 +3261,7 @@ def api_weekly_report(week: str = Query("")):
         (start, end)).fetchone()[0]
 
     # Platform health: only what's genuinely measurable after the fact.
-    # Stage 3's V5 ("Platform and WAN health" - Suricata stats, disk
+    # Stage 3's V5 ("Platform and WAN health" - IDS stats, disk
     # headroom, a WAN latency probe) hasn't been built, so this
     # deliberately does not claim any packet-drop or WAN-latency figure.
     events_ingested = c.execute(

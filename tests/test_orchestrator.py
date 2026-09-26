@@ -4,7 +4,7 @@ SecurePi Gateway - policy orchestrator tests (ENHANCEMENT-PLAN.md Stage 4).
 
 Every test runs the real app/orchestrator.py against a real temp SQLite
 database and a FakeBackends object: an in-memory stand-in for the two
-nftables sets, the enrolled set and AdGuard Home, with the same methods
+nftables sets, the enrolled set and the DNS filter, with the same methods
 the real Backends class has. The fake can also be told to misbehave
 (accept a change but not keep it, or fail outright), which is how the
 "injected failure rolls back" exit criterion is tested.
@@ -32,7 +32,7 @@ CATALOG = {"steam": "gaming", "roblox": "gaming", "tiktok": "social_network", "i
 
 
 class FakeBackends:
-    """In-memory nftables + AdGuard. Set elements are stored with an
+    """In-memory nftables + the DNS filter. Set elements are stored with an
     absolute expiry and reported back as seconds left, like nft does."""
 
     def __init__(self, clock):
@@ -45,7 +45,7 @@ class FakeBackends:
         self.protection_on = True
         self.protection_until = None
         self.ignore_mac_adds = False   # accept mac_add but don't keep it
-        self.fail_rules = False        # AdGuard refuses set_rules
+        self.fail_rules = False        # The DNS filter refuses set_rules
         self.calls = []
 
     def _secs(self, s):
@@ -88,7 +88,7 @@ class FakeBackends:
 
     def set_user_rules(self, rules):
         if self.fail_rules:
-            raise adguard.AdGuardError("AdGuard Home rejected POST /control/filtering/set_rules (HTTP 500)")
+            raise adguard.AdGuardError("The DNS filter rejected POST /control/filtering/set_rules (HTTP 500)")
         self.rules = list(rules)
 
     def clients(self):
@@ -260,7 +260,7 @@ class DriftTests(OrchestratorTestCase):
         self.b.rules = [r for r in self.b.rules if r != rule]
         summary = self.reconcile()
         self.assertIn(rule, self.b.rules)
-        self.assertTrue(any("removed or edited in AdGuard" in d for d in summary["drift"]))
+        self.assertTrue(any("removed or edited in the DNS filter" in d for d in summary["drift"]))
 
     def test_client_settings_edited_in_adguard_are_detected(self):
         self.create("profile", 1, "kids")
@@ -387,7 +387,7 @@ class ProfileAndPauseTests(OrchestratorTestCase):
         self.create("pause", 1, minutes=15)
         cl = self.b.client_list[0]
         # A pause turns off blocklists, blocked services AND safe search -
-        # AdGuard's filtering_enabled alone leaves the other two applying.
+        # the DNS filter's filtering_enabled alone leaves the other two applying.
         self.assertFalse(cl["filtering_enabled"])
         self.assertEqual(cl["blocked_services"], [])
         self.assertFalse(cl["safesearch_enabled"])

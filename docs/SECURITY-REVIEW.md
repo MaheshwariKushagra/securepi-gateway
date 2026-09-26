@@ -265,7 +265,7 @@ uplink (`wlp2s0`, the home Wi-Fi) versus the isolated project LAN (`ap0`,
   changes), even though key-only auth already closes most of the
   practical risk that binding change would have addressed.
 - Every other listener (the console at `10.10.0.1:8000`, the DPI CA
-  download server at `10.10.0.1:8081`, AdGuard DNS at `10.10.0.1:53`,
+  download server at `10.10.0.1:8081`, the DNS filter at `10.10.0.1:53`,
   `systemd-resolved`'s stub listeners on loopback) was already correctly
   scoped to an internal interface or loopback — checked, not assumed.
 
@@ -319,7 +319,7 @@ summaries and audit details. Raw HTML is only ever built from constants in
 exposure but blocked the page.
 
 **Races.** The console and the engine both change the same nftables sets
-and AdGuard rule list, and they're serialised by an exclusive `flock` on
+and DNS-filter rule list, and they're serialised by an exclusive `flock` on
 `/var/lib/securepi/orchestrator.lock` (moved out of `/opt/securepi` on 26
 September - see the audit follow-up below). Without it, a reconcile could remove a
 quarantine the console had applied a moment earlier. `securepi-web` could

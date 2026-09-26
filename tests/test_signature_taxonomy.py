@@ -40,7 +40,7 @@ class ClassifyTests(unittest.TestCase):
         signal_type, plain_name, severity, attack = signature_taxonomy.classify(None, None)
         self.assertEqual(signal_type, "ids_other")
         self.assertEqual(severity, "medium")
-        self.assertEqual(plain_name, "Unclassified Suricata alert")
+        self.assertEqual(plain_name, "Unclassified IDS alert")
 
     def test_ids_other_has_no_playbooks_attack_mapping(self):
         # The module docstring says ids_other deliberately gets no ATT&CK

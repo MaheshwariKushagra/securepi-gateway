@@ -9,7 +9,7 @@ Built as a final-year engineering project, deployed on real hardware, and measur
 
 <br>
 
-![Python](https://img.shields.io/badge/Python-3.12-3776AB?style=for-the-badge&logo=python&logoColor=white) ![FastAPI](https://img.shields.io/badge/FastAPI-console-009688?style=for-the-badge&logo=fastapi&logoColor=white) ![Suricata](https://img.shields.io/badge/Suricata-IDS-EF3B2D?style=for-the-badge) ![AdGuard Home](https://img.shields.io/badge/AdGuard_Home-DNS-68BC71?style=for-the-badge&logo=adguard&logoColor=white) ![mitmproxy](https://img.shields.io/badge/mitmproxy-selective_DPI-2B6CB0?style=for-the-badge) ![Ubuntu](https://img.shields.io/badge/Ubuntu-24.04_LTS-E95420?style=for-the-badge&logo=ubuntu&logoColor=white)
+![Python](https://img.shields.io/badge/Python-3.12-3776AB?style=for-the-badge&logo=python&logoColor=white) ![FastAPI](https://img.shields.io/badge/FastAPI-console-009688?style=for-the-badge&logo=fastapi&logoColor=white) ![IDS](https://img.shields.io/badge/IDS-intrusion_detection-EF3B2D?style=for-the-badge) ![DNS filter](https://img.shields.io/badge/DNS_filter-blocklists-68BC71?style=for-the-badge) ![mitmproxy](https://img.shields.io/badge/mitmproxy-selective_DPI-2B6CB0?style=for-the-badge) ![Ubuntu](https://img.shields.io/badge/Ubuntu-24.04_LTS-E95420?style=for-the-badge&logo=ubuntu&logoColor=white)
 
 ![Tests](https://img.shields.io/badge/tests-362_passing-2fbf71?style=flat-square) ![Detection signals](https://img.shields.io/badge/detection_signals-14-4f9cf9?style=flat-square) ![ATT&CK](https://img.shields.io/badge/MITRE_ATT%26CK-mapped-7b5cf0?style=flat-square) ![Stages complete](https://img.shields.io/badge/roadmap-stages_0%E2%80%936_complete-2fbf71?style=flat-square) ![No Docker](https://img.shields.io/badge/footprint-3.6_GiB_RAM,_no_Docker-8d99ad?style=flat-square)
 
@@ -40,7 +40,7 @@ It decrypts nothing else.
 <td width="33%" valign="top">
 
 ### Detect
-**Suricata IDS**, the DNS resolver and the inspection proxy all write into one event
+**IDS**, the DNS resolver and the inspection proxy all write into one event
 store. A **correlation engine** runs fourteen signal checks over that data every 15 seconds,
 merges repeat detections, and links related incidents into **campaigns** mapped to a MITRE
 ATT&CK kill chain, so **15,884 raw events became 10 incidents** over a real
@@ -73,7 +73,7 @@ and puts back anything altered outside the console.
 | **Alert-to-incident reduction** | **1,588 : 1** over a clean 24-hour window | [Evaluation §2](EVALUATION-RESULTS.md) |
 | **Third-party ad blocking** | **100%** (10/10 fixed test domains) | [Evaluation §4](EVALUATION-RESULTS.md) |
 | **Detection** | 4 attack types × 3 runs each, **all detected**. 6/6 signals verified live. One real bug found and fixed along the way | [Evaluation §1](EVALUATION-RESULTS.md) |
-| **DNS rules enforced** | **656,735** across 5 curated lists | Live AdGuard Home |
+| **DNS rules enforced** | **656,735** across 5 curated lists | Live DNS filter |
 | **Memory under attack load** | **40%** of 3.6 GiB used, over 2 GiB free | [Evaluation §5](EVALUATION-RESULTS.md) |
 | **Throughput headroom** | Limited by the WAN (~30 Mbps). The inspection path itself ran at **39.9 Gbps** on virtual links | [Evaluation §6](EVALUATION-RESULTS.md) |
 | **Automated tests** | **362** unit tests (`make test`), all on synthetic data | [`tests/`](tests) |
@@ -97,7 +97,7 @@ and puts back anything altered outside the console.
 <p align="center">
   <img src="docs/assets/screenshots/response.png" alt="Response page" width="100%">
 </p>
-<p align="center"><sub><b>Response</b>: every policy the gateway is enforcing (quarantines, blocks, allows, profiles, pauses, inspection), where each came from, when it ends and when it was last read back from nftables or AdGuard. Beside it: the health of each enforcement point, the orchestrator's own activity (drift repaired, rollbacks, expiries), auto-response and device trust.</sub></p>
+<p align="center"><sub><b>Response</b>: every policy the gateway is enforcing (quarantines, blocks, allows, profiles, pauses, inspection), where each came from, when it ends and when it was last read back from nftables or the DNS filter. Beside it: the health of each enforcement point, the orchestrator's own activity (drift repaired, rollbacks, expiries), auto-response and device trust.</sub></p>
 
 <table>
 <tr>
@@ -213,19 +213,19 @@ flowchart LR
 Three sensors write into one shared event table. The correlation engine and the console both
 read from it directly, so what the console shows is exactly what detection saw. The console
 also writes back: quarantine and enrollment go to nftables sets, and filtering rules and
-per-device policy go to AdGuard Home's API.
+per-device policy go to the DNS filter's API.
 
 ```mermaid
 %%{init: {'theme':'base','themeVariables':{'primaryColor':'#161d2b','primaryTextColor':'#e6ecf5','primaryBorderColor':'#2e3a50','secondaryColor':'#111722','tertiaryColor':'#0d121b','lineColor':'#4f9cf9','clusterBkg':'#0d121b','clusterBorder':'#2e3a50','titleColor':'#aab6c8','edgeLabelBackground':'#1d2534','textColor':'#8d99ad'},'flowchart':{'curve':'basis','padding':14,'nodeSpacing':38,'rankSpacing':46}}}%%
 flowchart LR
     subgraph S["Sensors"]
         direction TB
-        SUR["Suricata IDS<br/>eve.json"]
-        AGH["AdGuard Home<br/>query API"]
+        SUR["IDS<br/>eve.json"]
+        AGH["DNS filter<br/>query API"]
         DPI["mitmproxy addon<br/>dpi-events.jsonl"]
     end
 
-    ING["<b>ingest.py</b><br/>tails logs by inode<br/>polls AdGuard every 2 s"]
+    ING["<b>ingest.py</b><br/>tails logs by inode<br/>polls DNS-filter every 2 s"]
     LEASE["DHCP leases"]
     REG["<b>registry.py</b><br/>device identity<br/>IP history"]
     DB[("<b>SQLite · WAL</b><br/>events · devices<br/>incidents · audit_log")]
@@ -262,8 +262,8 @@ flowchart LR
 | Layer | Choice | Why |
 |---|---|---|
 | Host | Ubuntu Server 24.04 LTS on an x86-64 laptop (i3-1005G1, **3.6 GiB RAM**) | x86-64 packages, an SSD and a built-in battery. The small RAM budget ruled out Docker from day one |
-| Network | `hostapd`, `nftables`, AdGuard Home DHCP | Router, access point, NAT and firewall on one box |
-| Sensing | **Suricata 7** (af-packet), **AdGuard Home**, **mitmproxy 12** addon | IDS flows/alerts, DNS decisions, selective TLS inspection |
+| Network | `hostapd`, `nftables`, DNS-filter DHCP | Router, access point, NAT and firewall on one box |
+| Sensing | **IDS** (af-packet), **DNS filter**, **mitmproxy 12** addon | IDS flows/alerts, DNS decisions, selective TLS inspection |
 | Storage | **SQLite** in WAL mode, one unified `events` table | One `events` table, so no UNIONs across tables in detection queries. Readers never block the writer |
 | Detection | Plain Python and windowed SQL, no framework | Every detection is a query anyone can run by hand to check it |
 | Console | **FastAPI**, Jinja2, vanilla JS, **Chart.js 4**, one hand-written stylesheet | No build step and no SPA framework. Session-cookie auth runs as middleware (step 3.1) and blocks every request if the password file is missing |
@@ -288,8 +288,8 @@ produces the reduction ratio.
 | `slow_port_scan` / `slow_network_sweep` | The same two patterns above, paced too slowly for their fast window to ever catch (nmap `-T0`/`-T1`-style timing) | ≥ 8 over 7200 s | ![high](https://img.shields.io/badge/-high-f2545b?style=flat-square) | Same techniques as above |
 | `brute_force` | Many short connections to an auth port (SSH, FTP, Telnet, RDP, SMTP) | ≥ 6 attempts in 120 s | ![high](https://img.shields.io/badge/-high-f2545b?style=flat-square) | Credential Access · [T1110](https://attack.mitre.org/techniques/T1110/) |
 | `malicious_domain` | Blocked lookups across many **distinct** domains (not raw volume, which is mostly SDK retries) | ≥ 15 distinct in 600 s | ![medium](https://img.shields.io/badge/-medium-f5a524?style=flat-square) | *not tagged on purpose*¹ |
-| `dns_bypass` | A device routing DNS around AdGuard: rejected DoT/DoH/QUIC, Firefox/Apple canary-domain queries, or a TLS SNI matching a known DoH provider | ≥ 3 combined indicators in 300 s | ![medium](https://img.shields.io/badge/-medium-f5a524?style=flat-square) | Defense Evasion · [TA0005](https://attack.mitre.org/tactics/TA0005/) (tactic only)¹ |
-| `ids_*` (8 types) | Suricata/ET Open alerts, grouped by device + category. 7 curated types (trojan, C2, C2 domain, exploit kit, shellcode, privilege gain, credential theft) each get a plain name and ATT&CK tag; everything else falls to `ids_other`, severity from Suricata's own priority | ≥ 3 of the same category in 300 s | varies by category | Varies - see [`app/signature_taxonomy.py`](app/signature_taxonomy.py) |
+| `dns_bypass` | A device routing DNS around the DNS filter: rejected DoT/DoH/QUIC, Firefox/Apple canary-domain queries, or a TLS SNI matching a known DoH provider | ≥ 3 combined indicators in 300 s | ![medium](https://img.shields.io/badge/-medium-f5a524?style=flat-square) | Defense Evasion · [TA0005](https://attack.mitre.org/tactics/TA0005/) (tactic only)¹ |
+| `ids_*` (8 types) | IDS/ET Open alerts, grouped by device + category. 7 curated types (trojan, C2, C2 domain, exploit kit, shellcode, privilege gain, credential theft) each get a plain name and ATT&CK tag; everything else falls to `ids_other`, severity from the IDS's own priority | ≥ 3 of the same category in 300 s | varies by category | Varies - see [`app/signature_taxonomy.py`](app/signature_taxonomy.py) |
 | `threat_intel` | A device contacted an IP or domain confirmed malicious by abuse.ch's Feodo Tracker, URLhaus or ThreatFox (daily-refreshed, 5,600+ real indicators) | ≥ 1 match in 3600 s | ![high](https://img.shields.io/badge/-high-f2545b?style=flat-square) | Command and Control · [TA0011](https://attack.mitre.org/tactics/TA0011/) (tactic only) |
 | `dns_tunneling` | Many distinct high-entropy subdomains, or an unusual TXT-query ratio, under one domain - data smuggled out through DNS | ≥ 20 distinct subdomains + entropy/TXT-ratio in 600 s | ![high](https://img.shields.io/badge/-high-f2545b?style=flat-square) | Command and Control · [T1071.004](https://attack.mitre.org/techniques/T1071/004/) |
 | `dga` | A burst of *genuine* NXDOMAIN lookups (not just blocked) with high-entropy labels - malware hunting for its C2 domain | ≥ 10 NXDOMAIN + entropy in 600 s | ![high](https://img.shields.io/badge/-high-f2545b?style=flat-square) | Command and Control · [T1568.002](https://attack.mitre.org/techniques/T1568/002/) |
@@ -310,7 +310,7 @@ produces the reduction ratio.
 sequenceDiagram
     autonumber
     participant A as Unknown device
-    participant S as Suricata + ingest
+    participant S as IDS + ingest
     participant D as SQLite
     participant E as Engine
     participant O as Operator
@@ -427,7 +427,7 @@ and no certificate is ever presented for them.
 flowchart TD
     Q["Device traffic"] --> DNS{"DNS query"}
     DNS -->|"any resolver, port 53"| DNAT["nftables DNAT<br/>forced to 10.10.0.1"]
-    DNAT --> AGH{"AdGuard Home<br/>656,735 rules"}
+    DNAT --> AGH{"DNS filter<br/>656,735 rules"}
     AGH -->|match| BLK["0.0.0.0 · blocked<br/><b>Tier 1</b>: every device"]
     AGH -->|clean| OK["resolved via DoT upstreams"]
 
@@ -587,8 +587,8 @@ devices on the network**. Full method and raw figures: [`EVALUATION-RESULTS.md`]
 
 | Service | Memory |
 |---|---:|
-| Suricata | 683 MB |
-| AdGuard Home | 235 MB |
+| IDS | 683 MB |
+| DNS filter | 235 MB |
 | Console (`securepi-web`) | 121 MB |
 | Ingest | 15 MB |
 | Correlation engine | 5 MB |
@@ -603,9 +603,9 @@ devices on the network**. Full method and raw figures: [`EVALUATION-RESULTS.md`]
 > [!WARNING]
 > **Limitations found and reported honestly**
 > - **A real bug found during evaluation:** `new_device_signal` used a persisted watermark that meant new devices were almost never detected. It was fixed, verified live, and is now covered by regression tests.
-> - **\*Malicious-domain latency** was originally limited by AdGuard only flushing its on-disk query log every 1,000 queries. Ingest now polls AdGuard's API in real time instead (step 1.4).
+> - **\*Malicious-domain latency** was originally limited by the DNS filter only flushing its on-disk query log every 1,000 queries. Ingest now polls the DNS filter's API in real time instead (step 1.4).
 > - **One false positive** on a real phone: ordinary ad-SDK background traffic crossed a *raw-count* threshold. The signal now counts **distinct** domains (step 1.6).
-> - **Two earlier features had silently stopped working, found while building Stage 4:** AdGuard does not ignore a trailing `# comment` on a rule line, so step 5.2's temporary allows and 5.5's vendor-telemetry rules never matched; and step 2.2's firewall change was never saved as the boot-time `/etc/nftables.conf`, so reboots dropped the DNS-bypass logging. Both fixed and verified live ([Evaluation 2 §Stage 4](EVALUATION-RESULTS-2.md)).
+> - **Two earlier features had silently stopped working, found while building Stage 4:** the DNS filter does not ignore a trailing `# comment` on a rule line, so step 5.2's temporary allows and 5.5's vendor-telemetry rules never matched; and step 2.2's firewall change was never saved as the boot-time `/etc/nftables.conf`, so reboots dropped the DNS-bypass logging. Both fixed and verified live ([Evaluation 2 §Stage 4](EVALUATION-RESULTS-2.md)).
 
 ---
 
@@ -637,11 +637,11 @@ is in [`ENHANCEMENT-PLAN.md`](ENHANCEMENT-PLAN.md).
 ```text
 securepi-gateway/
 ├── app/                      Ingest, identity, correlation engine and console
-│   ├── ingest.py             Suricata / AdGuard / DPI → unified events table
+│   ├── ingest.py             IDS / DNS filter / DPI → unified events table
 │   ├── registry.py           Device identity across MAC randomization
 │   ├── correlation.py        The six detection signals + incident dedup
 │   ├── engine.py             15-second loop: signals, rollups, retention
-│   ├── orchestrator.py       Desired state → nftables + AdGuard, verified, drift repaired
+│   ├── orchestrator.py       Desired state → nftables + DNS filter, verified, drift repaired
 │   ├── profiles.py · notify.py   Filtering profiles and schedules · incident notifications
 │   ├── risk.py · playbooks.py · fingerprint.py · firewall_sets.py · retention.py
 │   ├── webapp.py             FastAPI console (pages + JSON API)
@@ -658,7 +658,7 @@ securepi-gateway/
 ### 1. Run the test suite
 
 The code that can run anywhere (parsing, detection, retention, identity, DPI rule logic) is tested on the
-development Mac against in-memory SQLite and synthetic Suricata and AdGuard records. It never touches the live gateway.
+development Mac against in-memory SQLite and synthetic IDS/DNS-filter records. It never touches the live gateway.
 
 ```bash
 make test        # python3 -m unittest discover -s tests -p 'test_*.py' -v

@@ -112,7 +112,7 @@ SETTINGS_SCHEMA = {
         "label": "DNS-bypass threshold",
         "help": "Combined DoT/DoH/QUIC/Private-Relay bypass attempts from one device, in the "
                 "signal's window, before it's flagged. Combines nftables reject-rule hits, "
-                "Firefox/Apple canary-domain queries, and Suricata TLS SNI matches on known "
+                "Firefox/Apple canary-domain queries, and IDS TLS SNI matches on known "
                 "DoH providers into one count.",
     },
     "dns_bypass_window_seconds": {
@@ -123,7 +123,7 @@ SETTINGS_SCHEMA = {
     "ids_alert_threshold": {
         "default": 3, "type": int, "min": 1, "max": 1000,
         "label": "IDS-alert threshold",
-        "help": "Suricata/ET alerts of the same category from one device, in the signal's "
+        "help": "IDS/ET alerts of the same category from one device, in the signal's "
                 "window, before it's flagged. Keeps a single stray alert from becoming an "
                 "incident on its own; a sustained pattern still gets one, per category.",
     },
@@ -259,7 +259,7 @@ SETTINGS_SCHEMA = {
     "health_stale_after_seconds": {
         "default": 60, "type": int, "min": 30, "max": 3600,
         "label": "Platform staleness threshold",
-        "help": "How long (seconds) with no fresh Suricata- or AdGuard-sourced events before "
+        "help": "How long (seconds) with no fresh IDS- or DNS-filter-sourced events before "
                 "that sensor is flagged stale, even if its systemd unit is still 'active' - "
                 "catches a hung process a bare is-active check would miss (step 3.5).",
     },
@@ -279,16 +279,16 @@ SETTINGS_SCHEMA = {
     "dns_failopen_check_interval_seconds": {
         "default": 5, "type": int, "min": 2, "max": 60,
         "label": "DNS fail-open check interval",
-        "help": "How often (seconds) the gateway probes AdGuard with a real DNS query, separate "
+        "help": "How often (seconds) the gateway probes the DNS filter with a real DNS query, separate "
                 "from and faster than the general platform health interval - the ~30s 'clients "
                 "still resolve' exit criterion has no room to wait out a slower cycle (step 3.6).",
     },
     "dns_failopen_after_seconds": {
         "default": 10, "type": int, "min": 5, "max": 120,
         "label": "DNS fail-open grace period",
-        "help": "How long (seconds) AdGuard must go on not answering DNS queries before the "
+        "help": "How long (seconds) the DNS filter must go on not answering DNS queries before the "
                 "gateway redirects plaintext DNS to a public upstream resolver - long enough that "
-                "AdGuard's own automatic restart (10s) usually gets a chance to fix things first, "
+                "The DNS filter's own automatic restart (10s) usually gets a chance to fix things first, "
                 "short enough that the ~30s exit criterion still has margin (step 3.6).",
     },
     # ---- Stage 4: response and notifications. `group` puts each on its

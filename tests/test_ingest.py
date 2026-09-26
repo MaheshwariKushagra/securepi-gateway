@@ -4,12 +4,12 @@ SecurePi Gateway - ingest parsing tests (ENHANCEMENT-PLAN.md steps 1.1
 and 1.4).
 
 Tests app/ingest.py's flattening functions against the synthetic eve.json/
-AdGuard querylog fixtures in tests/fixtures.py - the "generator script
+DNS-filter querylog fixtures in tests/fixtures.py - the "generator script
 creates synthetic eve/querylog fixtures" half of step 1.1's own row. These
 exercise the PARSING layer specifically (raw JSON-shaped dict in, a flat
 events-table row out), which is a different failure mode than
 test_correlation.py's DB-level signal tests: a malformed or renamed
-upstream field (Suricata or AdGuard changing their JSON shape) would break
+upstream field (the IDS or the DNS filter changing their JSON shape) would break
 here without ever reaching a signal.
 
 ParseRfc3339Tests (added for step 1.4) are regression tests for a real
@@ -36,22 +36,22 @@ class ParseRfc3339Tests(unittest.TestCase):
     """Regression tests for the real timestamp bug found and fixed in step
     1.4 - see parse_rfc3339's own docstring. Every case below is a real
     timestamp string observed live, either on the gateway's actual
-    eve.json/querylog.json files or from AdGuard's real /control/querylog
+    eve.json/querylog.json files or from the DNS filter's real /control/querylog
     API response, not invented."""
 
     def test_z_suffixed_nanosecond_precision(self):
-        # Real AdGuard API entry.
+        # Real DNS-filter API entry.
         epoch = ingest.parse_rfc3339("2026-09-12T23:50:11.853451407Z")
         self.assertAlmostEqual(epoch, 1789257011.853451, places=3)
 
     def test_colon_offset_nanosecond_precision(self):
-        # Real AdGuard querylog.json file line AND API entry - the exact
+        # Real DNS-filter querylog.json file line AND API entry - the exact
         # case that used to be silently wrong by 5.5 hours.
         epoch = ingest.parse_rfc3339("2026-09-13T14:28:29.571373047+05:30")
         self.assertAlmostEqual(epoch, 1789289909.571373, places=3)
 
     def test_no_colon_offset_microsecond_precision(self):
-        # Real Suricata eve.json line - the format the old to_epoch
+        # Real IDS eve.json line - the format the old to_epoch
         # docstring incorrectly claimed was always '+0000'.
         epoch = ingest.parse_rfc3339("2026-09-14T03:53:12.151693+0530")
         self.assertAlmostEqual(epoch, 1789338192.151693, places=3)
@@ -100,7 +100,7 @@ class FlattenSuricataTests(unittest.TestCase):
         self.assertIsInstance(row["ts"], float)
 
     def test_flow_start_is_kept_apart_from_the_logging_time(self):
-        # Step 7.2: ts is when Suricata logged the flow (after it timed
+        # Step 7.2: ts is when the IDS logged the flow (after it timed
         # out); flow_start is when the connection began.
         row = ingest.flatten_suricata(fixtures.make_eve_flow(
             timestamp="2026-09-14T10:01:10.000000+0000", start="2026-09-14T10:00:00.000000+0000"))
@@ -217,7 +217,7 @@ class FlattenAghApiTests(unittest.TestCase):
     def test_dns_rcode_comes_from_the_status_field(self):
         # ENHANCEMENT-PLAN.md step 2.5 needs a genuine NXDOMAIN signal -
         # confirmed live (14 September 2026) that 'status' is the real
-        # response code AdGuard answered with, distinct from whether IT
+        # response code the DNS filter answered with, distinct from whether IT
         # blocked the query (a blocked query still reports NOERROR under
         # this gateway's 'default' blocking_mode).
         row = ingest.flatten_agh_api(fixtures.make_agh_api_entry(
@@ -361,7 +361,7 @@ class PartialLineTests(unittest.TestCase):
         first = self.json.dumps(fixtures.make_eve_flow(dest_port=1111)) + "\n"
         second = self.json.dumps(fixtures.make_eve_flow(dest_port=2222))
         with open(self.path, "w") as fh:
-            fh.write(first + second[:25])           # Suricata mid-write
+            fh.write(first + second[:25])           # IDS mid-write
         read, saved, errors = ingest.read_eve(conn)  # must not raise
         self.assertEqual((read, saved, errors), (1, 1, 0))
         self.assertEqual(ingest.get_state(conn, "suricata", self.path)[1], len(first.encode()))
@@ -481,7 +481,7 @@ class NftLogWatermarkTests(unittest.TestCase):
 class ReadNftLogTests(unittest.TestCase):
     """read_nft_log itself, with subprocess.run mocked - no real journalctl
     call, matching how ReadAghApiTests mocks adguard._request rather than
-    hitting a real AdGuard instance."""
+    hitting a real DNS-filter instance."""
 
     @staticmethod
     def _journal_line(message, realtime_us):

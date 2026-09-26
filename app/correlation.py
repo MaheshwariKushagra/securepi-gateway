@@ -186,7 +186,7 @@ def raise_incident(conn, device_id, signal_type, severity, title, description,
 #
 # Threshold chosen deliberately low (8 ports / 5 minutes) because this signal
 # is meant to catch the slow scan that a per-packet IDS signature misses, not
-# just to duplicate what Suricata's own scan rules already flag.
+# just to duplicate what the IDS's own scan rules already flag.
 # --------------------------------------------------------------------------
 # Window and threshold both live in app/settings.py (steps 1.2 and 6.3) -
 # queried fresh every cycle below, the same "no cached state" design this
@@ -431,7 +431,7 @@ def slow_scan_signal(conn):
 # Signal 1d: DNS-filtering bypass (ENHANCEMENT-PLAN.md step 2.2)
 #
 # Combines three independent kinds of evidence that a device is routing
-# its DNS around AdGuard rather than through it, into one count per
+# its DNS around DNS-filter rather than through it, into one count per
 # device:
 #   1. nftables reject-rule hits (source='nftables', event_type=
 #      'bypass_attempt') - a device that actually tried DoT (port 853),
@@ -441,11 +441,11 @@ def slow_scan_signal(conn):
 #   2. Canary-domain queries (event_type='dns_query') for
 #      use-application-dns.net (Firefox's own DoH auto-enable check) or
 #      mask.icloud.com / mask-h2.icloud.com (Apple's documented iCloud
-#      Private Relay opt-out signal) - AdGuard now answers all three with
+#      Private Relay opt-out signal) - the DNS filter now answers all three with
 #      a genuine NXDOMAIN (app/adguard.py's add_nxdomain_rule), so seeing
 #      the QUERY at all means the client-side mechanism ran, independent
 #      of whether the nftables layer ever saw a rejected connection.
-#   3. Suricata TLS SNI matches (event_type='tls') against known DoH
+#   3. IDS TLS SNI matches (event_type='tls') against known DoH
 #      provider hostnames - catches a provider's IP the moment it
 #      changes, before the doh_resolvers nft set's next daily refresh
 #      (gateway/refresh-doh-set.sh) would.
@@ -463,12 +463,12 @@ def slow_scan_signal(conn):
 # own note above.
 
 CANARY_DOMAINS = ("use-application-dns.net", "mask.icloud.com", "mask-h2.icloud.com")
-# Checked live (26 September 2026, step 7.2): AdGuard Home answers the
+# Checked live (26 September 2026, step 7.2): the DNS filter answers the
 # Firefox canary through our $dnsrewrite rule but never writes it to its
 # query log (the iCloud canaries ARE logged, reason "RewriteRule"), so an
-# AdGuard-sourced dns_query event for it can never exist. Suricata captures
+# DNS-filter-sourced dns_query event for it can never exist. The IDS captures
 # ap0 and logs every DNS request a device sends the gateway, so for this
-# one domain the signal counts Suricata's own DNS records instead - only
+# one domain the signal counts the IDS's own DNS records instead - only
 # this one, so the logged canaries aren't counted twice.
 CANARY_DOMAINS_NOT_IN_ADGUARD_LOG = ("use-application-dns.net",)
 # Curated, not exhaustive - the same "short, defensible list beats a large
@@ -572,7 +572,7 @@ def dns_bypass_signal(conn):
 # --------------------------------------------------------------------------
 # Signal 1e: IDS alerts -> incidents (ENHANCEMENT-PLAN.md step 2.3)
 #
-# Suricata/ET Open alerts have been ingested since day one (source=
+# IDS/ET Open alerts have been ingested since day one (source=
 # 'suricata', event_type='alert') but never turned into anything the
 # console shows - the exact gap ENHANCEMENT-PLAN.md §1.1 names ("Alerts
 # ingested but never used"). This signal closes it, using
@@ -619,7 +619,7 @@ def ids_alert_signal(conn):
     fired = 0
     for r in rows:
         # max() only because alert_severity is 1:1 with alert_category in
-        # Suricata's own classification.config - it never actually varies
+        # the IDS's own classification.config - it never actually varies
         # within a group, so which aggregate wins doesn't matter (the same
         # reasoning app/webapp.py's signal_mix query already documents for
         # incidents.severity).
@@ -647,7 +647,7 @@ def ids_alert_signal(conn):
             conn, r["device_id"], signal_type, severity,
             title="%s (%d alerts)" % (plain_name, r["n"]),
             description=(
-                "%d Suricata alerts in category \"%s\" over %d seconds. Top signatures: %s.%s"
+                "%d IDS alerts in category \"%s\" over %d seconds. Top signatures: %s.%s"
                 % (r["n"], r["alert_category"], window,
                    ", ".join("%s (x%d)" % (t["alert_signature"], t["n"]) for t in top),
                    attack_note)
@@ -667,7 +667,7 @@ def ids_alert_signal(conn):
 # Matches recent events against app/intel.py's daily-refreshed `ioc`
 # table (abuse.ch Feodo Tracker / URLhaus / ThreatFox): flow destination
 # IPs against ip-type indicators, and DNS queries / TLS SNI against
-# domain-type ones. Domain-type indicators are ALSO pushed to AdGuard as
+# domain-type ones. Domain-type indicators are ALSO pushed to the DNS filter as
 # a real blocklist (intel.py's own job) - this signal is what turns a
 # match into an INCIDENT, on top of intel.py's blocklist turning it into
 # a block. The three UNION ALL branches (rather than one query with OR'd
@@ -1017,7 +1017,7 @@ def beacon_signal(conn):
 
     # The window is on ts (when the flow was logged), so a flow logged late
     # is still picked up; the timing is judged on flow_start (when the
-    # connection began). Suricata logs flows in batches after they time
+    # connection began). The IDS logs flows in batches after they time
     # out, so ts gaps are the flow manager's rhythm, not the beacon's - a
     # 10 s beacon's logged gaps ran 5-15 s and it scored 0.73 against the
     # 0.8 threshold (step 7.2 finding, measured live). Rows from before

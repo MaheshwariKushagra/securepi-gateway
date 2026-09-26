@@ -7,14 +7,14 @@
 # port-scan/brute-force detections can be exercised repeatedly (e.g. for the
 # day-14 evaluation) without generating traffic against real devices.
 #
-# Suricata captures on veth-atk (the attacker's bridge-side port) as a SECOND
+# The IDS captures on veth-atk (the attacker's bridge-side port) as a SECOND
 # af-packet interface, alongside its real ap0 capture. It must exist before
-# Suricata starts, which is why this runs as a systemd unit ordered first -
+# the IDS starts, which is why this runs as a systemd unit ordered first -
 # see securepi-test-harness.service.
 set -e
 
 # Segmentation offload off on both namespace interfaces. With it on, the
-# kernel hands bulk TCP across the veth as 64 KB packets, and Suricata
+# kernel hands bulk TCP across the veth as 64 KB packets, and the IDS
 # (capturing veth-atk) keeps only the first part of each: step 7.2's
 # 150 MB iperf3 transfers were logged as under 1 MB and volume_anomaly
 # never fired. Real Wi-Fi clients' packets arrive at normal size, so only
@@ -58,7 +58,7 @@ ip netns exec ns_victim ip link set eth0 up
 ip netns exec ns_victim ip addr add 10.10.0.221/24 dev eth0
 # Nine extra addresses on the SAME interface (ENHANCEMENT-PLAN.md step 2.1),
 # purely so a network-sweep test has real distinct hosts to find. A scan
-# against an address with no host behind it never produces a Suricata flow
+# against an address with no host behind it never produces an IDS flow
 # event at all - the kernel can't ARP-resolve it, so no IP packet ever
 # leaves ns_attacker's interface for that address. These are IP aliases on
 # ns_victim's own single interface, not new namespaces: still fully

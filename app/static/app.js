@@ -440,7 +440,7 @@ async function refreshDnsStatus() {
         if (!banner) return;
         banner.hidden = !d.active;
         if (d.active && text) {
-            text.textContent = "DNS protection degraded - AdGuard isn't answering" +
+            text.textContent = "DNS protection degraded - the DNS filter isn't answering" +
                 (d.since ? ` (since ${d.since})` : "") +
                 " - plaintext DNS is running unfiltered through a public resolver.";
         }
@@ -971,7 +971,7 @@ function initIncidentBlockDomain() {
             btn.disabled = true;
             btn.textContent = `Blocked ${domain}`;
         } catch (err) {
-            toast("Could not block domain", "AdGuard Home did not accept the change.", "high");
+            toast("Could not block domain", "The DNS filter did not accept the change.", "high");
         }
     });
 }
@@ -1295,7 +1295,7 @@ function initDeviceBlocked() {
             toast("Allowed for this device", temporary ? `${domain} — for 1 hour` : domain, "ok");
             load();
         } catch (err) {
-            toast("Could not allow domain", "AdGuard Home did not accept the change.", "high");
+            toast("Could not allow domain", "The DNS filter did not accept the change.", "high");
         }
     }
 
@@ -1317,7 +1317,7 @@ function initDeviceBlocked() {
                     <button class="btn" data-allow="${esc(r.domain)}" title="Allow for this device from now on">Allow</button>
                 </div>`).join("");
         } catch (err) {
-            wrap.innerHTML = `<div class="empty">Could not reach AdGuard Home</div>`;
+            wrap.innerHTML = `<div class="empty">Could not reach the DNS filter</div>`;
         }
     }
 
@@ -1345,7 +1345,7 @@ function initDeviceBlocked() {
                     toast("Allowed", detail, "ok");
                 }
             } catch (err) {
-                toast("Check failed", "Could not reach AdGuard Home.", "high");
+                toast("Check failed", "Could not reach the DNS filter.", "high");
             }
         }
         checkBtn.addEventListener("click", runCheck);
@@ -1461,7 +1461,7 @@ function initDeviceProfiles() {
             toast("Profile applied", select.options[select.selectedIndex].text, "ok");
             loadApplied();
         } catch (err) {
-            toast("Could not apply profile", "AdGuard Home did not accept the change.", "high");
+            toast("Could not apply profile", "The DNS filter did not accept the change.", "high");
         }
     });
 
@@ -1478,7 +1478,7 @@ function initDeviceProfiles() {
             toast("Profile removed", "", "ok");
             loadApplied();
         } catch (err) {
-            toast("Could not remove profile", "AdGuard Home did not accept the change.", "high");
+            toast("Could not remove profile", "The DNS filter did not accept the change.", "high");
         }
     });
 
@@ -2123,11 +2123,11 @@ function initResolverQuality() {
                     toast("Resolver tuning applied", "", "ok");
                     load();
                 } catch (err) {
-                    toast("Could not apply tuning", "AdGuard Home did not accept the change.", "high");
+                    toast("Could not apply tuning", "The DNS filter did not accept the change.", "high");
                 }
             });
         } catch (err) {
-            wrap.innerHTML = `<div class="empty">Could not reach AdGuard Home</div>`;
+            wrap.innerHTML = `<div class="empty">Could not reach the DNS filter</div>`;
         }
     }
     load();
@@ -2287,7 +2287,7 @@ function initFiltering() {
             masterBtn.dataset.enabled = data.enabled ? "1" : "0";
 
             // Health (staleness + contribution) is a second, independent
-            // fetch: it's allowed to fail (a fresh AdGuard with no
+            // fetch: it's allowed to fail (a fresh DNS filter with no
             // telemetry yet) without taking down the list view itself.
             let healthByUrl = {};
             try {
@@ -2299,7 +2299,7 @@ function initFiltering() {
             } catch (err) { /* list rows just render without badges */ }
             renderLists(data.filters, healthByUrl);
         } catch (err) {
-            listsEl.innerHTML = `<div class="empty">Could not reach AdGuard Home. Is it running?</div>`;
+            listsEl.innerHTML = `<div class="empty">Could not reach the DNS filter. Is it running?</div>`;
             rulesEl.innerHTML = "";
             masterBtn.textContent = "Unavailable";
         }
@@ -2316,7 +2316,7 @@ function initFiltering() {
                 if (!res.ok) throw new Error("request failed");
                 toast("Blocklist updated", "", "ok");
                 loadStatus();
-            } catch (err) { toast("Update failed", "Could not reach AdGuard Home.", "high"); }
+            } catch (err) { toast("Update failed", "Could not reach the DNS filter.", "high"); }
             return;
         }
         const rm = e.target.closest("[data-list-remove]");
@@ -2329,7 +2329,7 @@ function initFiltering() {
                 if (!res.ok) throw new Error("request failed");
                 toast("Blocklist removed", "", "ok");
                 loadStatus();
-            } catch (err) { toast("Remove failed", "Could not reach AdGuard Home.", "high"); }
+            } catch (err) { toast("Remove failed", "Could not reach the DNS filter.", "high"); }
         }
     });
 
@@ -2344,7 +2344,7 @@ function initFiltering() {
             if (!res.ok) throw new Error("request failed");
             toast("Rule removed", "", "ok");
             loadStatus();
-        } catch (err) { toast("Remove failed", "Could not reach AdGuard Home.", "high"); }
+        } catch (err) { toast("Remove failed", "Could not reach the DNS filter.", "high"); }
     });
 
     masterBtn.addEventListener("click", async () => {
@@ -2357,7 +2357,7 @@ function initFiltering() {
             if (!res.ok) throw new Error("request failed");
             toast("Filtering " + (enabled ? "enabled" : "disabled"), "", "ok");
             loadStatus();
-        } catch (err) { toast("Update failed", "Could not reach AdGuard Home.", "high"); }
+        } catch (err) { toast("Update failed", "Could not reach the DNS filter.", "high"); }
     });
 
     $("#filterListAddForm").addEventListener("submit", async (e) => {
@@ -2374,7 +2374,7 @@ function initFiltering() {
             nameEl.value = ""; urlEl.value = "";
             toast("Blocklist added", name, "ok");
             loadStatus();
-        } catch (err) { toast("Add failed", "Could not reach AdGuard Home.", "high"); }
+        } catch (err) { toast("Add failed", "Could not reach the DNS filter.", "high"); }
     });
 
     async function addRule(action) {
@@ -2390,7 +2390,7 @@ function initFiltering() {
             domainEl.value = "";
             toast("Rule added", `${action} ${domain}`, "ok");
             loadStatus();
-        } catch (err) { toast("Add failed", "Could not reach AdGuard Home.", "high"); }
+        } catch (err) { toast("Add failed", "Could not reach the DNS filter.", "high"); }
     }
     $("#filterRuleBlockBtn").addEventListener("click", () => addRule("block"));
     $("#filterRuleAllowBtn").addEventListener("click", () => addRule("allow"));
@@ -2428,7 +2428,7 @@ function initFiltering() {
                     ${r.cname ? ` — via CNAME to <span class="mono">${esc(r.cname)}</span>` : ""}
                 </div>`;
         } catch (err) {
-            resultEl.innerHTML = `<div class="empty">Could not reach AdGuard Home</div>`;
+            resultEl.innerHTML = `<div class="empty">Could not reach the DNS filter</div>`;
         }
     }
     const checkBtn = $("#checkBtn");
@@ -3025,7 +3025,7 @@ function initDeviceFiltering() {
             if (f.schedule_label) text += ` · schedule ${esc(f.schedule_label)}${f.schedule_active ? ' <span class="text-medium">(active now)</span>' : ""}`;
             if (f.paused) text = `<span class="text-medium">Paused · ${fmtLeft(f.pause_remaining_s)} left</span> · ${text}`;
             else if (f.managed && f.filtering_enabled === false && f.profile !== "unrestricted") {
-                text += ` · <span class="text-high">AdGuard reports filtering off - the orchestrator will correct it</span>`;
+                text += ` · <span class="text-high">the DNS filter reports filtering off - the orchestrator will correct it</span>`;
             }
             desc.innerHTML = text;
             if (f.paused) {
@@ -3061,7 +3061,7 @@ function initDeviceFiltering() {
         pick.disabled = true;
         try {
             await api(`/api/devices/${deviceId}/profile`, { profile: key, reason });
-            toast("Profile applied", `${label} - verified in AdGuard Home.`, "ok");
+            toast("Profile applied", `${label} - verified in the DNS filter.`, "ok");
             deviceChanged();
         } catch (err) {
             toast("Profile not applied", err.message, "high");
@@ -3112,7 +3112,7 @@ function policyTargetHtml(p) {
 function policyVerifiedHtml(p) {
     if (p.last_error) return `<span class="text-high" title="${esc(p.last_error)}">check failed</span>`;
     if (p.verified_age_s == null) return `<span class="dim">pending</span>`;
-    return `<span class="text-ok" title="Read back from the firewall / AdGuard">✓</span> <span class="dim">${fmtAgo(p.verified_age_s)}</span>`;
+    return `<span class="text-ok" title="Read back from the firewall / DNS filter">✓</span> <span class="dim">${fmtAgo(p.verified_age_s)}</span>`;
 }
 
 async function endPolicyFlow(p, onDone) {
@@ -3651,7 +3651,7 @@ function initProfiles() {
                 { name: "safe_search", label: "Enforce safe search on every search engine and YouTube", type: "checkbox", value: p.safe_search },
                 { name: "always_html", type: "html", html: `<span class="field-label">Always blocked - categories</span>${groupChecks("always", alwaysGroups)}` },
                 { name: "singles", label: "Always blocked - individual services", type: "text", value: alwaysSingles.join(", "),
-                  placeholder: "tiktok, snapchat", hint: "AdGuard service ids, comma-separated." },
+                  placeholder: "tiktok, snapchat", hint: "DNS-filter service ids, comma-separated." },
                 { name: "sched_on", label: "Also block some services during a daily window", type: "checkbox", value: !!p.schedule },
                 { name: "sched_html", type: "html", html: `<div class="toolbar" style="margin-bottom:8px">
                     <label class="field inline"><span class="field-label">From</span><input class="input" type="time" id="schedStart" value="${esc(sched.start)}" style="min-width:0;width:120px"></label>
@@ -3711,7 +3711,7 @@ function initNetworkPause() {
                 title: `Pause filtering for every device for ${fmtLeft(minutes * 60)}?`, tone: "danger", icon: "i-pause",
                 confirm: "Pause filtering",
                 description: "Ads, trackers and known-malicious domains resolve normally on the whole network until it resumes. " +
-                    "AdGuard Home resumes on its own when the time is up.",
+                    "The DNS filter resumes on its own when the time is up.",
                 fields: [reasonField("")],
             });
             if (!v) return;

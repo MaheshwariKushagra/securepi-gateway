@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Run the real SecurePi console (app/webapp.py, unmodified on disk) locally on
-the Mac against the synthetic demo DB, with gateway-only dependencies (AdGuard
-Home's API, nftables, the CA file) replaced by in-memory stand-ins."""
+the Mac against the synthetic demo DB, with gateway-only dependencies (the DNS filter's
+API, nftables, the CA file) replaced by in-memory stand-ins."""
 import datetime, os, shutil, sys, threading, time, types, json, sqlite3
 
 # The repository root, two folders up from docs/demo/.
@@ -18,10 +18,10 @@ if not os.path.exists(RULE_STATS):
 import adguard, dpi_enroll, quarantine, correlation, rollup  # noqa: E402
 import firewall_sets, notify, orchestrator  # noqa: E402
 
-# ---- AdGuard Home stand-in
+# ---- DNS-filter stand-in
 iso = lambda h: (datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(hours=h)).isoformat()
 FILTERS = [
-    {"id": 1, "name": "AdGuard DNS filter", "url": "https://adguardteam.github.io/HostlistsRegistry/assets/filter_1.txt", "enabled": True, "rules_count": 71384, "last_updated": iso(3)},
+    {"id": 1, "name": "Default DNS filter list", "url": "https://adguardteam.github.io/HostlistsRegistry/assets/filter_1.txt", "enabled": True, "rules_count": 71384, "last_updated": iso(3)},
     {"id": 2, "name": "AdAway Default Blocklist", "url": "https://adaway.org/hosts.txt", "enabled": True, "rules_count": 6540, "last_updated": iso(3)},
     {"id": 3, "name": "HaGeZi Pro", "url": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/adblock/pro.txt", "enabled": True, "rules_count": 243921, "last_updated": iso(3)},
     {"id": 4, "name": "OISD Big", "url": "https://big.oisd.nl", "enabled": True, "rules_count": 331443, "last_updated": iso(3)},
@@ -63,7 +63,7 @@ def fake_request(method, path, body=None):
     if path.startswith("/control/status"):
         left = max(0, int(((PROTECTION["until"] or 0) - time.time()) * 1000))
         if not PROTECTION["enabled"] and PROTECTION["until"] and left == 0:
-            PROTECTION.update(enabled=True, until=None)  # AdGuard's own auto-resume
+            PROTECTION.update(enabled=True, until=None)  # The DNS filter's own auto-resume
         return {"protection_enabled": PROTECTION["enabled"], "protection_disabled_duration": left}
     if path.startswith("/control/protection"):
         PROTECTION["enabled"] = body["enabled"]

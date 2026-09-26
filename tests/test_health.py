@@ -130,7 +130,7 @@ class CheckStalenessTests(unittest.TestCase):
         self.assertIn("correlation engine", rows[0]["title"] + rows[0]["description"])
 
     def test_no_events_ever_from_a_source_is_not_flagged_as_stale(self):
-        # A fresh install with no Suricata data yet is a startup
+        # A fresh install with no IDS data yet is a startup
         # condition, not staleness - max(ts) returns NULL, which must
         # not be misread as "very stale".
         conn = fixtures.temp_db()

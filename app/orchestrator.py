@@ -6,14 +6,14 @@ Every response action the console takes - quarantine a device, block an IP
 or a domain, give a device a filtering profile, pause filtering, turn on
 HTTPS inspection - is stored first as a row in the `policies` table: the
 DESIRED state. This module turns the active rows into the real thing
-(nftables set elements through the privileged helper, AdGuard Home rules
+(nftables set elements through the privileged helper, DNS-filter rules
 and client settings through its API), and then keeps it that way.
 
 It works in three steps, every time:
 
   1. Apply. Work out what every enforcement point should hold and change
      only what differs.
-  2. Read back. Ask nftables and AdGuard what they actually hold now, and
+  2. Read back. Ask nftables and the DNS filter what they actually hold now, and
      compare. A change that was accepted but didn't take is caught here.
   3. Roll back on a mismatch. Put every touched enforcement point back
      exactly as it was before step 1, mark the policy 'failed', and tell
@@ -24,7 +24,7 @@ ends policies whose time is up, applies the device trust rules (step 4.4)
 and automatic responses (step 4.2), follows a device to its new IP after a
 DHCP renewal, turns scheduled service blocks on and off (step 4.3), and
 notices when something outside the console changed what it applied - a
-rule deleted in AdGuard's own UI, an nftables element removed by hand. It
+rule deleted in the DNS filter's own UI, an nftables element removed by hand. It
 puts those back, writes an audit row, and raises a platform incident.
 
 Drift versus a planned change
@@ -54,7 +54,7 @@ One lock for both processes
 The console (securepi-web, unprivileged) applies a policy the moment it's
 created, so a quarantine takes effect immediately rather than on the next
 engine cycle. The engine (securepi-engine, root) runs reconcile(). Both
-change the same nftables sets and the same AdGuard rules list, so both
+change the same nftables sets and the same DNS-filter rules list, so both
 hold an exclusive file lock (fcntl.flock) on LOCK_PATH while they work.
 Without it, a reconcile that read the policies table a moment before the
 console inserted a new policy would see the console's fresh firewall
@@ -119,9 +119,9 @@ DOMAINS = ("macs", "ips", "rules", "clients", "protection", "enrolled")
 DOMAIN_LABELS = {
     "macs": "Quarantine (firewall)",
     "ips": "Blocked IPs (firewall)",
-    "rules": "Domain rules (AdGuard)",
-    "clients": "Device filtering settings (AdGuard)",
-    "protection": "Network-wide filtering (AdGuard)",
+    "rules": "Domain rules (DNS filter)",
+    "clients": "Device filtering settings (DNS filter)",
+    "protection": "Network-wide filtering (DNS filter)",
     "enrolled": "HTTPS inspection enrollment (firewall)",
 }
 
@@ -193,7 +193,7 @@ def lock(timeout_s=20):
 
 class Backends:
     """Everything the orchestrator reads from or writes to, in one place.
-    The real one calls the privileged helper and AdGuard's API; the tests
+    The real one calls the privileged helper and the DNS filter's API; the tests
     pass a fake with the same methods and in-memory state."""
 
     def macs(self):
@@ -531,7 +531,7 @@ def _load_state(conn):
 
 
 def managed_rules(conn):
-    """The AdGuard rule lines this orchestrator put there itself (from
+    """The DNS-filter rule lines this orchestrator put there itself (from
     policies). The console's hand-edited rule list must not remove these -
     the next reconcile would only put them straight back."""
     return set(_load_state(conn)["applied"].get("rules") or [])
@@ -553,9 +553,9 @@ def current_boot_id():
 # ----------------------------------------------------------- desired state --
 
 def _client_identity(conn, device_id, clients):
-    """(existing AdGuard client or None, name to use, ids it should carry).
+    """(existing DNS-filter client or None, name to use, ids it should carry).
 
-    ids are the device's MACs plus its current IP. AdGuard is also this
+    ids are the device's MACs plus its current IP. The DNS filter is also this
     network's DHCP server, so it can recognise a device by MAC even after
     its IP changes. Old LAN IPs are left out, so an address later handed to
     a different device isn't still claimed by this one."""
@@ -741,7 +741,7 @@ def _domain_matches(domain, want, have, applied, now):
             if not set(c["ids"]) <= have_ids:
                 return False
             # An old LAN address still on the client is drift too: DHCP may
-            # have given it to another device, which AdGuard would then
+            # have given it to another device, which the DNS filter would then
             # treat as this one (Audit.md H3). Matches what
             # _converge_clients() removes - it keeps other ids (MACs,
             # names) and drops only LAN IPs this device no longer has.
@@ -1078,7 +1078,7 @@ def auto_response(conn, now, state_extra):
 
 def migrate_legacy_rules(conn, b, now):
     """Turn per-device rules written before step 4.1 (with a trailing
-    "  # securepi-expires/tag" comment, which AdGuard never matched - see
+    "  # securepi-expires/tag" comment, which the DNS filter never matched - see
     adguard.py) into proper policies, and take the broken lines out.
     Runs every reconcile but costs one rules read when there's nothing to do."""
     rules = b.user_rules()
@@ -1114,7 +1114,7 @@ def migrate_legacy_rules(conn, b, now):
             conn.execute(
                 "INSERT INTO policies (kind, device_id, target, reason, source, created_by, created_at,"
                 " expires_at, status) VALUES (?, ?, ?, ?, 'migrated', ?, ?, ?, 'active')",
-                (kind, device_id, target, "converted from a pre-4.1 rule that AdGuard never matched",
+                (kind, device_id, target, "converted from a pre-4.1 rule that the DNS filter never matched",
                  ACTOR, now, expires_at))
             migrated += 1
     conn.commit()
@@ -1203,11 +1203,11 @@ def _describe_drift(domain, desired, have, applied, now):
     if domain == "rules":
         prev = applied.get("rules") or []
         missing = [r for r in prev if r not in set(have)]
-        return "%s rule(s) removed or edited in AdGuard: %s" % (len(missing), ", ".join(missing[:3]))
+        return "%s rule(s) removed or edited in the DNS filter: %s" % (len(missing), ", ".join(missing[:3]))
     if domain == "clients":
-        return "a device's filtering settings were changed directly in AdGuard"
+        return "a device's filtering settings were changed directly in the DNS filter"
     if domain == "protection":
-        return "network-wide filtering was turned %s directly in AdGuard" % ("on" if have["enabled"] else "off")
+        return "network-wide filtering was turned %s directly in the DNS filter" % ("on" if have["enabled"] else "off")
     return "%s changed outside the console" % DOMAIN_LABELS[domain]
 
 

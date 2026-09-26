@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """
-SecurePi Gateway - AdGuard Home client.
+SecurePi Gateway - DNS-filter client.
 
-AdGuard Home owns DNS filtering: blocklist sources, custom allow/block rules,
+The DNS filter owns DNS filtering: blocklist sources, custom allow/block rules,
 and per-client policy. This module is a thin wrapper around its control API
-so the console can manage filtering without an operator opening AdGuard's
+so the console can manage filtering without an operator opening the DNS filter's
 own UI - which is deliberately bound to 127.0.0.1 and never exposed on the
 network (see REPORT-adblocking.md).
 
@@ -32,7 +32,7 @@ PASSWORD_FILE = "/etc/securepi/dns-password"
 
 
 class AdGuardError(Exception):
-    """AdGuard Home could not be reached, or rejected a request."""
+    """The DNS filter could not be reached, or rejected a request."""
 
 
 def _password():
@@ -40,7 +40,7 @@ def _password():
         with open(PASSWORD_FILE) as f:
             return f.read().strip()
     except FileNotFoundError:
-        raise AdGuardError("AdGuard Home admin password file is missing: %s" % PASSWORD_FILE)
+        raise AdGuardError("DNS-filter admin password file is missing: %s" % PASSWORD_FILE)
 
 
 def _request(method, path, body=None):
@@ -58,15 +58,15 @@ def _request(method, path, body=None):
             try:
                 return json.loads(raw)
             except json.JSONDecodeError:
-                # Several AdGuard endpoints (add_url, remove_url, ...) reply
+                # Several DNS-filter endpoints (add_url, remove_url, ...) reply
                 # with a plain-text "OK ..." body on success, not JSON.
                 return raw.decode(errors="replace")
     except urllib.error.HTTPError as e:
         detail = e.read().decode(errors="replace").strip()
         reason = (": %s" % detail) if detail else ""
-        raise AdGuardError("AdGuard Home rejected %s %s (HTTP %d)%s" % (method, path, e.code, reason))
+        raise AdGuardError("The DNS filter rejected %s %s (HTTP %d)%s" % (method, path, e.code, reason))
     except (urllib.error.URLError, OSError) as e:
-        raise AdGuardError("Could not reach AdGuard Home at %s: %s" % (BASE_URL, e))
+        raise AdGuardError("Could not reach the DNS filter at %s: %s" % (BASE_URL, e))
 
 
 # --------------------------------------------------------------- blocklists
@@ -131,7 +131,7 @@ def add_nxdomain_rule(domain):
     signal for disabling Private Relay). A plain add_user_rule('block')
     would answer 0.0.0.0 here, which is a resolvable address as far as
     either check is concerned - it would not actually disable either
-    feature. AdGuard's $dnsrewrite modifier overrides the global mode on a
+    feature. The DNS filter's $dnsrewrite modifier overrides the global mode on a
     per-rule basis; NXDOMAIN is one of its documented shorthand values."""
     rule = "||%s^$dnsrewrite=NXDOMAIN" % domain
     rules = user_rules()
@@ -141,7 +141,7 @@ def add_nxdomain_rule(domain):
 
 
 def describe_rule(rule):
-    """Turn a raw AdGuard rule string into something the console can show
+    """Turn a raw DNS-filter rule string into something the console can show
     next to a plain-language action, rather than syntax the operator has to
     parse themselves.
 
@@ -149,7 +149,7 @@ def describe_rule(rule):
     per-device rules the orchestrator writes via domain_rule() (the same
     shape, with a trailing $client=name modifier after the ^). A trailing
     "  # ..." comment is stripped first: rules written by an older version
-    of this module carried one, and a live AdGuard may still hold them."""
+    of this module carried one, and a live DNS filter may still hold them."""
     body = rule.partition("  #")[0]
     scope = "network"
     if "^$client=" in body:
@@ -165,14 +165,14 @@ def describe_rule(rule):
 
 # ----------------------------------------------------------- per-client policy
 #
-# A device is identified to AdGuard by a LIST of identifiers - every MAC it
+# A device is identified to the DNS filter by a LIST of identifiers - every MAC it
 # has ever used, plus its current IP - not by IP alone.
 #
-# Why this matters: AdGuard is also our DHCP server, so it supports MAC-based
+# Why this matters: the DNS filter is also our DHCP server, so it supports MAC-based
 # client identifiers directly. Keying on IP alone (the original version of
 # this module) meant a device's per-device filtering setting was silently
 # lost every time its DHCP lease renewed to a new address - the device kept
-# its identity in OUR device registry, but AdGuard had no way to know the
+# its identity in OUR device registry, but the DNS filter had no way to know the
 # "new" IP was the same device. See ENHANCEMENT-PLAN.md finding A3.
 
 def _find_client(identifiers):
@@ -199,19 +199,19 @@ def client_filtering_status(identifiers):
 # --------------------------------------------------------- "why blocked?"
 
 def check_host(name, client_ip=None):
-    """Ask AdGuard how it would resolve `name` right now, exactly as if a
+    """Ask the DNS filter how it would resolve `name` right now, exactly as if a
     query for it arrived from `client_ip` - this is the engine behind the
     console's "why is this blocked?" tool. Passing client_ip matters because
     a per-device ($client=) rule or a per-client upstream
-    only applies to a query AdGuard can see as coming from that client."""
+    only applies to a query the DNS filter can see as coming from that client."""
     path = "/control/filtering/check_host?name=%s" % urllib.parse.quote(name)
     if client_ip:
         path += "&client=%s" % urllib.parse.quote(client_ip)
     return _request("GET", path) or {}
 
 
-# Plain-language reasons for the codes AdGuard's check_host and query log
-# both use, so the console never has to show raw AdGuard internals to the
+# Plain-language reasons for the codes the DNS filter's check_host and query log
+# both use, so the console never has to show raw DNS-filter internals to the
 # operator - the same normalization spirit as describe_rule() below.
 _REASON_TEXT = {
     "NotFilteredNotFound": "Not blocked - no rule matches this domain",
@@ -233,7 +233,7 @@ def describe_check(result, domain):
     """Turn a check_host response into what the console shows: a plain
     verdict, whether it's blocked, and which rule/list is responsible.
 
-    `domain` is passed in rather than read from `result` because AdGuard's
+    `domain` is passed in rather than read from `result` because the DNS filter's
     check_host response never echoes the hostname it was asked about at
     all (confirmed against a live gateway - {"reason":..., "rule":...,
     "rules":[...], ...}, no "host" or "name" key anywhere). Assuming one
@@ -241,11 +241,11 @@ def describe_check(result, domain):
     feature - the console showed "null" as the domain in every result
     until this was fixed.
 
-    `cname`, if AdGuard reports one, means the block happened via
+    `cname`, if the DNS filter reports one, means the block happened via
     CNAME-cloaking: the queried domain itself doesn't match any rule, but
     the address it's an alias for does (see ENHANCEMENT-PLAN.md step
     5.5). This on-demand check is the only place this project currently
-    surfaces that - AdGuard's stored query log has no equivalent field
+    surfaces that - the DNS filter's stored query log has no equivalent field
     (confirmed by inspecting it directly), only the raw base64 DNS answer
     packet, which would need a hand-written wire-format parser to read;
     tagging historical blocked events as CNAME-cloaked or not is deferred
@@ -278,7 +278,7 @@ def describe_check(result, domain):
 # reviewable action; nothing calls it automatically.
 
 def dns_config():
-    """Current resolver configuration, straight from AdGuard - confirmed
+    """Current resolver configuration, straight from the DNS filter - confirmed
     live against the real endpoint (GET /control/dns_info), not guessed:
     upstream_dns, cache_optimistic, dnssec_enabled and friends."""
     return _request("GET", "/control/dns_info") or {}
@@ -288,7 +288,7 @@ def set_dns_tuning(upstream_dns=None, fallback_dns=None, cache_optimistic=None,
                     dnssec_enabled=None, upstream_mode=None):
     """Update resolver settings, changing only the fields actually passed
     in - everything else is read back from the live config first and sent
-    through unchanged, since AdGuard's dns_config endpoint replaces the
+    through unchanged, since the DNS filter's dns_config endpoint replaces the
     whole object rather than patching it. Every argument left as None
     is a no-op for that field."""
     current = dns_config()
@@ -309,10 +309,10 @@ def set_dns_tuning(upstream_dns=None, fallback_dns=None, cache_optimistic=None,
 # ------------------------------------------------- orchestrator (Stage 4) --
 #
 # The functions below are what app/orchestrator.py (ENHANCEMENT-PLAN.md
-# step 4.1) uses to read and write AdGuard's state as a whole, so it can
+# step 4.1) uses to read and write the DNS filter's state as a whole, so it can
 # compare what's there with what the console wants and put it right.
 #
-# A real bug found while building this (26 September 2026): AdGuard does
+# A real bug found while building this (26 September 2026): the DNS filter does
 # NOT ignore text after "#" on a rule line. The old per-device helpers
 # (add_client_rule and friends, since removed - nothing called them any
 # more) stored an expiry and tag as a trailing "  # securepi-..." comment,
@@ -323,7 +323,7 @@ def set_dns_tuning(upstream_dns=None, fallback_dns=None, cache_optimistic=None,
 # state table instead of marking the rule text.
 
 def quote_client(name):
-    """A $client= value, quoted and escaped the way AdGuard's rule syntax
+    """A $client= value, quoted and escaped the way the DNS filter's rule syntax
     requires for a name with spaces or punctuation: single quotes around
     it, and a backslash before any quote, comma or pipe inside it. The
     quoted form was checked live to match (see the note above)."""
@@ -369,7 +369,7 @@ def set_user_rules(rules):
 
 
 def list_clients():
-    """Every persistent client, as AdGuard returns it."""
+    """Every persistent client, as the DNS filter returns it."""
     return (_request("GET", "/control/clients") or {}).get("clients") or []
 
 
@@ -386,14 +386,14 @@ def delete_client(name):
 
 
 def protection_status():
-    """(enabled, milliseconds left on a timed pause or 0) from AdGuard's
+    """(enabled, milliseconds left on a timed pause or 0) from the DNS filter's
     own status endpoint - the network-wide "pause filtering" state."""
     st = _request("GET", "/control/status") or {}
     return bool(st.get("protection_enabled", True)), int(st.get("protection_disabled_duration") or 0)
 
 
 def set_protection(enabled, duration_ms=None):
-    """Turn network-wide filtering on or off. With `duration_ms`, AdGuard
+    """Turn network-wide filtering on or off. With `duration_ms`, the DNS filter
     pauses it for that long and turns it back on by itself - the
     orchestrator still checks, but the pause ends even if it doesn't."""
     body = {"enabled": bool(enabled)}
@@ -406,9 +406,9 @@ _catalog_cache = {"at": 0, "catalog": {}}
 
 
 def service_catalog(max_age_s=3600):
-    """{service_id: group_id} for every service AdGuard can block, e.g.
+    """{service_id: group_id} for every service the DNS filter can block, e.g.
     {"steam": "gaming", "tiktok": "social_network"}. Cached for an hour -
-    it only changes when AdGuard itself is upgraded."""
+    it only changes when the DNS filter itself is upgraded."""
     now = time.time()
     if _catalog_cache["catalog"] and now - _catalog_cache["at"] < max_age_s:
         return _catalog_cache["catalog"]
@@ -419,7 +419,7 @@ def service_catalog(max_age_s=3600):
 
 
 def service_groups():
-    """[(group_id, [service ids])] in AdGuard's own order - for the
+    """[(group_id, [service ids])] in the DNS filter's own order - for the
     console's profile editor."""
     groups = {}
     for sid, gid in service_catalog().items():

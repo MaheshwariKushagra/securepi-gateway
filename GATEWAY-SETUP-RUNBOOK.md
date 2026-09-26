@@ -30,7 +30,7 @@ attempt to make a Realtek card do AP mode — people lose weeks to this.
 Also check while you are there:
 
 ```
-free -h          # 8 GB strongly preferred; 4 GB works with a reduced Suricata ruleset
+free -h          # 8 GB strongly preferred; 4 GB works with a reduced IDS ruleset
 lscpu | head -20 # i3-1005G1 (2c/4t) is the weakest likely config, still adequate
 ip link          # confirm the built-in RJ45 port is present and named
 ```
@@ -80,7 +80,7 @@ far better documented there. Ship-stopping driver problems are the top risk in a
 - Choose **Server**, not Desktop. This box is an appliance; a GUI wastes RAM you need.
 - **Tick "Install OpenSSH server"** during installation. Without it you are typing on
   the Dell's keyboard to fix it.
-- Suricata 7.x is in the 24.04 archive. The OISF PPA has newer builds if needed.
+- The IDS 7.x package is in the 24.04 archive. The OISF PPA has newer builds if needed.
 - If the Wi-Fi card needs a kernel newer than 24.04's, use Ubuntu Server 26.04 LTS.
 
 ---
@@ -135,7 +135,7 @@ echo "$USER ALL=(ALL) NOPASSWD: ALL" | sudo tee /etc/sudoers.d/securepi
 sudo chmod 440 /etc/sudoers.d/securepi
 sudo visudo -c                              # validate before logging out
 ```
-Nearly all gateway work is privileged: `nftables`, `systemctl`, Suricata, `hostapd`,
+Nearly all gateway work is privileged: `nftables`, `systemctl`, IDS, `hostapd`,
 netplan. Without this, those commands hang forever waiting on a prompt.
 
 *This grants effective root over SSH. That is a reasonable trade for a wiped, dedicated

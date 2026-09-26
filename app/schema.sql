@@ -1,6 +1,6 @@
 -- SecurePi Gateway - database schema
 --
--- One table holds every event, whatever produced it. Suricata's own output
+-- One table holds every event, whatever produced it. The IDS's own output
 -- already shares a common backbone across its event types (timestamp, source
 -- and destination address and port, protocol, flow id), so a single table with
 -- those columns plus nullable type-specific ones fits the data naturally.
@@ -114,13 +114,13 @@ CREATE TABLE IF NOT EXISTS events (
     tls_version    TEXT,
     tls_ja3        TEXT,               -- client fingerprint
 
-    -- Suricata rule alerts
+    -- IDS rule alerts
     alert_signature    TEXT,
     alert_category     TEXT,
     alert_severity     INTEGER,
     alert_signature_id INTEGER,
 
-    -- Filtering decisions, which come from the DNS resolver rather than Suricata
+    -- Filtering decisions, which come from the DNS resolver rather than the IDS
     blocked        INTEGER,            -- 1 if the query was refused
     block_reason   TEXT,
 
@@ -181,9 +181,9 @@ CREATE TABLE IF NOT EXISTS ingest_state (
     file_inode  INTEGER,
     byte_offset INTEGER NOT NULL DEFAULT 0,
     updated_at  REAL NOT NULL,
-    -- Step 1.4: the AdGuard API-polling reader has no file/byte-offset
+    -- Step 1.4: the DNS-filter API-polling reader has no file/byte-offset
     -- concept (it's not tailing a file), so it needs a real epoch-seconds
-    -- watermark instead - REAL, not byte_offset's INTEGER, since AdGuard's
+    -- watermark instead - REAL, not byte_offset's INTEGER, since the DNS filter's
     -- own timestamps carry nanosecond precision and truncating to whole
     -- seconds could re-ingest (or skip) an entry at a second boundary.
     watermark_ts REAL
@@ -474,11 +474,11 @@ CREATE TABLE IF NOT EXISTS login_attempts (
 CREATE INDEX IF NOT EXISTS idx_login_attempts_ip_ts ON login_attempts(ip, ts);
 
 -- --------------------------------------------------------- sensor_stats --
--- Suricata's own periodic 'stats' record (ENHANCEMENT-PLAN.md step 3.5,
+-- the IDS's own periodic 'stats' record (ENHANCEMENT-PLAN.md step 3.5,
 -- health supervisor): kernel-level packet/drop counts, so the platform
 -- health check can tell "capturing fine" apart from "the kernel is
 -- dropping packets under load" - a real, distinct failure mode from
--- "Suricata isn't running at all". One upserted row (id=1), the same
+-- "The IDS isn't running at all". One upserted row (id=1), the same
 -- "current snapshot, not history" shape as ingest_stats.
 CREATE TABLE IF NOT EXISTS sensor_stats (
     id              INTEGER PRIMARY KEY,
@@ -507,7 +507,7 @@ CREATE TABLE IF NOT EXISTS service_health (
 -- ----------------------------------------------------- dns_failopen_state --
 -- One row (id=1), live status for ENHANCEMENT-PLAN.md step 3.6 (F§8.4):
 -- is plaintext DNS currently being redirected to a public upstream
--- resolver because AdGuard stopped answering queries. Read directly by
+-- resolver because the DNS filter stopped answering queries. Read directly by
 -- the (unprivileged, step 3.3) web console to show/hide its "protection
 -- degraded" banner - app/health.py, which runs as root, is the only
 -- writer. `down_since` is cleared the moment resolution works again,
@@ -527,7 +527,7 @@ CREATE TABLE IF NOT EXISTS dns_failopen_state (
 -- quarantine, a blocked IP or domain, an allowed domain, a filtering
 -- profile, a pause, a Tier 2 enrollment, a vendor-telemetry block list.
 -- app/orchestrator.py turns the active rows into nftables set elements and
--- AdGuard Home settings, reads them back to check they took, and puts
+-- DNS-filter settings, reads them back to check they took, and puts
 -- them back if something outside the console changes them.
 --
 --   kind       quarantine | block_ip | block_domain | allow_domain |

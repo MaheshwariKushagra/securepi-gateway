@@ -49,9 +49,9 @@ the code as built, and decides whether it comes back.
 | Frontend | React + TS + Vite + ECharts, WebSocket push | FastAPI + Jinja2 + HTMX + Chart.js | Jinja2 + vanilla JS + Chart.js, polling | **Keep** | Already meets the polish bar. A rewrite adds risk and no capability |
 | Deployment | Docker Compose + provisioned host | Native systemd | Native systemd, reboot-verified | **Keep.** Add a one-command installer (8.2) | RAM, and containers gave no isolation with host networking |
 | OS | Debian stable | Debian 13 → Ubuntu 24.04 | Ubuntu Server 24.04 | **Keep** | Hardware support on the Dell |
-| Detection source | Suricata + ET Open + our correlation | Suricata metadata + curated rules | Metadata only. **Alerts ingested but never used** | **Partly restore:** alerts become incidents (2.3) | Promised in feasibility §9.6 |
+| Detection source | IDS + ET Open + our correlation | IDS metadata + curated rules | Metadata only. **Alerts ingested but never used** | **Partly restore:** alerts become incidents (2.3) | Promised in feasibility §9.6 |
 | Topology | Wired WAN, switch + dumb AP **with client isolation** | Same | One radio: station uplink + hostapd AP. **No `ap_isolate`** | **Keep the topology. Enable client isolation** (1.7) | Otherwise phone-to-phone traffic is invisible (feasibility R9) |
-| Event sources | Suricata, AdGuard DNS + DHCP, **nftables log** | Suricata, AdGuard | Suricata, AdGuard query log **file**, DHCP leases | **Restore the nftables log source** (2.2). **Replace file tailing with the AdGuard API** (1.4). **Add HTTPS-proxy telemetry** (5.1) | The file flush caused hours of DNS detection lag (EVAL §1) |
+| Event sources | IDS, DNS filter (DNS + DHCP), **nftables log** | IDS, DNS filter | IDS, DNS-filter query log **file**, DHCP leases | **Restore the nftables log source** (2.2). **Replace file tailing with the DNS-filter API** (1.4). **Add HTTPS-proxy telemetry** (5.1) | The file flush caused hours of DNS detection lag (EVAL §1) |
 
 ### 1.2 Explicit cuts (15-day plan §4 "OUT" list)
 
@@ -87,7 +87,7 @@ the code as built, and decides whether it comes back.
 | **Filtering §9.3:** block statistics & **bandwidth-saved estimate** | None | **Restore** | 5.3 |
 | **Filtering §9.3:** DoH/DoT bypass detection | None | **Restore** | 2.2 |
 | **Filtering §9.3:** encrypted upstream (DoT) | **Done** (DoT to 1.1.1.1) | Extend with resilient upstreams | 5.5 |
-| **Filtering §9.3:** scheduled blocklist updates | AdGuard 24 h interval, no failure visibility | **Add list health monitoring** | 5.4 |
+| **Filtering §9.3:** scheduled blocklist updates | The DNS filter 24 h interval, no failure visibility | **Add list health monitoring** | 5.4 |
 | Block domain/IP response (§9.4) | Quarantine only, keyed on IP | **Restore** | 4.2 |
 | Top talkers, protocol breakdown, uplink health (§9.2) | Partial | **Restore** | 6.5, 3.5 |
 | Signature taxonomy, OSS attributions page (§9.6) | Missing | **Restore** | 2.3, 6.3 |
@@ -112,7 +112,7 @@ the code as built, and decides whether it comes back.
 | Excluded | Reason |
 |---|---|
 | Zeek, ELK/OpenSearch, Wazuh manager, PostgreSQL, Docker | Each costs roughly 1–4 GB RAM on a 3.6 GiB host |
-| Suricata IPS mode as default | Latency and false-positive outage risk |
+| IDS IPS mode as default | Latency and false-positive outage risk |
 | ML / deep-learning detection | Can't be validated at this data volume |
 | Cloud LLM incident summaries | Sends telemetry off-box |
 | **HTTPS inspection for all traffic, or on by default** | Privacy, pinning, and it breaks apps. Stays per-device opt-in and per-host allowlisted |
@@ -168,7 +168,7 @@ step 3.5.**
 | Category | Platforms | Relevant strengths |
 |---|---|---|
 | Prosumer security firewalls | Firewalla, UniFi + CyberSecure | Device-centric UI, IDS/IPS, ~7-day behaviour learning, new-device quarantine, per-device schedules, push alerts |
-| Open-source NGFW | OPNsense/pfSense + Suricata + Zenarmor | Signature IPS, app control, trusted/untrusted device access control, reporting |
+| Open-source NGFW | OPNsense/pfSense + IDS + Zenarmor | Signature IPS, app control, trusted/untrusted device access control, reporting |
 | NSM / SOC | Security Onion, Malcolm, Wazuh | Alert queue, cases, detection tuning, playbooks, hunting |
 | Traffic analytics | ntopng | Flow risks, explainable host score, behavioural checks, periodicity, alert endpoints |
 | C2 hunting | Zeek + RITA | Beacon scoring from timing/size distributions, DNS subdomain analysis |
@@ -196,15 +196,15 @@ step 3.5.**
 
 | Product | Layer | Relevant strengths |
 |---|---|---|
-| **AdGuard Home** (our engine) | Network DNS | Blocklists, persistent clients by IP/MAC/ClientID, blocked services with schedules, CNAME/response inspection, check-host API, safe search, DoT/DoH upstreams |
+| **DNS filter** (our engine) | Network DNS | Blocklists, persistent clients by IP/MAC/ClientID, blocked services with schedules, CNAME/response inspection, check-host API, safe search, DoT/DoH upstreams |
 | **Pi-hole v6** | Network DNS | Groups, regex, CNAME deep inspection, strong per-client analytics |
 | **NextDNS** | Cloud DNS | Profiles, "block bypass methods", native tracking protection per vendor (Apple, Samsung, Xiaomi, Windows…), recreation-time schedules, company/destination analytics |
 | **Firewalla** | Network box | Per-device ad block, schedules, pause, app blocking, unbreak workflow in app |
 | **HaGeZi lists** | Blocklists | Tiered ad/tracker lists, native device tracker lists, DoH/VPN/TOR/proxy bypass list, threat-intel (TIF) list |
 | **uBlock Origin** | In browser | URL filtering, cosmetic filtering, scriptlets (e.g. `json-prune`). The reference for first-party ads |
-| **AdGuard apps (desktop/Android)** | On-device HTTPS filtering | Decrypts locally and injects cosmetic CSS + scriptlets into HTML, excludes pinned apps automatically |
+| **Commercial ad-blocker apps (desktop/Android)** | On-device HTTPS filtering | Decrypts locally and injects cosmetic CSS + scriptlets into HTML, excludes pinned apps automatically |
 
-| Capability | AdGuard Home | Pi-hole v6 | NextDNS | Firewalla | uBO (browser) | AdGuard apps | **SecurePi now** | Step |
+| Capability | DNS filter | Pi-hole v6 | NextDNS | Firewalla | uBO (browser) | Ad-blocker apps | **SecurePi now** | Step |
 |---|---|---|---|---|---|---|---|---|
 | Third-party ad/tracker DNS blocking | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | **✓** 655,974 rules, 100% on test set | — |
 | Per-device profiles, schedules, pause | ✓ | ◐ | ✓ | ✓ | ◐ | ◐ | **◐** on/off per device | 4.3 |
@@ -234,7 +234,7 @@ step 3.5.**
 | G1 | Signal 1 is called "horizontal" but detects many ports on **one** host, which is a *vertical* scan by standard terms | 1.6 |
 | G2 | `raise_incident()` only merges into `status='new'`, so an "investigating" incident gets duplicated | 1.6 |
 | G3 | Malicious-domain false positive from Android ad-SDK chatter | 1.6 |
-| G4 | DNS ingest tails `querylog.json`, which AdGuard flushes only when its buffer fills (hours) | 1.4 |
+| G4 | DNS ingest tails `querylog.json`, which DNS-filter flushes only when its buffer fills (hours) | 1.4 |
 | G5 | Quarantine keyed on IP, so a DHCP renewal escapes it | 4.2 |
 | G6 | No tie-break for overlapping `device_ips` intervals | 1.6 |
 | G7 | No automated tests | 1.1 |
@@ -247,7 +247,7 @@ step 3.5.**
 |---|---|---|---|
 | A1 | `deploy-dpi.sh` creates `enrolled` in `inet filter`, but the redirect rule lives in `ip nat`, and the script prints enroll commands for the wrong table. `nftables.conf` already notes sets are per-table. Re-running the script could leave a broken or duplicate setup | `dpi/deploy-dpi.sh` step 4 | 1.8 |
 | A2 | `securepi enroll` with no argument enrolls **every lease**. Any device without the CA then loses YouTube over HTTPS | `gateway/securepi` | 1.8 |
-| A3 | Per-device AdGuard clients are keyed on **IP**, so policy is lost on lease change. AdGuard (which is also our DHCP server) supports MAC identifiers | `app/adguard.py` `set_client_filtering` | 1.8 |
+| A3 | Per-device DNS-filter clients are keyed on **IP**, so policy is lost on lease change. The DNS filter (which is also our DHCP server) supports MAC identifiers | `app/adguard.py` `set_client_filtering` | 1.8 |
 | A4 | DoT (tcp/853) is rejected only toward the 14 listed resolver IPs. Android Private DNS pointed at any other provider bypasses filtering | `gateway/nftables.conf` | 1.8 |
 | A5 | DoH blocking is a static IP list. No hostname-level DoH blocking, no Firefox canary domain, no iCloud Private Relay opt-out, no IPv6 equivalents | `nftables.conf` | 2.2 |
 | A6 | Tier 2 statistics exist only as journal lines. The console shows nothing about decrypted vs. passed-through connections or removed ads | `dpi/securepi_adfilter.py` | 5.1 |
@@ -256,7 +256,7 @@ step 3.5.**
 | A9 | Tier 2 rules (`AD_FIELDS`, `AD_RENDERERS`, `BLOCKED_PATHS`) are hard-coded with no tests. A YouTube format change or SSAI rollout would break it silently | addon | 5.9, 5.10 |
 | A10 | The CA uses mitmproxy's long default validity (verify on gateway) and is served over plain HTTP. A forgotten CA stays trusted for years | `deploy-dpi.sh` step 5 | 5.6 |
 | A11 | Filtering page has no statistics, no "why blocked", no per-device unbreak, no list health | `app/templates/filtering.html` | 5.2–5.4 |
-| A12 | `FIRST-PARTY-ADS-ANALYSIS.md` §5.1 says cosmetic filtering is impossible after interception. On-device AdGuard shows CSS/scriptlet injection into decrypted HTML is possible. Only the DOM-after-JavaScript part is out of reach | doc | 5.11, 8.1 |
+| A12 | `FIRST-PARTY-ADS-ANALYSIS.md` §5.1 says cosmetic filtering is impossible after interception. On-device DNS-filter shows CSS/scriptlet injection into decrypted HTML is possible. Only the DOM-after-JavaScript part is out of reach | doc | 5.11, 8.1 |
 
 ---
 
@@ -279,11 +279,11 @@ Effort is in build days. **Origin:** F§ = feasibility section, 15d = 15-day cut
 | 1.1 | **Test suite.** `tests/` with pytest. A generator script creates synthetic eve/querylog/lease fixtures (no personal data). Temp-DB helper. Positive, negative and dedup tests for every signal, plus regression tests for the two past bugs | F§15.2, G7 | `make test` green. Reintroducing either old bug fails a test | 1.5 |
 | 1.2 | **Central config.** `settings` table with validated defaults for thresholds, windows, retention, channels. The engine re-reads it each cycle | Mkt | Threshold change takes effect without a restart | 1 |
 | 1.3 | **Retention + hourly rollups.** `app/retention.py` nightly: flow/TLS 14 days, DNS 30 days, incidents 365 days, audit kept forever. `device_hourly` rollup (bytes, flows, queries, **blocked queries**) kept 180 days. **Deploy early: 6.1 needs ≥7 days of rollups** | F§10.4, G10 | Old rows gone. Rollups fill. DB size logged daily | 1 |
-| 1.4 | **AdGuard API ingest.** Poll `/control/querylog` with a time watermark and duplicate guard. **Also capture the block reason, matched rule, filter-list id, upstream time and cached flag** (needed by Stage 5). File reader kept as fallback | EVAL §1, G4 | Blocked-domain latency ≤ 30 s with no flush-forcing traffic. New columns populated | 1 |
+| 1.4 | **DNS-filter API ingest.** Poll `/control/querylog` with a time watermark and duplicate guard. **Also capture the block reason, matched rule, filter-list id, upstream time and cached flag** (needed by Stage 5). File reader kept as fallback | EVAL §1, G4 | Blocked-domain latency ≤ 30 s with no flush-forcing traffic. New columns populated | 1 |
 | 1.5 | **Audit log.** `audit_log` table and an `audit()` helper on every write endpoint (filtering changes included) | F§11.1 | Every console action → one audit row | 0.5 |
 | 1.6 | **Detection fixes G1, G2, G3, G6**, each with a test | CR | Tests pass. The Day 14 false positive no longer fires on its fixture | 1 |
 | 1.7 | **AP client isolation** (`ap_isolate=1`). Document the casting/mDNS trade-off | F§4.4, G8 | Client-to-client test flow appears in `events` | 0.5 |
-| 1.8 | **Ad-blocking correctness fixes.** (a) Fix `deploy-dpi.sh` to use the `ip nat` `enrolled` set and correct instructions (A1). (b) `securepi enroll` requires an explicit device, no silent "all" (A2). (c) AdGuard per-device clients use **MAC identifiers** (plus new MACs synced from the registry on rotation) instead of IP (A3). (d) Reject **all** tcp/853 from `ap0`, not just listed IPs (A4). (e) IPv6 guard: confirm no v6 egress, and add `ip6` drop/DNAT parity so a future v6 uplink can't bypass filtering | A1–A4 | Clean re-deploy works. Per-device filtering survives a DHCP renewal. Android Private DNS with an unlisted provider falls back to our resolver | 0.5 |
+| 1.8 | **Ad-blocking correctness fixes.** (a) Fix `deploy-dpi.sh` to use the `ip nat` `enrolled` set and correct instructions (A1). (b) `securepi enroll` requires an explicit device, no silent "all" (A2). (c) DNS-filter per-device clients use **MAC identifiers** (plus new MACs synced from the registry on rotation) instead of IP (A3). (d) Reject **all** tcp/853 from `ap0`, not just listed IPs (A4). (e) IPv6 guard: confirm no v6 egress, and add `ip6` drop/DNAT parity so a future v6 uplink can't bypass filtering | A1–A4 | Clean re-deploy works. Per-device filtering survives a DHCP renewal. Android Private DNS with an unlisted provider falls back to our resolver | 0.5 |
 
 ### Stage 2 — Detection breadth: restore the original signal set (~11 days)
 
@@ -292,9 +292,9 @@ New signals follow the `correlation.py` pattern (trailing-window SQL → `raise_
 | Step | Work | Origin | Exit criteria | Days |
 |---|---|---|---|---|
 | 2.1 | **Scan family:** network sweep (one port across many hosts) + slow-scan variants — **done, 14 September 2026** | F§12.3 | `nmap -T0` from `ns_attacker` detected — verified live: see `EVALUATION-RESULTS-2.md` §2.1 | 1 |
-| 2.2 | **DNS-bypass hardening + detection — done, 14 September 2026** (the `doh_resolvers` set is refreshed from HaGeZi's maintained IP list rather than resolved hostnames — a better source than the plan's own original wording envisioned; see `EVALUATION-RESULTS-2.md` §2.2 for the honest scope of what was and wasn't live-verified). *Hardening:* (a) DNS-level blocking of DoH hostnames (HaGeZi DoH/VPN/proxy bypass list, DoH part on by default; VPN/proxy part available as a profile option in 4.3). (b) Firefox canary `use-application-dns.net` → NXDOMAIN, which disables Firefox's automatic DoH. (c) iCloud Private Relay opt-out: `mask.icloud.com` / `mask-h2.icloud.com` → NXDOMAIN, Apple's documented network signal. (d) The `doh_resolvers` nft set refreshes daily from resolved DoH hostnames instead of 14 static IPs. *Detection:* `log prefix` on the dot/doh/quic reject rules, those log lines ingested as events (the restored nftables source), plus Suricata TLS SNI matches on DoH hostnames. Incident: "Device X tried to bypass DNS filtering N times via DoH/DoT/Private Relay" | F§11.3, 15d cut, A5, Mkt (NextDNS) | Firefox with DoH on, Chrome Secure DNS with a custom provider, and Android Private DNS each end up resolving through AdGuard (or failing closed). One incident per device with evidence | 2 |
+| 2.2 | **DNS-bypass hardening + detection — done, 14 September 2026** (the `doh_resolvers` set is refreshed from HaGeZi's maintained IP list rather than resolved hostnames — a better source than the plan's own original wording envisioned; see `EVALUATION-RESULTS-2.md` §2.2 for the honest scope of what was and wasn't live-verified). *Hardening:* (a) DNS-level blocking of DoH hostnames (HaGeZi DoH/VPN/proxy bypass list, DoH part on by default; VPN/proxy part available as a profile option in 4.3). (b) Firefox canary `use-application-dns.net` → NXDOMAIN, which disables Firefox's automatic DoH. (c) iCloud Private Relay opt-out: `mask.icloud.com` / `mask-h2.icloud.com` → NXDOMAIN, Apple's documented network signal. (d) The `doh_resolvers` nft set refreshes daily from resolved DoH hostnames instead of 14 static IPs. *Detection:* `log prefix` on the dot/doh/quic reject rules, those log lines ingested as events (the restored nftables source), plus IDS TLS SNI matches on DoH hostnames. Incident: "Device X tried to bypass DNS filtering N times via DoH/DoT/Private Relay" | F§11.3, 15d cut, A5, Mkt (NextDNS) | Firefox with DoH on, Chrome Secure DNS with a custom provider, and Android Private DNS each end up resolving through the DNS filter (or failing closed). One incident per device with evidence | 2 |
 | 2.3 | **IDS alerts → taxonomy → incidents — done, 14 September 2026** (mapping by `alert_category`, confirmed against this gateway's real `classification.config`, not SID — see `EVALUATION-RESULTS-2.md` §2.3 for two real findings from the live data and the honest scope of live verification) | F§9.6 | Test signature → plain-language incident | 1 |
-| 2.4 | **Offline threat intel — done, 14 September 2026.** Daily abuse.ch Feodo/URLhaus/ThreatFox into an `ioc` table, matched on IP/domain/SNI. The same domains are pushed to AdGuard as a **security blocklist**, so they're both blocked and turned into incidents (see `EVALUATION-RESULTS-2.md` §2.4 for a real `file://`-URL bug found and fixed live, and each feed's real confirmed format) | F§19, Mkt | Seeded test IOC is blocked **and** raises an incident. Feed age visible | 1 |
+| 2.4 | **Offline threat intel — done, 14 September 2026.** Daily abuse.ch Feodo/URLhaus/ThreatFox into an `ioc` table, matched on IP/domain/SNI. The same domains are pushed to the DNS filter as a **security blocklist**, so they're both blocked and turned into incidents (see `EVALUATION-RESULTS-2.md` §2.4 for a real `file://`-URL bug found and fixed live, and each feed's real confirmed format) | F§19, Mkt | Seeded test IOC is blocked **and** raises an incident. Feed age visible | 1 |
 | 2.5 | **DNS tunnelling + DGA — done, 14 September 2026** (subdomain entropy, label length, unique subdomains, TXT ratio; NXDOMAIN burst + entropy — see `EVALUATION-RESULTS-2.md` §2.5 for a real `dns_rcode` capture gap found and fixed, and both exit-criterion checks run against real data) | F§12.3 | Harness generators detected. No firing on 24 h of phone traffic | 1.5 |
 | 2.6 | **C2 beaconing — done, 14 September 2026** (RITA-style timing and size regularity score, allowlist for NTP/push — a from-scratch formula calibrated against this step's own exit-criterion numbers before being written into the signal; push-notification allowlisting deliberately left as a named gap, see `EVALUATION-RESULTS-2.md` §2.6) | F§12.3, 15d cut | Harness beacon (60 s, 10% jitter) ≥ 0.8. No real-phone incidents | 2 |
 | 2.7 | **Suppression rules — done, 14 September 2026** (from false-positive verdicts, audited, expiring — scoped to (signal_type, device_id), a stated boundary narrower than per-destination; see `EVALUATION-RESULTS-2.md` §2.7 for the live create→suppress→remove→resume test through the real HTTP API) | F§11.2 | Suppressed pattern stops raising incidents | 1 |
@@ -310,16 +310,16 @@ New signals follow the `correlation.py` pattern (trailing-window SQL → `raise_
 | 3.2 | **TLS on the console — done, 20 September 2026** (console CA, separate from the DPI CA - `gateway/generate-console-tls.sh` + a now-tracked `gateway/securepi-web.service`. Full detail and three real bugs found: `EVALUATION-RESULTS-2.md` §3.2) | F§11.1 | HTTPS only - **confirmed live: plain HTTP gets no response at all** | 0.5 |
 | 3.3 | **Privilege separation — done, 20 September 2026:** unprivileged web app + allowlisted root helper for quarantine, **enroll/unenroll** (domain/IP "block" from an incident is Stage 4's not-yet-built feature - the helper will gain a verb for it then). `gateway/securepi-web-helper` + `securepi-web-sudoers` + `setup-privilege-separation.sh`. Four real bugs found live, full detail: `EVALUATION-RESULTS-2.md` §3.3 | F§11.1, G9 | Web process has no root - **confirmed via `ps`/`systemctl show`**. Helper rejects malformed input - **confirmed live (bad IP, direct `nft` refused)**. Calls audited - **DB audit_log + independent helper syslog trail, both confirmed** | 1 |
 | 3.4 | **Security self-review — done, 20 September 2026** (CSRF/XSS/injection, secrets in logs, `pip-audit`, WAN exposure) → `docs/SECURITY-REVIEW.md`. Two real WAN-exposure bugs found and fixed live (mitmproxy on `0.0.0.0`, SSH password auth); framework-dependency CVEs found via `pip-audit` and recorded as a standing, honestly-scoped gap (Ubuntu's own repos have no newer versions yet) | F§14 Ph9 | No unmitigated high findings - **the two real findings were WAN exposure, both fixed and verified live; CSRF/XSS/SQL/command injection/secrets-in-logs all reviewed and found already clean** | 0.5 |
-| 3.5 | **Health supervisor — done, 20 September 2026:** Suricata `stats` (drops), staleness alerts for Suricata / AdGuard / ingest / engine / **HTTPS proxy** (and every other service in `app/services.list`), disk, DB growth, WAN probe, **per-service CPU/memory read via systemd's own cgroup accounting** (§1.6 decision — no btop/Netdata/Glances/psutil) → platform incidents. New `app/health.py`, run from `securepi-ingest`'s loop (not the engine's - a process can't detect its own death). Found and fixed a real latent bug in `raise_incident()` first (SQLite `=` never matches NULL, breaking dedup for device-less incidents). Full detail: `EVALUATION-RESULTS-2.md` §3.5 | F§5.5, F§8.4 | Stopping any service raises a platform incident within 60 s - **confirmed live: securepi-dpi stopped and flagged in ~14s** | 1 |
-| 3.6 | **Fail-open DNS — done, 21 September 2026:** a dedicated, faster-than-general-health check (`app/health.py`'s `check_dns_failopen`, F§8.4) probes AdGuard with a real DNS query; after a grace period, `app/dns_failopen.py` redirects plaintext DNS on `ap0` to a public upstream resolver via a runtime-added nftables rule, and the console shows a "protection degraded" banner (`/api/dns-status`, read from a new `dns_failopen_state` table). Reverts itself the moment AdGuard answers again. Full detail: `EVALUATION-RESULTS-2.md` §3.6 | F§8.4 | Kill AdGuard → clients still resolve within ~30 s. Filtering returns on recovery - **confirmed live: fail-open activated ~19s after stopping AdGuard, reverted within ~7s of it answering again, banner shown/hidden correctly in a real browser** | 1 |
+| 3.5 | **Health supervisor — done, 20 September 2026:** the IDS `stats` (drops), staleness alerts for the IDS and DNS filter / ingest / engine / **HTTPS proxy** (and every other service in `app/services.list`), disk, DB growth, WAN probe, **per-service CPU/memory read via systemd's own cgroup accounting** (§1.6 decision — no btop/Netdata/Glances/psutil) → platform incidents. New `app/health.py`, run from `securepi-ingest`'s loop (not the engine's - a process can't detect its own death). Found and fixed a real latent bug in `raise_incident()` first (SQLite `=` never matches NULL, breaking dedup for device-less incidents). Full detail: `EVALUATION-RESULTS-2.md` §3.5 | F§5.5, F§8.4 | Stopping any service raises a platform incident within 60 s - **confirmed live: securepi-dpi stopped and flagged in ~14s** | 1 |
+| 3.6 | **Fail-open DNS — done, 21 September 2026:** a dedicated, faster-than-general-health check (`app/health.py`'s `check_dns_failopen`, F§8.4) probes the DNS filter with a real DNS query; after a grace period, `app/dns_failopen.py` redirects plaintext DNS on `ap0` to a public upstream resolver via a runtime-added nftables rule, and the console shows a "protection degraded" banner (`/api/dns-status`, read from a new `dns_failopen_state` table). Reverts itself the moment the DNS filter answers again. Full detail: `EVALUATION-RESULTS-2.md` §3.6 | F§8.4 | Kill the DNS filter → clients still resolve within ~30 s. Filtering returns on recovery - **confirmed live: fail-open activated ~19s after stopping the DNS filter, reverted within ~7s of it answering again, banner shown/hidden correctly in a real browser** | 1 |
 
 ### Stage 4 — Response and policy orchestration (~7½ days)
 
 | Step | Work | Origin | Exit criteria | Days |
 |---|---|---|---|---|
-| 4.1 | **Policy orchestrator (lite) — done, 26 September 2026:** `app/orchestrator.py` + a `policies` table. Desired state for quarantine, IP/domain blocks, allow rules, filtering profiles, pauses, **enrollment** and vendor-telemetry lists. Apply → read back → roll back on mismatch; a reconcile every engine cycle expires policies, follows DHCP renewals and reverts drift, telling a reboot apart from drift by the kernel boot id. One cross-process `flock` so the console and engine never race. Enrollment is the deliberate exception: it is never re-added if something else turned it off (privacy canary, reboot, CLI). Found and fixed on the way: AdGuard does **not** ignore a trailing `# comment` on a rule, so 5.2's temporary allows and 5.5's vendor lists had never matched. Full detail: `EVALUATION-RESULTS-2.md` §4.1 | F§8.3, 15d cut | Injected failure rolls back. A change made directly in AdGuard is detected - **both confirmed live: two injected failures (AdGuard and nftables) rolled back with state unchanged; a managed rule deleted through AdGuard's API was restored within one cycle, with an audit row and a platform incident** | 2 |
+| 4.1 | **Policy orchestrator (lite) — done, 26 September 2026:** `app/orchestrator.py` + a `policies` table. Desired state for quarantine, IP/domain blocks, allow rules, filtering profiles, pauses, **enrollment** and vendor-telemetry lists. Apply → read back → roll back on mismatch; a reconcile every engine cycle expires policies, follows DHCP renewals and reverts drift, telling a reboot apart from drift by the kernel boot id. One cross-process `flock` so the console and engine never race. Enrollment is the deliberate exception: it is never re-added if something else turned it off (privacy canary, reboot, CLI). Found and fixed on the way: the DNS filter does **not** ignore a trailing `# comment` on a rule, so 5.2's temporary allows and 5.5's vendor lists had never matched. Full detail: `EVALUATION-RESULTS-2.md` §4.1 | F§8.3, 15d cut | Injected failure rolls back. A change made directly in the DNS filter is detected - **both confirmed live: two injected failures (the DNS filter and nftables) rolled back with state unchanged; a managed rule deleted through the DNS filter's API was restored within one cycle, with an audit row and a platform incident** | 2 |
 | 4.2 | **Response actions — done, 26 September 2026:** quarantine keyed on **MAC** (new `quarantine_mac` set, `ether saddr` in the forward chain) and optionally timed, with a kernel-side timeout one minute past the policy as a backstop; **block IP** (new `blocked_ip` set) and **block domain** from an incident's own evidence; opt-in **auto-quarantine** for campaigns spanning ≥ N tactics (off by default, acts once per campaign, only on campaigns after it's switched on). Six new validated helper verbs. Also found: step 2.2's firewall change had never been installed as `/etc/nftables.conf`, so every reboot since 14 Sep dropped the DNS-bypass log prefixes - fixed in the same install. Full detail: `EVALUATION-RESULTS-2.md` §4.2 | F§9.4, G5 | Quarantine survives DHCP renewal and expires on its own - **expiry confirmed live (ended 11 s after its time, both sets emptied); auto-quarantine confirmed live on a synthetic 3-tactic campaign; the DHCP-renewal half needs a real device on `ap0` - see §4.2** | 1.5 |
-| 4.3 | **Filtering profiles — done, 26 September 2026:** Standard / Kids / IoT restricted / Strict privacy / Unrestricted (`app/profiles.py`), built only from AdGuard's real per-client controls (filtering, safe search, blocked services) plus per-device `$client` rules - AdGuard has no per-client blocklist selection, so "list sets" per profile isn't possible and isn't pretended. Daily **blocked-service schedules** enforced by the orchestrator (AdGuard's own schedule pauses a client's whole services list at once and allows one range per day, so it can't express "TikTok always, games at night" or a daytime window). VPN/proxy bypass blocking is the `privacy` services group. **Pause 5/15/60 min** per device, or network-wide through AdGuard's own timed protection pause. Editable from the Filtering page. Full detail: `EVALUATION-RESULTS-2.md` §4.3 | F§9.3, Mkt | Profile assignment verified by read-back. A scheduled service block activates on time. Pause auto-expires - **all three confirmed live with AdGuard's own `check_host`: the scheduled gaming block started at 00:38:01 for a 00:38 window; the pause (after a live-found fix: `filtering_enabled=false` alone leaves blocked services and safe search on) ended 13 s after its time** | 2 |
+| 4.3 | **Filtering profiles — done, 26 September 2026:** Standard / Kids / IoT restricted / Strict privacy / Unrestricted (`app/profiles.py`), built only from the DNS filter's real per-client controls (filtering, safe search, blocked services) plus per-device `$client` rules - the DNS filter has no per-client blocklist selection, so "list sets" per profile isn't possible and isn't pretended. Daily **blocked-service schedules** enforced by the orchestrator (the DNS filter's own schedule pauses a client's whole services list at once and allows one range per day, so it can't express "TikTok always, games at night" or a daytime window). VPN/proxy bypass blocking is the `privacy` services group. **Pause 5/15/60 min** per device, or network-wide through the DNS filter's own timed protection pause. Editable from the Filtering page. Full detail: `EVALUATION-RESULTS-2.md` §4.3 | F§9.3, Mkt | Profile assignment verified by read-back. A scheduled service block activates on time. Pause auto-expires - **all three confirmed live with the DNS filter's own `check_host`: the scheduled gaming block started at 00:38:01 for a 00:38 window; the pause (after a live-found fix: `filtering_enabled=false` alone leaves blocked services and safe search on) ended 13 s after its time** | 2 |
 | 4.4 | **Device trust states — done, 26 September 2026:** approved / unknown / blocked on every device (existing devices grandfathered as approved on migration). Blocked = permanent quarantine; unknown = quarantined only while "restrict unknown devices" is on. Lockout-safe: switching it on approves every device already on the network first, and a restricted device keeps DHCP, DNS and the console (the rule only matches forwarded traffic), so it can always be approved from itself. Full detail: `EVALUATION-RESULTS-2.md` §4.4 | Mkt | New device restricted until approved - **confirmed live: a new registry device was restricted in the firewall 4 s after it appeared, and approving it lifted it on the same call** | 1 |
 | 4.5 | **Notifications — done, 26 September 2026:** `app/notify.py` - ntfy, Telegram, SMTP and webhook (HMAC-SHA256 signed); per-channel severity threshold; per-channel hourly rate limit; quiet hours (high still goes out); everything held goes into a digest, never dropped; failed sends retried. Title + severity + device + link by default, description only if a channel opts in. Secrets stored on the gateway, never returned by the API. Stage 5's degraded-ad-blocking alerts are incidents, so they're covered automatically. Full detail: `EVALUATION-RESULTS-2.md` §4.5 | F§9.4, 15d cut | One notification per incident, not one per cycle - **confirmed live: a harness scan extended its incident to 80 events across several cycles and the webhook (gateway → Mac over the management link) received it exactly once, signature verified** | 1 |
 
@@ -341,20 +341,20 @@ Order: telemetry first, because every later step displays or measures it. Then T
 #### 5B — Tier 1: everyday product experience
 | Step | Work | Origin | Exit criteria | Days |
 |---|---|---|---|---|
-| 5.2 | **"Why blocked?", domain tester and unbreak workflow.** (a) Test a domain for a device: AdGuard `check_host` → verdict, matching rule, source list, and whether a CNAME matched. (b) Per-device **"Recently blocked"** panel on the device page and the Filtering page. (c) One-click **Allow for this device** (AdGuard `$client` modifier on the persistent client name) or **for everyone**, optionally **temporary** (auto-removed after 1 h / 1 day), with a required reason. Everything goes through the orchestrator (4.1) and the audit log. (d) Allowlist churn is tracked as a false-positive / breakage metric | F§9.3, Mkt, A11 | Breaking a site by blocking its CDN, then fixing it from the device page, takes under 30 s. The temporary allow expires. Audit shows who, what and why | 1.5 |
+| 5.2 | **"Why blocked?", domain tester and unbreak workflow.** (a) Test a domain for a device: the DNS filter `check_host` → verdict, matching rule, source list, and whether a CNAME matched. (b) Per-device **"Recently blocked"** panel on the device page and the Filtering page. (c) One-click **Allow for this device** (the DNS filter `$client` modifier on the persistent client name) or **for everyone**, optionally **temporary** (auto-removed after 1 h / 1 day), with a required reason. Everything goes through the orchestrator (4.1) and the audit log. (d) Allowlist churn is tracked as a false-positive / breakage metric | F§9.3, Mkt, A11 | Breaking a site by blocking its CDN, then fixing it from the device page, takes under 30 s. The temporary allow expires. Audit shows who, what and why | 1.5 |
 | 5.3 | **Ad-blocking analytics.** (a) Block % over time, network and per device (from rollups). (b) Top blocked domains and top clients. (c) **Tracker company attribution** from an offline entity map (DuckDuckGo Tracker Radar or Disconnect entity data, licence checked and cited): "Device X contacted 14 tracking companies; 11 blocked". (d) Per-device **privacy report** card. (e) **Estimated bandwidth and requests saved**, with the method stated on the page (median blocked-request size taken from the 7.5 benchmark, not invented). (f) Tier 2 panel: connections decrypted vs. passed through, ads stripped, endpoints blocked | F§9.3, Mkt (NextDNS/Firewalla), A11 | All panels render from real data. The savings estimate names its method and source figure | 2 |
-| 5.4 | **Blocklist health and contribution.** (a) List last-updated age, update failures, rule counts, plus a platform incident if a list is stale for more than 48 h. (b) **Per-list contribution:** hits attributed to each list. An offline script on the Mac replays 7 days of queried domains against all lists to compute unique blocks per list and an overlap matrix. (c) AdGuard memory vs. total rules measured with lists toggled. (d) Recommendations shown in the console ("OISD Big uniquely blocks 0.4% — consider removing") | Mkt, F§10.2 | Contribution and overlap table produced and shown. A broken list URL raises an alert | 1.5 |
-| 5.5 | **Tracker coverage and resolver quality.** (a) Surface CNAME-cloaked tracker blocks separately in analytics, and add the AdGuard CNAME-trackers list. (b) **Native device telemetry lists** (HaGeZi native Apple / Samsung / Xiaomi / Windows / TikTok…) selectable per device or profile. Picked manually now, auto-suggested by fingerprinting once 6.2 lands. (c) Resolver quality: optimistic caching and cache size, DNSSEC on, two DoT upstreams (Cloudflare + Quad9) in parallel with fallback. DNS latency measured before and after | Mkt (NextDNS native tracking, Pi-hole CNAME), F§17.3 | CNAME blocks visible. A Samsung/Xiaomi-profile device blocks vendor telemetry without breaking updates (checked). p50/p95 DNS latency recorded | 1 |
+| 5.4 | **Blocklist health and contribution.** (a) List last-updated age, update failures, rule counts, plus a platform incident if a list is stale for more than 48 h. (b) **Per-list contribution:** hits attributed to each list. An offline script on the Mac replays 7 days of queried domains against all lists to compute unique blocks per list and an overlap matrix. (c) DNS-filter memory vs. total rules measured with lists toggled. (d) Recommendations shown in the console ("OISD Big uniquely blocks 0.4% — consider removing") | Mkt, F§10.2 | Contribution and overlap table produced and shown. A broken list URL raises an alert | 1.5 |
+| 5.5 | **Tracker coverage and resolver quality.** (a) Surface CNAME-cloaked tracker blocks separately in analytics, and add a CNAME-trackers blocklist. (b) **Native device telemetry lists** (HaGeZi native Apple / Samsung / Xiaomi / Windows / TikTok…) selectable per device or profile. Picked manually now, auto-suggested by fingerprinting once 6.2 lands. (c) Resolver quality: optimistic caching and cache size, DNSSEC on, two DoT upstreams (Cloudflare + Quad9) in parallel with fallback. DNS latency measured before and after | Mkt (NextDNS native tracking, Pi-hole CNAME), F§17.3 | CNAME blocks visible. A Samsung/Xiaomi-profile device blocks vendor telemetry without breaking updates (checked). p50/p95 DNS latency recorded | 1 |
 
 #### 5C — Tier 2: selective HTTPS inspection, hardened
 | Step | Work | Origin | Exit criteria | Days |
 |---|---|---|---|---|
 | 5.6 | **Enrollment and CA lifecycle in the console.** (a) Per-device "HTTPS ad removal" toggle through the orchestrator and root helper (replaces the CLI). Enrolled set keyed on MAC. (b) **Onboarding page:** CA download, QR code, per-OS install steps, and a live "is the CA trusted on this device?" check (successful handshakes to allowlisted hosts vs. TLS failures from 5.1). (c) **Auto-unenroll timer** (default 24 h), plus the existing off-after-reboot behaviour. (d) **Short-lived CA** (e.g. 90 days) with expiry on the page and a documented rotation. Old CA material destroyed on rotation. (e) Reminder banner to remove the CA from devices that are no longer enrolled | A2, A10, report §11 | Enroll → install CA → trust check green → auto-unenroll after timer. CA validity verified with `openssl x509 -enddate` | 1.5 |
 | 5.7 | **Automatic privacy-scope verification** (turns the report §6 lesson into a control). Every 15 minutes a canary client in a test namespace, placed in the enrolled set, opens TLS through the real redirect to (a) a **non-allowlisted** host and asserts the presented certificate is **not** issued by the SecurePi CA, and (b) an **allowlisted** host and asserts it **is** (proving inspection works). This checks what the *enforcing* component actually does, not the addon's log. On failure: **fail safe** (flush the enrolled set, inspection off), raise a platform incident, notify. Console badge: "Privacy scope verified 4 min ago" | Report §6, A7 | Deliberately reintroducing the `ignore_conn` typo in a test deploy triggers fail-safe within one cycle. Normal operation shows the badge green | 1.5 |
-| 5.8 | **Pinning-aware auto-passthrough.** The mitmproxy TLS-failure hook records (device, SNI) handshake failures. After N failures that pair is passed through undecrypted for 24 h, so pinned apps (e.g. the YouTube app) **keep working, with ads,** instead of breaking. Shown in the console as "App pins its certificate — bypassed" | A8, Mkt (AdGuard apps) | With the device enrolled, the YouTube app plays after at most N failed attempts. Browser YouTube on the same device stays ad-free | 1 |
+| 5.8 | **Pinning-aware auto-passthrough.** The mitmproxy TLS-failure hook records (device, SNI) handshake failures. After N failures that pair is passed through undecrypted for 24 h, so pinned apps (e.g. the YouTube app) **keep working, with ads,** instead of breaking. Shown in the console as "App pins its certificate — bypassed" | A8, Mkt (ad-blocker apps) | With the device enrolled, the YouTube app plays after at most N failed attempts. Browser YouTube on the same device stays ad-free | 1 |
 | 5.9 | **Rule-set refactor and tests.** Move `AD_FIELDS`, `AD_RENDERERS`, `BLOCKED_PATHS`, `DECRYPT_SUFFIXES` into a versioned `dpi/adfilter-rules.json` that the addon hot-reloads. Edited from the console with validation and audit. Decrypt-suffix changes need an explicit privacy confirmation. **Fixture tests** for `strip_ads` on synthetic YouTube-shaped JSON: nested fields removed, ad renderers dropped, content preserved, output still valid JSON. **Per-rule hit counters** to spot dead rules | A9 | `make test` covers the addon. A rule edit takes effect without restarting the proxy. Dead rules visible | 1 |
 | 5.10 | **Effectiveness watchdog and SSAI readiness.** Track ads stripped per YouTube watch session. If YouTube traffic continues but stripping stays at zero for a configured period, raise "YouTube ad removal may no longer be effective (format change or server-side ad insertion)" and notify. Document SSAI as the expected end state | A9, Mkt research | Removing a rule in a test deploy makes the watchdog fire. Report section drafted | 0.5 |
-| 5.11 | *(Optional)* **Cosmetic and scriptlet injection** for allowlisted hosts only: inject a stylesheet hiding leftover ad containers, and optionally vetted scriptlets (`json-prune`, `set-constant` equivalents, licences checked) into decrypted HTML. Handle CSP nonces carefully. Measure breakage. Also correct `FIRST-PARTY-ADS-ANALYSIS.md` §5.1 (A12) | Mkt (uBO, AdGuard apps), A12 | Leftover ad placeholders gone on the test pages with no functional breakage in a 10-video check | 1.5 |
+| 5.11 | *(Optional)* **Cosmetic and scriptlet injection** for allowlisted hosts only: inject a stylesheet hiding leftover ad containers, and optionally vetted scriptlets (`json-prune`, `set-constant` equivalents, licences checked) into decrypted HTML. Handle CSP nonces carefully. Measure breakage. Also correct `FIRST-PARTY-ADS-ANALYSIS.md` §5.1 (A12) | Mkt (uBO, ad-blocker apps), A12 | Leftover ad placeholders gone on the test pages with no functional breakage in a 10-video check | 1.5 |
 
 > **Open follow-up on 5.7 - revisit after 5.11:** 5.7 as built does NOT
 > exercise the real nftables redirect rule or mitmproxy's transparent-mode
@@ -478,13 +478,13 @@ This restores feasibility Phase 10. ⚡ = run a first time **as soon as the feat
 | Step | Experiment | Metrics |
 |---|---|---|
 | 7.0 | **7-day continuous run** on real devices | FP incidents/24 h, uptime, storage growth/day, ingest lag p95, reduction ratio, **block % per device** |
-| 7.1 | **PCAP replay pipeline** (`suricata -r` → ingest → engine; runnable on the Mac via Homebrew Suricata; own captures + a small labelled public subset, licence cited) | Deterministic ground truth |
+| 7.1 | **PCAP replay pipeline** (`suricata -r` → ingest → engine; runnable on the Mac via a Homebrew-installed IDS; own captures + a small labelled public subset, licence cited) | Deterministic ground truth |
 | 7.2 | ⚡ Detection battery for all signals, 5 runs each | Detection rate, TTD median + p95 |
 | 7.3 | Precision / recall / F1 per signal. Threshold sensitivity sweeps | Justifies every threshold |
 | 7.4 | ⚡ Slow-scan advantage vs. signatures. ⚡ Beacon jitter curve. Ablation (raw / dedup / dedup + campaigns) | Headline figures |
 | 7.5 | **Ad-blocking benchmark (expanded).** Headless Chromium (Playwright) on the Mac, temporarily joined to `SecurePi-Test`, loads a fixed set of 20 ad-heavy sites × 3 runs under four conditions: **no filtering / Tier 1 / Tier 1 + profile lists (5.5) / reference: uBlock Origin in the browser with gateway filtering off**. Measure total and third-party requests, bytes, tracker companies contacted (entity map), onLoad/LCP. Also: ⚡ **breakage rate** on the top-50 sites (checklist + allowlist churn from 5.2), ⚡ **per-list marginal utility and overlap** (5.4), ⚡ **DNS latency** p50/p95 before/after 5.5 vs. ISP resolver, ⚡ **bypass matrix**: Firefox DoH, Chrome Secure DNS, Android Private DNS, iCloud Private Relay (if an Apple device is available), VPN app → blocked / detected / leaked. **Tier 2:** 30 YouTube videos in mobile Chrome, pre-roll shown yes/no under DNS only vs. Tier 2, ⚡ scope-canary results over 7 days, pinned-app behaviour before/after 5.8, mitmproxy RSS and added TLS setup latency | Request/byte/tracker reduction vs. uBO reference, load-time delta, breakage %, list utility, latency, bypass matrix, first-party ad block rate with confidence interval, privacy-scope uptime |
 | 7.6 | Identity accuracy over the 7-day run | Accuracy vs. ground truth |
-| 7.7 | ⚡ **Chaos tests:** kill Suricata / AdGuard / ingest / engine / **mitmproxy** (inspection must fail open to plain passthrough, not break browsing), fill disk (scratch), drop WAN | MTTR, detection gap, fail-open verified |
+| 7.7 | ⚡ **Chaos tests:** kill the IDS and DNS filter / ingest / engine / **mitmproxy** (inspection must fail open to plain passthrough, not break browsing), fill disk (scratch), drop WAN | MTTR, detection gap, fail-open verified |
 | 7.8 | Performance: throughput + drops sweep, dashboard query latency, memory/CPU with everything on, ⚡ storage before/after retention | System table |
 | 7.9 | **Usability study** (5–8 people): tasks include "find the riskiest device and explain why" **and "a site is broken — fix it for one device only"** + SUS | Task success, time, SUS |
 
@@ -503,7 +503,7 @@ This restores feasibility Phase 10. ⚡ = run a first time **as soon as the feat
 |---|---|---|
 | S.1 | Raspberry Pi as a second independent sensor | F§5.4, F§19 |
 | S.2 | Network map + offline GeoIP/ASN | Mkt |
-| S.3 | Suricata IPS-mode latency experiment (measure only) | F§10.5 |
+| S.3 | IDS IPS-mode latency experiment (measure only) | F§10.5 |
 | S.4 | WireGuard remote access to the console | Mkt |
 | S.5 | Additional first-party ad modules (e.g. web promoted posts on another site), each a separate opt-in rule file, **only after a written privacy review**, because each adds a decrypted hostname that may carry messages or logins | Mkt, §1.4 |
 
@@ -534,7 +534,7 @@ Never cut Stage 2, steps 5.2, 5.3, 5.7, or evaluation items 7.2–7.5.
 
 - `app/correlation.py` — new signals, ATT&CK tags, campaigns, suppression, config thresholds
 - `app/schema.sql` — `settings`, `audit_log`, `device_hourly`, `filter_hourly`, `dpi_events`, `ioc`, `suppressions`, `campaigns`, `incident_notes`, `sensor_stats`, `policies`, `signal_taxonomy`, `tracker_entities`, `notifications`
-- `app/ingest.py` — AdGuard API source (with reason/rule/list/upstream fields), nftables log lines, Suricata `stats`, DHCP fingerprints, DPI decision lines
+- `app/ingest.py` — DNS-filter API source (with reason/rule/list/upstream fields), nftables log lines, the IDS `stats`, DHCP fingerprints, DPI decision lines
 - `app/adguard.py` — MAC-keyed persistent clients, blocked services + schedules, `check_host`, `$client` allow rules, pause, upstream/cache/DNSSEC settings, list health
 - `dpi/securepi_adfilter.py` + new `dpi/adfilter-rules.json` — hot-reloaded rules, decision telemetry, TLS-failure auto-passthrough, per-rule counters, optional cosmetic injection
 - `dpi/deploy-dpi.sh`, `gateway/securepi` — table fix, explicit enroll, short-lived CA, MAC-keyed enrolled set
@@ -607,7 +607,7 @@ harness itself needed extending first — a network-sweep test needs real
 distinct hosts to scan, so `setup-test-harness.sh` now gives `ns_victim`
 ten addresses instead of one — applied live by tearing down and
 recreating the isolated `br-test`/`ns_attacker`/`ns_victim` harness (never
-touching `ap0` or the two real devices) and restarting Suricata to rebind
+touching `ap0` or the two real devices) and restarting the IDS to rebind
 its capture socket to the recreated interface. Both live scenarios were
 run against the real gateway, not just asserted in unit tests: full
 results in `EVALUATION-RESULTS-2.md` §2.1. `make deploy` (0.2) was used
@@ -621,7 +621,7 @@ they asked to proceed with the same lockout-insurance discipline
 `GATEWAY-SETUP-RUNBOOK.md` already documents: ruleset backed up, `nft -c
 -f` syntax-checked before touching anything live, and the management link
 independently re-verified immediately after the real `nft -f` apply.
-Two AdGuard `$dnsrewrite=NXDOMAIN` rules (Firefox's DoH canary, Apple's
+Two DNS-filter `$dnsrewrite=NXDOMAIN` rules (Firefox's DoH canary, Apple's
 Private Relay opt-out domains) and two HaGeZi blocklists (DoH-only,
 enabled; the combined DoH/VPN/Proxy list, added but left disabled until
 4.3's profile system exists to actually offer it as a choice) were added
@@ -644,7 +644,7 @@ implied to be covered. Full detail: `EVALUATION-RESULTS-2.md` §2.2.
 signature_taxonomy.py` maps `alert_category` (confirmed against this
 gateway's real `/etc/suricata/classification.config`, not guessed) to a
 plain name, severity, and - for 7 curated categories - an ATT&CK tag;
-everything else falls to a generic `ids_other` bucket using Suricata's
+everything else falls to a generic `ids_other` bucket using the IDS's
 own numeric priority. Two real findings came out of checking the live
 data before writing any code: this gateway's own alert history is almost
 entirely low-priority "Misc activity"/"Generic Protocol Command Decode"
@@ -670,13 +670,13 @@ didn't match a naive first guess: the real download path is
 has a space after every comma (`"a", "b"`), which silently parsed zero
 rows under a plain `'","'` split until caught before deploying. A second
 real bug was found and fixed live: `add_blocklist()` was first pointed at
-a `file://` URL on the assumption AdGuard could read a local file
+a `file://` URL on the assumption the DNS filter could read a local file
 directly - it can't; `add_url` validates the scheme server-side and
 rejects anything but http/https. Fixed with `securepi-static.service`, a
 new loopback-only static file server (the same `python3 -m http.server`
 pattern `dpi/deploy-dpi.sh` already uses for the CA download server).
 Live-verified end to end: 5,651 real indicators fetched across all three
-feeds, 1,794 domain rules registered and enabled in AdGuard, a real
+feeds, 1,794 domain rules registered and enabled in the DNS filter, a real
 fetched domain confirmed blocked via `dig`, and `threat_intel_signal`
 fired correctly against a synthetic flow event pointed at a real
 Feodo-listed IP (never actually contacted - the same safe approach the
@@ -690,8 +690,8 @@ Suffix List dependency) and computes Shannon entropy, distinct-
 subdomain count, and TXT ratio, splitting into `dns_tunneling` (T1071.004
 Application Layer Protocol: DNS) and `dga` (T1568.002 Dynamic Resolution:
 DGA) - both exact ATT&CK matches by definition, not inferences. A real
-gap was found and fixed first: `flatten_agh_api` never captured AdGuard's
-own `status` field, so `dns_rcode` was always NULL for AdGuard-sourced
+gap was found and fixed first: `flatten_agh_api` never captured the DNS filter's
+own `status` field, so `dns_rcode` was always NULL for DNS-filter-sourced
 queries - no way to tell a genuine NXDOMAIN from anything else. Confirmed
 live that a query THIS gateway blocks still reports NOERROR (same fact
 step 2.2's NXDOMAIN-rule work already established), which is exactly what
@@ -794,7 +794,7 @@ end of the session.
 
 What was actually exercised against the live gateway, not just tested in
 isolation:
-- `/api/filtering/check` against real AdGuard data (`doubleclick.net` →
+- `/api/filtering/check` against real DNS-filter data (`doubleclick.net` →
   correctly blocked with rule and filter_list_id; `wikipedia.org` →
   correctly allowed).
 - `sudo securepi enroll` with no argument now refuses instead of silently
@@ -808,7 +808,7 @@ isolation:
   `EVALUATION-RESULTS.md` §3 already flagged as background noise.
 - The MAC-keyed identity fix (A3), proven against the test-harness's
   `test-victim` device (never against a real device): enabling filtering
-  created an AdGuard client keyed on **MAC + IP**; simulating a MAC
+  created a DNS-filter client keyed on **MAC + IP**; simulating a MAC
   rotation by adding a second MAC row and re-applying the policy grew the
   client's `ids` to include both MACs and the IP, rather than losing the
   old one - the exact failure this fix targets.
@@ -818,11 +818,11 @@ isolation:
   cleaned up afterward; device 5's filtering was restored to enabled.
 
 **One real bug found and fixed during this same live pass:** `describe_check()`
-assumed AdGuard's `check_host` response echoed back the domain it was asked
+assumed the DNS filter's `check_host` response echoed back the domain it was asked
 about (`result.get("host")` / `result.get("name")`). Live testing showed
-neither key exists in AdGuard's actual response - every result rendered
+neither key exists in the DNS filter's actual response - every result rendered
 `"domain": null`. Fixed by passing the domain through from the caller
-instead of reading it back from AdGuard; redeployed and re-verified within
+instead of reading it back from the DNS filter; redeployed and re-verified within
 the same session.
 
 **Not verified live, honestly:** the Tier 2 telemetry log
@@ -878,12 +878,12 @@ synthetic reconstruction of one, and needed no new tooling - but it also
 means two things the original method would have given us are explicitly
 NOT provided here, and the API response says so under `deferred_note`
 rather than pretending otherwise: the list-*overlap* matrix (which other
-lists would also have matched the same domain), and AdGuard's memory use
+lists would also have matched the same domain), and the DNS filter's memory use
 with lists toggled on/off. Both need a controlled experiment against a
-non-production AdGuard instance, which fits Stage 7's evaluation campaign
+non-production DNS-filter instance, which fits Stage 7's evaluation campaign
 better than an always-on console feature - deferred there, not dropped.
 
-Also unverified: whether AdGuard Home's real `/control/filtering/status`
+Also unverified: whether the DNS filter's real `/control/filtering/status`
 response actually includes a `last_updated` field per filter in the
 version running on the gateway. The code reads it defensively (`f.get(...)`,
 try/except around the timestamp parse) and degrades to "sync age unknown"
@@ -914,7 +914,7 @@ What was actually exercised against the live gateway:
   distinct, plausible per-device tracker breakdowns (34% and 37% block
   rates respectively).
 - `/api/filtering/lists/health` - **this is what resolved the one
-  specific thing flagged as unverified above.** AdGuard's real
+  specific thing flagged as unverified above.** The DNS filter's real
   `/control/filtering/status` (curled directly against port 3000, past
   this app's own layer) does return `last_updated` as a genuine
   RFC3339-with-offset string (`"2026-09-13T06:56:12+05:30"`), and
@@ -928,8 +928,8 @@ What was actually exercised against the live gateway:
 
 **One real thing this surfaced, not a bug:** of 1,963 blocked DNS events
 stored so far, only 6 carry a `dns_filter_list_id` at all, and all 6
-point to list id 1 ("AdGuard DNS filter"), never to HaGeZi/OISD/Peter
-Lowe/AdAway despite AdGuard's own on-disk `querylog.json` showing those
+point to list id 1 ("Default DNS filter list"), never to HaGeZi/OISD/Peter
+Lowe/AdAway despite the DNS filter's own on-disk `querylog.json` showing those
 four lists matching plenty of queries. Tracing it: `read_agh_querylog`'s
 byte-offset watermark means a querylog line already read (and inserted)
 before this session's schema migration keeps whatever columns
@@ -950,7 +950,7 @@ locally, not yet deployed.** Scoped down from the plan's original three
 parts based on what a live investigation actually found possible or safe
 to do in one pass, each documented rather than silently dropped:
 
-- **(a) CNAME-cloaking.** `describe_check()` now returns AdGuard's `cname`
+- **(a) CNAME-cloaking.** `describe_check()` now returns the DNS filter's `cname`
   field when a block happened via a CNAME match - confirmed to be a real
   field on the live check_host API during the 5.2 deploy already, so this
   is a small, safe addition, surfaced in both "why blocked?" tools (the
@@ -961,7 +961,7 @@ to do in one pass, each documented rather than silently dropped:
   every key across a large sample) found no CNAME field on stored query
   log entries at all, only a base64-encoded raw DNS answer packet that
   would need a hand-written wire-format parser to read. Deferred rather
-  than faked; adding the AdGuard "CNAME-trackers" blocklist itself needs
+  than faked; adding the DNS filter "CNAME-trackers" blocklist itself needs
   no code at all, since it's just another URL through the existing
   blocklist-add flow - left for whoever runs the deploy to add through
   the console rather than silently pre-added by this session.
@@ -1039,7 +1039,7 @@ rules that kind of action gets confirmed explicitly rather than folded
 into a routine "deploy and verify" pass. The gateway is currently running
 with DNSSEC on but optimistic caching off and only one upstream provider
 configured; applying the recommended tuning (or doing it by hand through
-AdGuard's own settings) is left as a deliberate next decision rather than
+the DNS filter's own settings) is left as a deliberate next decision rather than
 something this session did on its own judgment. Asked explicitly after
 this step landed: left as-is for now, to move on to Stage 5C first.
 
@@ -1062,7 +1062,7 @@ plan assumed:
   bundle into the same pass as everything else here, so it keeps the
   same DHCP-renewal limitation `quarantine.py` already documents.
 - **(c) Auto-unenroll timer.** Rather than a polling sweep (5.2's
-  pattern, needed there because AdGuard rules have no native expiry),
+  pattern, needed there because DNS-filter rules have no native expiry),
   `gateway/nftables.conf`'s `enrolled` set now declares `flags timeout`,
   so an element can carry its own TTL and the kernel expires it with no
   scheduler at all. This flag addition was reload-tested live on a
@@ -1187,7 +1187,7 @@ before writing any code:
 - `ip netns exec ns_victim ...` was the obvious first choice - it's the
   exact mechanism `gateway/evaluate.py` already uses for safe synthetic
   traffic. But `evaluate.py`'s own comments already establish that
-  `ns_victim` sits on `br-test`, which "has no path to AdGuard" - it is
+  `ns_victim` sits on `br-test`, which "has no path to the DNS filter" - it is
   NOT bridged onto `ap0`, the interface the dpi-redirect rule matches on.
   Traffic from `ns_victim` never reaches that rule at all.
 - Tried connecting directly to `127.0.0.1:8080` (mitmproxy's redirect
@@ -1845,10 +1845,10 @@ exist yet.
 Investigated what's actually available live before writing any
 classification code, which shaped the whole design:
 
-- **Suricata's DHCP logger was already enabled but in non-extended
+- **The IDS's DHCP logger was already enabled but in non-extended
   mode** (`extended: no` in `/etc/suricata/suricata.yaml`, confirmed
   live) - meaning option 55 (the Parameter Request List) was never being
-  logged at all, only a basic MAC→IP→hostname mapping AdGuard's own
+  logged at all, only a basic MAC→IP→hostname mapping the DNS filter's own
   lease table already gives us. Flipped to `extended: yes`, validated
   with `suricata -T` before restarting, confirmed live (15 real,
   pre-existing `event_type=dhcp` records already sat in `eve.json`, none
@@ -1857,7 +1857,7 @@ classification code, which shaped the whole design:
   `dhcp_params` column (schema.sql, `ingest.py`'s `flatten_suricata`)
   has never actually been exercised against a real extended-mode event.
   Written defensively (`.get()`, never assumes the field exists) so a
-  wrong guess at Suricata's field name is a silent no-op, not a crash -
+  wrong guess at the IDS's field name is a silent no-op, not a crash -
   confirm this the next time either real phone's lease renews.
 - **JA3 cannot honestly classify anything.** Checked the real database:
   device 2 (a confirmed Android phone) has shown *five different*
@@ -2014,8 +2014,8 @@ Other design decisions:
   shape naming the real unbuilt stage (F3, R3) rather than a Settings
   control that would silently do nothing.
 - Attributions list real, currently-deployed versions and licences for
-  every third-party component actually in use (Suricata 7.0.3 GPLv2,
-  AdGuard Home v0.107.79 GPLv3, mitmproxy 12.2.3 MIT, Chart.js v4.4.4
+  every third-party component actually in use (IDS 7.0.3 GPLv2,
+  DNS filter v0.107.79 GPLv3, mitmproxy 12.2.3 MIT, Chart.js v4.4.4
   MIT, nftables GPLv2), checked against the gateway rather than guessed.
 
 Smoke-tested locally: the `settings`/`audit_log` migration path on a
@@ -2260,7 +2260,7 @@ breakdown (6,609 dns_query, 1,777 flow, 1,168 dns, 1,143 quic, 491 tls,
 correctly showed the real phone `kushagra-s-a33` (1.2 GB) ahead of the
 test-harness attacker device; a combined device+domain filter correctly
 matched a real blocked DNS query (`ads-api.x.com`); an `event_type=alert`
-filter surfaced real Suricata alerts including a genuine DoH-bypass
+filter surfaced real IDS alerts including a genuine DoH-bypass
 detection. A real saved search was created, listed, and removed again
 via the console's own endpoints, confirmed via `GET /api/audit` as two
 real audited rows (`hunt.save_search`, `hunt.remove_search`). The
@@ -2639,10 +2639,10 @@ the following cycles, and the `signal_state` row's timestamp matched.
 healthy after the restart. Journal clean across all three services
 throughout.
 
-**Note on step 1.4 (AdGuard API ingest), implemented locally and
+**Note on step 1.4 (DNS-filter API ingest), implemented locally and
 deployed live.** Investigated the real live shape of
 `/control/querylog` before writing any parsing code - fetched it
-directly against the gateway's real AdGuard instance (`adguard._request`
+directly against the gateway's real DNS-filter instance (`adguard._request`
 run over SSH) rather than assuming it matches the on-disk file's own
 format. It doesn't: `client`/`question.name`/`question.type` instead of
 `IP`/`QH`/`QT`, a top-level `rule` string plus a `rules` array instead
@@ -2656,7 +2656,7 @@ of nested. `flatten_agh_api()` is built from two real fetched entries
 - **Transport**: polls the API on the same 2-second cycle the file
   reader used to run on, tracked by a real epoch-seconds watermark
   (`ingest_state.watermark_ts`, a new `REAL` column - `byte_offset`'s
-  `INTEGER` would have silently truncated AdGuard's nanosecond-precision
+  `INTEGER` would have silently truncated the DNS filter's nanosecond-precision
   timestamps) plus a same-page duplicate guard, since the API exposes no
   stable per-entry id to key on. No cursor-based pagination beyond one
   page per poll - at this project's real measured volume (well under
@@ -2668,10 +2668,10 @@ of nested. `flatten_agh_api()` is built from two real fetched entries
 - **Fallback**: `read_agh()` tries the API first and falls back to
   `read_agh_querylog()` (unchanged) if `adguard._request` raises
   `AdGuardError` - satisfying the step's own "file reader kept as
-  fallback" exactly, for exactly the case it names (AdGuard itself
+  fallback" exactly, for exactly the case it names (the DNS filter itself
   unreachable, e.g. mid-restart).
 - **Blocked-vs-allowed** comes from `reason.startswith("Filtered")` -
-  AdGuard's own documented naming convention, confirmed against the two
+  The DNS filter's own documented naming convention, confirmed against the two
   real reason strings this gateway actually produces
   (`FilteredBlackList`, `NotFilteredNotFound`). The fuller reason enum
   (safe browsing, parental control, safe search, custom rule, rewrite)
@@ -2685,14 +2685,14 @@ investigation, not invented as a hypothetical:** `to_epoch_agh`
 hardcoded `+00:00` regardless of a timestamp's actual offset. Checked
 live, the real on-disk `querylog.json` (not just the API) is full of
 `+05:30`-offset timestamps, not the `'Z'`-suffixed example the old
-docstring assumed - meaning every AdGuard-sourced event this project
+docstring assumed - meaning every DNS-filter-sourced event this project
 had ever ingested via the file path carried a timestamp roughly 5.5
 hours ahead of its true value, deterministically and regardless of
-system configuration (the code explicitly forced UTC). Suricata's own
+system configuration (the code explicitly forced UTC). The IDS's own
 `to_epoch` had a related issue: its real eve.json timestamps are also
 `+0530`, not the `+0000` its docstring claimed, and `fromisoformat`
 rejects the colon-less offset on any Python version - meaning every
-Suricata event was silently falling through to a fallback that
+IDS event was silently falling through to a fallback that
 discarded the offset and used naive local time. That fallback happened
 to produce the right answer only because this gateway's own system
 timezone is also Asia/Kolkata (confirmed live via `timedatectl`) - a
@@ -2707,7 +2707,7 @@ the real 19,800-second (5.5-hour) gap before reverting back to a
 byte-identical file.
 
 **Historical data was deliberately NOT retroactively corrected.** Every
-AdGuard-sourced event already in the database before this deploy still
+DNS-filter-sourced event already in the database before this deploy still
 carries its old, skewed timestamp; only newly-ingested events are
 correct from this point forward. A mass `UPDATE` against live
 production timestamps was considered and rejected as needlessly risky
@@ -2739,7 +2739,7 @@ column) and `.bak-1.4-*` copies of `ingest.py` and `schema.sql`. Only
 **Verified against real production data, including the exit criterion's
 own latency number, not just "it doesn't crash":** a real DNS query for
 a genuinely blocked domain (`doubleclick.net`) was issued directly
-against the live gateway's real AdGuard listener (`10.10.0.1:53`, found
+against the live gateway's real DNS-filter listener (`10.10.0.1:53`, found
 live via `ss -tulnp` after the loopback address failed) and the exact
 wall-clock query time recorded. The resulting event appeared in the
 database **11.1 seconds later** - well inside the ≤30s exit criterion,
@@ -2896,7 +2896,7 @@ reproduction of the exact G6 bug scenario, not just a fixture:**
 deployed live.** Added `ap_isolate=1` to `gateway/hostapd.conf` (finding
 G8) - without it, two devices on `SecurePi-Test` can talk directly to
 each other over the AP itself, invisibly to this project's own
-sensors: Suricata only sees traffic that actually reaches the gateway,
+sensors: the IDS only sees traffic that actually reaches the gateway,
 and client-to-client 802.11 frames never do, so a phone-to-phone scan
 or any other peer traffic would be completely undetectable. Documented
 the real, accepted trade-off directly in the config file: isolation
@@ -2960,6 +2960,6 @@ real, previously-undiscovered or previously-unfixed bugs were found and
 fixed along the way: a persisted-watermark bug and a cumulative
 evidence-count bug (both already fixed before this stage began, now
 permanently regression-tested), a 5.5-hour timestamp skew affecting
-every AdGuard-sourced event (found live during step 1.4's own
+every DNS-filter-sourced event (found live during step 1.4's own
 investigation, not hypothesised), and G1/G2/G3/G6's detection-accuracy
 findings from the original gap analysis.

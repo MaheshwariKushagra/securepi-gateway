@@ -5,7 +5,7 @@
 | `labels/` | Ground truth for each capture: which host is which, and what should be detected when | yes |
 | `results/` | Result files from the battery (7.2) and the replay (7.1) | yes |
 | `pcaps/` | The captures themselves | **no** - third-party data, and large |
-| `rules/` | A copy of the gateway's Suricata rule set | **no** - large, and rebuilt daily |
+| `rules/` | A copy of the gateway's IDS rule set | **no** - large, and rebuilt daily |
 | `replay-out/` | Scratch output of `tools/replay.py` (eve.json, a database) | no |
 
 ## Setting up the inputs on a fresh Mac

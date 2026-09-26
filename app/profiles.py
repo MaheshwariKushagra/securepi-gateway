@@ -8,11 +8,11 @@ which are blocked only during a daily time window (for example "no gaming
 21:00-07:00"), and whether the vendor-telemetry block lists from step 5.5
 are applied. A device is given a profile by an orchestrator policy
 (app/orchestrator.py); this module only defines the profiles and turns
-one into the exact AdGuard Home client settings it means right now.
+one into the exact DNS-filter client settings it means right now.
 
-What AdGuard Home can and cannot do per device
+What the DNS filter can and cannot do per device
 -----------------------------------------------
-AdGuard applies its blocklists to every device - there is no per-client
+the DNS filter applies its blocklists to every device - there is no per-client
 list selection. What it does have per client (confirmed against the live
 gateway's v0.107.79 API) is: filtering on/off, safe search per engine,
 and a list of "blocked services" (TikTok, Steam, Discord and about 140
@@ -21,9 +21,9 @@ are built only from those real per-client controls, plus per-device
 $client rules for the vendor-telemetry domains. Nothing here pretends a
 per-device blocklist exists.
 
-Why schedules are enforced by the orchestrator, not AdGuard's own schedule
+Why schedules are enforced by the orchestrator, not the DNS filter's own schedule
 --------------------------------------------------------------------------
-AdGuard's per-client `blocked_services_schedule` describes when blocked
+the DNS filter's per-client `blocked_services_schedule` describes when blocked
 services are PAUSED, and it pauses the client's whole blocked-services
 list at once, allowing one range per day. That can't express "TikTok
 always, games only at night" (the pause would unblock TikTok too), and it
@@ -37,8 +37,8 @@ cycle of its start time.
 Group references
 ----------------
 A profile can list whole categories as "group:gaming" rather than every
-game by name. They're expanded against AdGuard's own service catalogue at
-apply time, so a service AdGuard adds to a category later is included
+game by name. They're expanded against the DNS filter's own service catalogue at
+apply time, so a service the DNS filter adds to a category later is included
 automatically.
 """
 
@@ -46,7 +46,7 @@ import json
 import re
 import time
 
-# AdGuard's safe-search engines, as its client object names them
+# The DNS filter's safe-search engines, as its client object names them
 # (confirmed from the live gateway's /control/clients output).
 SAFE_SEARCH_ENGINES = ("bing", "duckduckgo", "ecosia", "google", "pixabay", "yandex", "youtube")
 
@@ -231,12 +231,12 @@ def in_window(schedule, now_struct):
     return now >= start or now < end
 
 
-# ------------------------------------------------- AdGuard client settings
+# ------------------------------------------------- DNS-filter client settings
 
 def expand_services(names, catalog):
-    """Turn "group:gaming"-style references into the service ids AdGuard
-    actually knows. `catalog` is AdGuard's own list (id -> group id). A
-    plain id AdGuard doesn't know is dropped: sending AdGuard an unknown
+    """Turn "group:gaming"-style references into the service ids the DNS filter
+    actually knows. `catalog` is the DNS filter's own list (id -> group id). A
+    plain id the DNS filter doesn't know is dropped: sending the DNS filter an unknown
     id would make it reject the whole client update."""
     out = set()
     for n in names:
@@ -249,12 +249,12 @@ def expand_services(names, catalog):
 
 
 def client_settings(profile, catalog, now_struct, paused=False):
-    """The AdGuard client fields this profile means at this moment - the
+    """The DNS-filter client fields this profile means at this moment - the
     orchestrator's desired state for one device's client entry.
 
     `paused` is a per-device "pause filtering for N minutes" (step 4.3).
     It clears the blocked services and safe search too, not just the
-    blocklists: checked live, AdGuard's per-client filtering_enabled=false
+    blocklists: checked live, the DNS filter's per-client filtering_enabled=false
     only switches off blocklist matching - a paused Kids device still had
     TikTok blocked and Google rewritten to safe search. A pause is for
     "let this device reach everything for a few minutes", so it has to
@@ -279,8 +279,8 @@ def client_settings(profile, catalog, now_struct, paused=False):
 
 
 def client_matches(desired, actual):
-    """True if an AdGuard client object already has every field `desired`
-    asks for. Compares lists as sets (AdGuard may return them in its own
+    """True if a DNS-filter client object already has every field `desired`
+    asks for. Compares lists as sets (the DNS filter may return them in its own
     order) and only the safe-search keys we set."""
     if actual is None:
         return False

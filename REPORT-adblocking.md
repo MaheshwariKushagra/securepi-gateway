@@ -59,8 +59,8 @@ Two tiers were implemented, differing in coverage, capability and privacy cost.
 
 | Component | Choice |
 |---|---|
-| Resolver | AdGuard Home, headless, UI bound to `127.0.0.1` and never exposed |
-| Blocklists | AdGuard DNS filter, AdAway, HaGeZi Pro, OISD Big, Peter Lowe — **655,974 rules** |
+| Resolver | DNS filter, headless, UI bound to `127.0.0.1` and never exposed |
+| Blocklists | Default DNS filter list, AdAway, HaGeZi Pro, OISD Big, Peter Lowe — **655,974 rules** |
 | Upstream | DNS-over-TLS to `1.1.1.1` / `1.0.0.1` |
 
 Three firewall controls were added, because filtering is only effective if it cannot be

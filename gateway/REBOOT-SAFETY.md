@@ -1,6 +1,6 @@
 # Reboot safety: the test harness dependency
 
-Suricata is configured with two capture interfaces: the production `ap0`
+The IDS is configured with two capture interfaces: the production `ap0`
 (the real project LAN) and `veth-atk`, a virtual interface belonging to an
 isolated test-traffic harness used to exercise the correlation engine's
 signals safely (see `dpi/` notes and the correlation engine commit for why
@@ -9,7 +9,7 @@ AF_PACKET capture entirely, and this bridge+veth design was the fix).
 
 Because `veth-atk` only exists once `setup-test-harness.sh` has run, an
 earlier version of this setup left it created ad hoc — meaning a reboot
-would have started Suricata pointed at an interface that didn't exist yet,
+would have started the IDS pointed at an interface that didn't exist yet,
 an unverified risk.
 
 Fixed with two systemd units, present on the gateway (not committed here in
@@ -21,11 +21,11 @@ full, since they are host configuration, but documented for reference):
 - A drop-in at `/etc/systemd/system/suricata.service.d/override.conf` adding
   `After=securepi-test-harness.service` and
   `Wants=securepi-test-harness.service` to the packaged `suricata.service`,
-  so the harness is guaranteed to exist before Suricata starts.
+  so the harness is guaranteed to exist before the IDS starts.
 
 Verified with an actual reboot (not just a dry-run of the units): all
 eleven gateway services came back active with no manual steps, both
-Suricata capture threads (`ap0` and `veth-atk`) started without error, and
+IDS capture threads (`ap0` and `veth-atk`) started without error, and
 the harness's bridge and both network namespaces were present immediately.
 
 
@@ -40,7 +40,7 @@ console silently comes out 5.5 hours behind real IST time, with no error or
 warning, just a wrong-looking clock.
 
 This is a display-layer issue only. Every stored event timestamp comes from
-Suricata's own EVE JSON, which carries an explicit UTC offset
+the IDS's own EVE JSON, which carries an explicit UTC offset
 (`+0000`) - the ingest pipeline converts these to timezone-agnostic epoch
 seconds correctly regardless of the system's local timezone setting. Nothing
 about the data itself was ever wrong; only the human-readable rendering was.

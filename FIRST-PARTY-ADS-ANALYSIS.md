@@ -166,7 +166,7 @@ correctly functioning matcher with nothing to evaluate. This is not an implement
 gap that more work would close; the arguments do not exist at that location.
 
 **Can the inputs be manufactured?** Only by TLS interception — and that is a real,
-shipping architecture, not a hypothetical one. AdGuard's desktop products, `mitmproxy`
+shipping architecture, not a hypothetical one. The DNS filter's desktop products, `mitmproxy`
 filtering plugins, and Squid with SSL-bump all do URL-level filtering centrally.
 
 Note where those products run: **on the endpoint**, where they can install a CA into the

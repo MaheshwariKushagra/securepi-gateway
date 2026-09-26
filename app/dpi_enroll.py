@@ -38,7 +38,7 @@ lease renewal drops enrollment until the console re-applies it.
 Auto-unenroll via a native nftables timeout, not a scheduler
 ---------------------------------------------------------------
 Step 5.6c wants an auto-unenroll timer. Rather than build a polling sweep
-(the pattern 5.2 uses for temporary allow rules, because AdGuard's rules
+(the pattern 5.2 uses for temporary allow rules, because the DNS filter's rules
 have no native expiry), the `enrolled` set now carries `flags timeout`
 (see gateway/nftables.conf), so an element can be given a TTL directly
 and the kernel expires it with no code involved at all.

@@ -164,7 +164,7 @@ for i in range(260):
        tls_sni=random.choice(["netbanking.example-bank.com", "mail.google.com", "web.whatsapp.com"]),
        dpi_action="passthrough")
 
-# ---- Suricata IDS alerts, low volume, over the day
+# ---- IDS alerts, low volume, over the day
 SIGS = [("ET SCAN Possible Nmap User-Agent Observed", "Web Application Attack", 1, 2024364),
         ("ET POLICY Observed DNS Query to .onion proxy Domain", "Potential Corporate Privacy Violation", 2, 2022048),
         ("ET INFO Session Traversal Utilities for NAT (STUN Binding Request)", "Attempted User Privilege Gain", 3, 2033078),

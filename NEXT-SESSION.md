@@ -98,7 +98,7 @@ Ten new correlation signals beyond the original six, closing the plan's own
   `doh_resolvers` set); backed up and syntax-checked before applying.
 - **2.3** `ids_trojan`/`ids_c2`/`ids_c2_domain`/`ids_exploit_kit`/
   `ids_shellcode`/`ids_privilege_gain`/`ids_credential_theft`/`ids_other` —
-  Suricata/ET alerts finally turned into incidents (previously ingested but
+  IDS/ET alerts finally turned into incidents (previously ingested but
   never used).
 - **2.4** `threat_intel` — matches against a daily-refreshed `ioc` table
   (Feodo Tracker, URLhaus, ThreatFox — 5,600+ real indicators). New
@@ -115,7 +115,7 @@ Ten new correlation signals beyond the original six, closing the plan's own
 Every step above was deployed to the live gateway and verified against real
 data (not just synthetic fixtures) — see `EVALUATION-RESULTS-2.md` §2.1–§2.8
 for exactly what was and wasn't observed live, including a few real bugs
-found and fixed along the way (a `dns_rcode` capture gap, AdGuard rejecting a
+found and fixed along the way (a `dns_rcode` capture gap, the DNS filter rejecting a
 `file://` blocklist URL, a ThreatFox CSV quoting mismatch). Test suite grew
 from 110 → **206**, all passing.
 
@@ -218,7 +218,7 @@ Every step was deployed to the live gateway and verified there — see
 - **3.5 Health supervisor** (`app/health.py`, run from ingest's loop): a
   stopped service, disk pressure, DB growth or a WAN outage becomes a
   platform incident.
-- **3.6 Fail-open DNS** (`app/dns_failopen.py`): if AdGuard stops
+- **3.6 Fail-open DNS** (`app/dns_failopen.py`): if the DNS filter stops
   answering, plaintext DNS on `ap0` is redirected to a public resolver and
   the console shows a "protection degraded" banner; it reverts on recovery.
 
@@ -257,7 +257,7 @@ Full live results: `EVALUATION-RESULTS-2.md` §Stage 4.
   `gateway/nftables.conf` (it had been stuck at the pre-2.2 version, so reboots
   kept dropping the DNS-bypass log prefixes). Any future firewall change must
   be installed there too, not only loaded with `nft -f`.
-- **AdGuard rules can't carry comments.** A trailing `# ...` makes the rule
+- **DNS-filter rules can't carry comments.** A trailing `# ...` makes the rule
   match nothing. The orchestrator tracks its own rules in
   `orchestrator_state`; don't tag rule text.
 - **Don't use `filtering_enabled` alone to "turn filtering off".** It
@@ -301,7 +301,7 @@ the accepted fixes are commits `44c8c6c`-`5d616fa` (tests 382 -> 442) and are
 The real-phone checks (a Galaxy A33 over `adb`) passed: inspection redirect,
 quarantine surviving a reconnect, the new proxied-HTTPS rule, DoT/QUIC
 bypass detection, and fail-open DNS (the phone resolved through the
-redirect while AdGuard was down). Details and caveats:
+redirect while the DNS filter was down). Details and caveats:
 `EVALUATION-RESULTS-2.md`, "Real-device checks". **Device 2 is that phone**,
 so its open `slow_network_sweep` incidents come from ordinary phone traffic.
 
@@ -360,7 +360,7 @@ the original gap analysis — all fixed with regression tests
 (`tests/test_correlation.py`).
 
 From this session (Stage 2): see `EVALUATION-RESULTS-2.md` for full detail
-on each — the `dns_rcode`/`status` field ingest.py never captured, AdGuard's
+on each — the `dns_rcode`/`status` field ingest.py never captured, the DNS filter's
 `add_url` rejecting a `file://` scheme, and ThreatFox's CSV quoting (a space
 after each comma) silently parsing zero rows under a naive split.
 

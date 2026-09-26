@@ -4,9 +4,9 @@ SecurePi Gateway - DNS fail-open (ENHANCEMENT-PLAN.md step 3.6, F§8.4).
 
 gateway/nftables.conf's own prerouting chain already forces stray plain
 DNS (a device hardcoded to some other resolver) back to the gateway's
-own address, 10.10.0.1:53, where AdGuard listens - see that file's own
+own address, 10.10.0.1:53, where the DNS filter listens - see that file's own
 comments. That rule protects filtering; it does nothing for
-availability if AdGuard itself is the one not answering there, because
+availability if the DNS filter itself is the one not answering there, because
 it only matches traffic addressed anywhere ELSE - a client correctly
 pointed at 10.10.0.1 (what DHCP handed it) never touches that rule at
 all, and just gets nothing back the moment nothing is listening.
@@ -15,7 +15,7 @@ This module adds (and later removes) one more prerouting rule that DOES
 match traffic addressed to 10.10.0.1:53 specifically, and DNATs it to a
 public upstream resolver instead - so LAN clients keep resolving names
 (unfiltered, but working) instead of every device going dark the moment
-AdGuard stops answering.
+the DNS filter stops answering.
 
 Called from app/health.py's check_dns_failopen(), which runs from
 app/ingest.py's own systemd unit - already root (see health.py's own

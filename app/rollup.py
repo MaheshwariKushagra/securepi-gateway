@@ -29,7 +29,7 @@ import time
 # How many of the most recently closed hours are recomputed on every call,
 # even if they were rolled up already. Events can land in an hour after
 # it closed: an event attributed to its device a few seconds late (the
-# registry refreshes every ~10s), or AdGuard's file fallback delivering
+# registry refreshes every ~10s), or the DNS filter's file fallback delivering
 # queries late. Re-rolling is safe - INSERT OR REPLACE simply overwrites
 # the same (device, hour) row with the corrected totals.
 REPAIR_HOURS = 2

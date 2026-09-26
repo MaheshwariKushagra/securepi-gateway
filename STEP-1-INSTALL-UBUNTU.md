@@ -146,7 +146,7 @@ ssh yourusername@192.168.1.37 'sudo nft list ruleset && echo ACCESS-OK'
 
 If that prints `ACCESS-OK` without asking for anything, **you are done.** Tell me the
 username and IP address, paste the step 7 output, and I take it from there — installing
-Suricata, the DNS filter, and everything else remotely.
+the IDS, the DNS filter, and everything else remotely.
 
 ---
 

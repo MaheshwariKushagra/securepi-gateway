@@ -24,7 +24,7 @@ Investigating this live (via `ip netns exec ns_victim ...` and a direct
 buildable in this pass:
 
 1. gateway/setup-test-harness.sh's ns_victim sits on `br-test`, which
-   evaluate.py's own comments already establish has no path to AdGuard or
+   evaluate.py's own comments already establish has no path to the DNS filter or
    the internet - it is NOT bridged onto `ap0`, the interface the
    dpi-redirect rule matches on (`iifname "ap0" ip saddr @enrolled tcp
    dport 443 ...`). Traffic from ns_victim never reaches that rule at

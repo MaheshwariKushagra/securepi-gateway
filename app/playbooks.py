@@ -30,7 +30,7 @@ rather than a guessed technique:
   real evidence of evaded filtering, not reliable evidence of intent.
 - new_device is an informational registry event, not an attack pattern.
 - ids_other (ENHANCEMENT-PLAN.md step 2.3's fallback bucket for every
-  Suricata/ET alert category not in signature_taxonomy.py's curated set -
+  IDS/ET alert category not in signature_taxonomy.py's curated set -
   overwhelmingly "Misc activity"-style informational alerts on this
   gateway's own real traffic) gets no technique tag, for the same
   distinct-hit-volume-isn't-intent reasoning as malicious_domain.
@@ -70,7 +70,7 @@ The signals that DO get a tag:
   ids_exploit_kit -> Initial Access / T1189 Drive-by Compromise.
   ids_shellcode -> Execution / T1203 Exploitation for Client Execution.
   ids_privilege_gain -> Privilege Escalation / TA0004 (tactic-level -
-  Suricata's admin/user, attempted/successful classtypes all collapse
+  the IDS's admin/user, attempted/successful classtypes all collapse
   into this one signal_type, and don't share one specific technique).
   ids_credential_theft -> Credential Access / TA0006 (tactic-level - many
   distinct techniques could produce this classtype).
@@ -275,7 +275,7 @@ PLAYBOOKS = {
     },
     "dns_bypass": {
         "what_it_means": "This device's traffic showed enough combined signs of routing DNS "
-            "around AdGuard - a rejected DoT/DoH/QUIC connection, a query for Firefox's or "
+            "around the DNS filter - a rejected DoT/DoH/QUIC connection, a query for Firefox's or "
             "Apple's own encrypted-DNS canary domains, or a TLS connection to a known DoH "
             "provider - to cross the threshold. This is very often a normal privacy default "
             "(iOS Private Relay, a browser's own DoH rollout), not an attempt to evade this "
@@ -289,7 +289,7 @@ PLAYBOOKS = {
             "further before deciding.",
     },
     "ids_trojan": {
-        "what_it_means": "Suricata/ET Open flagged network traffic matching a known trojan "
+        "what_it_means": "The IDS (ET Open rules) flagged network traffic matching a known trojan "
             "signature from this device - a signature-based match against published rules, "
             "not this project's own correlation logic.",
         "how_to_check": "Open the evidence chain and read the specific signature name(s) in "
@@ -300,7 +300,7 @@ PLAYBOOKS = {
             "signature (some are broad), mark false positive.",
     },
     "ids_c2": {
-        "what_it_means": "Suricata/ET Open flagged traffic matching known malware command-and-"
+        "what_it_means": "The IDS (ET Open rules) flagged traffic matching known malware command-and-"
             "control patterns from this device.",
         "how_to_check": "Open the evidence chain for the destination and the specific "
             "signature(s) matched.",
@@ -308,14 +308,14 @@ PLAYBOOKS = {
             "benign explanation the way an INFO-level alert might.",
     },
     "ids_c2_domain": {
-        "what_it_means": "This device contacted a domain Suricata/ET Open's threat intelligence "
+        "what_it_means": "This device contacted a domain the IDS's ET Open threat intelligence "
             "identifies as known command-and-control infrastructure.",
         "how_to_check": "Open the evidence chain for the exact domain and destination IP.",
         "recommended_action": "Quarantine and investigate. Also consider blocking the domain "
             "network-wide from the Filtering page.",
     },
     "ids_exploit_kit": {
-        "what_it_means": "Suricata/ET Open flagged traffic matching a known exploit-kit "
+        "what_it_means": "The IDS (ET Open rules) flagged traffic matching a known exploit-kit "
             "delivery pattern - typically a compromised or malicious website attempting to "
             "silently exploit a browser vulnerability.",
         "how_to_check": "Open the evidence chain for the destination and what the device was "
@@ -324,7 +324,7 @@ PLAYBOOKS = {
             "or OS is out of date.",
     },
     "ids_shellcode": {
-        "what_it_means": "Suricata/ET Open detected a byte pattern in traffic consistent with "
+        "what_it_means": "The IDS (ET Open rules) detected a byte pattern in traffic consistent with "
             "executable shellcode - often a sign of an exploit attempt in progress.",
         "how_to_check": "Open the evidence chain for the destination and protocol involved.",
         "recommended_action": "Quarantine and investigate. Shellcode-pattern matches can "
@@ -332,7 +332,7 @@ PLAYBOOKS = {
             "check what was actually being transferred before concluding it's malicious.",
     },
     "ids_privilege_gain": {
-        "what_it_means": "Suricata/ET Open flagged an attempted or successful privilege-"
+        "what_it_means": "The IDS (ET Open rules) flagged an attempted or successful privilege-"
             "escalation pattern involving this device, either as source or target.",
         "how_to_check": "Open the evidence chain for the destination, port and specific "
             "signature(s) - this covers several related classtypes (attempted/successful, "
@@ -341,14 +341,14 @@ PLAYBOOKS = {
             "Check whether the device or destination is one you administer directly.",
     },
     "ids_credential_theft": {
-        "what_it_means": "Suricata/ET Open flagged a pattern consistent with successful "
+        "what_it_means": "The IDS (ET Open rules) flagged a pattern consistent with successful "
             "credential theft involving this device.",
         "how_to_check": "Open the evidence chain for the destination and specific signature.",
         "recommended_action": "Treat as urgent - quarantine and change any credentials that "
             "may have been exposed, independent of this console.",
     },
     "ids_other": {
-        "what_it_means": "Suricata/ET Open raised enough alerts of the same category from this "
+        "what_it_means": "The IDS (ET Open rules) raised enough alerts of the same category from this "
             "device, in a short window, to cross the threshold - but this category isn't one of "
             "the specific patterns this project curates a plain name and ATT&CK tag for (see "
             "app/signature_taxonomy.py). On this gateway's own real traffic, the overwhelming "
@@ -357,7 +357,7 @@ PLAYBOOKS = {
             "genuinely low-value on their own, which is exactly why they're grouped and "
             "thresholded rather than raised one-by-one.",
         "how_to_check": "Open the evidence chain and read the raw category name and specific "
-            "signature(s) in the description - the severity shown reflects Suricata's own "
+            "signature(s) in the description - the severity shown reflects the IDS's own "
             "priority for this category, not a per-incident judgment.",
         "recommended_action": "For a recognized low-value pattern, mark false positive - "
             "step 2.7's suppression rules (once built) will let a verdict like this apply "
@@ -453,7 +453,7 @@ PLAYBOOKS = {
             "crash, which is why the service-down check alone wouldn't catch it (step 3.5).",
         "how_to_check": "Check the named service's journal for the last real activity, and "
             "compare against its own expected cadence (ingest polls every 2s, the engine every "
-            "15s, Suricata/AdGuard continuously).",
+            "15s, the IDS and DNS filter continuously).",
         "recommended_action": "A restart usually clears a genuine hang: "
             "`sudo systemctl restart <service>`. Resolve once fresh events/incidents resume.",
     },
@@ -488,7 +488,7 @@ PLAYBOOKS = {
             "if it's a new network). Resolve once WAN connectivity is confirmed restored.",
     },
     "platform_dns_failopen": {
-        "what_it_means": "AdGuard Home stopped answering real DNS queries for longer than the "
+        "what_it_means": "The DNS filter stopped answering real DNS queries for longer than the "
             "configured grace period (Settings), so the gateway redirected plaintext DNS to a "
             "public upstream resolver to keep devices online - every device on the network is "
             "currently resolving names WITHOUT ad/threat blocking, DNS filtering, or DoH-bypass "
@@ -496,26 +496,26 @@ PLAYBOOKS = {
         "how_to_check": "`sudo systemctl status AdGuardHome` and its journal "
             "(`sudo journalctl -u AdGuardHome -n 50`) for why it stopped or won't start. "
             "`sudo securepi status` shows whether Tier 1 DNS filtering currently reads active.",
-        "recommended_action": "Fix and restart AdGuard (`sudo systemctl restart AdGuardHome`); "
+        "recommended_action": "Fix and restart the DNS filter (`sudo systemctl restart AdGuardHome`); "
             "filtering resumes on its own the next time this check confirms it's answering again - "
             "no manual step needed for that part. Resolve this incident once you've confirmed "
-            "filtering is actually back, not just that AdGuard is running.",
+            "filtering is actually back, not just that the DNS filter is running.",
     },
     "policy_drift": {
         "what_it_means": "Something outside the console changed a response policy's enforcement - "
             "a quarantine or IP block removed from nftables by hand, a rule deleted or a device's "
-            "settings edited in AdGuard Home's own UI. The orchestrator put it back the way the "
+            "settings edited in the DNS filter's own UI. The orchestrator put it back the way the "
             "console says it should be (step 4.1); the description lists exactly what changed.",
         "how_to_check": "Settings -> Audit Log shows each 'policy.drift_corrected' row. On the "
             "gateway, `sudo journalctl -t securepi-web-helper` shows every firewall change made "
             "through the console's helper - a change missing from it was made some other way.",
         "recommended_action": "If you made the change on purpose, make it from the console instead "
             "(or remove the policy there), otherwise the orchestrator will keep undoing it. If "
-            "nobody did, find out who has root or AdGuard access. Resolve once explained.",
+            "nobody did, find out who has root or DNS-filter access. Resolve once explained.",
     },
     "policy_enforcement_failed": {
         "what_it_means": "The orchestrator could not check or apply one or more response policies "
-            "- usually because AdGuard Home's API or the firewall helper didn't answer. Until it "
+            "- usually because the DNS filter's API or the firewall helper didn't answer. Until it "
             "recovers, a quarantine, block or profile may not be in force.",
         "how_to_check": "The Response page shows which enforcement point is failing and its "
             "error. `sudo securepi status` shows whether AdGuardHome and nftables are running.",

@@ -5,7 +5,7 @@ SecurePi Gateway - platform health supervisor (ENHANCEMENT-PLAN.md steps
 
 Every signal in app/correlation.py asks "is a DEVICE doing something
 suspicious"; this asks "is the GATEWAY ITSELF healthy enough to trust
-what those signals are telling you". A stopped Suricata means silent,
+what those signals are telling you". A stopped IDS means silent,
 undetected blind spots, not a quiet network - the operator needs to
 know the difference, and needs to know it the same way as any other
 incident (in the queue, audited, not buried in a log file).
@@ -36,11 +36,11 @@ ever raises/extends an incident while a problem is real, never closes
 one out from underneath an operator.
 
 check_dns_failopen() (step 3.6) is the one exception to "this module
-only observes and reports": when AdGuard stops answering DNS, it
+only observes and reports": when the DNS filter stops answering DNS, it
 actively redirects plaintext DNS to a public upstream resolver via
 app/dns_failopen.py, so the network keeps working while the incident
 above is still open. That firewall change - not the incident - is what
-reverts itself automatically once AdGuard recovers.
+reverts itself automatically once the DNS filter recovers.
 """
 
 import os
@@ -160,7 +160,7 @@ def check_staleness(conn, now):
     stopped actually doing anything - a hang, not a crash - which
     check_services() alone would miss. Reuses the ingest_stats/
     signal_state tables step 1.1 onward already maintain, plus the
-    events table's own source column for Suricata/AdGuard specifically."""
+    events table's own source column for the IDS and DNS filter specifically."""
     stale_after = settings.get(conn, "health_stale_after_seconds")
     stale = []
 
@@ -179,7 +179,7 @@ def check_staleness(conn, now):
     if engine_row and engine_row["last_run_ts"] and now - engine_row["last_run_ts"] > stale_after:
         stale.append("correlation engine")
 
-    for label, source in (("Suricata", "suricata"), ("AdGuard", "adguard")):
+    for label, source in (("IDS", "suricata"), ("DNS filter", "adguard")):
         r = conn.execute("SELECT max(ts) m FROM events WHERE source=?", (source,)).fetchone()
         if r and r["m"] and now - r["m"] > stale_after:
             stale.append(label)
@@ -276,8 +276,8 @@ def run_if_due(conn, now=None):
 
 
 def _dns_resolves(host):
-    """A real query, not just 'is AdGuard's process active' - a hung-
-    but-still-running AdGuard would pass systemctl's own is-active check
+    """A real query, not just 'is the DNS filter's process active' - a hung-
+    but-still-running DNS filter would pass systemctl's own is-active check
     (check_services above) but not actually answer anything, exactly
     the same 'active is not the same as working' distinction
     check_staleness already draws. Uses `dig`, already installed on the
@@ -295,13 +295,13 @@ def _dns_resolves(host):
 
 
 def check_dns_failopen(conn, now):
-    """ENHANCEMENT-PLAN.md step 3.6 (F§8.4): if AdGuard stops actually
+    """ENHANCEMENT-PLAN.md step 3.6 (F§8.4): if the DNS filter stops actually
     answering DNS queries, redirect plaintext DNS to a public upstream
-    resolver after a short grace period - long enough that AdGuard's
+    resolver after a short grace period - long enough that the DNS filter's
     own `Restart=always` (10s) usually fixes a simple crash on its own
     first - so LAN clients keep resolving names (unfiltered, but
     working) instead of the whole network going dark. Reverts itself
-    the moment AdGuard is confirmed answering again: DNS service itself
+    the moment the DNS filter is confirmed answering again: DNS service itself
     needs no operator action to come back, even though the incident
     this raises still needs a manual resolve like every other platform
     incident (see this module's own docstring on why none of these
@@ -342,10 +342,10 @@ def check_dns_failopen(conn, now):
         conn.execute("UPDATE dns_failopen_state SET active=1, changed_at=? WHERE id=1", (now,))
     correlation.raise_incident(
         conn, None, "platform_dns_failopen", "high",
-        "DNS fail-open active - AdGuard not answering queries",
-        "AdGuard Home has not answered a real DNS query in over %ds. Plaintext DNS for the "
+        "DNS fail-open active - the DNS filter not answering queries",
+        "The DNS filter has not answered a real DNS query in over %ds. Plaintext DNS for the "
         "project LAN is being redirected to a public upstream resolver (%s) so devices keep "
-        "resolving names - unfiltered - until AdGuard recovers." % (int(grace), dns_failopen.UPSTREAM_RESOLVER),
+        "resolving names - unfiltered - until the DNS filter recovers." % (int(grace), dns_failopen.UPSTREAM_RESOLVER),
         now, now, [],
     )
     conn.commit()

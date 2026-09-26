@@ -26,12 +26,12 @@ What makes this different from evaluate.py (the day-14 script)
 
 Where the traffic comes from
 -----------------------------
-Suricata captures on veth-atk, ns_attacker's link to the test bridge. Every
+the IDS captures on veth-atk, ns_attacker's link to the test bridge. Every
 extra host is a secondary address on ns_attacker's own interface, and each
 tool is told to send from it (nmap -S, ssh -b, curl --interface, iperf3 -B),
 so every packet still crosses the captured link. DNS-based signals can't
-use the bridge (it has no path to AdGuard), so their queries are sent from
-the gateway itself to AdGuard at 10.10.0.1, and that address is mapped to a
+use the bridge (it has no path to the DNS filter), so their queries are sent from
+the gateway itself to the DNS filter at 10.10.0.1, and that address is mapped to a
 fresh battery device for the length of each run - the same approach
 evaluate.py's malicious-domain test uses.
 
@@ -266,7 +266,7 @@ def beacon(n, host, dev):
 def ids_alert(n, host, dev):
     """The classic testmynids.org check, entirely inside the harness: a
     server on the test host answers with a Unix `id` output for root, which
-    Suricata's rule 2100498 ("GPL ATTACK_RESPONSE id check returned root")
+    the IDS's rule 2100498 ("GPL ATTACK_RESPONSE id check returned root")
     matches. The server is the host that 'returned root', so the alert and
     the incident belong to the test host. Three fetches meet the default
     ids_alert_threshold of 3."""
@@ -324,7 +324,7 @@ def slow_network_sweep(n, host, dev):
 
 def volume_anomaly(n, host, dev):
     """A synthetic ten-day baseline of ~10 MB in this hour of the day, then a
-    real ~150 MB transfer to the victim - flows Suricata really sees."""
+    real ~150 MB transfer to the victim - flows the IDS really sees."""
     conn = db()
     hour = int(time.time() // 3600) * 3600
     for d in range(1, 11):
@@ -339,7 +339,7 @@ def volume_anomaly(n, host, dev):
     run = Run("volume_anomaly", n, host, dev, target="150 MB at 40 Mbit/s to %s, baseline synthetic" % VICTIM_IP,
               expect=True)
     # Capped at a Wi-Fi-like rate. Unthrottled, the veth carries ~420 Mbit/s,
-    # which outruns Suricata's single veth-atk capture thread on this laptop
+    # which outruns the IDS's single veth-atk capture thread on this laptop
     # (a 50 MB test: 10 MB counted, 29,856 kernel drops; at 40 Mbit/s: all
     # of it, no drops). The AP is 2.4 GHz, so real clients never get near
     # that; line-rate capture is step 7.8's throughput sweep.
@@ -389,7 +389,7 @@ def dns(name, qtype="A"):
 
 def dns_track(runs, blocked):
     """All DNS-driven signals, run k on its own device: 10.10.0.1 (where
-    the gateway's own queries to AdGuard come from) is mapped to that
+    the gateway's own queries to the DNS filter come from) is mapped to that
     device for run k only, so the runs can't share a threshold."""
     conn = db()
     for n in range(1, runs + 1):
@@ -405,9 +405,9 @@ def dns_track(runs, blocked):
             dns(d)
         started["malicious_domain"].ended()
 
-        # mask.icloud.com, not the Firefox canary: AdGuard doesn't log
+        # mask.icloud.com, not the Firefox canary: the DNS filter doesn't log
         # use-application-dns.net at all (a finding of this step), and the
-        # Suricata path that now covers it only sees queries that cross
+        # IDS path that now covers it only sees queries that cross
         # ap0 - these come from the gateway itself. See correlation.py.
         started["dns_bypass"] = Run("dns_bypass", n, GATEWAY_DNS, dev, target="%s x4 (iCloud Private Relay canary)" % CANARY, expect=True)
         for _ in range(4):

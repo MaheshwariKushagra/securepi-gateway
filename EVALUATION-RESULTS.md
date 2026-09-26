@@ -68,29 +68,29 @@ core signals was not working in normal operation before today.
 ### Malicious-domain caveat: the number above is not a production latency
 
 `malicious_domain_signal` reads from `events`, which `ingest.py` populates by
-tailing AdGuard Home's `querylog.json` file on disk. During testing, that
+tailing the DNS filter's `querylog.json` file on disk. During testing, that
 file's on-disk copy went **over 7 hours** without a single new line written,
 despite continuous real DNS traffic from both real devices the whole time —
 confirmed by comparing the file's own `stat` (last modified 7.5h prior) against
-AdGuard's control API (`/control/querylog`), which showed the same queries
+the DNS filter's control API (`/control/querylog`), which showed the same queries
 immediately. `ingest.py`'s own watermark was sitting exactly at end-of-file,
-correctly waiting for data that AdGuard had simply not written yet.
+correctly waiting for data that the DNS filter had simply not written yet.
 
-The cause is AdGuard's own `querylog.size_memory: 1000` setting
+The cause is the DNS filter's own `querylog.size_memory: 1000` setting
 (`AdGuardHome.yaml`): it buffers up to 1000 queries in memory and only
 flushes to disk when that buffer rotates, not on a fixed timer. Firing ~1000
 extra DNS queries per test run (visible as the flush-probe traffic in
 `evaluate.py`) is what forced each flush and produced the ~11s numbers above.
 **In ordinary operation, malicious-domain detection latency is bounded by
-whichever is worse: the engine's 15s cycle, or AdGuard's own flush cadence —
+whichever is worse: the engine's 15s cycle, or the DNS filter's own flush cadence —
 and the flush cadence was observed to be hours, not seconds, under real
 traffic.**
 
 This is a genuine limitation, not a bug in this project's own code, and not
 fixed here — recorded for the report's limitations chapter. The two
 lowest-effort fixes, for future work: lower `querylog.size_memory` in
-AdGuard's own config, or switch `ingest.py`'s DNS source from the file to
-AdGuard's control API (which is current in real time).
+the DNS filter's own config, or switch `ingest.py`'s DNS source from the file to
+the DNS filter's control API (which is current in real time).
 
 ---
 
@@ -111,7 +111,7 @@ has to look at.
 
 (For context, not as the headline figure: including today's evaluation
 traffic — three deliberate attack runs per signal, plus ~3,000 DNS queries
-used purely to force AdGuard's log to flush — the same 24h window shows
+used purely to force the DNS filter's log to flush — the same 24h window shows
 23,788 events against 23 incidents, a ratio of 1,034:1. The ratio drops
 because the extra incidents are almost entirely the evaluation's own
 deliberate detections, not because dedup got worse.)
@@ -158,11 +158,11 @@ real device, over their entire history to date.
 ## 4. Ad-block ratio, third-party
 
 `REPORT-adblocking.md` §9 explicitly left this "to be measured." Measured
-now: 10 domains known to be on AdGuard's active blocklists, resolved through
-AdGuard (`10.10.0.1`) and through a public resolver (`1.1.1.1`) with no
+now: 10 domains known to be on the DNS filter's active blocklists, resolved through
+the DNS filter (`10.10.0.1`) and through a public resolver (`1.1.1.1`) with no
 filtering, side by side.
 
-| Domain | Via AdGuard | Via public resolver |
+| Domain | Via the DNS filter | Via public resolver |
 |---|---|---|
 | doubleclick.net | 0.0.0.0 (blocked) | 142.251.223.14 |
 | googlesyndication.com | 0.0.0.0 (blocked) | 142.250.66.4 |
@@ -199,13 +199,13 @@ Per-service memory:
 
 | Service | Memory |
 |---|---|
-| Suricata | 683 MB |
-| AdGuard Home | 235 MB |
+| IDS | 683 MB |
+| DNS filter | 235 MB |
 | securepi-web | 121 MB |
 | securepi-ingest | 15 MB |
 | securepi-engine | 5 MB |
 
-Matches the day-1 budget in `SECUREPI-15-DAY-PLAN.md` §2.6 (Suricata ~0.7GB,
+Matches the day-1 budget in `SECUREPI-15-DAY-PLAN.md` §2.6 (the IDS ~0.7GB,
 DNS filter ~0.2GB, app ~0.3GB) closely, with over 2GB still free even while
 three attack simulations were actively running. The 3.6GB constraint that
 drove the "no Docker" decision on day 1 has held up in practice.
@@ -215,13 +215,13 @@ drove the "no Docker" decision on day 1 has held up in practice.
 ## 6. Throughput
 
 `iperf3` between the two test-harness namespaces (`ns_attacker` ↔
-`ns_victim`, over `br-test` — the same bridge Suricata captures on, via
+`ns_victim`, over `br-test` — the same bridge the IDS captures on, via
 `veth-atk`, exactly as it captures production traffic on `ap0`) against a
 loopback baseline with no bridge or capture path at all:
 
 | Path | Throughput |
 |---|---|
-| Through the bridge + Suricata capture | 39.9 Gbps |
+| Through the bridge + IDS capture | 39.9 Gbps |
 | Loopback (no bridge, no capture) | 57.5 Gbps |
 
 Both figures are far beyond anything the gateway's real uplink will ever see

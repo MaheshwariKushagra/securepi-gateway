@@ -28,13 +28,13 @@ more marks than three extra features would be. Chapters 1–4 of your report are
 ## 2. Host machine: the spare Linux laptop
 
 Your Mac is Apple Silicon (arm64, macOS 26). The gateway needs Linux — `nftables`,
-Suricata AF_PACKET capture, `hostapd`, DHCP serving. None exist on macOS in a form
+IDS AF_PACKET capture, `hostapd`, DHCP serving. None exist on macOS in a form
 worth building against, and Asahi Linux is not a fifteen-day install.
 
 **Decision: the spare Linux laptop is the gateway. The MacBook is the development machine.
 Leave the Windows laptop alone.**
 
-An x86 laptop is better than a Raspberry Pi for this: the ET Open ruleset and Suricata
+An x86 laptop is better than a Raspberry Pi for this: the ET Open ruleset and the IDS
 are best-tested on x86-64, it has an SSD rather than an SD card, it has more RAM, and an
 older laptop is *more* likely to have a built-in Ethernet port than a new one.
 
@@ -46,7 +46,7 @@ older laptop is *more* likely to have a built-in Ethernet port than a new one.
 > `GATEWAY-SETUP-RUNBOOK.md` §2. Install **Server, not Desktop**, and tick OpenSSH.
 
 "Old Linux" is a real risk regardless of distribution. An aged install ships an old
-Suricata whose EVE JSON field names may differ from current documentation — a subtle
+the IDS whose EVE JSON field names may differ from current documentation — a subtle
 problem that costs hours to diagnose. A clean install costs an hour and eliminates the
 whole category.
 
@@ -69,7 +69,7 @@ Internet ──▶ Existing Router ──[Ethernet]──▶ Linux Laptop ──
 |---|---|---|---|
 | 1 | Ethernet port present and working | `ip link` | Use Wi-Fi as WAN and Ethernet as LAN (reversed); needs a switch + AP |
 | 2 | **Wi-Fi chipset supports AP mode** | `iw list \| grep -A10 "Supported interface modes"` — look for `AP` | See below |
-| 3 | Suricata ≥ 7.x available | `apt-cache policy suricata` | Confirms the reinstall was worth it |
+| 3 | The IDS ≥ 7.x available | `apt-cache policy suricata` | Confirms the reinstall was worth it |
 
 **If AP mode is unsupported** (a real possibility on older Intel and Realtek chipsets),
 in order of preference: use an old spare router as a dumb AP if you have one lying around
@@ -87,8 +87,8 @@ Develop on the MacBook. The split that makes this work:
 
 | Runs anywhere (develop + test on the Mac) | Linux-only (deploy to the gateway) |
 |---|---|
-| Ingest and normalization logic | Suricata |
-| Device registry | AdGuard Home (DNS + DHCP) |
+| Ingest and normalization logic | IDS |
+| Device registry | The DNS filter (DNS + DHCP) |
 | Correlation engine and signals | nftables / routing / NAT |
 | Risk scoring | hostapd |
 | FastAPI + templates + charts | Quarantine enforcement |
@@ -97,9 +97,9 @@ Develop on the MacBook. The split that makes this work:
 Roughly 70% of the code you write — including the entire correlation engine, which is
 your actual contribution — is pure Python plus SQLite and runs natively on macOS.
 
-**Set this up on day 3, and it will pay for itself repeatedly:** once Suricata and
-AdGuard Home are running on the gateway, capture a few hours of real `eve.json` and
-AdGuard query-log output and copy it to the Mac as test fixtures. From then on, develop
+**Set this up on day 3, and it will pay for itself repeatedly:** once the IDS and
+the DNS filter are running on the gateway, capture a few hours of real `eve.json` and
+DNS-filter query-log output and copy it to the Mac as test fixtures. From then on, develop
 the pipeline and correlation engine locally against those fixtures with a fast edit-run
 loop, and deploy to the gateway only for integration checks.
 
@@ -120,7 +120,7 @@ Do not edit files directly on the gateway — you will lose work.
 
 | | | Consequence |
 |---|---|---|
-| CPU | Intel i3-1005G1, 2 cores / 4 threads @ 1.2 GHz | Modest. Suricata gets 1–2 threads; inspection ceiling likely 100–300 Mbps |
+| CPU | Intel i3-1005G1, 2 cores / 4 threads @ 1.2 GHz | Modest. The IDS gets 1–2 threads; inspection ceiling likely 100–300 Mbps |
 | RAM | **3.6 GiB** | **The binding constraint.** Drives the decisions below |
 | Disk | 88 GB free | Ample — storage growth is a non-issue at 15 days |
 | Wi-Fi | Qualcomm Atheros QCA9377, `ath10k_pci` | **AP mode CONFIRMED supported** |
@@ -192,9 +192,9 @@ throughput benchmark should note that the measured ceiling is upstream-limited.
 | Decision | Change |
 |---|---|
 | **Docker dropped entirely** | Everything runs natively under systemd. SQLite already removed the database container, leaving little for Compose to earn. Saves memory and a layer of complexity |
-| Suricata ruleset | Curated subset, not full ET Open. Was already planned; now mandatory |
-| Suricata memory | Explicit `flow.memcap` and `stream.memcap` limits rather than defaults |
-| Expected footprint | Suricata ~0.7 GB · DNS filter ~0.2 GB · app ~0.3 GB · OS ~0.6 GB ≈ **1.8 GB of 3.6** |
+| IDS ruleset | Curated subset, not full ET Open. Was already planned; now mandatory |
+| IDS memory | Explicit `flow.memcap` and `stream.memcap` limits rather than defaults |
+| Expected footprint | IDS ~0.7 GB · DNS filter ~0.2 GB · app ~0.3 GB · OS ~0.6 GB ≈ **1.8 GB of 3.6** |
 
 
 ### Possible later optimisation — do not bet the schedule on it
@@ -215,14 +215,14 @@ Three changes from the feasibility document, each justified by the compressed ti
 |---|---|---|---|
 | Storage | PostgreSQL + TimescaleDB | **SQLite (WAL mode)** | Retention and compression solved a problem that no longer exists — you will collect days of data, not months. SQLite removes a container, a connection pool, and a whole class of setup failure. Defensible: "at this retention window and event rate, an embedded store is sufficient" |
 | Frontend | React + TypeScript + Vite | **FastAPI + Jinja2 + HTMX + Chart.js** | Saves ~10 days. Server-rendered with HTMX polling gives live-updating panels at a fraction of the effort, and still looks like a product |
-| Detection source | Suricata ET Open ruleset + own correlation | **Suricata as flow/DNS/TLS sensor + a small curated ruleset; detection logic almost entirely yours** | Eliminates the false-positive tuning phase, which was budgeted at days and could have consumed the whole schedule |
+| Detection source | IDS ET Open ruleset + own correlation | **The IDS as flow/DNS/TLS sensor + a small curated ruleset; detection logic almost entirely yours** | Eliminates the false-positive tuning phase, which was budgeted at days and could have consumed the whole schedule |
 
-**Unchanged:** Suricata (metadata sensor), AdGuard Home (DNS + DHCP, headless, API-driven),
+**Unchanged:** the IDS (metadata sensor), the DNS filter (DNS + DHCP, headless, API-driven),
 Python 3.12 + FastAPI, Linux + nftables, Debian/Raspberry Pi OS.
 
 ### The detection change is an academic upgrade, not a compromise
 
-Leaning on Suricata for *metadata* rather than *alerts* means the port-scan, brute-force,
+Leaning on the IDS for *metadata* rather than *alerts* means the port-scan, brute-force,
 and DNS-anomaly detections are written by you against flow records, rather than being
 Emerging Threats signatures firing. More of the detection logic sits in the contribution
 column, and you skip the FP-tuning work entirely. State this as a deliberate design
@@ -237,8 +237,8 @@ choice in the report — because it is one.
 | # | Capability | Est. |
 |---|---|---|
 | 1 | Model D gateway on the Pi: WAN + Wi-Fi AP, DHCP, DNS, NAT, routing | 1.5 d |
-| 2 | Suricata emitting EVE JSON; AdGuard Home headless with API access | 1 d |
-| 3 | Ingest pipeline: EVE + AdGuard query log + DHCP leases → SQLite, unified schema | 2 d |
+| 2 | The IDS emitting EVE JSON; DNS-filter headless with API access | 1 d |
+| 3 | Ingest pipeline: EVE + DNS-filter query log + DHCP leases → SQLite, unified schema | 2 d |
 | 4 | Device registry: MAC ↔ IP ↔ hostname from DHCP leases, first/last seen | 1 d |
 | 5 | Correlation engine with **3 core signals** (+ new-device) → incidents with evidence | 2.5 d |
 | 6 | Simple device risk score (weighted, decaying, explainable) | 0.5 d |
@@ -326,10 +326,10 @@ Assumes ~8–10 focused hours/day. Slack is near zero — see §8.
 
 | Day | Work | End-of-day state |
 |---|---|---|
-| **1** | Fresh Debian 13 on the spare laptop. **Run the three day-1 checks in §2.** Ethernet WAN up. Install Suricata, AdGuard Home, Python. Git repo on Mac + `make deploy` loop | Gateway online, tooling installed, AP mode resolved |
-| **2** | `hostapd` + AP running. AdGuard Home serving DHCP + DNS on 10.10.0.0/24. nftables NAT. Join 4–6 devices | **Devices browse the internet through the gateway** |
-| **3** | Suricata on the LAN interface, EVE JSON with flow/dns/tls enabled. Curated rule subset. Confirm event flow. AdGuard Home API auth working | Both engines producing data |
-| **4** | SQLite schema. Ingest service: EVE tailer with watermark + AdGuard query log | Events landing in the database |
+| **1** | Fresh Debian 13 on the spare laptop. **Run the three day-1 checks in §2.** Ethernet WAN up. Install the IDS, DNS filter, Python. Git repo on Mac + `make deploy` loop | Gateway online, tooling installed, AP mode resolved |
+| **2** | `hostapd` + AP running. The DNS filter serving DHCP + DNS on 10.10.0.0/24. nftables NAT. Join 4–6 devices | **Devices browse the internet through the gateway** |
+| **3** | The IDS on the LAN interface, EVE JSON with flow/dns/tls enabled. Curated rule subset. Confirm event flow. DNS-filter API auth working | Both engines producing data |
+| **4** | SQLite schema. Ingest service: EVE tailer with watermark + DNS-filter query log | Events landing in the database |
 | **5** | FastAPI skeleton + one Jinja page listing recent DNS queries and flows, auto-refreshing | **First end-to-end slice — demoable** |
 | **6** | Device registry from DHCP leases + ARP. MAC↔IP↔hostname. First/last seen | Device inventory populated |
 | **7** | Devices page with drill-down: per-device flows, DNS history, bandwidth | Recognisably a product |
@@ -337,7 +337,7 @@ Assumes ~8–10 focused hours/day. Slack is near zero — see §8.
 | **9** | Signals 3 & 4: malicious-domain repeat offender, new device. Signal→incident grouping, dedup, evidence chain | Incidents being created |
 | **10** | Incidents page: queue, severity, evidence, per-device timeline | The thesis is visible in the UI |
 | **11** | Overview dashboard: throughput, active incidents, blocked-query rate, device count. Chart.js | Full console shape |
-| **12** | Filtering page: blocklist management + per-device policy via AdGuard Home API. Query log search | Ad blocking controllable from your UI |
+| **12** | Filtering page: blocklist management + per-device policy via DNS-filter API. Query log search | Ad blocking controllable from your UI |
 | **13** | Risk scoring with explanations. Quarantine + undo. Basic auth. Styling pass | Feature-complete |
 | **14** | Scripted test run: all 4 detections, ad-block measurement, resource measurement. Collect results table. Bug fixes | **Results collected** |
 | **15** | Report writing, README, demo rehearsal ×3, backup video recording | Submittable |

@@ -24,13 +24,13 @@ table". See gateway/refresh-doh-set.sh for the same fail-safe philosophy
 applied to nftables' doh_resolvers set.
 
 Domain-type indicators are also written to a plain blocklist file, served
-over loopback HTTP by securepi-static.service (AdGuard's own add_url
+over loopback HTTP by securepi-static.service (the DNS filter's own add_url
 endpoint validates the URL scheme and rejects file:// outright - the
 first design here assumed otherwise and was corrected after a live 400
-response), and registered with AdGuard as a normal blocklist source -
-"the same domains are pushed to AdGuard... so they're both blocked and
+response), and registered with the DNS filter as a normal blocklist source -
+"the same domains are pushed to the DNS filter... so they're both blocked and
 turned into incidents", per this step's own wording. IP-type indicators
-aren't pushed anywhere: AdGuard blocks DNS names, not arbitrary
+aren't pushed anywhere: the DNS filter blocks DNS names, not arbitrary
 destination IPs, so those exist only for app/correlation.py's
 threat_intel_signal to match against events.dest_ip.
 """
@@ -48,7 +48,7 @@ DB_PATH = "/var/lib/securepi/securepi.db"
 DOMAIN_BLOCKLIST_DIR = "/opt/securepi/static"
 DOMAIN_BLOCKLIST_PATH = DOMAIN_BLOCKLIST_DIR + "/ioc-domains.txt"
 BLOCKLIST_MAX_AGE_DAYS = 30  # see _write_domain_blocklist_file
-# AdGuard's add_url endpoint validates the URL scheme server-side and
+# the DNS filter's add_url endpoint validates the URL scheme server-side and
 # rejects anything but http/https outright (confirmed live: a file://
 # URL fails with "bad enum value: \"file\"; want \"http\" or \"https\"" -
 # an assumption this project got wrong on the first attempt and fixed
@@ -56,7 +56,7 @@ BLOCKLIST_MAX_AGE_DAYS = 30  # see _write_domain_blocklist_file
 # `python3 -m http.server`, the same pattern dpi/deploy-dpi.sh already
 # uses for the CA download server) serves this directory on loopback
 # only - nothing here needs to be reachable from the LAN, just from
-# AdGuard's own process on this same host.
+# the DNS filter's own process on this same host.
 DOMAIN_BLOCKLIST_URL = "http://127.0.0.1:8082/ioc-domains.txt"
 FETCH_TIMEOUT_SECONDS = 30
 
@@ -163,9 +163,9 @@ def _upsert_indicators(conn, source, indicators, now):
 
 
 def _write_domain_blocklist_file(conn):
-    """Every CURRENT domain-type IOC, as a plain AdGuard-syntax blocklist
+    """Every CURRENT domain-type IOC, as a plain DNS-filter-syntax blocklist
     file - the mechanism that turns these into a Tier 1 block, not just a
-    correlation match. Rewritten in full each refresh; AdGuard re-reads
+    correlation match. Rewritten in full each refresh; the DNS filter re-reads
     it on its own configured interval, same as any other blocklist URL.
 
     "Current" means its feed listed it within BLOCKLIST_MAX_AGE_DAYS of
@@ -228,9 +228,9 @@ def refresh_all(conn):
 
 
 def ensure_adguard_blocklist_registered():
-    """Register the domain blocklist file with AdGuard if it isn't
+    """Register the domain blocklist file with the DNS filter if it isn't
     already - idempotent, safe to call every run (add_blocklist's own
-    docstring: AdGuard's add_url endpoint, called here through the same
+    docstring: the DNS filter's add_url endpoint, called here through the same
     thin wrapper every other blocklist registration in this project
     uses)."""
     existing = {f["url"] for f in adguard.filtering_status().get("filters", [])}

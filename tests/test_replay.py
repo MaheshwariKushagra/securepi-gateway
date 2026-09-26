@@ -1,8 +1,8 @@
 """
 Tests for tools/replay.py (ENHANCEMENT-PLAN.md step 7.1).
 
-Suricata itself isn't needed: the tests write small eve.json files by hand
-and drive the part of the replay that comes after Suricata - reshaping the
+The IDS itself isn't needed: the tests write small eve.json files by hand
+and drive the part of the replay that comes after the IDS - reshaping the
 records, timing them, and running the real engine on the simulated clock.
 """
 
@@ -33,7 +33,7 @@ def iso(epoch):
 
 
 def flow(src, dst, dport, start, end=None, state="new", proto="TCP", logged=None, flow_id=1, size=120):
-    """An eve.json flow record. `logged` is Suricata's own (unreliable)
+    """An eve.json flow record. `logged` is the IDS's own (unreliable)
     logging time; the replay should ignore it."""
     end = start if end is None else end
     return {"timestamp": iso(logged if logged is not None else end + 999), "event_type": "flow",
@@ -77,7 +77,7 @@ class ReshapeTests(unittest.TestCase):
 
 class FlowTimingTests(unittest.TestCase):
     """The replay's flow timestamp is when the flow times out, not when
-    Suricata's flow manager happened to log it in this particular run."""
+    the IDS's flow manager happened to log it in this particular run."""
 
     def test_tcp_flow_that_never_got_an_answer_times_out_after_60_s(self):
         self.assertEqual(replay.flow_logged_at({"end": iso(T0), "state": "new"}, "TCP", T0 + 9999), T0 + 60)
@@ -109,7 +109,7 @@ class LoadEventsTests(unittest.TestCase):
         self.assertEqual([r["flow_start"] for r in rows], [T0, T0 + 500])
 
     def test_order_does_not_depend_on_file_order_or_flow_id(self):
-        # Two records with the same timestamp: Suricata writes them in
+        # Two records with the same timestamp: the IDS writes them in
         # either order and gives them random flow_ids from run to run.
         a = flow("10.10.0.231", "203.0.113.9", 22, T0, flow_id=111)
         b = flow("10.10.0.232", "203.0.113.9", 22, T0, flow_id=999)
@@ -130,8 +130,8 @@ class LoadEventsTests(unittest.TestCase):
         self.assertEqual(rows[0]["blocked"], 0)
 
     def test_firefox_canary_is_not_written_as_an_adguard_query(self):
-        # The real AdGuard never logs it (step 7.2 finding), so the stand-in
-        # mustn't either - correlation.py counts it from Suricata's records.
+        # The real DNS filter never logs it (step 7.2 finding), so the stand-in
+        # mustn't either - correlation.py counts it from the IDS's records.
         canary = next(iter(correlation.CANARY_DOMAINS_NOT_IN_ADGUARD_LOG))
         path = write_eve([dns_v3("10.10.0.231", canary, T0, "request")])
         rows = replay.load_events(path)
@@ -140,7 +140,7 @@ class LoadEventsTests(unittest.TestCase):
 
 
 class RunEngineTests(unittest.TestCase):
-    """End to end after Suricata: a beacon host, a benign host, and a label
+    """End to end after the IDS: a beacon host, a benign host, and a label
     for a signal a capture can't drive."""
 
     LABELS = {

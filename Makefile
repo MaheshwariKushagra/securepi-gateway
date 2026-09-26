@@ -4,7 +4,7 @@
 # (ENHANCEMENT-PLAN.md step 1.1): the DPI addon's rule logic (step 5.9),
 # app/correlation.py's six detection signals (positive, negative, dedup
 # and regression tests, all against a real temp SQLite DB - see
-# tests/fixtures.py), and app/ingest.py's Suricata/AdGuard parsing
+# tests/fixtures.py), and app/ingest.py's IDS/DNS-filter parsing
 # against synthetic eve.json/querylog fixtures. Every test runs off
 # synthetic or in-memory data - never against the live gateway's
 # database or a real device.

@@ -243,7 +243,7 @@ class BruteForceSignalTests(unittest.TestCase):
 
 class DnsBypassSignalTests(unittest.TestCase):
     """ENHANCEMENT-PLAN.md step 2.2: combines nftables reject-rule hits,
-    canary-domain queries, and Suricata TLS SNI matches on known DoH
+    canary-domain queries, and IDS TLS SNI matches on known DoH
     providers into one per-device count."""
 
     def test_fires_on_enough_nftables_bypass_attempts_alone(self):
@@ -274,9 +274,9 @@ class DnsBypassSignalTests(unittest.TestCase):
         conn.commit()
 
     def test_firefox_canary_is_counted_from_suricata_dns(self):
-        # Step 7.2 finding: AdGuard never logs use-application-dns.net, so
-        # in the real pipeline the evidence only exists as Suricata DNS.
-        # Suricata 7 logs a request as "query"; 8's format says "request".
+        # Step 7.2 finding: the DNS filter never logs use-application-dns.net, so
+        # in the real pipeline the evidence only exists as IDS DNS.
+        # IDS version 7 logs a request as "query"; version 8's format says "request".
         conn = fixtures.temp_db()
         fixtures.insert_device(conn, 1)
         now = time.time()
@@ -285,7 +285,7 @@ class DnsBypassSignalTests(unittest.TestCase):
         self.assertEqual(correlation.dns_bypass_signal(conn), 1)
 
     def test_logged_canaries_are_not_counted_twice_from_suricata(self):
-        # mask.icloud.com IS in AdGuard's log, so Suricata's copy of the
+        # mask.icloud.com IS in the DNS filter's log, so the IDS's copy of the
         # same query must not add a second count: 2 real queries stay 2.
         conn = fixtures.temp_db()
         fixtures.insert_device(conn, 1)
@@ -348,7 +348,7 @@ class DnsBypassSignalTests(unittest.TestCase):
 
 
 class IdsAlertSignalTests(unittest.TestCase):
-    """ENHANCEMENT-PLAN.md step 2.3: turns Suricata/ET alerts into
+    """ENHANCEMENT-PLAN.md step 2.3: turns IDS/ET alerts into
     incidents via signature_taxonomy.classify()."""
 
     def test_fires_on_enough_curated_category_alerts(self):
@@ -691,7 +691,7 @@ class BeaconSignalTests(unittest.TestCase):
 
     def test_timing_comes_from_flow_start_not_the_logging_time(self):
         # Step 7.2 finding: the battery's 10 s beacon (10% jitter) was never
-        # detected live. Suricata logs a flow only after it times out, in
+        # detected live. The IDS logs a flow only after it times out, in
         # batches whenever its flow manager wakes: live, the logged gaps ran
         # 5-15 s and the score was 0.73, under the 0.8 threshold. Here
         # the connections are regular but each is logged 60-90 s later at

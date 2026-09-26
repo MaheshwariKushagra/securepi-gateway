@@ -2,7 +2,7 @@
 """
 SecurePi Gateway - event ingest service.
 
-Reads Suricata's eve.json and the DNS resolver's query log, converts every
+Reads the IDS's eve.json and the DNS resolver's query log, converts every
 record into the one shared event shape defined in schema.sql, and stores it.
 
 Design notes worth knowing:
@@ -10,7 +10,7 @@ Design notes worth knowing:
   * It remembers its position in each file (see the ingest_state table), so a
     restart neither re-reads old events nor skips new ones.
 
-  * It watches for log rotation by inode, not by size. Suricata replaces
+  * It watches for log rotation by inode, not by size. The IDS replaces
     eve.json periodically; the file path stays the same but the inode changes,
     and a byte offset into the old file means nothing in the new one.
 
@@ -42,7 +42,7 @@ AGH_API_PAGE_SIZE = 500  # comfortably covers real accumulation between 2s polls
 AGH_API_MAX_PAGES = 20   # up to 10,000 entries per poll when catching up after a gap (restart, outage)
 AGH_WATERMARK_STARTUP_LOOKBACK_SECONDS = 300  # first-ever run: start 5 minutes back, not from epoch 0
 DPI_EVENTS_PATH = "/var/log/securepi/dpi-events.jsonl"
-NFT_LOG_STARTUP_LOOKBACK_SECONDS = 300  # same first-run convention as AdGuard's watermark above
+NFT_LOG_STARTUP_LOOKBACK_SECONDS = 300  # same first-run convention as the DNS filter's watermark above
 
 # Schema changes made after the Day 14 database was already created on the
 # gateway. schema.sql already lists these for a FRESH install (open_db()
@@ -254,7 +254,7 @@ SCHEMA_MIGRATIONS = [
            last_digest_at   REAL
        )""",
     "INSERT OR IGNORE INTO notify_state (id, last_incident_id, last_digest_at) VALUES (1, NULL, NULL)",
-    # Step 7.2: when a flow STARTED. `ts` on a flow record is when Suricata
+    # Step 7.2: when a flow STARTED. `ts` on a flow record is when the IDS
     # logged it - after the flow timed out, in batches whenever its flow
     # manager wakes - so the gaps between ts values aren't the gaps between
     # connections. beacon_signal() needs the real ones.
@@ -268,7 +268,7 @@ POLL_SECONDS = 2
 # Event types that are not network events and so do not belong in the
 # events table. 'stats' USED to be skipped entirely here - as of step 3.5
 # it gets its own handling (save_sensor_stats) instead, since the health
-# supervisor needs Suricata's own capture-drop count. Kept as an empty-
+# supervisor needs the IDS's own capture-drop count. Kept as an empty-
 # but-present set rather than removed outright, so a genuinely new
 # non-network event type has an obvious place to go without having to
 # rediscover this exact reasoning.
@@ -316,7 +316,7 @@ def parse_rfc3339(timestamp):
     timestamp parsers previously disagreed about what format they'd even
     see, and one of them was silently wrong as a result.
 
-    - Suricata's own eve.json docstring example claimed '+0000' (UTC).
+    - The IDS's own eve.json docstring example claimed '+0000' (UTC).
       Checked live against this gateway's real eve.json: it is actually
       '2026-09-14T03:53:12.151693+0530' - the system's local IST offset,
       not UTC, and without a colon. `datetime.fromisoformat()` rejects
@@ -327,7 +327,7 @@ def parse_rfc3339(timestamp):
       own system timezone is also Asia/Kolkata (+05:30) - confirmed live
       via `timedatectl` - a coincidence any future redeploy in a
       different timezone would silently break.
-    - AdGuard's querylog (both the on-disk file AND the /control/querylog
+    - The DNS filter's querylog (both the on-disk file AND the /control/querylog
       API - checked both live) returns a MIX of 'Z' and explicit-offset
       timestamps in the same response/file, not always 'Z' as the old
       code assumed. The old `to_epoch_agh` built its own string with a
@@ -336,7 +336,7 @@ def parse_rfc3339(timestamp):
       5.5-hour error, confirmed by computing both the buggy and correct
       epoch for the same real timestamp and comparing.
 
-    One shared, tested parser now backs both Suricata and AdGuard
+    One shared, tested parser now backs both the IDS and DNS filter
     ingestion, handling any offset form rather than assuming one.
     """
     from datetime import datetime
@@ -359,20 +359,20 @@ def parse_rfc3339(timestamp):
 
 
 def to_epoch(timestamp):
-    """Convert Suricata's eve.json timestamp to epoch seconds. See
+    """Convert the IDS's eve.json timestamp to epoch seconds. See
     parse_rfc3339's own docstring for the real bug this used to have."""
     return parse_rfc3339(timestamp)
 
 
 def save_sensor_stats(conn, event):
-    """Suricata emits a 'stats' record periodically (every 8s by default) -
+    """The IDS emits a 'stats' record periodically (every 8s by default) -
     previously discarded entirely via SKIP_TYPES. ENHANCEMENT-PLAN.md step
     3.5 (health supervisor) needs the capture drop count to tell "packets
     are arriving but the kernel is dropping some" apart from "nothing is
     arriving at all" - a single upserted row (matching the ingest_stats/
     signal_state pattern: one current snapshot, not a growing history) is
     all that check needs. capture.kernel_packets/kernel_drops/errors are
-    Suricata's own documented stats.capture fields, confirmed against a
+    the IDS's own documented stats.capture fields, confirmed against a
     real record on the live gateway before writing this, not guessed."""
     capture = event.get("stats", {}).get("capture", {})
     conn.execute(
@@ -387,7 +387,7 @@ def save_sensor_stats(conn, event):
 
 def flatten_suricata(event):
     """
-    Turn one Suricata record into a flat dictionary matching the events table.
+    Turn one IDS record into a flat dictionary matching the events table.
 
     Every event type shares the same outer fields; the type-specific detail
     lives in a nested object named after the type. We pull out the parts the
@@ -444,7 +444,7 @@ def flatten_suricata(event):
     # DHCP option 55 (the Parameter Request List) - step 6.2 device
     # fingerprinting evidence. Only present once suricata.yaml's dhcp
     # logger is in "extended" mode (enabled this step; confirmed live via
-    # `suricata -T` before the restart). `.get("params")` is Suricata's
+    # `suricata -T` before the restart). `.get("params")` is the IDS's
     # documented field name for this list, but NOT yet confirmed against
     # a real extended-mode event on this gateway - no device has renewed
     # its DHCP lease since extended mode was turned on, and forcing one
@@ -537,7 +537,7 @@ def read_eve(conn):
         fh.seek(offset)
         while True:
             line = fh.readline()
-            # Empty = end of file. No trailing newline = Suricata is still
+            # Empty = end of file. No trailing newline = the IDS is still
             # writing this line. Either way stop, with `offset` still at
             # the start of the unfinished line, and read it whole next pass.
             if not line.endswith(b"\n"):
@@ -570,7 +570,7 @@ def read_eve(conn):
 
 
 def to_epoch_agh(timestamp):
-    """Convert an AdGuard Home timestamp (file querylog or the
+    """Convert a DNS-filter timestamp (file querylog or the
     /control/querylog API - both seen live to return a MIX of 'Z' and
     explicit-offset forms) to epoch seconds. See parse_rfc3339's own
     docstring for the real 5.5-hour bug this function used to have."""
@@ -579,12 +579,12 @@ def to_epoch_agh(timestamp):
 
 def flatten_agh(entry):
     """
-    Turn one AdGuard Home querylog line into a flat event row.
+    Turn one DNS-filter querylog line into a flat event row.
 
-    This is a genuinely different signal from Suricata's own 'dns' event type:
-    Suricata sees that a query was made; AdGuard reports whether its own
+    This is a genuinely different signal from the IDS's own 'dns' event type:
+    the IDS sees that a query was made; the DNS filter reports whether its own
     filtering decision blocked it. Keeping event_type='dns_query' (source=
-    'adguard') separate from Suricata's 'dns' (source='suricata') avoids
+    'adguard') separate from the IDS's 'dns' (source='suricata') avoids
     conflating "a query happened" with "a query was blocked".
     """
     result = entry.get("Result") or {}
@@ -601,7 +601,7 @@ def flatten_agh(entry):
         "blocked": 1 if result.get("IsFiltered") else 0,
         # Telemetry for the ad-blocking analytics and list-health pages
         # (ENHANCEMENT-PLAN.md 5.3, 5.4): which list matched, whether the
-        # answer came from AdGuard's cache, which upstream resolver
+        # answer came from the DNS filter's cache, which upstream resolver
         # answered (only meaningful when not cached), and how long that
         # took. "Elapsed" arrives in nanoseconds; we store milliseconds,
         # which is the unit every other latency figure in this project uses.
@@ -617,11 +617,11 @@ def flatten_agh(entry):
 
 
 def read_agh_querylog(conn):
-    """Read whatever is new in AdGuard's querylog.json. Same watermark and
+    """Read whatever is new in the DNS filter's querylog.json. Same watermark and
     rotation-by-inode approach as read_eve - see its docstring.
 
     Only runs when the API is unreachable (read_agh below), and the API
-    reader is what normally imports AdGuard's queries. So entries at or
+    reader is what normally imports the DNS filter's queries. So entries at or
     before the API reader's watermark are skipped - they're already in
     the database - and the watermark moves forward past whatever this
     reader imports, so the API doesn't import them a second time once it
@@ -687,7 +687,7 @@ def flatten_agh_api(entry, ts=None):
     instead of 'Elapsed' nanoseconds, and 'cached'/'upstream' at the top
     level instead of nested under 'Result'.
 
-    Blocked-vs-allowed comes from 'reason': AdGuard's own documented
+    Blocked-vs-allowed comes from 'reason': the DNS filter's own documented
     naming convention is that every 'Filtered*' reason means blocked and
     every 'NotFiltered*' reason means allowed. Confirmed live against
     the two reasons this gateway actually produces
@@ -695,7 +695,7 @@ def flatten_agh_api(entry, ts=None):
     (safe browsing, parental control, safe search, custom rule,
     rewrite...) was not each individually exercised live, since none of
     those features are enabled on this gateway. Followed here as a
-    stated interpretation of AdGuard's own convention, not a guess."""
+    stated interpretation of the DNS filter's own convention, not a guess."""
     question = entry.get("question") or {}
     rules = entry.get("rules") or []
     reason = entry.get("reason") or ""
@@ -709,7 +709,7 @@ def flatten_agh_api(entry, ts=None):
         "dns_type": "query",
         "dns_rrname": question.get("name"),
         "dns_rrtype": question.get("type"),
-        # 'status' is the response code AdGuard itself answered with, not
+        # 'status' is the response code the DNS filter itself answered with, not
         # necessarily what the real upstream would say for a NON-blocked
         # query - confirmed live (14 September 2026) that a query this
         # gateway's filtering blocks still reports status NOERROR (the
@@ -718,7 +718,7 @@ def flatten_agh_api(entry, ts=None):
         # the same fact used elsewhere). That's exactly what step 2.5's
         # DGA detection needs: a genuine NXDOMAIN here means the query
         # reached the real upstream and the domain doesn't actually
-        # exist anywhere - not that AdGuard chose to block it.
+        # exist anywhere - not that the DNS filter chose to block it.
         "dns_rcode": entry.get("status"),
         "blocked": 1 if reason.startswith("Filtered") else 0,
         "dns_cached": 1 if entry.get("cached") else 0,
@@ -761,10 +761,10 @@ def set_agh_watermark(conn, ts):
 
 
 def read_agh_api(conn):
-    """Poll AdGuard's /control/querylog API - real-time, not gated on
-    AdGuard's own flush-to-disk cadence the way tailing querylog.json is
+    """Poll the DNS filter's /control/querylog API - real-time, not gated on
+    the DNS filter's own flush-to-disk cadence the way tailing querylog.json is
     (confirmed live in EVALUATION-RESULTS.md: the on-disk file can sit
-    unwritten for 7+ hours under real traffic, because AdGuard only
+    unwritten for 7+ hours under real traffic, because the DNS filter only
     flushes when its 1000-entry in-memory buffer rotates - the exact gap
     this step exists to close). Raises adguard.AdGuardError if the admin
     API can't be reached; read_agh() below catches that and falls back
@@ -777,7 +777,7 @@ def read_agh_api(conn):
     down for a while, or a real traffic spike - more than one page can
     pile up, and taking only the newest page then jumping the watermark
     to it silently lost everything older (Audit.md H5). So this keeps
-    asking for the next-older page (AdGuard's `older_than` cursor, which
+    asking for the next-older page (the DNS filter's `older_than` cursor, which
     each reply supplies as "oldest") until a page reaches back to entries
     already imported, up to AGH_API_MAX_PAGES pages per poll.
     """
@@ -793,7 +793,7 @@ def read_agh_api(conn):
         data.extend(page)
         # Newest first, so the page's last entry is its oldest. Stop when
         # that already reaches the watermark, when the page wasn't full
-        # (nothing older exists), or when AdGuard gives no cursor.
+        # (nothing older exists), or when the DNS filter gives no cursor.
         if len(page) < AGH_API_PAGE_SIZE or not resp.get("oldest"):
             break
         if parse_rfc3339(page[-1].get("time", "")) <= watermark:
@@ -836,13 +836,13 @@ def read_agh_api(conn):
 
 def read_agh(conn):
     """Try the real-time /control/querylog API first; fall back to
-    tailing the on-disk file if AdGuard's admin API can't be reached
-    right now (e.g. AdGuard itself restarting) - step 1.4's own "file
+    tailing the on-disk file if the DNS filter's admin API can't be reached
+    right now (e.g. the DNS filter itself restarting) - step 1.4's own "file
     reader kept as fallback"."""
     try:
         return read_agh_api(conn)
     except adguard.AdGuardError as e:
-        print("AdGuard API unreachable (%s) - falling back to file tailing this cycle" % e, flush=True)
+        print("DNS-filter API unreachable (%s) - falling back to file tailing this cycle" % e, flush=True)
         return read_agh_querylog(conn)
 
 
@@ -851,7 +851,7 @@ def flatten_dpi(entry):
     dpi/securepi_adfilter.py's _log_event) into an events row. Reuses the
     generic events shape - source='dpi', event_type='dpi_decision' - rather
     than a bespoke table, the same reasoning schema.sql's header gives for
-    keeping Suricata and AdGuard on one table."""
+    keeping the IDS and DNS filter on one table."""
     return {
         "ts": entry.get("ts") or time.time(),
         "ts_iso": entry.get("ts_iso"),
@@ -1066,7 +1066,7 @@ def run_step(conn, name, fn, default):
     `default` so the rest of the pass still runs.
 
     Every step used to share one try/except around the whole pass, so a
-    single failing reader (a bad line, AdGuard restarting) also skipped
+    single failing reader (a bad line, the DNS filter restarting) also skipped
     every step after it - including the DNS fail-open check, whose whole
     job is keeping the network usable when something is broken
     (Audit.md H4). The rollback matters too: without it, a step's
@@ -1099,8 +1099,8 @@ def main():
             run_step(conn, "device registry", registry.update_devices, None)
         cycle += 1
 
-        read, saved, errors = run_step(conn, "Suricata reader", read_eve, nothing)
-        a_read, a_saved, a_errors = run_step(conn, "AdGuard reader", read_agh, nothing)
+        read, saved, errors = run_step(conn, "IDS reader", read_eve, nothing)
+        a_read, a_saved, a_errors = run_step(conn, "DNS-filter reader", read_agh, nothing)
         d_read, d_saved, d_errors = run_step(conn, "DPI reader", read_dpi_events, nothing)
         saved += a_saved + d_saved
         errors += a_errors + d_errors

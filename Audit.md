@@ -10,7 +10,7 @@ No builds, application services, or test suite were run. Some tests write files,
 
 ## Architecture and structural integrity
 
-The primary flow is Suricata/AdGuard/DPI ingestion → registry and SQLite → correlation and incidents → policy orchestration through nftables/AdGuard → notifications. The FastAPI console also accesses SQLite and backend controls directly.
+The primary flow is IDS/DNS-filter/DPI ingestion → registry and SQLite → correlation and incidents → policy orchestration through nftables/DNS filter → notifications. The FastAPI console also accesses SQLite and backend controls directly.
 
 Useful foundations include predominantly parameterized SQL, evidence linked to incidents, narrow privileged helpers with validation, and desired-state reconciliation with locking and rollback attempts. No static application import cycles were detected.
 
@@ -72,7 +72,7 @@ Readers iterate a text file using `for line in fh`, break on an incomplete line,
 
 **Recommendation:** Use explicit `readline()` calls and checkpoint only complete records. Bound batches and isolate source failures. Schedule DNS recovery independently of ingestion success.
 
-### H5. AdGuard polling can lose bursts and replay history
+### H5. The DNS filter polling can lose bursts and replay history
 
 **References:** `app/ingest.py:353`, `app/ingest.py:737–784`, `app/ingest.py:794–803`.
 
@@ -112,11 +112,11 @@ Taking the maximum timestamp across all signal-state rows includes timestamps ma
 
 **Recommendation:** Maintain an explicit successful engine-cycle heartbeat and separate source/signal health indicators, with a defined startup grace period.
 
-### H10. Direct AdGuard rule mutations race with orchestration
+### H10. Direct DNS-filter rule mutations race with orchestration
 
 **References:** `app/webapp.py:1501–1516`, `app/adguard.py:107–118`, `app/orchestrator.py:771`, `app/orchestrator.py:262`.
 
-Console endpoints read and replace the complete AdGuard rule list outside the orchestrator's policy lock. Concurrent updates can overwrite one another. Removing an orchestrator-managed rule can report success only for reconciliation to restore it. Validation also differs from the orchestrator's domain normalization.
+Console endpoints read and replace the complete DNS-filter rule list outside the orchestrator's policy lock. Concurrent updates can overwrite one another. Removing an orchestrator-managed rule can report success only for reconciliation to restore it. Validation also differs from the orchestrator's domain normalization.
 
 **Recommendation:** Route managed changes through one policy command boundary and one locking/ownership model. Validate domains consistently and distinguish user-owned rules from generated policy rules.
 
@@ -182,7 +182,7 @@ These are observable maintenance issues; authorship alone does not establish the
 
 3. Enforce network restrictions before local proxy redirection and validate them using real gateway traffic.
 4. Remove hostname-based trust inheritance and establish current IP ownership.
-5. Repair log checkpointing and AdGuard pagination; isolate recovery scheduling from reader failures.
+5. Repair log checkpointing and DNS-filter pagination; isolate recovery scheduling from reader failures.
 6. Move external notifications outside database write transactions and sanitize stored provider errors.
 7. Correct TLS event handling and define counter/reset behavior.
 8. Make engine health independent of health-check activity.
@@ -380,7 +380,7 @@ Keep raw URLs, tokens, and provider response bodies out of persisted errors and 
 
 ## Ad-blocking improvement recommendations
 
-Added following a focused review of `dpi/securepi_adfilter.py`, `dpi/adfilter_rules.py`, `dpi/adfilter-rules.json`, and the AdGuard integration. These are recommendations only; no filtering code or configuration was changed. The highest-value improvement is to make filtering precise, measurable, and reversible before adding more rules.
+Added following a focused review of `dpi/securepi_adfilter.py`, `dpi/adfilter_rules.py`, `dpi/adfilter-rules.json`, and the DNS-filter integration. These are recommendations only; no filtering code or configuration was changed. The highest-value improvement is to make filtering precise, measurable, and reversible before adding more rules.
 
 ### 1. [Critical when cosmetics are enabled] Preserve the site's Content Security Policy
 
@@ -396,11 +396,11 @@ Also restrict the selector grammar in `dpi/adfilter_rules.py:160–165`: nonempt
 
 **Locations:** `app/adguard.py:73–118`, `dpi/adfilter-rules.json`, `dpi/securepi_adfilter.py:336–382`.
 
-Use AdGuard Home as the broad baseline for dedicated advertising/tracking domains. Maintain a small, reviewed set of complementary DNS-compatible subscriptions and optional regional coverage. Record update health, enabled state, rule count, and the source of each blocking decision. Adding overlapping lists without measuring new coverage increases maintenance and false positives.
+Use the DNS filter as the broad baseline for dedicated advertising/tracking domains. Maintain a small, reviewed set of complementary DNS-compatible subscriptions and optional regional coverage. Record update health, enabled state, rule count, and the source of each blocking decision. Adding overlapping lists without measuring new coverage increases maintenance and false positives.
 
 Keep selective HTTPS inspection an explicit per-device feature for cases DNS cannot distinguish. Blocking a shared video/content hostname cannot selectively remove advertising carried on that hostname. Display this limitation in the console; do not promise universal YouTube or native-app ad removal.
 
-AdGuard Home supports specific DNS filtering syntax; do not import full browser cosmetic/scriptlet lists into the DNS layer or interpret them using substring matching. Use the [AdGuard Home blocklist syntax documentation](https://github.com/AdguardTeam/AdGuardHome/wiki/Hosts-Blocklists) as the compatibility contract. Browser-side filtering can be an optional complementary layer on user-controlled browsers, with separate reporting of what the gateway actually blocked.
+The DNS filter supports specific DNS filtering syntax; do not import full browser cosmetic/scriptlet lists into the DNS layer or interpret them using substring matching. Use the [DNS-filter blocklist syntax documentation](https://github.com/AdguardTeam/AdGuardHome/wiki/Hosts-Blocklists) as the compatibility contract. Browser-side filtering can be an optional complementary layer on user-controlled browsers, with separate reporting of what the gateway actually blocked.
 
 ### 3. [High] Replace global substring rules with host- and endpoint-scoped rules
 

@@ -40,9 +40,9 @@ Two corrections are required:
 
 **Correction 2 — The Raspberry Pi should not be in the data path in version 1.** Splitting the data plane (Pi) from the analysis plane (laptop) requires either traffic mirroring across an extra interface or running the sensor on the Pi anyway, and it forces the control plane to manage two hosts with partial-failure states. That is real distributed-systems work with no proportional academic payoff. The laptop has ample headroom for 15 devices. The Pi earns its place later as a *second independent sensor*, which proves the ingest layer is sensor-agnostic — a far better demonstration than using it as a bridge.
 
-Beyond that, the scope needs a sharp line between what is integrated and what is built. Suricata, a DNS filtering resolver, PostgreSQL, and nftables are integrated. The **unified data model, device identity resolution, correlation engine, policy orchestration layer, risk scoring, response framework, and SOC console are the project.** That distinction is what makes this defensible as engineering work rather than a configuration exercise, and it should be stated explicitly in the thesis.
+Beyond that, the scope needs a sharp line between what is integrated and what is built. The IDS, a DNS filtering resolver, PostgreSQL, and nftables are integrated. The **unified data model, device identity resolution, correlation engine, policy orchestration layer, risk scoring, response framework, and SOC console are the project.** That distinction is what makes this defensible as engineering work rather than a configuration exercise, and it should be stated explicitly in the thesis.
 
-The single largest technical risk is not performance — it is **storage growth from Suricata's event stream**, which will produce roughly 0.5–2 GB/day of raw JSON if handled naively. This is solvable with normalization and tiered retention, but it must be designed in from day one, not discovered in month five.
+The single largest technical risk is not performance — it is **storage growth from the IDS's event stream**, which will produce roughly 0.5–2 GB/day of raw JSON if handled naively. This is solvable with normalization and tiered retention, but it must be designed in from day one, not discovered in month five.
 
 ---
 
@@ -53,7 +53,7 @@ The single largest technical risk is not performance — it is **storage growth 
 | Technical feasibility | **Feasible** | High | All required capabilities exist as mature OSS; integration is the work |
 | Deployment/topology | **Feasible** | High | Router-agnostic design removes the main unknown |
 | Hardware adequacy | **Feasible, comfortable** | High | Modern laptop is over-provisioned for 15 devices |
-| Performance at 15 devices | **Feasible** | Medium-High | Suricata throughput ceiling must be measured, not assumed |
+| Performance at 15 devices | **Feasible** | Medium-High | IDS throughput ceiling must be measured, not assumed |
 | Storage sustainability | **Feasible with design effort** | Medium | Naive approach fails within weeks; requires deliberate schema + retention |
 | Solo delivery in an academic year | **Feasible with strict scope control** | Medium | Requires the MVP gate in §13 to be enforced |
 | Academic depth | **Strong** | High | Genuine original contribution in correlation, identity, orchestration |
@@ -71,8 +71,8 @@ These are stated explicitly so they can be challenged and so the evaluation numb
 |---|---|---|---|
 | A1 | ~15 devices: mix of laptops, phones, and IoT | Your brief | Scales to ~50 without redesign |
 | A2 | Internet uplink 50–300 Mbps typical, ≤1 Gbps peak | Typical Indian broadband, 2026 | >1 Gbps requires throughput re-measurement |
-| A3 | Sustained LAN↔WAN throughput averages 5–50 Mbps, bursts to line rate | Small-office traffic profile | Higher sustained load raises Suricata drop risk |
-| A4 | Laptop has ≥4 physical cores, ≥8 GB RAM, ≥128 GB free SSD | Stated as primary host | 4 GB RAM forces dropping Suricata rule categories |
+| A3 | Sustained LAN↔WAN throughput averages 5–50 Mbps, bursts to line rate | Small-office traffic profile | Higher sustained load raises IDS drop risk |
+| A4 | Laptop has ≥4 physical cores, ≥8 GB RAM, ≥128 GB free SSD | Stated as primary host | 4 GB RAM forces dropping IDS rule categories |
 | A5 | A dedicated Linux install (bare metal or dual-boot) is acceptable on the host | Required for reliable packet capture | VM-based hosting adds latency and NIC passthrough complexity |
 | A6 | You can add a cheap unmanaged switch, a USB-Ethernet adapter, and a dumb AP (~₹3,000 total) | You indicated budget flexibility | Without an AP, wireless devices can't join the project LAN; falls back to Model C (§5) |
 | A7 | Devices on the project LAN are yours or consenting participants | Ethical/legal necessity | Monitoring non-consenting users is not acceptable; see §12.6 |
@@ -107,7 +107,7 @@ An ad blocker running standalone next to an IDS running standalone gets none of 
 
 | Function | Decision | Rationale |
 |---|---|---|
-| Packet capture, protocol parsing, signature matching | **Delegate** | Suricata. Reimplementing this is a multi-year effort and adds nothing |
+| Packet capture, protocol parsing, signature matching | **Delegate** | The IDS. Reimplementing this is a multi-year effort and adds nothing |
 | DNS resolution, caching, blocklist evaluation | **Delegate** | Solved comprehensively. Correctness bugs here break the network |
 | DHCP service | **Delegate** | Solved; needed anyway |
 | Packet forwarding, NAT, firewall | **Delegate** | Linux kernel + nftables |
@@ -214,7 +214,7 @@ Internet ──▶ Existing Router  (untouched, treated as upstream uplink)
               [WAN interface]
          ┌──────────────────────────┐
          │   SecurePi Gateway       │  DHCP · DNS filter · NAT
-         │   (laptop, Debian)       │  nftables · Suricata IDS
+         │   (laptop, Debian)       │  nftables · IDS
          │                          │  TimescaleDB · API · Console
          └──────────────────────────┘
               [LAN interface]
@@ -257,7 +257,7 @@ Requires a VLAN-capable router and managed switch. Adds VLAN configuration compl
 Router ──▶ [Pi: routing/NAT/DHCP/DNS] ──▶ Devices
                     │ (mirror via 2nd NIC)
                     ▼
-              [Laptop: Suricata, DB, UI]
+              [Laptop: IDS, DB, UI]
 ```
 
 | Pros | Cons |
@@ -313,7 +313,7 @@ Start with the zero-cost arrangement during early development (it works today, w
 |---|---|---|
 | Whole host down | Project LAN loses internet and DNS | Accepted by design in a lab context. Household network unaffected — this is a key benefit of Model D |
 | DNS service crashes | Name resolution fails LAN-wide | Watchdog restart + optional Pi secondary resolver (Phase 2) |
-| Suricata crashes | Detection stops silently; traffic still flows | **Detect and surface this in the console** — silent sensor failure is a classic SOC blind spot, and handling it is a good engineering detail |
+| The IDS crashes | Detection stops silently; traffic still flows | **Detect and surface this in the console** — silent sensor failure is a classic SOC blind spot, and handling it is a good engineering detail |
 | Database full/down | Ingest stalls, UI degrades | Disk watchdog + enforced retention + bounded in-memory buffer with explicit drop accounting |
 
 The design principle: **fail open on the data path, fail loud on the control plane.** Traffic keeps flowing when analysis breaks, and the console says so.
@@ -324,7 +324,7 @@ The design principle: **fail open on the data path, fail loud on the control pla
 
 ### 6.1 Class comparison
 
-| Platform | CPU | RAM | Storage | Suricata @ 15 devices | Verdict |
+| Platform | CPU | RAM | Storage | The IDS @ 15 devices | Verdict |
 |---|---|---|---|---|---|
 | Raspberry Pi 4 (4 GB) | 4× A72 | 4 GB | microSD/USB | Tight; needs reduced ruleset | Marginal; SD wear is a real problem for a write-heavy DB |
 | Raspberry Pi 5 (8 GB) | 4× A76 | 8 GB | NVMe via PCIe HAT | Handles a few hundred Mbps with a tuned ruleset | Viable for the IDS role alone; cramped once DB + UI are co-resident |
@@ -334,18 +334,18 @@ The design principle: **fail open on the data path, fail loud on the control pla
 ### 6.2 Why the laptop wins
 
 - **Storage endurance.** This is the underrated argument. The workload is continuous small writes to a time-series database. An SSD absorbs this indefinitely; a microSD card degrades in months. This alone rules out an SD-booted Pi as the primary host.
-- **x86 rule compatibility.** Suricata and the ET Open ruleset are best-tested on x86-64. ARM works but is less-trodden ground — an unnecessary variable for a solo project.
-- **RAM headroom.** Suricata's flow tables plus PostgreSQL's shared buffers plus the application layer want 4–6 GB. 8 GB is workable; 16 GB is comfortable.
+- **x86 rule compatibility.** The IDS and the ET Open ruleset are best-tested on x86-64. ARM works but is less-trodden ground — an unnecessary variable for a solo project.
+- **RAM headroom.** The IDS's flow tables plus PostgreSQL's shared buffers plus the application layer want 4–6 GB. 8 GB is workable; 16 GB is comfortable.
 - **Development convenience.** Being your dev machine and your target machine removes an entire class of deploy-and-test friction.
 
 ### 6.3 Practical caveats for laptop-as-gateway
 
 - Install Debian **bare metal or dual-boot**, not in a VM on your daily OS. NIC passthrough for reliable AF_PACKET capture inside a VM is fiddly and will distort your performance measurements (assumption A5).
 - Disable suspend-on-lid-close and all sleep states (`logind` configuration).
-- Thermal: sustained Suricata load will keep fans running. Ensure ventilation during long baseline runs.
+- Thermal: sustained IDS load will keep fans running. Ensure ventilation during long baseline runs.
 - Reserve ~60 GB for the database under the retention policy in §10.4.
 
-**Answer to "can it support ~15 devices?": comfortably, with substantial headroom.** The binding constraint is Suricata's per-core inspection throughput, not device count — see §10.
+**Answer to "can it support ~15 devices?": comfortably, with substantial headroom.** The binding constraint is the IDS's per-core inspection throughput, not device count — see §10.
 
 ---
 
@@ -355,13 +355,13 @@ The design principle: **fail open on the data path, fail loud on the control pla
 
 | Candidate | Strengths | Weaknesses | Fit |
 |---|---|---|---|
-| **Suricata** | Multi-threaded; AF_PACKET; unified **EVE JSON** output covering alerts *and* flow, dns, http, tls, ssh, anomaly records; JA3/JA4 fingerprinting; free ET Open ruleset; optional IPS via NFQUEUE; excellent docs | Ruleset tuning needed to avoid FP storms; memory grows with flow table | **✅ Selected** |
+| **IDS** | Multi-threaded; AF_PACKET; unified **EVE JSON** output covering alerts *and* flow, dns, http, tls, ssh, anomaly records; JA3/JA4 fingerprinting; free ET Open ruleset; optional IPS via NFQUEUE; excellent docs | Ruleset tuning needed to avoid FP storms; memory grows with flow table | **✅ Selected** |
 | Zeek | Unmatched protocol metadata depth; scriptable; rich conn/dns/ssl/x509 logs | Single-threaded per worker; memory-hungry; multi-file TSV/JSON log sprawl; no signature alerting without add-ons | Rejected — see below |
 | Snort 3 | Mature; strong rule ecosystem | Weaker structured JSON output; less convenient for programmatic ingest | Rejected |
-| ntopng | Good flow analytics, nDPI app classification, REST API | Community edition is feature-limited; brings its own UI we'd have to hide; overlaps Suricata's flow output | Rejected |
+| ntopng | Good flow analytics, nDPI app classification, REST API | Community edition is feature-limited; brings its own UI we'd have to hide; overlaps the IDS's flow output | Rejected |
 | CrowdSec | Behavioural detection, crowd-sourced blocklists, clean local API, YAML scenarios | Log-driven not packet-driven; **its scenario engine would replace the correlation engine you need to build** | Rejected on academic grounds — see §7.7 |
 
-**Key decision — Suricata alone, no Zeek.** The common wisdom is "run both: Suricata for alerts, Zeek for metadata." That advice is written for enterprise SOCs. Suricata's EVE output already emits `flow`, `dns`, `tls`, `http`, and `anomaly` event types alongside `alert` — which covers the great majority of what you'd use Zeek's `conn.log`, `dns.log`, and `ssl.log` for. Running Zeek too would roughly double CPU and memory for marginal added metadata at 15 devices, and would add a second log format to normalize.
+**Key decision — the IDS alone, no Zeek.** The common wisdom is "run both: the IDS for alerts, Zeek for metadata." That advice is written for enterprise SOCs. The IDS's EVE output already emits `flow`, `dns`, `tls`, `http`, and `anomaly` event types alongside `alert` — which covers the great majority of what you'd use Zeek's `conn.log`, `dns.log`, and `ssl.log` for. Running Zeek too would roughly double CPU and memory for marginal added metadata at 15 devices, and would add a second log format to normalize.
 
 **Choosing one engine that produces both alerts and metadata is a deliberate, defensible simplification** — exactly the kind of judgement call worth documenting in the thesis. Zeek belongs in Future Scope.
 
@@ -369,13 +369,13 @@ The design principle: **fail open on the data path, fail loud on the control pla
 
 | Candidate | Strengths | Weaknesses | Fit |
 |---|---|---|---|
-| **AdGuard Home** | Single static Go binary; OpenAPI-documented REST API for both config *and* query data; **built-in DHCP**; native DoH/DoT/DoQ upstream and server; per-client rules and policies; runs fully headless with UI bound to localhost | Single-vendor project; query-log API pagination is awkward for continuous tailing | **✅ Selected** |
+| **DNS filter** | Single static Go binary; OpenAPI-documented REST API for both config *and* query data; **built-in DHCP**; native DoH/DoT/DoQ upstream and server; per-client rules and policies; runs fully headless with UI bound to localhost | Single-vendor project; query-log API pagination is awkward for continuous tailing | **✅ Selected** |
 | Pi-hole v6 | Very mature; huge community; v6 rebuilt the API and web server into the `pihole-FTL` binary (no more lighttpd/PHP); good group/client policy; gravity blocklists; DHCP available | Session-based auth is more awkward to script; UI is baked into FTL and needs deliberate containment; strongest brand recognition makes the "unified platform" framing harder | Strong alternative |
 | Blocky | Purpose-built as a component; YAML config; native Prometheus metrics; **can write query logs directly to PostgreSQL** — near-zero integration glue | No DHCP; smaller community; fewer built-in features; thinner documentation if you get stuck | Attractive but riskier |
 | Technitium DNS | Extremely API-first; authoritative + recursive; DoH/DoT server; plugin system | .NET runtime; heavier; more surface than needed | Rejected — over-scoped |
 | Unbound + RPZ | Rock solid resolver | No management API, no policy UI, all glue is yours | Rejected |
 
-**Selected: AdGuard Home.** The deciding factor is that **it provides DHCP and DNS in one process.** That is not a convenience — it means DHCP lease events and DNS query events originate from the same component with consistent client identity, which materially simplifies the identity resolution layer (§9.2), your hardest sub-problem. Add a documented REST API, static-binary deployment, native encrypted-upstream support, and clean headless operation with the UI bound to `127.0.0.1`, and it fits the "invisible engine behind our platform" requirement better than the alternatives.
+**Selected: the DNS filter.** The deciding factor is that **it provides DHCP and DNS in one process.** That is not a convenience — it means DHCP lease events and DNS query events originate from the same component with consistent client identity, which materially simplifies the identity resolution layer (§9.2), your hardest sub-problem. Add a documented REST API, static-binary deployment, native encrypted-upstream support, and clean headless operation with the UI bound to `127.0.0.1`, and it fits the "invisible engine behind our platform" requirement better than the alternatives.
 
 Blocky's direct-to-Postgres logging is genuinely tempting and would eliminate an adapter. It loses on the DHCP point and on community depth — the wrong risk for a solo project with a deadline.
 
@@ -418,12 +418,12 @@ Charts: **Apache ECharts** — better than Recharts for dense timelines, heatmap
 
 **Docker Compose for the application tier; native host configuration for the network tier.**
 
-The split exists for a concrete reason: Suricata needs `CAP_NET_RAW`/`CAP_NET_ADMIN` and host network access; AdGuard Home needs port 53 plus DHCP broadcast handling; nftables NAT is inherently host-level. Containerising these with `network_mode: host` retains dependency management and reproducibility while discarding most isolation benefit — so be explicit about the trade-off rather than pretending containers provide security here.
+The split exists for a concrete reason: the IDS needs `CAP_NET_RAW`/`CAP_NET_ADMIN` and host network access; the DNS filter needs port 53 plus DHCP broadcast handling; nftables NAT is inherently host-level. Containerising these with `network_mode: host` retains dependency management and reproducibility while discarding most isolation benefit — so be explicit about the trade-off rather than pretending containers provide security here.
 
 | Tier | Components | Mechanism |
 |---|---|---|
 | Network tier | nftables rules, interface/routing config | Host systemd units, rendered from templates by the orchestration layer |
-| Engine tier | Suricata, AdGuard Home | Containers with `network_mode: host` + required capabilities (or native systemd units; decide during Phase 2 spikes) |
+| Engine tier | IDS, DNS filter | Containers with `network_mode: host` + required capabilities (or native systemd units; decide during Phase 2 spikes) |
 | Application tier | PostgreSQL/TimescaleDB, ingest, correlation, API, frontend | Standard Docker Compose with a private bridge network |
 
 Provisioning of the host tier belongs in a single idempotent script (or a small Ansible playbook), which also becomes your deployment-testing artefact.
@@ -474,8 +474,8 @@ This table is worth including verbatim in the thesis. The strongest defence agai
 │  └───┬───────────────┬───────────────┬───────────────┬──────────┘  │
 │      │               │               │               │              │
 │  ┌───┴────┐   ┌──────┴─────┐   ┌─────┴──────┐  ┌─────┴────────┐    │
-│  │Suricata│   │ AdGuard    │   │  nftables  │  │ Health       │    │
-│  │EVE JSON│   │ Home       │   │  log target│  │ Supervisor   │    │
+│  │  IDS   │   │ DNS filter │   │  nftables  │  │ Health       │    │
+│  │EVE JSON│   │            │   │  log target│  │ Supervisor   │    │
 │  │        │   │ DNS + DHCP │   │            │  │  ★ OURS      │    │
 │  │ 3rd-pty│   │  3rd-party │   │   kernel   │  │              │    │
 │  └────────┘   └────────────┘   └────────────┘  └──────────────┘    │
@@ -496,9 +496,9 @@ This table is worth including verbatim in the thesis. The strongest defence agai
 ```
 Packets on LAN interface
    │
-   ├──▶ Suricata (AF_PACKET) ──▶ eve.json ──┐
+   ├──▶ IDS (AF_PACKET) ──▶ eve.json ───────┐
    │                                        │
-   ├──▶ AdGuard Home (DNS/DHCP) ──▶ API/log ┤
+   ├──▶ DNS filter (DNS/DHCP) ──▶ API/log ──┤
    │                                        ├──▶ Ingest & Normalization
    └──▶ nftables ──▶ kernel log ────────────┘         │
                                                       ▼
@@ -531,9 +531,9 @@ Policy API — validate against schema, check invariants
    ▼
 Policy Orchestrator — compute desired state, diff against current
    │
-   ├──▶ AdGuard Home REST API   (blocklists, per-client rules, upstreams)
+   ├──▶ DNS filter REST API     (blocklists, per-client rules, upstreams)
    ├──▶ nftables ruleset render + atomic reload  (firewall, quarantine)
-   └──▶ Suricata config/rule file + signal reload  (rule categories)
+   └──▶ IDS config/rule file + signal reload       (rule categories)
    │
    ▼
 Verify applied state ──▶ on failure: automatic rollback to last-good
@@ -542,14 +542,14 @@ Verify applied state ──▶ on failure: automatic rollback to last-good
 Audit log entry + drift-detection baseline update
 ```
 
-**Drift detection** — periodically reading back the actual state of each engine and comparing it to the intended state — is a small feature with disproportionate value. It is real configuration-management engineering and it demos well ("I changed AdGuard Home manually behind the platform's back; watch it get detected and reconciled").
+**Drift detection** — periodically reading back the actual state of each engine and comparing it to the intended state — is a small feature with disproportionate value. It is real configuration-management engineering and it demos well ("I changed the DNS filter manually behind the platform's back; watch it get detected and reconciled").
 
 ### 8.4 Failure behaviour
 
 | Failure | Data path | Detection | Response |
 |---|---|---|---|
-| Suricata dies | Traffic unaffected | Supervisor heartbeat + EVE staleness check | Restart; raise a **platform health alert** (silent sensor loss is a critical SOC failure) |
-| AdGuard Home dies | **DNS fails LAN-wide** | Health probe | Restart; if repeated, nftables rule releases port 53 to an upstream resolver (fail-open) and the console shows "protection degraded" |
+| The IDS dies | Traffic unaffected | Supervisor heartbeat + EVE staleness check | Restart; raise a **platform health alert** (silent sensor loss is a critical SOC failure) |
+| The DNS filter dies | **DNS fails LAN-wide** | Health probe | Restart; if repeated, nftables rule releases port 53 to an upstream resolver (fail-open) and the console shows "protection degraded" |
 | Database full/down | Ingest stalls | Disk watchdog + write errors | Enforce retention aggressively; bounded ring buffer with explicit drop counters (never drop silently) |
 | Correlation engine dies | Events still stored | Heartbeat | Restart, replay from the last processed watermark |
 | Whole host down | Project LAN offline | External | Accepted in lab context; documented |
@@ -560,7 +560,7 @@ Audit log entry + drift-detection baseline update
 |---|---|
 | Multi-host (Pi + laptop) | Doubles operational surface, adds partial-failure states and clock-skew risk, no compute benefit at this scale (§5.4) |
 | Microservices over a message bus | Kafka/RabbitMQ adds an operational component for throughput two orders of magnitude below the need. A single Python service with an internal async queue and Postgres `LISTEN/NOTIFY` is sufficient. **Documented upgrade trigger:** if measured ingest lag exceeds 5 s at p95, introduce Redis Streams |
-| Elastic/OpenSearch-centric (ELK) | Memory cost dominates the host; would force dropping either Suricata's ruleset or the app tier |
+| Elastic/OpenSearch-centric (ELK) | Memory cost dominates the host; would force dropping either the IDS's ruleset or the app tier |
 | Deploy Security Onion / Wazuh | Eliminates the engineering contribution (§7.7) |
 
 ---
@@ -582,14 +582,14 @@ Audit log entry + drift-detection baseline update
 |---|---|---|
 | Device discovery & inventory | Core | From DHCP leases + ARP + passive observation |
 | **Device identity resolution** | Core | MAC↔IP↔hostname↔friendly-name stitched over time. Handles lease churn and **MAC randomization** via DHCP fingerprinting, hostname stability, and TLS/JA4 fingerprints, with manual pinning as the fallback. *This is the hardest and most original sub-problem — everything else keys off it* |
-| Per-device bandwidth (up/down, over time) | Core | From Suricata flow records |
+| Per-device bandwidth (up/down, over time) | Core | From IDS flow records |
 | Active flows / connection list | Core | |
 | Protocol & service breakdown | Supporting | |
 | Top talkers, top destinations | Supporting | |
 | New-device detection | Core | Also a security signal |
 | Per-device behavioural baselines | Advanced | Rolling statistics; feeds anomaly detection |
 | Latency/uplink health monitoring | Supporting | Simple, cheap, visibly useful |
-| Application identification via JA4 | Advanced | Suricata provides fingerprints free; identifying apps inside TLS is a strong differentiator |
+| Application identification via JA4 | Advanced | The IDS provides fingerprints free; identifying apps inside TLS is a strong differentiator |
 
 ### 9.3 Ad blocking / filtering
 
@@ -610,12 +610,12 @@ Audit log entry + drift-detection baseline update
 
 | Feature | Tier | Notes |
 |---|---|---|
-| Unified security event ingestion | Core | Suricata alerts + flow/dns/tls metadata + DNS decisions + firewall drops |
+| Unified security event ingestion | Core | IDS alerts + flow/dns/tls metadata + DNS decisions + firewall drops |
 | Severity classification & normalization | Core | Our own taxonomy, mapped from ET signature IDs |
 | Alert deduplication & suppression | Core | Without it the console is unusable |
 | **Alert → Incident correlation** | Core | The central contribution |
 | Port scan detection | Core | Correlate flow records; detect horizontal and vertical scans, including slow scans that per-packet signatures miss |
-| Brute-force detection | Core | Failed-auth patterns via flow characteristics + Suricata alerts |
+| Brute-force detection | Core | Failed-auth patterns via flow characteristics + IDS alerts |
 | DNS anomaly detection | Core | NXDOMAIN bursts, DGA-like entropy, query-volume spikes, long-label tunnelling indicators |
 | Malicious-domain / IP hits | Core | Local threat-intel feeds; no cloud dependency |
 | New-device / rogue-device alerting | Core | |
@@ -645,9 +645,9 @@ Five top-level views. The unifying principle: **the device is the primary object
 
 The requirement to present one unified platform is satisfiable and legitimate:
 
-- Bind AdGuard Home's own web UI to `127.0.0.1` and never expose or link to it. Drive it exclusively through its REST API. Suricata has no UI.
+- Bind the DNS filter's own web UI to `127.0.0.1` and never expose or link to it. Drive it exclusively through its REST API. The IDS has no UI.
 - Maintain a **signature-to-taxonomy mapping table** so the console says *"Port scan detected from 10.10.0.42"* rather than *"ET SCAN Nmap NULL Scan"*. This is genuine normalization work, not cosmetics — and it is why the correlation layer exists.
-- Include an **Open-Source Attributions page** in Settings listing every upstream project and licence (Suricata GPLv2, AdGuard Home GPLv3, PostgreSQL PostgreSQL Licence, etc.).
+- Include an **Open-Source Attributions page** in Settings listing every upstream project and licence (IDS GPLv2, DNS filter GPLv3, PostgreSQL PostgreSQL Licence, etc.).
 
 The distinction to hold: **hiding upstream branding in the product UI is normal integration practice; hiding it from your examiners is not.** The thesis must state precisely what is integrated versus built — which is also your strongest academic argument (§17).
 
@@ -659,7 +659,7 @@ All figures are engineering estimates under the assumptions in §3, to be replac
 
 ### 10.1 Throughput and CPU
 
-| Load | Suricata CPU (4-core x86) | Expected behaviour |
+| Load | IDS CPU (4-core x86) | Expected behaviour |
 |---|---|---|
 | 50 Mbps sustained | ~10–20% of one core | Trivial |
 | 200 Mbps | ~0.5–1.5 cores | Comfortable |
@@ -668,15 +668,15 @@ All figures are engineering estimates under the assumptions in §3, to be replac
 
 Reported experience places a tuned Raspberry Pi 4 at roughly 500–700 Mbps and a Pi 5 near gigabit; a 4-core x86 laptop should exceed both. Rule count is the dominant variable — the full ET Open set (~40–50k rules) is far heavier than a curated subset.
 
-**Deliberate action:** measure `capture.kernel_drops` from Suricata's own statistics across a throughput sweep and publish the curve. "Our platform inspects at line rate up to X Mbps and begins dropping beyond it" is an honest, quantitative, defensible result — considerably better than an unqualified claim.
+**Deliberate action:** measure `capture.kernel_drops` from the IDS's own statistics across a throughput sweep and publish the curve. "Our platform inspects at line rate up to X Mbps and begins dropping beyond it" is an honest, quantitative, defensible result — considerably better than an unqualified claim.
 
 ### 10.2 Memory
 
 | Component | Estimate |
 |---|---|
-| Suricata (flow tables + ruleset) | 1.0–2.0 GB |
+| The IDS (flow tables + ruleset) | 1.0–2.0 GB |
 | PostgreSQL + TimescaleDB | 1.0–2.0 GB |
-| AdGuard Home | 100–300 MB |
+| DNS filter | 100–300 MB |
 | Application tier (API, ingest, correlation) | 400–800 MB |
 | OS + containers | ~1 GB |
 | **Total** | **~4–6 GB** |
@@ -725,8 +725,8 @@ This is comfortably within FastAPI/Python range with `orjson` — roughly two or
 | Path | Added latency | Notes |
 |---|---|---|
 | Routing/NAT through the gateway | <1 ms | Kernel path |
-| Suricata in IDS mode (AF_PACKET copy) | **0 ms** | Out-of-band copy; does not delay packets |
-| Suricata in IPS mode (NFQUEUE) | 1–10 ms + jitter | A reason to keep IDS mode as default |
+| The IDS in IDS mode (AF_PACKET copy) | **0 ms** | Out-of-band copy; does not delay packets |
+| The IDS in IPS mode (NFQUEUE) | 1–10 ms + jitter | A reason to keep IDS mode as default |
 | DNS resolution (cache hit) | <1 ms | Often *faster* than the ISP resolver |
 | DNS resolution (cache miss) | 20–80 ms | Upstream-dependent |
 
@@ -735,7 +735,7 @@ This is comfortably within FastAPI/Python range with `orjson` — roughly two or
 ### 10.6 Bottleneck ranking
 
 1. **Storage growth** — highest risk, fully mitigable by design (§10.4)
-2. **Suricata drops at high throughput** — measurable, tunable, honestly reportable
+2. **The IDS drops at high throughput** — measurable, tunable, honestly reportable
 3. **Correlation engine state memory** — bounded windows and eviction policies required
 4. **Dashboard query latency over 30+ days** — solved by continuous aggregates
 5. **Python ingest throughput** — ample headroom at this scale
@@ -753,7 +753,7 @@ SecurePi Gateway sees every DNS query and every flow on the network. Compromisin
 | Console exposed to the network | Bind to the LAN interface only; **never** to the WAN side. Explicit nftables rules |
 | Weak/absent authentication | Argon2id password hashing, session management, rate-limited login, mandatory setup-time credential creation (no default password, ever) |
 | Plaintext admin traffic | TLS on the console with a locally-generated CA; document the trust process |
-| Credential sprawl | Single secrets store; AdGuard Home API credentials never in the repo or in logs; env-file with restricted permissions |
+| Credential sprawl | Single secrets store; DNS-filter API credentials never in the repo or in logs; env-file with restricted permissions |
 | Privilege escalation via the app tier | App tier runs unprivileged. Privileged operations (nftables changes) go through a **narrow, allowlisted helper** with validated inputs — never shell interpolation of user input |
 | Injection into rendered configs | Treat nftables/Suricata config rendering as a code-generation problem: strict schema validation, typed rendering, no string concatenation of user-supplied values |
 | Log integrity | Append-only audit table; every policy change and response action recorded with actor, timestamp, before/after state |
@@ -776,7 +776,7 @@ DNS-over-HTTPS is the most serious threat to the DNS-based half of the platform,
 
 1. **Force plaintext DNS to the gateway** — nftables DNAT redirect of all outbound port 53 to the local resolver, so hardcoded resolvers (very common in IoT firmware) are transparently captured.
 2. **Block known DoH endpoints** — maintain a list of public DoH resolver IPs and hostnames; block at the firewall and via SNI observation.
-3. **Detect DoH usage** — Suricata TLS events plus a known-resolver list identify devices attempting to bypass filtering.
+3. **Detect DoH usage** — IDS TLS events plus a known-resolver list identify devices attempting to bypass filtering.
 4. **Surface it** — "Device X attempted to bypass DNS filtering 47 times" is an excellent, concrete, novel-feeling console feature.
 
 This converts a limitation into a demonstrable capability and shows you understood the threat model rather than working around it.
@@ -815,7 +815,7 @@ An enterprise SOC assumes analysts, tiered escalation, threat hunting, and compl
 |---|---|---|
 | Event collection & normalization | **Essential** | Foundation |
 | Device inventory & identity | **Essential** | Attribution is prerequisite to everything |
-| Signature-based IDS alerts | **Essential** | Delegated to Suricata |
+| Signature-based IDS alerts | **Essential** | Delegated to the IDS |
 | Alert dedup / suppression | **Essential** | Usability collapses without it |
 | Alert → incident correlation | **Essential** | The core contribution |
 | Port scan / brute-force detection | **Essential** | Classic, demonstrable, safely testable |
@@ -875,7 +875,7 @@ This is where you demonstrate engineering depth, so specify it carefully.
 | # | Capability | Why non-negotiable |
 |---|---|---|
 | 1 | Model D gateway operational; 15 devices routed, NATed, DHCP-served | Everything depends on it |
-| 2 | Suricata + AdGuard Home integrated, driven entirely through our layer | Proves the integration thesis |
+| 2 | IDS + DNS filter integrated, driven entirely through our layer | Proves the integration thesis |
 | 3 | Unified event pipeline → TimescaleDB with working tiered retention | The data foundation; retention proves sustainability |
 | 4 | Device registry with identity resolution across lease churn | Attribution underpins all analysis |
 | 5 | 6+ correlation signals producing incidents with evidence chains | The core contribution |
@@ -900,7 +900,7 @@ Weekly PDF report · JA4-based application identification · Raspberry Pi as sec
 | TLS/HTTPS interception (MITM CA) | Invasive, breaks certificate pinning, serious privacy implications, disproportionate effort |
 | Host agents / EDR on client devices | Different project; unrealistic to deploy across 15 heterogeneous devices |
 | Deep-learning anomaly detection | Cannot be validated properly in the time available; statistical baselining is more honest and more defensible |
-| Suricata IPS mode as the default | Latency and false-positive outage risk. Available as a labelled, measured option |
+| IDS IPS mode as the default | Latency and false-positive outage risk. Available as a labelled, measured option |
 | High availability / clustering | Meaningless at this scale |
 | Multi-site / multi-tenant | Out of scope |
 | Compliance reporting | No relevance |
@@ -938,17 +938,17 @@ Sequenced by **technical risk first**, not by feature attractiveness. The riskie
 
 **Objective:** Prove each third-party engine works in this environment and quantify its cost.
 **Why:** Converts the estimates in §10 into measurements before they are depended upon.
-**Tasks:** Suricata with AF_PACKET on the LAN interface; ET Open rules; EVE output configured and sized · AdGuard Home headless, UI bound to localhost, DHCP moved to it, REST API exercised for every operation the platform will need · Measure CPU, RAM, event rate, and raw log volume over 72 h · Throughput sweep with `capture.kernel_drops` recorded.
+**Tasks:** the IDS with AF_PACKET on the LAN interface; ET Open rules; EVE output configured and sized · DNS-filter headless, UI bound to localhost, DHCP moved to it, REST API exercised for every operation the platform will need · Measure CPU, RAM, event rate, and raw log volume over 72 h · Throughput sweep with `capture.kernel_drops` recorded.
 **Dependencies:** Phase 1.
 **Deliverables:** Measured resource profile · **Measured daily event volume and log size** (feeds the Phase-3 schema) · Verified API coverage for every planned operation.
 **Exit criteria:** Both engines run stably for 72 h; event rate and storage growth measured; every required API call confirmed to work.
-**Risks:** An AdGuard Home API gap → discovered here, while switching to Pi-hole v6 is still cheap. This is precisely why this phase exists.
+**Risks:** A DNS-filter API gap → discovered here, while switching to Pi-hole v6 is still cheap. This is precisely why this phase exists.
 
 ### Phase 3 — Data model and ingest pipeline (3–4 weeks)
 
 **Objective:** A unified schema and a working, bounded ingest path.
 **Why:** Every later phase reads from this. Schema mistakes are expensive later.
-**Tasks:** Design the unified event schema across all sources · PostgreSQL/TimescaleDB with hypertables, compression, continuous aggregates, retention policies · EVE JSON tailer with watermark/resume · AdGuard Home query and DHCP-lease ingestion · nftables log ingestion · Normalization and enrichment · Ingest-lag and drop-counter instrumentation.
+**Tasks:** Design the unified event schema across all sources · PostgreSQL/TimescaleDB with hypertables, compression, continuous aggregates, retention policies · EVE JSON tailer with watermark/resume · DNS-filter query and DHCP-lease ingestion · nftables log ingestion · Normalization and enrichment · Ingest-lag and drop-counter instrumentation.
 **Dependencies:** Phase 2 measurements.
 **Deliverables:** Schema documentation · Running ingest service · Retention verified working.
 **Exit criteria:** All sources flowing into the database for 7 days continuously; **storage growth measured and shown to be bounded**; ingest lag p95 under 5 s; zero silent drops.
@@ -978,7 +978,7 @@ Sequenced by **technical risk first**, not by feature attractiveness. The riskie
 
 **Objective:** One policy model that drives every engine.
 **Why:** This is what makes it a platform rather than a dashboard.
-**Tasks:** Unified policy schema · Renderers for AdGuard Home API, nftables, and Suricata config · Validation and invariant checks · Atomic apply with verification and rollback · Drift detection · Audit logging.
+**Tasks:** Unified policy schema · Renderers for DNS-filter API, nftables, and IDS config · Validation and invariant checks · Atomic apply with verification and rollback · Drift detection · Audit logging.
 **Dependencies:** Phase 2 (API knowledge).
 **Deliverables:** Orchestration service · Audit log.
 **Exit criteria:** A policy change made through the API is verifiably applied to all engines; an injected failure triggers automatic rollback; manual out-of-band changes are detected.
@@ -1046,7 +1046,7 @@ If the timeline is one semester rather than two: deliver Phases 0–5 plus a min
 
 ### 15.1 PCAP replay as the testing backbone
 
-The single most valuable testing decision available: build the test infrastructure around **replaying captured packet traces** through Suricata on an isolated interface.
+The single most valuable testing decision available: build the test infrastructure around **replaying captured packet traces** through the IDS on an isolated interface.
 
 Why it matters:
 - **Deterministic and repeatable** — the same input produces the same events, making regression testing possible
@@ -1062,9 +1062,9 @@ Sources: your own captures of scripted attacks in an isolated lab; public malwar
 |---|---|---|
 | **Unit** | Correlation rule logic, normalization, risk scoring, identity stitching | Synthetic event fixtures with golden-file expected outputs. Pure functions where possible — design the signal framework for testability |
 | **Integration** | Ingest → DB → correlation → API | Docker Compose test environment; PCAP replay end to end; assert on resulting incidents |
-| **Contract** | Adapters to AdGuard Home and Suricata | Recorded API responses; detect upstream breaking changes on version bumps |
+| **Contract** | Adapters to the DNS filter and the IDS | Recorded API responses; detect upstream breaking changes on version bumps |
 | **Network** | Routing, NAT, DHCP, DNS, isolation | Automated connectivity checks from a test client; verify quarantine actually isolates |
-| **Performance** | Throughput, latency, drops, ingest rate | `iperf3` sweeps; Suricata drop counters; synthetic event floods; DB query benchmarks |
+| **Performance** | Throughput, latency, drops, ingest rate | `iperf3` sweeps; IDS drop counters; synthetic event floods; DB query benchmarks |
 | **Security** | The platform's own attack surface | Auth bypass attempts, injection into policy fields, CSRF/XSS on the console, secrets-in-logs scan, dependency CVE audit, unauthenticated-access checks from the WAN side |
 | **Failure/chaos** | Resilience | Kill each service; fill the disk; saturate the link; disconnect WAN; corrupt a config. Measure detection and recovery time |
 | **Usability** | Console effectiveness | Task-based study, 5–8 participants |
@@ -1086,7 +1086,7 @@ All conducted on the isolated project LAN against your own targets:
 | 8 | New-device detection | Join an unknown device | Alert within seconds |
 | 9 | Correlation value | Replay a 72 h capture containing scripted attacks | Show the raw-events-to-incidents reduction ratio |
 | 10 | Response action | Quarantine a device from the console | Device loses connectivity; audit entry created; one-click restore works |
-| 11 | Resilience | Kill Suricata mid-demo | Traffic continues; platform health alert appears; auto-restart succeeds |
+| 11 | Resilience | Kill IDS mid-demo | Traffic continues; platform health alert appears; auto-restart succeeds |
 | 12 | Fail-open DNS | Kill the DNS service | Name resolution recovers via fallback; console shows "protection degraded" |
 
 Scenarios 1, 5, 9, and 11 are the strongest. Scenario 9 is the one that proves the thesis; scenario 11 is the one that convinces examiners you built something operationally real rather than a demo.
@@ -1105,13 +1105,13 @@ Probability and impact are assessed for this project in this environment.
 | R4 | **DoH/DoT bypasses DNS filtering** | High | High | Would undermine both ad blocking and DNS telemetry | Port-53 DNAT redirect; block known DoH endpoints; detect and surface attempts (§11.3) | Accept and measure the bypass rate; report honestly as a limitation |
 | R5 | **Correlation engine phase overruns** | Medium | High | It is the core contribution; losing it hollows out the project | 5 weeks allocated; strictly protected; reduce to 4 well-tested signals rather than 8 rushed ones | Cut Phases 7–8 scope, never Phase 5 |
 | R6 | **False-positive storms from ET Open** | High | Medium | Makes the console unusable and undermines the demo | Dedicated tuning window in Phase 5; suppression lists; correlation-layer dedup; per-rule FP tracking | Run a curated rule subset; document the selection criteria |
-| R7 | **Suricata drops packets at high throughput** | Medium | Medium | Undermines completeness claims | Ruleset tuning, AF_PACKET fanout, CPU affinity; **measure and publish the ceiling** | Report the measured throughput limit as a finding, not a failure |
+| R7 | **The IDS drops packets at high throughput** | Medium | Medium | Undermines completeness claims | Ruleset tuning, AF_PACKET fanout, CPU affinity; **measure and publish the ceiling** | Report the measured throughput limit as a finding, not a failure |
 | R8 | **MAC randomization breaks device identity** | High | Medium | Attribution failure degrades every SOC feature | Multi-signal identity heuristics; manual pinning; measured accuracy | Manual device naming; report accuracy honestly |
 | R9 | **Wi-Fi client↔client traffic invisible** | High | Medium | Lateral movement between wireless devices unseen | Enable AP client isolation, forcing traffic through the gateway | Document as a known limitation |
 | R10 | **Laptop-as-gateway operational friction** (sleep, portability, thermals) | High | Medium | Interrupts long baseline runs | Dedicated Debian install; disable all sleep states; scheduled unattended runs | Migrate to a mini-PC if it becomes disruptive |
 | R11 | **Single point of failure** | Certain | Low (lab) | Whole platform on one host | Accepted by design; Model D confines the blast radius to the project LAN | Documented as an architectural limitation with an HA discussion in Future Scope |
 | R12 | **Upstream API/tool changes** | Low | Medium | Could break adapters mid-project | Pin versions; adapter pattern isolates changes; contract tests | Freeze versions for the remainder of the project |
-| R13 | **AdGuard Home API insufficient for a needed operation** | Low | Medium | Would force a mid-project engine swap | **Verified exhaustively in Phase 2, while switching is still cheap** | Switch to Pi-hole v6; the adapter pattern contains the change |
+| R13 | **DNS-filter API insufficient for a needed operation** | Low | Medium | Would force a mid-project engine swap | **Verified exhaustively in Phase 2, while switching is still cheap** | Switch to Pi-hole v6; the adapter pattern contains the change |
 | R14 | **Integration complexity underestimated** | Medium | Medium | Three engines with different data models and time bases | Spike each engine independently in Phase 2 before integrating | Reduce to two engines: drop nftables logging as a source |
 | R15 | **Hardware procurement delay** | Medium | Low | Blocks Phase 1 | Order in week 1; the Wi-Fi-WAN arrangement needs no purchases | Start with the zero-cost interface arrangement |
 | R16 | **Insufficient realistic traffic for evaluation** | Medium | Medium | 15 lab devices may generate thin, unrepresentative traffic | Supplement with PCAP replay and scripted traffic generators | Use public datasets for volume-dependent results; label them clearly |
@@ -1136,9 +1136,9 @@ Expect this question. The answer has three parts:
 
 | Integrated (third-party) | Built (your contribution) |
 |---|---|
-| Packet capture, protocol parsing, signature matching (Suricata) | Unified event schema and normalization across four heterogeneous sources |
-| DNS resolution and blocklist evaluation (AdGuard Home) | Device identity resolution across lease churn and MAC randomization |
-| DHCP service (AdGuard Home) | Stateful windowed correlation: events → signals → incidents |
+| Packet capture, protocol parsing, signature matching (IDS) | Unified event schema and normalization across four heterogeneous sources |
+| DNS resolution and blocklist evaluation (DNS filter) | Device identity resolution across lease churn and MAC randomization |
+| DHCP service (DNS filter) | Stateful windowed correlation: events → signals → incidents |
 | Time-series storage engine (PostgreSQL/TimescaleDB) | Explainable, time-decayed device risk model |
 | Packet forwarding, NAT, firewall primitives (Linux/nftables) | Policy orchestration: one model rendered to three engines, with validation, atomic apply, rollback, and drift detection |
 | Threat signatures (ET Open) | Reversible response framework with full audit |
@@ -1210,7 +1210,7 @@ A 15-minute demo, ordered for narrative impact:
 4. **Live attack: slow port scan** (3 min) — run `nmap -T0`; show the incident appear with its evidence chain. Emphasise that per-packet signatures miss this and windowed correlation does not
 5. **Correlation value** (2 min) — the reduction-ratio figure from the 72 h replay
 6. **Response** (2 min) — quarantine the offending device; show it lose connectivity; restore it
-7. **Resilience** (2 min) — kill Suricata; traffic continues; the platform reports its own degradation and recovers
+7. **Resilience** (2 min) — kill the IDS; traffic continues; the platform reports its own degradation and recovers
 8. **Results summary** (1 min) — the metrics table
 
 Steps 4 and 7 are the ones examiners remember. Record a backup video: live demos on live networks fail at exactly the wrong moment.
@@ -1238,8 +1238,8 @@ A single-host network security platform that acts as the routed gateway for a de
 
 | Function | Choice |
 |---|---|
-| IDS / packet analysis | **Suricata** with ET Open rules (no Zeek) |
-| DNS filtering + DHCP | **AdGuard Home**, headless, API-driven (Pi-hole v6 as documented alternative) |
+| IDS / packet analysis | **IDS** with ET Open rules (no Zeek) |
+| DNS filtering + DHCP | **DNS filter**, headless, API-driven (Pi-hole v6 as documented alternative) |
 | Storage | **PostgreSQL + TimescaleDB** |
 | Backend | **Python 3.12 + FastAPI** |
 | Frontend | **React + TypeScript + Vite + ECharts** |
@@ -1257,7 +1257,7 @@ Live ad blocking · Device inventory with explained risk scores · Slow-scan det
 
 ### What to deliberately leave out of v1
 
-TLS interception · Host agents · Deep-learning detection · Suricata IPS mode as default · High availability · Multi-site support · Compliance reporting · Zeek · Any custom implementation of DNS resolution, packet capture, or signature matching.
+TLS interception · Host agents · Deep-learning detection · IDS IPS mode as default · High availability · Multi-site support · Compliance reporting · Zeek · Any custom implementation of DNS resolution, packet capture, or signature matching.
 
 ---
 
@@ -1299,8 +1299,8 @@ Since this document contains no code, verification means confirming the analysis
 | Check | Method | Phase |
 |---|---|---|
 | Model D works on your actual hardware | Build it manually; 15 devices online for 48 h | 1 |
-| Suricata runs within resource budget | 72 h run; measure CPU, RAM, drops | 2 |
-| AdGuard Home API covers every needed operation | Exercise every planned call before integrating | 2 |
+| The IDS runs within resource budget | 72 h run; measure CPU, RAM, drops | 2 |
+| DNS-filter API covers every needed operation | Exercise every planned call before integrating | 2 |
 | Event volume matches §10.3 estimates | Measure over 72 h | 2 |
 | Storage projections hold | Measure growth over 7 days with compression enabled | 3 |
 | Correlation rules detect scripted attacks | PCAP replay with labelled ground truth | 5 |

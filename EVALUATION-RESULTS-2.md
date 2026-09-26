@@ -103,8 +103,8 @@ Read from each unit's cgroup (`systemctl show <unit> -p MemoryCurrent`).
 
 | Service | Memory |
 |---|---:|
-| Suricata | 583.3 MB |
-| AdGuard Home | 269.0 MB |
+| IDS | 583.3 MB |
+| DNS filter | 269.0 MB |
 | securepi-web | 44.3 MB |
 | **securepi-dpi (mitmproxy addon)** | **70.1 MB — idle, unenrolled** ¹ |
 | securepi-ca-server | 15.8 MB |
@@ -132,7 +132,7 @@ in particular is a oneshot ruleset load, not a long-running process, so
 
 **Sanity check against Day 14:** Day 14's evaluation measured 1,457 MB used
 under active attack-harness load. This baseline, idle and freshly rebooted,
-measures 1,349 MB. Suricata (583 vs 683 MB) and AdGuard (269 vs 235 MB)
+measures 1,349 MB. The IDS (583 vs 683 MB) and the DNS filter (269 vs 235 MB)
 account for most of the difference — consistent with "idle vs. under load,"
 not a regression.
 
@@ -166,13 +166,13 @@ System Discovery, distinct from `port_scan`'s T1046) are in
 
 The harness (`gateway/setup-test-harness.sh`) needed extending first: a
 sweep test needs real distinct hosts to find, and scanning an address with
-no host behind it produces no Suricata flow event at all (no ARP
+no host behind it produces no IDS flow event at all (no ARP
 resolution, so no IP packet is ever sent). Added nine more IP aliases
 (`10.10.0.222`–`230`) to `ns_victim`'s single interface — still fully
 isolated from `ap0`/hostapd and the two real devices. Applying this live
 required tearing down and recreating `br-test`/`ns_attacker`/`ns_victim`
 (the running harness was created at this boot, before the script changed)
-and restarting Suricata afterward, since its AF_PACKET capture socket binds
+and restarting the IDS afterward, since its AF_PACKET capture socket binds
 to `veth-atk`'s interface index at startup and would otherwise keep
 listening on the now-deleted old interface. Both confirmed clean
 (`securepi status` all-active immediately after).
@@ -210,7 +210,7 @@ ran.
 
 | Change | Verification |
 |---|---|
-| Two AdGuard `$dnsrewrite=NXDOMAIN` rules: Firefox's DoH canary (`use-application-dns.net`) and Apple's iCloud Private Relay opt-out (`mask.icloud.com`, `mask-h2.icloud.com`) | `dig` against each returned genuine `status: NXDOMAIN` (confirmed this gateway's global `blocking_mode` is `"default"`, which would otherwise answer a plain block with `0.0.0.0` - a real, resolvable-looking answer that would NOT trip either mechanism's own "did this fail to resolve" check) |
+| Two DNS-filter `$dnsrewrite=NXDOMAIN` rules: Firefox's DoH canary (`use-application-dns.net`) and Apple's iCloud Private Relay opt-out (`mask.icloud.com`, `mask-h2.icloud.com`) | `dig` against each returned genuine `status: NXDOMAIN` (confirmed this gateway's global `blocking_mode` is `"default"`, which would otherwise answer a plain block with `0.0.0.0` - a real, resolvable-looking answer that would NOT trip either mechanism's own "did this fail to resolve" check) |
 | HaGeZi's DoH-only blocklist (`doh.txt`, 3,313 rules) added and enabled network-wide | `dig` against `dns.google`, `cloudflare-dns.com`, `dns.quad9.net` each returned `0.0.0.0` (previously resolved normally) |
 | HaGeZi's combined DoH/VPN/Proxy-bypass list added but **disabled** network-wide - the plan's "VPN/proxy part available as a profile option in 4.3" isn't buildable yet (no profile system exists), so this stays a togglable-but-off list until then, rather than either skipping it or force-enabling VPN/proxy blocking network-wide without that control | `filtering_status()` confirms `enabled: false`, `rules_count: 0` |
 | `doh_resolvers` nftables set now refreshed daily from HaGeZi's maintained `doh-ips.txt` (`gateway/refresh-doh-set.sh` + `securepi-doh-refresh.timer`) instead of 14 hand-picked IPs | Ran the script live: **1,445 addresses loaded** in one atomic `nft` transaction (flush+fill, no empty-set window). Script fails safe on a bad/short download (`MIN_PLAUSIBLE_COUNT` guard) rather than ever wiping the set to empty |
@@ -226,23 +226,23 @@ ran.
 
 | Layer | How verified |
 |---|---|
-| `log prefix` → kernel ring buffer → `journalctl -k` (the actual OS/nftables plumbing, not project-specific code) | **Proven with real, live traffic**: a temporary, non-persisted `chain output` rule (`log prefix "dot-bypass: "` on `tcp dport 853` outbound) was added, a fresh `dig` query forced a real DoT handshake from AdGuard to its upstream (`1.0.0.1:853`), the resulting kernel log lines were confirmed in `journalctl -k`, and the temporary rule was removed immediately after (never persisted to `/etc/nftables.conf`) |
+| `log prefix` → kernel ring buffer → `journalctl -k` (the actual OS/nftables plumbing, not project-specific code) | **Proven with real, live traffic**: a temporary, non-persisted `chain output` rule (`log prefix "dot-bypass: "` on `tcp dport 853` outbound) was added, a fresh `dig` query forced a real DoT handshake from the DNS filter to its upstream (`1.0.0.1:853`), the resulting kernel log lines were confirmed in `journalctl -k`, and the temporary rule was removed immediately after (never persisted to `/etc/nftables.conf`) |
 | `app/ingest.py`'s `read_nft_log` | Run live against those real journal lines (not synthetic ones): correctly parsed and inserted 10 real `bypass_attempt` events with the right `src_ip`/`dest_ip`/`dest_port`/`proto`/`block_reason` |
 | `app/correlation.py`'s `dns_bypass_signal` | Run live against the real database: executed with no error; correctly did **not** fire, since the test traffic (the gateway's own outbound DoT) has no `device_id` (it's WAN-side gateway traffic, not an attributable LAN device) - exactly the intended behaviour |
 | The `iifname "ap0"` match condition specifically (a real LAN client's traffic actually reaching these rules) | **Not exercised this session** - no real device attempted a bypass, and the harness genuinely cannot reach `ap0`. This is standard, well-established nftables interface matching, not bespoke project logic, so the residual risk here is low - but it's not "observed," and is recorded as such rather than implied |
-| Cleanup | The 20 test rows this verification created (unattributed, `device_id IS NULL`) were deleted from the live database afterward - they were also technically mislabeled `bypass_attempt` despite never having actually been rejected, since the temporary test rule only logged, never blocked, to avoid disrupting AdGuard's real upstream DNS during the test |
+| Cleanup | The 20 test rows this verification created (unattributed, `device_id IS NULL`) were deleted from the live database afterward - they were also technically mislabeled `bypass_attempt` despite never having actually been rejected, since the temporary test rule only logged, never blocked, to avoid disrupting the DNS filter's real upstream DNS during the test |
 
-8 new unit tests for `dns_bypass_signal` (nftables-only, canary-only, SNI-only, and all three combined toward one threshold), 10 new unit tests for `flatten_nft_log`/`read_nft_log`/the watermark helpers (subprocess mocked, the same pattern `ReadAghApiTests` already uses for AdGuard's API). 2 new settings (`dns_bypass_threshold`, `dns_bypass_window_seconds`). ATT&CK: tagged at the tactic level only (Defense Evasion, TA0005) - full reasoning in `app/playbooks.py`, the same caution `malicious_domain`'s own docstring already applies to a signal with a real benign-majority risk.
+8 new unit tests for `dns_bypass_signal` (nftables-only, canary-only, SNI-only, and all three combined toward one threshold), 10 new unit tests for `flatten_nft_log`/`read_nft_log`/the watermark helpers (subprocess mocked, the same pattern `ReadAghApiTests` already uses for the DNS filter's API). 2 new settings (`dns_bypass_threshold`, `dns_bypass_window_seconds`). ATT&CK: tagged at the tactic level only (Defense Evasion, TA0005) - full reasoning in `app/playbooks.py`, the same caution `malicious_domain`'s own docstring already applies to a signal with a real benign-majority risk.
 
 `make deploy` (app code) and manual `rsync` (the firewall config and refresh script, deliberately kept out of the automated `make deploy` target - see the Makefile's own comment) both used. All three app services restarted clean; journal clear throughout every step above.
 
 ### 2.3 — IDS alerts → taxonomy → incidents
 
-Closes the exact gap `ENHANCEMENT-PLAN.md` §1.1 names: "Suricata metadata only. Alerts ingested but never used." New `app/signature_taxonomy.py` maps Suricata's own `alert_category` text - confirmed against this gateway's real `/etc/suricata/classification.config`, not guessed - to a plain name, our severity, and (for 7 curated, genuinely specific categories) an ATT&CK tag. Everything else falls to a generic `ids_other` bucket, severity taken from Suricata's own numeric priority.
+Closes the exact gap `ENHANCEMENT-PLAN.md` §1.1 names: "IDS metadata only. Alerts ingested but never used." New `app/signature_taxonomy.py` maps the IDS's own `alert_category` text - confirmed against this gateway's real `/etc/suricata/classification.config`, not guessed - to a plain name, our severity, and (for 7 curated, genuinely specific categories) an ATT&CK tag. Everything else falls to a generic `ids_other` bucket, severity taken from the IDS's own numeric priority.
 
 **A real finding from the live data, before writing any code:** the gateway's own accumulated alert history (2.5 days) is almost entirely `Misc activity` (86 events) and `Generic Protocol Command Decode` (43) - both ET's own lowest-priority ("INFO") classification, mostly STUN/WebRTC observations and one recurring "ET INFO Observed Cloudflare DNS over HTTPS Domain" signature (interesting: an existing ET rule already does some of what step 2.2's `dns_bypass_signal` does independently, via TLS SNI). This is the same shape of problem `malicious_domain`'s own G3 finding describes for blocklist-hit volume - which is why `ids_alert_signal` groups by **(device, alert_category)**, not just device: a burst of low-value `Misc activity` alerts must never let a genuinely severe, unrelated trojan alert get silently merged into that same incident thread by `raise_incident`'s dedup (keyed on device + signal_type). Each curated category gets its own `signal_type` for exactly this reason - the same pattern `slow_scan_signal` (step 2.1) already established with two variants, extended here to a larger but still bounded, fully known set.
 
-**A second real finding, also from the live data:** 5 real alerts in category `Potential Corporate Privacy Violation` (priority 1) turned out, on inspection, to be `ET INFO DNS Query for TOR Hidden Domain .onion Accessible Via TOR` - a genuinely interesting, specific, actionable finding despite ET's own "INFO" naming, and priority 1 (→ our "high" severity) is the right call for it. This wasn't added as its own curated category (the `policy-violation` classtype covers many unrelated signatures, not just this one), but it's exactly the kind of case the generic fallback's "use Suricata's own priority, don't invent a name" design is meant to get right without needing to be anticipated in advance - confirmed here against a real example, not just reasoned about.
+**A second real finding, also from the live data:** 5 real alerts in category `Potential Corporate Privacy Violation` (priority 1) turned out, on inspection, to be `ET INFO DNS Query for TOR Hidden Domain .onion Accessible Via TOR` - a genuinely interesting, specific, actionable finding despite ET's own "INFO" naming, and priority 1 (→ our "high" severity) is the right call for it. This wasn't added as its own curated category (the `policy-violation` classtype covers many unrelated signatures, not just this one), but it's exactly the kind of case the generic fallback's "use the IDS's own priority, don't invent a name" design is meant to get right without needing to be anticipated in advance - confirmed here against a real example, not just reasoned about.
 
 **Live verification:**
 
@@ -251,7 +251,7 @@ Closes the exact gap `ENHANCEMENT-PLAN.md` §1.1 names: "Suricata metadata only.
 | `make deploy` | Clean; journal clear across all three services |
 | `ids_alert_signal` run against the real database | No crash. Correctly did **not** fire on the real historical alert data (73/10/5 alerts across three categories for a real past device) - all of it is 36+ hours old, far outside the signal's window (300s default, 3600s max) |
 | Settings validation | Attempting to widen the window past its own schema max (3600s) to force-test against that old data correctly raised `SettingsError` - the validator did its job; no override was left behind (confirmed unchanged afterward) |
-| Fresh live-fire attempt | A port scan and a `.onion` DNS query were run through the isolated `ns_attacker` harness (the same safe mechanism used all session) to try to trigger a **new** real alert. Neither did, given this gateway's currently-enabled Suricata ruleset and the harness's limited reachability - recorded honestly as not achieved this session, rather than claimed |
+| Fresh live-fire attempt | A port scan and a `.onion` DNS query were run through the isolated `ns_attacker` harness (the same safe mechanism used all session) to try to trigger a **new** real alert. Neither did, given this gateway's currently-enabled IDS ruleset and the harness's limited reachability - recorded honestly as not achieved this session, rather than claimed |
 | Unit tests | 8 curated-category tests, fallback tests, dedup-by-category test, `classify()` tests, and a regression test confirming every `signature_taxonomy.ALL_SIGNAL_TYPES` entry has a `playbooks.py` entry |
 
 The signal is correctly wired, deployed, and will pick up any qualifying activity going forward - the specific gap is a fresh, real, *security-relevant* trigger within this session's environment, the same class of limitation already recorded for steps 2.1's live namespace constraints and 2.2's `ap0` reachability gap.
@@ -260,7 +260,7 @@ The signal is correctly wired, deployed, and will pick up any qualifying activit
 
 ### 2.4 — Offline threat intelligence
 
-New `app/intel.py` fetches three real abuse.ch feeds daily - Feodo Tracker (botnet C2 IPs), URLhaus (malware-hosting hostnames), ThreatFox (mixed IOCs, filtered to `ip:port` and `domain` types only) - into a new `ioc` table, matched against events by `app/correlation.py`'s new `threat_intel_signal`. Domain-type indicators are also pushed to AdGuard as a real Tier 1 blocklist, so a match is both blocked and turned into an incident, per this step's own wording.
+New `app/intel.py` fetches three real abuse.ch feeds daily - Feodo Tracker (botnet C2 IPs), URLhaus (malware-hosting hostnames), ThreatFox (mixed IOCs, filtered to `ip:port` and `domain` types only) - into a new `ioc` table, matched against events by `app/correlation.py`'s new `threat_intel_signal`. Domain-type indicators are also pushed to the DNS filter as a real Tier 1 blocklist, so a match is both blocked and turned into an incident, per this step's own wording.
 
 **Every feed's real format was confirmed against a live download before writing any parser** - none of the three matched a naive first guess:
 
@@ -270,7 +270,7 @@ New `app/intel.py` fetches three real abuse.ch feeds daily - Feodo Tracker (botn
 | URLhaus | - | Correct on the first try: hosts-file format, `127.0.0.1<TAB>hostname` |
 | ThreatFox | A `csv/recent/` path would exist, standard `"a","b","c"` CSV quoting | Real path is `export/csv/recent/`; real quoting has a **space** after each comma (`"a", "b", "c"`) - a naive `split('","')` silently parsed zero rows until this was caught and fixed before deploying |
 
-**A real bug found and fixed before touching the gateway:** `add_blocklist()` was first pointed at a `file:///opt/securepi/ioc-domains.txt` URL, on the assumption AdGuard could read a local blocklist file directly. Running it live returned `HTTP 400: bad enum value: "file"; want "http" or "https"` - AdGuard's `add_url` endpoint validates the scheme server-side and rejects anything but http/https outright. Fixed by adding `securepi-static.service`, a loopback-only (`127.0.0.1:8082`) static file server - the same `python3 -m http.server` pattern `dpi/deploy-dpi.sh` already uses for the CA download server - and registering `http://127.0.0.1:8082/ioc-domains.txt` instead. Re-run afterward, clean.
+**A real bug found and fixed before touching the gateway:** `add_blocklist()` was first pointed at a `file:///opt/securepi/ioc-domains.txt` URL, on the assumption the DNS filter could read a local blocklist file directly. Running it live returned `HTTP 400: bad enum value: "file"; want "http" or "https"` - The DNS filter's `add_url` endpoint validates the scheme server-side and rejects anything but http/https outright. Fixed by adding `securepi-static.service`, a loopback-only (`127.0.0.1:8082`) static file server - the same `python3 -m http.server` pattern `dpi/deploy-dpi.sh` already uses for the CA download server - and registering `http://127.0.0.1:8082/ioc-domains.txt` instead. Re-run afterward, clean.
 
 **Live verification, 14 September 2026:**
 
@@ -278,7 +278,7 @@ New `app/intel.py` fetches three real abuse.ch feeds daily - Feodo Tracker (botn
 |---|---|
 | `make deploy` (new `ioc`/`intel_feed_state` tables via `SCHEMA_MIGRATIONS`) | Clean; journal clear; both tables confirmed present |
 | `intel.py` run live | **5 Feodo IPs, 354 URLhaus hostnames, 5,292 ThreatFox IOCs (3,849 IP, 1,443 domain)** fetched and loaded |
-| AdGuard blocklist registration | `http://127.0.0.1:8082/ioc-domains.txt` registered, **1,794 rules**, enabled |
+| DNS-filter blocklist registration | `http://127.0.0.1:8082/ioc-domains.txt` registered, **1,794 rules**, enabled |
 | A real fetched domain (`0following.com`) | `dig` confirms `0.0.0.0` - genuinely blocked |
 | `intel_feed_state` ("feed age visible", this step's own exit criterion) | All three sources show `last_error: NULL`, a real `last_fetched` timestamp, and a computed age in seconds |
 | `threat_intel_signal`, live | A synthetic `flow` event was inserted against a **real** Feodo-listed IP (`162.243.103.246`) - never actually contacted; the same safe "insert the row, don't touch the destination" approach the unit tests already use - attributed to the isolated test-attacker device (id 4). Fired correctly: "Contact with known-malicious IP: 162.243.103.246", severity high, evidence_count 1, description naming the source feed and malware label. The synthetic event and incident were deleted afterward |
@@ -293,7 +293,7 @@ New `dns_tunneling_signal` in `app/correlation.py` groups DNS queries by (device
 - **`dns_tunneling`**: many distinct high-entropy subdomains, or an unusual TXT-query ratio, under one domain - a common way malware carries data out through DNS. ATT&CK: **T1071.004** Application Layer Protocol: DNS - an exact, textbook match, not an inference.
 - **`dga`**: a burst of *genuine* NXDOMAIN lookups (the domain doesn't exist anywhere - not just blocked) with high-entropy labels - malware searching for its C2 server via algorithmically generated names. ATT&CK: **T1568.002** Dynamic Resolution: Domain Generation Algorithms - also an exact match.
 
-**A real gap found and fixed before writing the signal:** `app/ingest.py`'s `flatten_agh_api` never captured AdGuard's own `status` field (the real DNS response code), so `dns_rcode` was always `NULL` for AdGuard-sourced queries - there was no way to tell a genuine NXDOMAIN from anything else. Confirmed live (14 September 2026) against this gateway's real API that `status` is exactly this field, and - importantly - that **a query THIS gateway blocks still reports `NOERROR`** (the "default" blocking_mode's `0.0.0.0` answer is a real, if bogus, successful response, the same fact `app/adguard.py`'s `add_nxdomain_rule` already established for a different reason in step 2.2). This distinction is exactly what DGA detection needs: a genuine NXDOMAIN means the domain doesn't exist anywhere, not that AdGuard chose to block it. 2 new ingest tests confirm both cases.
+**A real gap found and fixed before writing the signal:** `app/ingest.py`'s `flatten_agh_api` never captured the DNS filter's own `status` field (the real DNS response code), so `dns_rcode` was always `NULL` for DNS-filter-sourced queries - there was no way to tell a genuine NXDOMAIN from anything else. Confirmed live (14 September 2026) against this gateway's real API that `status` is exactly this field, and - importantly - that **a query THIS gateway blocks still reports `NOERROR`** (the "default" blocking_mode's `0.0.0.0` answer is a real, if bogus, successful response, the same fact `app/adguard.py`'s `add_nxdomain_rule` already established for a different reason in step 2.2). This distinction is exactly what DGA detection needs: a genuine NXDOMAIN means the domain doesn't exist anywhere, not that the DNS filter chose to block it. 2 new ingest tests confirm both cases.
 
 **The exit criterion's two halves, both verified live against the real gateway, not just unit tests:**
 
@@ -485,13 +485,13 @@ CSRF, XSS, SQL injection, command injection and secrets-in-logs were each checke
 - `mitmdump` (Tier 2 HTTPS inspection) listened on `0.0.0.0:8080` - every interface, including the WAN Wi-Fi uplink - when the nftables redirect rule that feeds it only ever needs `10.10.0.1` (the address `redirect` implicitly targets for `ap0`-sourced traffic). Fixed in both the live unit and `dpi/deploy-dpi.sh`'s tracked copy; verified live via `ss -tlnp` showing the narrowed bind and the nftables rule unchanged. **Not fully verified**: a real redirected connection reaching the relocated listener - the same `ap0`-isolation gap already documented for step 5.7, since the test harness can't reach `ap0` and no device was actively enrolled this session.
 - `sshd` listened on `0.0.0.0:22` with `PasswordAuthentication yes`. Checked `authorized_keys` first (one key present) and confirmed this entire session's SSH access had already worked via key auth throughout with zero password prompts, before disabling password auth via a new `10-securepi-harden.conf` (named to sort and win ahead of the existing `50-cloud-init.conf`, which still sets it to `yes` - OpenSSH keeps the first value it sees for a keyword). `sudo sshd -t` validated before reloading; verified live immediately after with two connections - one forced to `PreferredAuthentications=password` (refused: "Permission denied (publickey)"), one ordinary key-based connection (succeeded). `sshd`'s WAN-facing `ListenAddress` was deliberately left unchanged - a lockout-risk system-access change this project's own standing rules reserve for the user, even though the more exploitable half (password guessing) is now closed.
 
-Every other listener (the console, the DPI CA download server, AdGuard DNS) was already correctly scoped to `10.10.0.1` or loopback - checked, not assumed, before writing "no other findings."
+Every other listener (the console, the DPI CA download server, the DNS filter) was already correctly scoped to `10.10.0.1` or loopback - checked, not assumed, before writing "no other findings."
 
 `make test`: **265/265 passing** (was 262) - 3 new structural tests for the security headers.
 
 ### 3.5 — Platform health supervisor
 
-Every existing signal in `app/correlation.py` answers "is a device doing something suspicious"; nothing answered "is the gateway itself healthy enough to trust what those signals are telling you". A stopped Suricata process is a silent blind spot, not a quiet network, and the operator had no way to know the difference short of SSHing in and checking manually. New `app/health.py` runs five checks - `check_services` (every unit in the new `app/services.list`, via `systemctl is-active`/`systemctl show`), `check_staleness` (ingest/engine/Suricata/AdGuard all still producing fresh output, not just "still running"), `check_disk` (free space on the DB's volume), `check_db_size` (retention keeping up), `check_wan` (a single ping to `1.1.1.1`) - and raises ordinary rows in the `incidents` table for whatever's wrong, with `device_id=NULL` and a `signal_type` deliberately left out of `app/playbooks.py`'s `ATTACK_MAPPING`, the same "no tactic, on purpose" treatment `malicious_domain`/`new_device`/`ids_other` already get. They show up in the same Incidents queue, get the same audit treatment, and clear the same way - an operator resolves one once the real problem is fixed; this module never auto-resolves anything, matching every other signal's behavior.
+Every existing signal in `app/correlation.py` answers "is a device doing something suspicious"; nothing answered "is the gateway itself healthy enough to trust what those signals are telling you". A stopped IDS process is a silent blind spot, not a quiet network, and the operator had no way to know the difference short of SSHing in and checking manually. New `app/health.py` runs five checks - `check_services` (every unit in the new `app/services.list`, via `systemctl is-active`/`systemctl show`), `check_staleness` (ingest/engine/Suricata/AdGuard all still producing fresh output, not just "still running"), `check_disk` (free space on the DB's volume), `check_db_size` (retention keeping up), `check_wan` (a single ping to `1.1.1.1`) - and raises ordinary rows in the `incidents` table for whatever's wrong, with `device_id=NULL` and a `signal_type` deliberately left out of `app/playbooks.py`'s `ATTACK_MAPPING`, the same "no tactic, on purpose" treatment `malicious_domain`/`new_device`/`ids_other` already get. They show up in the same Incidents queue, get the same audit treatment, and clear the same way - an operator resolves one once the real problem is fixed; this module never auto-resolves anything, matching every other signal's behavior.
 
 **Architectural decision, made explicit rather than left implicit:** these checks run from `app/ingest.py`'s loop, not `app/engine.py`'s, even though `app/engine.py` (the correlation engine) is itself one of the things being watched. A process cannot reliably detect its own death. `app/ingest.py` is a genuinely separate systemd unit, so it keeps running (and can correctly report "the engine hasn't run recently" via `check_staleness`'s read of `signal_state`) even if the engine itself has crashed outright. Throttled via `run_if_due()` - the same "gate on a stored timestamp" pattern `app/retention.py` already uses for its own once-a-day job - to `health_check_interval_seconds` (default 30s, comfortably under the plan's own 60s exit criterion), since ingest's own loop runs every 2s and several of these checks (systemctl calls, a WAN ping) are too costly to repeat that often.
 
@@ -499,7 +499,7 @@ Several down services are combined into **one** `platform_service_down` incident
 
 **One real, latent bug found and fixed - not in the new code, in code steps 1.1-2.x had shipped without ever exercising this path:** `correlation.raise_incident()`'s own dedup query read `WHERE device_id = ?`. In SQLite, `=` never matches `NULL`, not even `NULL` against another `NULL` - confirmed directly in a live interpreter (`SELECT count(*) FROM t WHERE device_id = ?` with a bound value of `None` returns 0 against a row whose `device_id` actually is `NULL`, while the same query with `IS ?` returns 1). Every existing signal type always has a real `device_id`, so this had never surfaced in two prior stages of testing - a device-less platform incident is the first thing in this project to ever call `raise_incident()` with `device_id=None`. Left unfixed, every single health-check cycle would have raised a brand-new `platform_service_down` incident instead of extending the one still open, flooding the Incidents queue every 30 seconds for as long as a service stayed down. Fixed by changing the dedup query to `IS ?`, which behaves identically for every real `device_id` and correctly matches `NULL` to `NULL` for platform incidents. A regression test (`test_a_device_less_platform_incident_dedups_against_itself` in `tests/test_correlation.py`) was written and confirmed to **fail against the reverted (`=`) code first**, before confirming the fix passes it - the same "prove the test would have caught it" discipline used for every fix this stage.
 
-Two new tables support this: `sensor_stats` (Suricata's own `eve.json` `stats` event type - `kernel_packets`/`kernel_drops`/`errors` - previously silently discarded by `SKIP_TYPES`, now parsed by a new `save_sensor_stats()` in `app/ingest.py` and upserted as a single row) and `service_health` (one row per service, refreshed every check cycle with `is_active`/`memory_bytes`/`cpu_seconds` - the latter two read from systemd's own cgroup accounting via `systemctl show -p MemoryCurrent -p CPUUsageNSec`, not `psutil`/`/proc` parsing, matching the plan's own §1.6 decision against adding a system-monitor dependency for this). Both added to `app/schema.sql` for fresh installs and to `app/ingest.py`'s `SCHEMA_MIGRATIONS` list for the live, already-existing database.
+Two new tables support this: `sensor_stats` (the IDS's own `eve.json` `stats` event type - `kernel_packets`/`kernel_drops`/`errors` - previously silently discarded by `SKIP_TYPES`, now parsed by a new `save_sensor_stats()` in `app/ingest.py` and upserted as a single row) and `service_health` (one row per service, refreshed every check cycle with `is_active`/`memory_bytes`/`cpu_seconds` - the latter two read from systemd's own cgroup accounting via `systemctl show -p MemoryCurrent -p CPUUsageNSec`, not `psutil`/`/proc` parsing, matching the plan's own §1.6 decision against adding a system-monitor dependency for this). Both added to `app/schema.sql` for fresh installs and to `app/ingest.py`'s `SCHEMA_MIGRATIONS` list for the live, already-existing database.
 
 **A repo-tracking gap found while building this, not a functional bug:** the live gateway's `/opt/securepi/services.list` had existed on disk for stages 1-2 but was never checked into the repo - `app/health.py` needed to read it, and there was nothing in git to deploy. Added as `app/services.list`, copied exactly from the live file's real service list, with a comment noting the new reader.
 
@@ -529,13 +529,13 @@ The "recovery updates `service_health` but does not auto-resolve the incident" b
 
 ### 3.6 — Fail-open DNS
 
-F§8.4's own failure table draws a sharp line for AdGuard specifically, different from every other service: "AdGuard Home dies → DNS fails LAN-wide". Every device on the network resolves names through the gateway (`gateway/nftables.conf` forces plaintext DNS there), so unlike Suricata or the DPI proxy going down - a detection or ad-blocking gap, not an outage - AdGuard going down and staying down means every device loses the internet by name, not just loses filtering. Step 3.5's `platform_service_down` incident would have caught and reported this, but reporting isn't the same as keeping the network usable while the underlying problem gets fixed.
+F§8.4's own failure table draws a sharp line for the DNS filter specifically, different from every other service: "The DNS filter dies → DNS fails LAN-wide". Every device on the network resolves names through the gateway (`gateway/nftables.conf` forces plaintext DNS there), so unlike the IDS or the DPI proxy going down - a detection or ad-blocking gap, not an outage - the DNS filter going down and staying down means every device loses the internet by name, not just loses filtering. Step 3.5's `platform_service_down` incident would have caught and reported this, but reporting isn't the same as keeping the network usable while the underlying problem gets fixed.
 
 New `app/dns_failopen.py` adds (and later removes) two nftables rules - `iifname "ap0" ip daddr 10.10.0.1 udp/tcp dport 53 ... dnat to 1.1.1.1:53`, tagged with `comment "dns-failopen"` - that redirect plaintext DNS bound for the gateway's own address to a public upstream resolver. This is a genuinely different rule from the two DNS-forcing rules `gateway/nftables.conf` already has: those only match `ip daddr != 10.10.0.1` (a device hardcoded to some other resolver, forced back to filtering), so a client correctly pointed at 10.10.0.1 - what DHCP actually hands out - never touches them at all, and gets nothing back the moment nothing is listening there. The two match conditions (`daddr != 10.10.0.1` vs `daddr 10.10.0.1`) are mutually exclusive by construction, so there's no ordering dependency between the existing rules and the new one.
 
-A new `check_dns_failopen()` in `app/health.py` decides when to flip this on: it probes AdGuard with a real `dig` query (not `systemctl is-active`, which a hung-but-running AdGuard would still pass - the same "active isn't the same as working" distinction `check_staleness` already draws), and after a configurable grace period (`dns_failopen_after_seconds`, default 10s - long enough that AdGuard's own `Restart=always`/`RestartSec=10` usually fixes a simple crash by itself first) calls `dns_failopen.activate()` and raises a `platform_dns_failopen` incident (`device_id=NULL`, no `ATTACK_MAPPING` entry - infrastructure health, not an adversary technique, the same treatment every other `platform_*` signal gets). It runs on its own dedicated, faster throttle (`run_dns_failopen_if_due`, default every 5s) separate from the general `health_check_interval_seconds` (30s) - the ~30s "clients still resolve" exit criterion has no room to wait out a slower shared cycle on top of the grace period.
+A new `check_dns_failopen()` in `app/health.py` decides when to flip this on: it probes the DNS filter with a real `dig` query (not `systemctl is-active`, which a hung-but-running DNS filter would still pass - the same "active isn't the same as working" distinction `check_staleness` already draws), and after a configurable grace period (`dns_failopen_after_seconds`, default 10s - long enough that the DNS filter's own `Restart=always`/`RestartSec=10` usually fixes a simple crash by itself first) calls `dns_failopen.activate()` and raises a `platform_dns_failopen` incident (`device_id=NULL`, no `ATTACK_MAPPING` entry - infrastructure health, not an adversary technique, the same treatment every other `platform_*` signal gets). It runs on its own dedicated, faster throttle (`run_dns_failopen_if_due`, default every 5s) separate from the general `health_check_interval_seconds` (30s) - the ~30s "clients still resolve" exit criterion has no room to wait out a slower shared cycle on top of the grace period.
 
-**Recovery is automatic for the network, deliberately not for the incident.** The moment AdGuard answers a real query again, `check_dns_failopen()` calls `dns_failopen.deactivate()` and clears the redirect - no operator action needed for DNS itself to come back, matching F§8.4's "protection returns on recovery" wording. The `platform_dns_failopen` incident it raised, however, still needs a manual resolve, exactly like every other platform incident (`app/health.py`'s own module docstring already establishes this for 3.5, and changing it just for this one signal would have meant special-casing the one piece of `raise_incident()` behavior 3.5 explicitly tested and relied on). The plan's "automatic recovery" describes the network, not the audit trail - a real DNS outage is worth an operator's eventual look even after it's already fixed itself.
+**Recovery is automatic for the network, deliberately not for the incident.** The moment the DNS filter answers a real query again, `check_dns_failopen()` calls `dns_failopen.deactivate()` and clears the redirect - no operator action needed for DNS itself to come back, matching F§8.4's "protection returns on recovery" wording. The `platform_dns_failopen` incident it raised, however, still needs a manual resolve, exactly like every other platform incident (`app/health.py`'s own module docstring already establishes this for 3.5, and changing it just for this one signal would have meant special-casing the one piece of `raise_incident()` behavior 3.5 explicitly tested and relied on). The plan's "automatic recovery" describes the network, not the audit trail - a real DNS outage is worth an operator's eventual look even after it's already fixed itself.
 
 A `dns_failopen_state` table (one row, `active`/`down_since`/`changed_at`) is the bridge between the two: `down_since` starts counting the moment a probe fails and is cleared the instant one succeeds again, `active` only ever gets set to 1 once the redirect is actually in effect. The two are deliberately not the same thing - a blip that self-heals inside the grace period sets `down_since` without ever setting `active`, so it raises no incident and calls neither `activate()` nor `deactivate()`, confirmed by a dedicated test. The unprivileged web console (step 3.3) reads this table directly through a new `GET /api/dns-status` route - it cannot ask `nftables` itself - and a new banner in `base.html` (visible on every page, not buried in a widget) shows "DNS protection degraded" while `active` is true, polled every 5s alongside the console's other live widgets.
 
@@ -552,11 +552,11 @@ A `dns_failopen_state` table (one row, `active`/`down_since`/`changed_at`) is th
 | `sudo systemctl stop AdGuardHome`, then `dig @10.10.0.1 example.com` from the gateway itself | Immediately fails ("connection refused") - confirms the outage is real before anything else is checked |
 | `dns_failopen_state` polled every 3s after the stop | `active` flipped to 1 at **~19 seconds** (first run) and **~19 seconds** (second run) - well under the 30s exit criterion, with the 10s grace period plus one ~5-9s detection cycle accounting for it |
 | `sudo nft -a list chain ip nat prerouting` while active | The two `dns-failopen`-commented rules present with exactly the intended match/target (`iifname "ap0" ip daddr 10.10.0.1 udp/tcp dport 53 ... dnat to 1.1.1.1:53`) |
-| Real Chrome tab, dashboard, while active | "DNS protection degraded - AdGuard isn't answering (since HH:MM:SS)..." banner visible, screenshotted |
-| `sudo systemctl start AdGuardHome`, then polled again | `active` reverted to 0 within **~7-8 seconds** of AdGuard answering again; the two nft rules confirmed gone via `nft -a list` |
+| Real Chrome tab, dashboard, while active | "DNS protection degraded - the DNS filter isn't answering (since HH:MM:SS)..." banner visible, screenshotted |
+| `sudo systemctl start AdGuardHome`, then polled again | `active` reverted to 0 within **~7-8 seconds** of the DNS filter answering again; the two nft rules confirmed gone via `nft -a list` |
 | Same Chrome tab, after recovery | Banner correctly hidden (after the CSS fix above - confirmed still visible, incorrectly, before it) |
 | `incidents` table across both outage/recovery cycles | Exactly **one** `platform_dns_failopen` incident (id 189, first_seen 00:31:27, last_seen 00:40:10) spanning both test outages - extended, not duplicated, the same dedup behavior 3.5 already proved; manually resolved as cleanup afterward |
-| Journal, `securepi-ingest`/`securepi-web`/`AdGuardHome`, across the whole test | Clean - only expected `AdGuard API unreachable ... falling back to file tailing` messages from `app/adguard.py`'s own pre-existing graceful-degradation path while AdGuard was deliberately down, no tracebacks |
+| Journal, `securepi-ingest`/`securepi-web`/`AdGuardHome`, across the whole test | Clean - only expected `AdGuard API unreachable ... falling back to file tailing` messages from `app/adguard.py`'s own pre-existing graceful-degradation path while the DNS filter was deliberately down, no tracebacks |
 
 **Not fully verified, named rather than implied:** the redirect rule's effect on an actual `ap0`-connected client's DNS query was not tested with a real Wi-Fi device - `securepi status` showed 0 clients connected this session, and the project's own test harness (`ns_attacker`/`ns_victim`) is deliberately built on a separate `br-test` bridge, "entirely separate from the production ap0/hostapd network" (its own setup script's words), so it cannot generate `ap0`-sourced traffic to test this specific path. Rather than risk attaching a virtual interface to the live, production Wi-Fi AP interface to simulate one - a state-changing experiment on the one interface actual devices depend on, for a rule whose match criteria were independently confirmed correct by direct inspection - this was left as a real gap: the detection, activation, deactivation, incident, and console-banner machinery are all live-verified end to end; the very last hop (a real phone's DNS query actually being answered by 1.1.1.1 instead of timing out) is not. Confirmed instead, as strong indirect evidence: the rule's match/target syntax is byte-for-byte what a manual read of `nft`'s own documentation and the existing, already-proven `dpi-redirect` rule's shape would predict, and the two conditions (`daddr != 10.10.0.1` for the existing rules, `daddr 10.10.0.1` for this one) cannot both match the same packet.
 
@@ -570,9 +570,9 @@ Response and policy orchestration, built and verified 25–26 September 2026. Ev
 
 ### Four real bugs found, none guessed
 
-1. **AdGuard does not ignore a trailing `# comment` on a rule line.** Steps 5.2 and 5.5 stored a temporary allow's expiry and a vendor list's tag as `  # securepi-expires:…` / `  # securepi-tag:…` after the rule, on the assumption that AdGuard ignores it. Checked live with `check_host` on four rule shapes: every rule with the comment matched **nothing**, the same rules without it matched. So every temporary "unbreak" and every vendor-telemetry block applied since those steps was stored but never enforced. There were none live at the time. The orchestrator now writes plain rules and remembers which are its own in `orchestrator_state`. `migrate_legacy_rules()` converts any old commented line into a real policy and removes the broken line. The quoted form `$client='[TEST HARNESS] test-victim'` was confirmed to match (victim blocked, another client not).
+1. **The DNS filter does not ignore a trailing `# comment` on a rule line.** Steps 5.2 and 5.5 stored a temporary allow's expiry and a vendor list's tag as `  # securepi-expires:…` / `  # securepi-tag:…` after the rule, on the assumption that the DNS filter ignores it. Checked live with `check_host` on four rule shapes: every rule with the comment matched **nothing**, the same rules without it matched. So every temporary "unbreak" and every vendor-telemetry block applied since those steps was stored but never enforced. There were none live at the time. The orchestrator now writes plain rules and remembers which are its own in `orchestrator_state`. `migrate_legacy_rules()` converts any old commented line into a real policy and removes the broken line. The quoted form `$client='[TEST HARNESS] test-victim'` was confirmed to match (victim blocked, another client not).
 2. **Step 2.2's firewall change was never made permanent.** The live forward chain had no `log prefix` on the three DNS-bypass reject rules, and `/etc/nftables.conf` (what `nftables.service` loads at boot) was dated 13 September - the pre-2.2 file. Step 2.2 had copied the new file to `/opt/securepi/nftables.conf` and loaded it with `nft -f`, but never installed it at `/etc`, so the reboots on 20, 21 and 25 September each put the old rules back. From then on the nftables half of `dns_bypass` detection was silently off (the DoH-set refresh kept working - 709 entries). Fixed in the same install as step 4.2's new sets: the repo file is now both `/etc/nftables.conf` and `/opt/securepi/nftables.conf`, and they're identical.
-3. **A per-device pause didn't pause everything.** AdGuard's per-client `filtering_enabled=false` switches off blocklist matching only: with it off, a Kids device still had TikTok blocked (`FilteredBlockedService`) and Google rewritten (`FilteredSafeSearch`), while `doubleclick.net` resolved. A pause now clears the device's blocked services and safe search as well, and restores the whole profile when it ends.
+3. **A per-device pause didn't pause everything.** The DNS filter's per-client `filtering_enabled=false` switches off blocklist matching only: with it off, a Kids device still had TikTok blocked (`FilteredBlockedService`) and Google rewritten (`FilteredSafeSearch`), while `doubleclick.net` resolved. A pause now clears the device's blocked services and safe search as well, and restores the whole profile when it ends.
 4. **Journal flooding from read-back.** The orchestrator reads three nftables sets every 15-second cycle through the helper, and each read went through `sudo` (a PAM session opened and closed) and wrote a helper log line - about 24 journal lines every 30 seconds. The engine already runs as root, so it now calls the helper directly, and the helper no longer logs the read-only `*-list` verbs (changes and rejected input are still logged). Measured after: 2 lines in 30 seconds.
 
 A pre-existing test flake was also fixed: four behavioural-baseline tests put their flow 60 s past the top of the hour, which is in the future during the first minute of every hour. The suite happened to run at 19:00:56 UTC, where the positive test failed and the three negative ones passed only because they saw nothing.
@@ -585,10 +585,10 @@ Backups first in `/opt/securepi-backups/`: the live ruleset (`nft list ruleset`)
 
 | Check | Result |
 |---|---|
-| Injected failure: AdGuard accepts a client update but doesn't keep it (Kids profile on the victim) | `PolicyApplyError: read-back did not match what was applied (Device filtering settings (AdGuard)) - rolled back, nothing was changed`. The client object was identical before and after. Policy recorded as `failed` |
+| Injected failure: the DNS filter accepts a client update but doesn't keep it (Kids profile on the victim) | `PolicyApplyError: read-back did not match what was applied (Device filtering settings (AdGuard)) - rolled back, nothing was changed`. The client object was identical before and after. Policy recorded as `failed` |
 | Injected failure: the firewall accepts a quarantine add but doesn't keep it | Same shape of error for `Quarantine (firewall)`. `quarantine_mac` unchanged, no active quarantine policy left behind |
-| Real apply: block `sp-drift-test.example` for the victim only | Rule `\|\|sp-drift-test.example^$client='[TEST HARNESS] test-victim'` in AdGuard; `check_host` from the victim → `FilteredBlackList`, from another client → `NotFilteredNotFound` |
-| Out-of-band change: that rule deleted directly through AdGuard's own API | Restored within 1 s (the engine's next cycle happened to land right away). Audit row `policy.drift_corrected` - "1 rule(s) removed or edited in AdGuard: …". Platform incident #201 "A response policy was changed outside the console" |
+| Real apply: block `sp-drift-test.example` for the victim only | Rule `\|\|sp-drift-test.example^$client='[TEST HARNESS] test-victim'` in the DNS filter; `check_host` from the victim → `FilteredBlackList`, from another client → `NotFilteredNotFound` |
+| Out-of-band change: that rule deleted directly through the DNS filter's own API | Restored within 1 s (the engine's next cycle happened to land right away). Audit row `policy.drift_corrected` - "1 rule(s) removed or edited in the DNS filter: …". Platform incident #201 "A response policy was changed outside the console" |
 
 ### 4.2 — Response actions
 
@@ -611,7 +611,7 @@ Kids on the victim, with its schedule edited for the test to block `group:gaming
 | `check_host` from the victim before the window | `amemv.com` (TikTok, always) → `FilteredBlockedService`; `www.google.com` → `FilteredSafeSearch`; `dota2.wmsj.cn` (a Steam service domain) → `NotFilteredNotFound` |
 | Window opens at 00:38:00 | `dota2.wmsj.cn` → `FilteredBlockedService` at **00:38:01**. Recorded as a planned change, not drift |
 | Pause for 60 s (after bug 3's fix) | During: all three domains `NotFilteredNotFound`. After: back to `FilteredBlackList` / `FilteredBlockedService` / `FilteredSafeSearch`, policy `expired` 13 s after its time |
-| Clean-up | Kids reset to its defaults; the victim's client back to standard (filtering on, no services, no safe search); AdGuard's custom rules back to the original three `$dnsrewrite` lines |
+| Clean-up | Kids reset to its defaults; the victim's client back to standard (filtering on, no services, no safe search); the DNS filter's custom rules back to the original three `$dnsrewrite` lines |
 
 ### 4.4 — Device trust
 
@@ -655,10 +655,10 @@ MAC; the same address came back on every reconnect).
 | **4.2 survives a reconnect** | The phone left SecurePi-Test and came back (new association and DHCP) still quarantined: ping 100% lost, `quarantined-mac` counter 6 → 151 |
 | **Audit H1: proxied HTTPS while quarantined** | New `quarantined-mac-proxied` input rule dropped **175** packets of the phone's redirected HTTPS (64 of them from loading YouTube in Chrome, which stayed blank). Before the fix these reached the internet through the proxy |
 | **4.2 expiry** | Policy `expired` by the orchestrator **6.3 s** after its time; set empty; phone back online |
-| **2.2 DoT bypass, layer 1** | Private DNS `dns.google`: AdGuard blocked the hostname (`\|\|dns.google^`), so the phone never attempted port 853. 9 of 10 common DoT hostnames are blocked this way (`dot.sb` is not) |
+| **2.2 DoT bypass, layer 1** | Private DNS `dns.google`: the DNS filter blocked the hostname (`\|\|dns.google^`), so the phone never attempted port 853. 9 of 10 common DoT hostnames are blocked this way (`dot.sb` is not) |
 | **2.2 DoT bypass, layer 2** | Private DNS `dot.sb`: `10.10.0.50 → 185.222.222.222:853` **rejected** by the `dot-bypass` rule, logged, ingested, and added as evidence to `dns_bypass` incident #447 |
 | **2.2 QUIC** | Chrome's QUIC attempts (51) were rejected by `quic-blocked` and raised the same incident #447 |
-| **3.6 fail-open DNS** | AdGuard stopped (a 3-minute safety restart armed) → both `dns-failopen` rules in place after **16-19 s**, incident #451 raised. With AdGuard **still down**, the phone resolved four fresh names (debian.org, rust-lang.org, python.org, kernel.org) and the UDP fail-open rule's counter went **0 → 8** (A + AAAA each), so the phone's DNS really went through the redirect to 1.1.1.1. AdGuard restarted → rules removed **4 s** later, phone resolving through AdGuard again |
+| **3.6 fail-open DNS** | The DNS filter stopped (a 3-minute safety restart armed) → both `dns-failopen` rules in place after **16-19 s**, incident #451 raised. With the DNS filter **still down**, the phone resolved four fresh names (debian.org, rust-lang.org, python.org, kernel.org) and the UDP fail-open rule's counter went **0 → 8** (A + AAAA each), so the phone's DNS really went through the redirect to 1.1.1.1. The DNS filter restarted → rules removed **4 s** later, phone resolving through the DNS filter again |
 
 **Second round, same day** (same phone; Chrome only - Brave, the phone's
 default browser, was never used; every setting changed on the phone was
@@ -667,7 +667,7 @@ restored afterwards):
 | Check | Result |
 |---|---|
 | **6.2 fingerprint** | Device 2 classified phone / Samsung / Android, confidence high. "Samsung" rests only on the hostname pattern (`-a33`) - the MAC is randomized, so there is no manufacturer prefix - and a hostname is client-chosen; "Android" is backed by the connectivity-check lookups |
-| **Chrome Secure DNS, unenrolled** | Provider "Google (Public DNS)": pages fail with `DNS_PROBE_FINISHED_BAD_SECURE_CONFIG` - AdGuard blocks `dns.google`, so Chrome can't bootstrap. Custom provider `https://8.8.8.8/dns-query`: Chrome's own provider check failed because the forward `doh-bypass` rule rejected it (**87** packets, `10.10.0.50 → 8.8.8.8:443`, logged) |
+| **Chrome Secure DNS, unenrolled** | Provider "Google (Public DNS)": pages fail with `DNS_PROBE_FINISHED_BAD_SECURE_CONFIG` - The DNS filter blocks `dns.google`, so Chrome can't bootstrap. Custom provider `https://8.8.8.8/dns-query`: Chrome's own provider check failed because the forward `doh-bypass` rule rejected it (**87** packets, `10.10.0.50 → 8.8.8.8:443`, logged) |
 | **Chrome Secure DNS, enrolled (Audit H1)** | Same custom provider while enrolled: the new input rule `doh-bypass-proxied` rejected **53** packets (0 before). Logged DST is `10.10.0.1:8080`, as the rule's own comment documents |
 | **5.8 / Audit H8 pinned-app bypass** | YouTube *app* while enrolled: every decrypted host failed its handshake (the app doesn't trust user CAs), each exactly 3 times, then `pin_bypass` - "failed the handshake for youtubei.googleapis.com 3 times in a row - bypassing (undecrypted) for 24h". The app then loaded and played normally. Before the H8 fix the failures carried no hostname and the bypass could never trigger. Consequence worth stating: in a bypassed app the traffic is not decrypted, so **in-app ads are not removed** (a "Sponsored" item was visible) - ad removal is a browser feature |
 | **7.7-style: proxy down while enrolled** | `securepi-dpi` stopped (3-minute safety restart armed): **every** HTTPS site failed on the phone, not just inspected ones - Chrome `ERR_CONNECTION_REFUSED` on w3.org, because all of an enrolled device's port-443 traffic is redirected to :8080. The health supervisor raised incident #457 ("1 service not running: securepi-dpi") within seconds, but nothing restores connectivity. **Inspection fails closed, not open** - contrary to the plan's 7.7 requirement. Restarting the proxy restored browsing at once |
@@ -736,16 +736,16 @@ links an event *from that run*. Final battery: 26 September 2026, 05:43-06:12,
 only starts once the beacon thread finishes, so it logged 261-274 s; it now
 uses `created_at` (fixed in `battery.py` after this run).
 
-Most of the scan and brute-force TTD is Suricata's TCP flow timeout (a flow
+Most of the scan and brute-force TTD is the IDS's TCP flow timeout (a flow
 is only logged ~60 s after its last packet), then one 15 s engine cycle.
 The slow signals' TTD is dominated by the attack itself: nine probes, 50 s
 apart, take 400 s.
 
 **What the battery found, in order (four real problems, none guessed):**
 
-1. **dns_bypass - fixed.** AdGuard never logs the Firefox canary
+1. **dns_bypass - fixed.** The DNS filter never logs the Firefox canary
    `use-application-dns.net`, so the signal never had evidence (smoke test).
-   It is now also counted from Suricata's DNS records. 0/1 → 5/5.
+   It is now also counted from the IDS's DNS records. 0/1 → 5/5.
 2. **beacon - fixed (engine bug).** Found through the replay's determinism
    check (see 7.1 below). Live evidence from the smoke test: logged gaps of
    5.0-14.9 s for a 10 s beacon, score 0.73 against 0.8. It now times from
@@ -753,7 +753,7 @@ apart, take 400 s.
 3. **volume_anomaly - harness problem, not an engine bug.** First five-run
    battery (04:53, `eval/results/battery-20260926-045314.json`): 0/5. Each
    150 MB transfer was logged as ~0.98 MB. The namespaces' `eth0` had
-   segmentation offload on, so the veth carried 64 KB packets and Suricata
+   segmentation offload on, so the veth carried 64 KB packets and the IDS
    kept only part of each (54 reassembly gaps, no kernel drops).
    `setup-test-harness.sh` now turns TSO/GSO/GRO off inside both namespaces,
    on every boot. With offloads off, an unthrottled transfer (~420 Mbit/s)
@@ -782,7 +782,7 @@ apart, take 400 s.
 
 ### 7.1 — PCAP replay pipeline
 
-`tools/replay.py` runs a capture through Suricata on the Mac with the
+`tools/replay.py` runs a capture through the IDS on the Mac with the
 gateway's own rules, then through `app/ingest.py`'s real parser into a fresh
 database, then runs `app/correlation.py`'s real engine every 15 s on a
 simulated clock stepping through capture time. Nothing in `app/` is changed
@@ -792,14 +792,14 @@ for it. Inputs, and how to set them up, are in `eval/README.md`; 15 tests in
 **Determinism check - the first attempt failed, and it found a real bug.**
 Two replays of the same capture gave different results: one raised a beacon
 incident, the other didn't, and the detection time moved from 214 s to 259 s.
-Suricata's output was the same flow for flow. Only each flow record's
+The IDS's output was the same flow for flow. Only each flow record's
 `timestamp` differed, by a median 44 s and up to 6 minutes. That field is
-when Suricata *logged* the flow, which happens after the flow times out, in
+when the IDS *logged* the flow, which happens after the flow times out, in
 batches, whenever its flow-manager thread wakes up.
 
 - **In the replay:** a flow's timestamp is now set to when the flow times out
   (its last packet plus the timeout in `tools/replay-suricata.yaml`), and ties
-  sort without Suricata's random `flow_id`. The live gateway adds a few seconds
+  sort without the IDS's random `flow_id`. The live gateway adds a few seconds
   of flow-manager delay on top, which a replay can't reproduce, so replay
   detection times are slightly optimistic. The timezone is pinned to UTC.
   After this, repeated runs give an identical result sha256.
@@ -817,13 +817,13 @@ batches, whenever its flow-manager thread wakes up.
   live** by the battery's beacon runs after `make deploy`.
 
 **Signals a replay can't judge**, because their inputs aren't in a capture:
-threat_intel (feed table), malicious_domain and adblock_ineffective (AdGuard's
+threat_intel (feed table), malicious_domain and adblock_ineffective (the DNS filter's
 block decisions), new_device (the device registry) and volume_anomaly (7 days
 of hourly rollups). Runs labelled with these are reported as "not replayable",
 not scored as misses; the live battery measures them.
 
 **Public captures (CTU-13, CC BY 2.0 - citation in `eval/README.md`).**
-Suricata 8.0.7, the gateway's rule set as copied on 26 September 2026. Each
+IDS version 8.0.7, the gateway's rule set as copied on 26 September 2026. Each
 capture was replayed three times, with the same result sha256 each time.
 
 | Capture | Events | Capture length | Infected host detected | First incident after | Incidents raised | Result sha256 (first 12) |

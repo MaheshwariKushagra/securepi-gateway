@@ -13,8 +13,8 @@ restricts redistribution outside DuckDuckGo's own products), so rather
 than bundle or silently subset one of them, this file lists the ~50
 companies most likely to actually show up in this project's own traffic:
 the ad/analytics SDKs bundled into ordinary Android and iOS apps, plus
-the ad-tech networks that the blocklists already in use (AdGuard DNS
-filter, OISD, HaGeZi) are built to catch. See ENHANCEMENT-PLAN.md step 5.3.
+the ad-tech networks that the blocklists already in use (default DNS
+filter list, OISD, HaGeZi) are built to catch. See ENHANCEMENT-PLAN.md step 5.3.
 
 If this project ever needs the full dataset, the right move is to add an
 explicit, cited import step for one licensed source - not to grow this

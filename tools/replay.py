@@ -3,7 +3,7 @@
 SecurePi Gateway - PCAP replay (ENHANCEMENT-PLAN.md step 7.1).
 
 Runs a packet capture through the same detection pipeline the gateway runs
-live, on any machine with Suricata installed (the Mac: `brew install
+live, on any machine with the IDS installed (the Mac: `brew install
 suricata`), and scores the result against a labels file that says what the
 capture contains. The same capture and the same rules always give the same
 answer, which is the point: a deterministic ground truth to check the
@@ -17,23 +17,23 @@ The pipeline, step by step
    own rule set (eval/rules/, copied from the gateway - see eval/README.md),
    writing eve.json.
 2. Every eve.json record goes through app/ingest.py's real flatten_suricata()
-   into a fresh database built from app/schema.sql. Suricata 8 (Homebrew)
-   writes DNS in its version-3 layout; the gateway's Suricata 7 writes
+   into a fresh database built from app/schema.sql. IDS version 8 (Homebrew)
+   writes DNS in its version-3 layout; the gateway's IDS version 7 writes
    version 2, which is what flatten_suricata() reads - so v3 records are
    reshaped to v2 first. Nothing in app/ is changed for the replay.
-   A flow record's timestamp is when Suricata logged it, and in a replay
+   A flow record's timestamp is when the IDS logged it, and in a replay
    that depends on when its flow-manager thread happened to wake: two runs
    of the same capture differed by a median 44 s and up to 6 minutes. So
    the replay sets it to when the flow times out - its last packet plus the
    timeout in tools/replay-suricata.yaml for its protocol and state (the
    live flow manager adds a few seconds on top, which a replay can't
    reproduce). A flow still open when the capture ends is logged then, as
-   Suricata does at shutdown.
-3. On the gateway, DNS filtering events come from AdGuard, not Suricata.
-   There is no AdGuard here, so each DNS request Suricata saw is also
+   the IDS does at shutdown.
+3. On the gateway, DNS filtering events come from the DNS filter, not the IDS.
+   There is no DNS filter here, so each DNS request the IDS saw is also
    written as a dns_query event (with the answer's response code), which is
    what the DNS signals read. The Firefox canary is left out, because the
-   real AdGuard never logs it either (step 7.2 finding).
+   real DNS filter never logs it either (step 7.2 finding).
 4. The labels file names the hosts; each becomes a device, and events from
    its address are attributed to it.
 5. app/correlation.py's real run_all() then runs on a simulated clock that
@@ -47,7 +47,7 @@ The pipeline, step by step
 What a replay can't judge
 -------------------------
 Five signals read gateway state that a capture doesn't carry (see
-NOT_REPLAYABLE below): threat-intel feeds, AdGuard's block decisions, the
+NOT_REPLAYABLE below): threat-intel feeds, the DNS filter's block decisions, the
 device registry's first sighting and the hourly rollups. Labelled runs for
 them are reported as "not replayable" rather than scored as misses - the
 live battery (gateway/battery.py) is where those are measured.
@@ -93,8 +93,8 @@ DETECT_GRACE_S = 300   # evidence may be up to this long after a run's last pack
 # Signals whose inputs don't exist in a capture, with the reason.
 NOT_REPLAYABLE = {
     "threat_intel": "needs the gateway's threat-intel feed (ioc table)",
-    "malicious_domain": "needs AdGuard's block decisions",
-    "adblock_ineffective": "needs AdGuard's block decisions",
+    "malicious_domain": "needs the DNS filter's block decisions",
+    "adblock_ineffective": "needs the DNS filter's block decisions",
     "new_device": "needs the device registry's first sighting",
     "volume_anomaly": "needs 7 days of hourly rollups (device_hourly)",
 }
@@ -138,7 +138,7 @@ def run_suricata(pcap, outdir, suricata, rules, classification):
 
 
 def to_v2_dns(event):
-    """Reshape a Suricata 8 (v3) DNS record into the v2 fields
+    """Reshape an IDS version 8 (v3) DNS record into the v2 fields
     flatten_suricata() reads: dns.type 'query'/'answer', a flat rrname and
     rrtype, and rcode. A v2 record passes through untouched."""
     dns = event.get("dns") or {}
@@ -153,7 +153,7 @@ def to_v2_dns(event):
     return event
 
 
-# Suricata's flow timeouts, as set in tools/replay-suricata.yaml (and the
+# The IDS's flow timeouts, as set in tools/replay-suricata.yaml (and the
 # gateway's defaults). Keep the two in step.
 FLOW_TIMEOUTS = {
     "TCP": {"new": 60, "established": 600, "closed": 60},
@@ -163,7 +163,7 @@ DEFAULT_FLOW_TIMEOUTS = {"new": 30, "established": 300, "closed": 0}
 
 
 def flow_logged_at(flow, proto, capture_end):
-    """When Suricata would log this flow: once it has been idle for its
+    """When the IDS would log this flow: once it has been idle for its
     timeout, or at the end of the capture if that comes first."""
     end = ingest.to_epoch(flow.get("end") or flow.get("start") or "")
     if end is None:
@@ -174,7 +174,7 @@ def flow_logged_at(flow, proto, capture_end):
 
 
 def sort_key(row):
-    """Time first, then everything else in the row except Suricata's
+    """Time first, then everything else in the row except the IDS's
     flow_id, which is random per run - so ties always sort the same way."""
     rest = {k: v for k, v in row.items() if k != "flow_id"}
     return (row["ts"], json.dumps(rest, sort_keys=True, default=str))
@@ -182,7 +182,7 @@ def sort_key(row):
 
 def load_events(eve_path):
     """Every eve record as an events-table row, plus a dns_query row for each
-    DNS request (the stand-in for AdGuard's query log)."""
+    DNS request (the stand-in for the DNS filter's query log)."""
     records = []
     with open(eve_path) as f:
         for line in f:
@@ -292,7 +292,7 @@ def replay(pcap, labels, outdir, suricata, rules, classification):
 def run_engine(conn, rows, labels):
     """Feed the events into the database on the simulated clock, run the
     engine every STEP_S seconds, and score each labelled run. Separate from
-    replay() so the tests can drive it without Suricata."""
+    replay() so the tests can drive it without the IDS."""
     first, last = rows[0]["ts"], rows[-1]["ts"]
     devices = {}
     for ip, label in sorted(labels["hosts"].items()):

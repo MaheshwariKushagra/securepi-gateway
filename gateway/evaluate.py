@@ -33,14 +33,14 @@ VICTIM_IP = "10.10.0.221"
 # Nine more addresses on ns_victim's own interface (ENHANCEMENT-PLAN.md step
 # 2.1 / setup-test-harness.sh) - real distinct hosts for a network-sweep
 # test to find. A sweep against an address with no host behind it produces
-# no Suricata flow event at all (the kernel never resolves an ARP entry to
+# no IDS flow event at all (the kernel never resolves an ARP entry to
 # send the packet on), so this needs actual hosts, not just addresses.
 SWEEP_IPS = ["10.10.0.%d" % i for i in range(221, 231)]
 RUNS_PER_SIGNAL = 3
 POLL_INTERVAL = 1
 DETECT_TIMEOUT = 90
 
-# A handful of domains AdGuard's active blocklists are known to cover (see
+# A handful of domains the DNS filter's active blocklists are known to cover (see
 # REPORT-adblocking.md) - used both for the malicious-domain signal test and
 # the third-party ad-block ratio measurement below.
 BLOCKED_DOMAIN = "doubleclick.net"
@@ -143,15 +143,15 @@ def test_brute_force(run_no):
     return latency
 
 
-GATEWAY_DNS_IP = "10.10.0.1"  # AdGuard's own address; see note in test_malicious_domain
+GATEWAY_DNS_IP = "10.10.0.1"  # The DNS filter's own address; see note in test_malicious_domain
 
 
 def test_malicious_domain(run_no):
     baseline = last_touch_now(ATTACKER_DEVICE_ID, "malicious_domain")
-    # ns_attacker cannot reach AdGuard at all: br-test (the isolated test
-    # harness bridge) has no path to ap0 (the production LAN AdGuard is
+    # ns_attacker cannot reach the DNS filter at all: br-test (the isolated test
+    # harness bridge) has no path to ap0 (the production LAN the DNS filter is
     # bound on) - confirmed by testing, not assumed. So this query has to
-    # run from the gateway's own network namespace, which means AdGuard logs
+    # run from the gateway's own network namespace, which means the DNS filter logs
     # its client as 10.10.0.1 (the gateway's own address) rather than the
     # attacker device's IP. A one-off device_ips interval maps that address
     # to the test-attacker device for attribution, exactly as the registry's
@@ -163,15 +163,15 @@ def test_malicious_domain(run_no):
     conn.commit()
     for _ in range(MALICIOUS_DOMAIN_QUERIES):
         run(["dig", "+short", "+time=2", "+tries=1", "@%s" % GATEWAY_DNS_IP, BLOCKED_DOMAIN], timeout=5)
-    # AdGuard buffers its query log in memory (querylog.size_memory: 1000 in
+    # the DNS filter buffers its query log in memory (querylog.size_memory: 1000 in
     # AdGuardHome.yaml) and was observed, under real continuous traffic, to
     # go over 7 hours without flushing it to the file ingest.py tails - a
-    # genuine latency gap between "AdGuard has seen the query" (immediate,
+    # genuine latency gap between "the DNS filter has seen the query" (immediate,
     # visible over its control API) and "our pipeline has the event" (only
     # after the next flush). Firing enough queries to fill that buffer here
     # forces the flush so this test completes in a reasonable time; in
     # production, malicious-domain detection latency is bounded by whichever
-    # is worse: the engine's 15s cycle, or AdGuard's own flush cadence -
+    # is worse: the engine's 15s cycle, or the DNS filter's own flush cadence -
     # worth recording as a limitation, not something this project fixes.
     run(["bash", "-c",
          "seq 1 985 | xargs -P30 -I{} dig +short +time=1 +tries=1 @%s"
@@ -229,7 +229,7 @@ def test_new_device(run_no):
     # new_device_signal fires off devices.first_seen, populated by
     # registry.resolve_device() for every real device (DHCP lease or ARP
     # entry). ns_attacker/ns_victim sit on br-test, which - confirmed by a
-    # failed ping, not assumed - has no path to AdGuard's DHCP/ap0 side, so
+    # failed ping, not assumed - has no path to the DNS filter's DHCP/ap0 side, so
     # there is no way to make an isolated netns look like a "real" new
     # device through the network. Calling resolve_device() directly with a
     # never-before-seen MAC exercises the exact same code path update_devices
@@ -253,7 +253,7 @@ def test_new_device(run_no):
 
 
 def ad_block_ratio():
-    """Compares resolution through AdGuard (filtering on, as configured
+    """Compares resolution through the DNS filter (filtering on, as configured
     right now) against a public resolver with no filtering, for a fixed set
     of known third-party ad/tracker domains. See REPORT-adblocking.md 9,
     which left this "to be measured"."""
@@ -261,7 +261,7 @@ def ad_block_ratio():
     rows = []
     for domain in AD_DOMAINS:
         # Run directly on the gateway, not inside ns_attacker: the isolated
-        # test-harness bridge has no path to AdGuard (see test_malicious_domain).
+        # test-harness bridge has no path to the DNS filter (see test_malicious_domain).
         via_adguard = run(["dig", "+short", "+time=2", "@%s" % GATEWAY_DNS_IP, domain])
         via_public = run(["dig", "+short", "+time=2", "@1.1.1.1", domain])
         adguard_result = via_adguard.stdout.strip()
@@ -286,7 +286,7 @@ def resource_snapshot():
 
 def throughput_test():
     """iperf3 between ns_attacker and ns_victim (over br-test, captured by
-    Suricata on veth-atk exactly like production ap0 traffic) vs. a loopback
+    the IDS on veth-atk exactly like production ap0 traffic) vs. a loopback
     baseline with no bridge/capture path at all - isolates what the
     inspection stack itself costs, separate from the WAN-side ceiling
     already measured in SECUREPI-15-DAY-PLAN.md 2.6. The gateway's own
@@ -346,7 +346,7 @@ def main():
 
     print("\n--- Throughput ---")
     lan_mbps, loop_mbps = throughput_test()
-    print("  br-test path (through bridge + Suricata capture): %s Mbps" %
+    print("  br-test path (through bridge + IDS capture): %s Mbps" %
           ("%.1f" % lan_mbps if lan_mbps else "failed"))
     print("  loopback baseline (no bridge/capture):             %s Mbps" %
           ("%.1f" % loop_mbps if loop_mbps else "failed"))

@@ -42,7 +42,7 @@ schedule. It was not: it consumed hours, not days.
 | Router independence | Achieved | Zero configuration on the home router; it is a plain uplink |
 | DNS filtering | Working | 655,974 rules across 5 lists; blocking verified |
 | DNS bypass prevention | Working | Port-53 DNAT, DoH/DoT blocking, QUIC rejection; 0 bypasses observed |
-| Suricata sensor | Working | 52,689 rules, 0 packet drops, 535 MB RSS, 12% of one core |
+| IDS sensor | Working | 52,689 rules, 0 packet drops, 535 MB RSS, 12% of one core |
 | Selective HTTPS inspection | Working | YouTube first-party ads removed on two devices; 0 non-allowlisted hosts decrypted |
 | Backup | Working | Private GitHub repository, 3 commits, no secrets |
 | Operations tooling | Working | `securepi status/devices/enroll/unenroll`, `battery`, `backup.sh` |
@@ -76,7 +76,7 @@ Chapters 1–4 of the thesis are effectively written, and chapter 5 has its firs
 | Missing | Plan day | Consequence |
 |---|---|---|
 | SQLite schema | 4 | Nothing is persisted; all analysis is impossible |
-| Ingest service (EVE tailer + AGH querylog) | 4 | Events accumulate in log files and are never read |
+| Ingest service (EVE tailer + DNS-filter querylog) | 4 | Events accumulate in log files and are never read |
 | FastAPI skeleton + first page | 5 | No end-to-end slice exists |
 | Device registry / identity resolution | 6 | No attribution; every later feature depends on this |
 | Devices page | 7 | — |

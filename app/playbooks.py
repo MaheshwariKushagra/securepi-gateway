@@ -461,7 +461,7 @@ PLAYBOOKS = {
         "what_it_means": "Free disk space on the volume holding the database has dropped below "
             "the configured threshold (Settings). Left unaddressed, the database and every "
             "service that writes to disk will eventually fail outright.",
-        "how_to_check": "`df -h` on the gateway, and `du -sh /opt/securepi/*` to see what's using "
+        "how_to_check": "`df -h` on the gateway, and `du -sh /opt/securepi/* /var/lib/securepi/*` to see what's using "
             "space - old `.bak-*` files from past deploys are a common, safe-to-remove cause.",
         "recommended_action": "Free space (remove old backups/logs) or expand storage. Resolve "
             "once free space is back above the threshold.",

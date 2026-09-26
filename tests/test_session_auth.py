@@ -61,6 +61,55 @@ class PasswordHashingTests(unittest.TestCase):
     def test_a_malformed_hash_string_fails_closed(self):
         self.assertFalse(session_auth.verify_password("anything", "pbkdf2_sha256$not-enough-fields"))
 
+    def test_an_empty_stored_password_never_matches(self):
+        # Audit C2: an emptied password file used to accept an empty login.
+        self.assertFalse(session_auth.verify_password("", ""))
+        self.assertFalse(session_auth.verify_password("anything", ""))
+
+    def test_an_empty_submitted_password_never_matches(self):
+        stored = session_auth.hash_password("correct horse battery staple")
+        self.assertFalse(session_auth.verify_password("", stored))
+
+    def test_a_non_numeric_iteration_count_fails_closed(self):
+        self.assertFalse(session_auth.verify_password("x", "pbkdf2_sha256$abc$%s$%s" % ("aa" * 16, "bb" * 32)))
+
+    def test_a_zero_iteration_count_fails_closed(self):
+        self.assertFalse(session_auth.verify_password("x", "pbkdf2_sha256$0$%s$%s" % ("aa" * 16, "bb" * 32)))
+
+    def test_a_non_ascii_legacy_password_verifies_instead_of_crashing(self):
+        self.assertTrue(session_auth.verify_password("café-password", "café-password"))
+
+
+class PasswordFileTests(unittest.TestCase):
+    def setUp(self):
+        import tempfile
+        self._dir = tempfile.TemporaryDirectory()
+        self.path = os.path.join(self._dir.name, "console-password")
+        with open(self.path, "w") as fh:
+            fh.write("old-value")
+
+    def tearDown(self):
+        self._dir.cleanup()
+
+    def test_write_replaces_the_contents(self):
+        session_auth.write_password_file(self.path, "pbkdf2_sha256$1$aa$bb")
+        with open(self.path) as fh:
+            self.assertEqual(fh.read(), "pbkdf2_sha256$1$aa$bb")
+
+    def test_write_leaves_no_temporary_files_behind(self):
+        session_auth.write_password_file(self.path, "pbkdf2_sha256$1$aa$bb")
+        self.assertEqual(os.listdir(self._dir.name), ["console-password"])
+
+    def test_write_keeps_group_read_write_permissions(self):
+        session_auth.write_password_file(self.path, "pbkdf2_sha256$1$aa$bb")
+        self.assertEqual(os.stat(self.path).st_mode & 0o777, 0o660)
+
+    def test_an_empty_value_is_refused_and_the_old_file_kept(self):
+        with self.assertRaises(ValueError):
+            session_auth.write_password_file(self.path, "")
+        with open(self.path) as fh:
+            self.assertEqual(fh.read(), "old-value")
+
 
 class SessionLifecycleTests(unittest.TestCase):
     def test_a_fresh_session_is_valid(self):
@@ -112,6 +161,14 @@ class SessionLifecycleTests(unittest.TestCase):
         token = session_auth.create_session(conn, "securepi")
         session_auth.delete_session(conn, token)
         self.assertIsNone(session_auth.get_session(conn, token))
+
+    def test_delete_other_sessions_keeps_only_the_callers_session(self):
+        conn = fixtures.temp_db()
+        mine = session_auth.create_session(conn, "securepi")
+        other = session_auth.create_session(conn, "securepi")
+        session_auth.delete_other_sessions(conn, mine)
+        self.assertIsNotNone(session_auth.get_session(conn, mine))
+        self.assertIsNone(session_auth.get_session(conn, other))
 
     def test_cleanup_expired_removes_stale_sessions_but_keeps_valid_ones(self):
         conn = fixtures.temp_db()

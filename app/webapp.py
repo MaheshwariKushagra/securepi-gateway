@@ -71,6 +71,7 @@ import json
 import os
 import sqlite3
 import subprocess
+import tempfile
 import time
 from typing import Any, Optional
 from urllib.parse import parse_qs, quote
@@ -80,6 +81,7 @@ from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse, Red
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel, Field
+from starlette.concurrency import run_in_threadpool
 from starlette.requests import Request
 
 import adfilter_rules
@@ -93,14 +95,13 @@ import notify
 import orchestrator
 import playbooks
 import profiles
-import quarantine
 import risk
 import session_auth
 import settings
 import suppression
 import tracker_entities
 
-DB_PATH = "/opt/securepi/securepi.db"
+DB_PATH = "/var/lib/securepi/securepi.db"
 CONSOLE_USERNAME = session_auth.CONSOLE_USERNAME
 # Moved out of /root (step 3.3): /root is 700 root-only, so once
 # securepi-web drops root (finding G9) it can no longer traverse into
@@ -225,10 +226,17 @@ async def do_login(request: Request):
     except FileNotFoundError:
         stored = None
 
-    if stored is not None and session_auth.verify_password(password, stored):
+    # PBKDF2 deliberately takes a noticeable fraction of a second. This
+    # handler is `async` (it has to await the request body), so running
+    # the hash directly here would freeze every other console request -
+    # including other tabs' live refreshes - for that whole time.
+    # run_in_threadpool runs the same plain function on a worker thread
+    # and waits for its answer without blocking everything else.
+    ok = stored is not None and await run_in_threadpool(session_auth.verify_password, password, stored)
+    if ok:
         if session_auth.needs_rehash(stored):
-            with open(CONSOLE_PASSWORD_FILE, "w") as f:
-                f.write(session_auth.hash_password(password))
+            encoded = await run_in_threadpool(session_auth.hash_password, password)
+            session_auth.write_password_file(CONSOLE_PASSWORD_FILE, encoded)
         session_auth.clear_attempts(conn, ip)
         token = session_auth.create_session(conn, CONSOLE_USERNAME)
         audit.log(conn, CONSOLE_USERNAME, "auth.login", detail="ip=%s" % ip)
@@ -318,7 +326,7 @@ DPI_CA_DOWNLOAD_URL = "http://10.10.0.1:8081/securepi-ca.crt"
 # Step 5.9: the versioned, console-editable Tier 2 rule set, and the
 # per-rule hit-count snapshot dpi/securepi_adfilter.py writes. Both plain
 # files, like the CA - no database table for either.
-DPI_RULES_PATH = "/opt/securepi-dpi/adfilter-rules.json"
+DPI_RULES_PATH = "/var/lib/securepi-dpi/adfilter-rules.json"
 DPI_RULE_STATS_PATH = "/var/log/securepi/dpi-rule-stats.json"
 
 # dpi/privacy_canary.py (step 5.7) checks every 15 minutes; twice that
@@ -2108,10 +2116,20 @@ def api_dpi_rules_set(body: DpiRulesUpdate):
     new_rules["version"] = (current.get("version") or 0) + 1
     new_rules["updated_at"] = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
 
-    tmp_path = DPI_RULES_PATH + ".tmp"
-    with open(tmp_path, "w") as f:
-        json.dump(new_rules, f, indent=2)
-    os.replace(tmp_path, DPI_RULES_PATH)  # atomic - the addon must never read a half-written file
+    # Write to a uniquely named temporary file, then rename it over the
+    # real one - atomic, so the addon never reads a half-written file.
+    # The name is unique (mkstemp) rather than a fixed "<path>.tmp" so two
+    # saves arriving at once can't write into the same temporary file.
+    fd, tmp_path = tempfile.mkstemp(prefix=".adfilter-rules.", dir=os.path.dirname(DPI_RULES_PATH))
+    try:
+        with os.fdopen(fd, "w") as f:
+            json.dump(new_rules, f, indent=2)
+        os.chmod(tmp_path, 0o664)  # the root-run addon and the console both read it
+        os.replace(tmp_path, DPI_RULES_PATH)
+    except BaseException:
+        if os.path.exists(tmp_path):
+            os.remove(tmp_path)
+        raise
 
     print("filtering: DPI rules updated to version %d - %s" % (new_rules["version"], body.reason), flush=True)
     audit.log(db(), CONSOLE_USERNAME, "filtering.dpi_rules_update",
@@ -2399,15 +2417,23 @@ def api_settings_get():
 
 
 @app.post("/api/settings/password")
-def api_settings_password(body: PasswordChange):
+def api_settings_password(body: PasswordChange, request: Request):
     """Change the console's login password. There is one shared account
     today (finding C7 - no per-user accounts yet), so this changes the
     one password everyone uses. Never logs the actual password value,
     before or after, into the audit trail or the journal - only that a
     change happened. Stored as a PBKDF2-HMAC-SHA256 hash (step 3.1 - see
     session_auth.py's module docstring for why not scrypt as originally
-    planned), not plaintext. Existing sessions are unaffected, since a
-    session's validity never depended on the password file after login.
+    planned), not plaintext.
+
+    Every OTHER signed-in session is signed out afterwards; the one that
+    made the change stays signed in. A password is usually changed
+    because someone else might know it, and that person's open session
+    should stop working at the same moment their password does.
+
+    The new hash is computed first and then swapped in atomically
+    (session_auth.write_password_file) - the file is never empty, not
+    even for a moment, so no login can ever see a blank password.
 
     Declared here, before the /api/settings/{key} route below, on
     purpose: Starlette matches routes in declaration order, and a
@@ -2426,9 +2452,12 @@ def api_settings_password(body: PasswordChange):
         raise HTTPException(400, "new password must be at least 12 characters")
     if body.new_password == body.current_password:
         raise HTTPException(400, "new password must be different from the current one")
-    with open(CONSOLE_PASSWORD_FILE, "w") as f:
-        f.write(session_auth.hash_password(body.new_password))
-    audit.log(db(), CONSOLE_USERNAME, "settings.password_change", detail="password changed (value not logged)")
+    encoded = session_auth.hash_password(body.new_password)
+    session_auth.write_password_file(CONSOLE_PASSWORD_FILE, encoded)
+    c = db()
+    session_auth.delete_other_sessions(c, request.cookies.get(session_auth.SESSION_COOKIE))
+    audit.log(c, CONSOLE_USERNAME, "settings.password_change",
+              detail="password changed (value not logged); other sessions signed out")
     print("settings: console password changed", flush=True)
     return {"ok": True}
 

@@ -1978,7 +1978,7 @@ function initSettings() {
                 }
                 $("#settingsPwCurrent").value = "";
                 $("#settingsPwNew").value = "";
-                toast("Password changed", "Use the new password next time you sign in.", "ok");
+                toast("Password changed", "Use the new password next time you sign in. Any other signed-in sessions were signed out.", "ok");
                 loadAudit();
             } catch (err) {
                 toast("Could not change password", String(err.message || err), "high");

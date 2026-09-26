@@ -66,7 +66,7 @@ PIN_BYPASS_HOURS = 24
 # adfilter_rules.py for the shared default/validation logic, why that
 # lives in its own mitmproxy-free module, and why a fifth constant that
 # used to live here (HTML_PLAYER_PAGES) was dropped rather than migrated.
-RULES_PATH = "/opt/securepi-dpi/adfilter-rules.json"
+RULES_PATH = "/var/lib/securepi-dpi/adfilter-rules.json"
 
 # Where the addon writes per-rule hit counts (step 5.9) for the console's
 # "dead rules" view. A plain JSON snapshot, not the database - like
@@ -187,6 +187,17 @@ def loosen_csp_for_inline_style(csp_header):
     policy, never script-src or anything else - this addon injects CSS,
     not JavaScript (see Path 2's record for why that line matters).
 
+    How, per case:
+      - style-src present: 'unsafe-inline' is added to it.
+      - style-src-elem present: 'unsafe-inline' is added there too - it
+        governs <style> elements specifically and overrides style-src.
+      - neither style-src nor style-src-elem, but default-src present: a
+        NEW style-src directive is added, copying default-src's sources
+        plus 'unsafe-inline'. default-src itself is NEVER changed. It is
+        also the fallback for script-src, so adding 'unsafe-inline' to it
+        (what this function used to do) quietly allowed inline SCRIPTS on
+        any page without its own script-src (Audit.md, ad-blocking #1).
+
     Returns `csp_header` completely unchanged if it already allows inline
     styles, or if it restricts neither style-src nor default-src (nothing
     to loosen). Returns falsy input unchanged.
@@ -197,28 +208,29 @@ def loosen_csp_for_inline_style(csp_header):
     directives = [d.strip() for d in csp_header.split(";") if d.strip()]
     new_directives = []
     found_style_src = False
-    found_default_src_index = None
+    default_src_sources = None
 
-    for i, d in enumerate(directives):
+    for d in directives:
         parts = d.split()
-        if not parts:
-            continue
         name = parts[0].lower()
-        if name == "style-src":
-            found_style_src = True
+        if name in ("style-src", "style-src-elem"):
+            if name == "style-src":
+                found_style_src = True
             if "'unsafe-inline'" not in parts:
                 parts.append("'unsafe-inline'")
             new_directives.append(" ".join(parts))
         else:
             if name == "default-src":
-                found_default_src_index = len(new_directives)
+                default_src_sources = parts[1:]
             new_directives.append(d)
 
-    if not found_style_src and found_default_src_index is not None:
-        parts = new_directives[found_default_src_index].split()
-        if "'unsafe-inline'" not in parts:
-            parts.append("'unsafe-inline'")
-        new_directives[found_default_src_index] = " ".join(parts)
+    if not found_style_src and default_src_sources is not None:
+        # 'none' can't be combined with other sources, so it's dropped
+        # from the copy - the result then allows inline styles only.
+        sources = [p for p in default_src_sources if p.lower() != "'none'"]
+        if "'unsafe-inline'" not in sources:
+            sources.append("'unsafe-inline'")
+        new_directives.append("style-src " + " ".join(sources))
 
     return "; ".join(new_directives)
 

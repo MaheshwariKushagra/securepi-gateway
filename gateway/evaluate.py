@@ -26,7 +26,7 @@ import time
 sys.path.insert(0, "/opt/securepi")
 import registry
 
-DB_PATH = "/opt/securepi/securepi.db"
+DB_PATH = "/var/lib/securepi/securepi.db"
 ATTACKER_NS = "ns_attacker"
 ATTACKER_DEVICE_ID = 4    # [TEST HARNESS] test-attacker
 VICTIM_IP = "10.10.0.221"

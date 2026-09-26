@@ -33,7 +33,7 @@ import adguard
 import health
 import registry
 
-DB_PATH = "/opt/securepi/securepi.db"
+DB_PATH = "/var/lib/securepi/securepi.db"
 SCHEMA_PATH = "/opt/securepi/schema.sql"
 EVE_PATH = "/var/log/suricata/eve.json"
 AGH_QUERYLOG_PATH = "/opt/AdGuardHome/data/querylog.json"

@@ -9,7 +9,7 @@ set -e
 
 DPI=/opt/securepi-dpi
 echo "==> 1/2  installing the canary script"
-sudo install -m 644 "$(dirname "$0")/privacy_canary.py" $DPI/privacy_canary.py
+sudo install -m 644 -o root -g root "$(dirname "$0")/privacy_canary.py" $DPI/privacy_canary.py
 
 echo "==> 2/2  creating the canary service"
 sudo tee /etc/systemd/system/securepi-privacy-canary.service >/dev/null <<'UNIT'

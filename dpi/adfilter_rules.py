@@ -163,8 +163,24 @@ def validate_rules(rules):
             raise ValueError("cosmetic_selectors must be a list")
         if not all(isinstance(v, str) and v.strip() for v in selectors):
             raise ValueError("cosmetic_selectors must contain only non-empty strings")
+        # Each selector is pasted into a <style> element inside other
+        # sites' pages (inject_cosmetic_css in securepi_adfilter.py). A
+        # selector must only ever SELECT, never end the style element
+        # ("</style><script>...") or add CSS rules of its own ("{", "}",
+        # ";", "@import", comments, escapes). None of these characters is
+        # needed for the plain element/class/attribute selectors this
+        # feature uses; ">" (the child combinator) is still allowed.
+        for v in selectors:
+            for bad in SELECTOR_FORBIDDEN:
+                if bad in v:
+                    raise ValueError("cosmetic selector %r contains %r, which is not allowed" % (v, bad))
 
     return rules
+
+
+# Characters and sequences a cosmetic selector may never contain - see
+# validate_rules() for why.
+SELECTOR_FORBIDDEN = ("<", "{", "}", ";", "@", "\\", "/*", "*/")
 
 
 def load_rules(path):

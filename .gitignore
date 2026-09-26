@@ -26,6 +26,7 @@ querylog*
 docs/demo/securepi.db*
 docs/demo/orchestrator.lock
 docs/demo/dpi-rule-stats.json
+docs/demo/adfilter-rules.demo.json
 docs/demo/node_modules/
 docs/demo/package*.json
 docs/demo/*.log

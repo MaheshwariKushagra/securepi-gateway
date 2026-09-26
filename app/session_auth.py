@@ -37,6 +37,7 @@ import hashlib
 import hmac
 import os
 import secrets
+import tempfile
 import time
 
 import settings
@@ -81,17 +82,71 @@ def verify_password(password, stored):
     manually re-hashes it by hand offline would be a worse outcome than
     this one conditional. The caller (app/webapp.py's /login) rehashes
     right after a successful plaintext match, so this branch is only
-    ever exercised once per deployment."""
+    ever exercised once per deployment.
+
+    An empty password, or an empty stored value, is ALWAYS a mismatch.
+    Without this guard the plaintext branch compared "" with "" and said
+    yes - so a password file that was empty (truncated mid-write, or
+    created empty by hand) let anyone in with a blank password. Failing
+    closed here means a damaged password file locks the console instead
+    of opening it."""
+    if not password or not stored:
+        return False
     if not stored.startswith("pbkdf2_sha256$"):
-        return hmac.compare_digest(password, stored)
+        # Compared as bytes: hmac.compare_digest() refuses two str values
+        # containing non-ASCII characters (TypeError), which would turn a
+        # password like "café" into a server error instead of a login.
+        return hmac.compare_digest(password.encode(), stored.encode())
     try:
         _, iterations, salt_hex, hash_hex = stored.split("$")
+        iterations = int(iterations)
         salt = bytes.fromhex(salt_hex)
         expected = bytes.fromhex(hash_hex)
     except ValueError:
         return False
-    computed = hashlib.pbkdf2_hmac("sha256", password.encode(), salt, int(iterations), dklen=len(expected))
+    # A malformed hash (zero/negative/absurd iteration count, empty hash)
+    # is treated as "no valid password stored", not computed.
+    if iterations < 1 or iterations > 10 * PBKDF2_ITERATIONS or not expected:
+        return False
+    computed = hashlib.pbkdf2_hmac("sha256", password.encode(), salt, iterations, dklen=len(expected))
     return hmac.compare_digest(computed, expected)
+
+
+def write_password_file(path, encoded):
+    """Replace the password file at `path` with `encoded` (an already
+    computed hash_password() string) in one atomic step.
+
+    The old code did open(path, "w") and THEN hashed the password: "w"
+    empties the file immediately, and hashing takes a fraction of a
+    second, so for that whole time the file was empty - and a login
+    arriving in that window read an empty password. This version writes
+    the new hash to a temporary file next to the real one, flushes it to
+    disk, and only then renames it over the old file. A rename within
+    one directory is atomic on Linux: any reader sees either the whole
+    old file or the whole new one, never an empty or half-written one,
+    even if the process crashes part-way through.
+
+    Needs write access to the DIRECTORY (to create the temporary file),
+    not just the file - gateway/setup-privilege-separation.sh makes
+    /etc/securepi group-writable for exactly this reason."""
+    if not encoded:
+        raise ValueError("refusing to write an empty password")
+    directory = os.path.dirname(path) or "."
+    fd, tmp_path = tempfile.mkstemp(prefix=".console-password.", dir=directory)
+    try:
+        with os.fdopen(fd, "w") as fh:
+            fh.write(encoded)
+            fh.flush()
+            os.fsync(fh.fileno())
+        # mkstemp creates the file readable by its owner only; keep the
+        # same owner+group read/write the setup script gives the original.
+        os.chmod(tmp_path, 0o660)
+        os.replace(tmp_path, path)
+    except BaseException:
+        # Never leave a stray temporary file behind on failure.
+        if os.path.exists(tmp_path):
+            os.remove(tmp_path)
+        raise
 
 
 def needs_rehash(stored):
@@ -154,6 +209,16 @@ def delete_session(conn, token):
     """Sign out: remove the session row so the cookie (wherever it still
     sits in a browser) can never be used again."""
     conn.execute("DELETE FROM sessions WHERE token = ?", (token,))
+    conn.commit()
+
+
+def delete_other_sessions(conn, keep_token):
+    """Sign out every session except `keep_token` (the one making the
+    request). Called after a password change: if the password was
+    changed because someone else learned it, their already-open session
+    must stop working too - otherwise changing the password would keep
+    them out only until their session expired on its own."""
+    conn.execute("DELETE FROM sessions WHERE token != ?", (keep_token or "",))
     conn.commit()
 
 

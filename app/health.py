@@ -54,7 +54,7 @@ import retention
 import settings
 
 SERVICES_LIST_PATH = "/opt/securepi/services.list"
-DB_PATH = "/opt/securepi/securepi.db"
+DB_PATH = "/var/lib/securepi/securepi.db"
 DB_DIR = os.path.dirname(DB_PATH)
 WAN_PROBE_HOST = "1.1.1.1"
 DNS_PROBE_DOMAIN = "example.com"

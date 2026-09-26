@@ -44,7 +44,7 @@ import settings
 import signature_taxonomy
 import suppression
 
-DB_PATH = "/opt/securepi/securepi.db"
+DB_PATH = "/var/lib/securepi/securepi.db"
 
 # How far apart two firings of the SAME signal for the SAME device can be
 # while still counting as "the same incident continuing" rather than a new

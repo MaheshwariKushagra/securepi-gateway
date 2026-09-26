@@ -78,7 +78,7 @@ import native_trackers
 import profiles
 import settings
 
-LOCK_PATH = "/opt/securepi/orchestrator.lock"
+LOCK_PATH = "/var/lib/securepi/orchestrator.lock"
 BOOT_ID_PATH = "/proc/sys/kernel/random/boot_id"
 ACTOR = "orchestrator"
 
@@ -147,9 +147,10 @@ _local = threading.local()
 
 def _open_lock_file():
     try:
-        # Root (the engine) creates it the first time; the unprivileged
-        # console can't create files in /opt/securepi, but a read-only
-        # descriptor is all flock() needs.
+        # Lives in /var/lib/securepi (the data directory, group-writable
+        # for the console) rather than /opt/securepi (code, root-only).
+        # If the console still can't create it, a read-only descriptor to
+        # a copy root already made is all flock() needs.
         return os.open(LOCK_PATH, os.O_RDWR | os.O_CREAT, 0o644)
     except PermissionError:
         return os.open(LOCK_PATH, os.O_RDONLY)

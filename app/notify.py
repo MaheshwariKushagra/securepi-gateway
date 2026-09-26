@@ -40,6 +40,7 @@ import smtplib
 import ssl
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 from email.message import EmailMessage
 
@@ -215,16 +216,40 @@ def digest_message(rows):
 
 # --------------------------------------------------------------- senders --
 
+def _host(url):
+    """Just the hostname of `url`, for error messages. Never the path or
+    query: Telegram puts the bot token IN the path
+    (https://api.telegram.org/bot<TOKEN>/sendMessage), so an error that
+    quoted the URL minus its query string still stored the token in the
+    database and showed it in the console (Audit.md H7)."""
+    return urllib.parse.urlsplit(url).hostname or "unknown host"
+
+
 def _post(url, body_bytes, headers):
     req = urllib.request.Request(url, data=body_bytes, method="POST", headers=headers)
     try:
         with urllib.request.urlopen(req, timeout=SEND_TIMEOUT_S, context=ssl.create_default_context()) as resp:
             return resp.status
     except urllib.error.HTTPError as e:
+        # A short piece of the provider's reply is kept - it's usually the
+        # only useful clue ("chat not found", "invalid topic"). send()
+        # below still scrubs every secret out of the final message.
         detail = e.read().decode(errors="replace")[:200].strip()
-        raise NotifyError("HTTP %d from %s%s" % (e.code, url.split("?")[0], (": " + detail) if detail else ""))
+        raise NotifyError("HTTP %d from %s%s" % (e.code, _host(url), (": " + detail) if detail else ""))
     except (urllib.error.URLError, OSError) as e:
-        raise NotifyError("could not reach %s: %s" % (url.split("/")[2] if "//" in url else url, e))
+        raise NotifyError("could not reach %s: %s" % (_host(url), e))
+
+
+def _redact(text, kind, config):
+    """`text` with every secret value from this channel's config replaced
+    by '***'. A second line of defence behind _host(): whatever a provider
+    or library puts in an error message, a token or password never
+    reaches the notifications table or the console."""
+    for field in FIELDS.get(kind, {}).get("secret", ()):
+        value = config.get(field)
+        if value:
+            text = text.replace(str(value), "***")
+    return text
 
 
 def build_request(kind, config, title, body, severity, event):
@@ -265,7 +290,15 @@ def build_email(config, title, body):
 
 
 def send(kind, config, title, body, severity="medium", event=None):
-    """Send one message on one channel, or raise NotifyError."""
+    """Send one message on one channel, or raise NotifyError. The error
+    message never contains one of the channel's secrets (see _redact)."""
+    try:
+        _send(kind, config, title, body, severity, event)
+    except NotifyError as e:
+        raise NotifyError(_redact(str(e), kind, config))
+
+
+def _send(kind, config, title, body, severity, event):
     if kind == "email":
         msg = build_email(config, title, body)
         try:

@@ -2,7 +2,7 @@
 """Inspect what the platform currently knows. Run on the gateway: securepi-db"""
 import sqlite3, sys
 
-DB = "/opt/securepi/securepi.db"
+DB = "/var/lib/securepi/securepi.db"
 c = sqlite3.connect(DB)
 c.row_factory = sqlite3.Row
 

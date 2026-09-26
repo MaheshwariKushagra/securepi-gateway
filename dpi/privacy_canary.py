@@ -72,7 +72,7 @@ sys.path.insert(0, "/opt/securepi")
 import correlation  # noqa: E402  (path must be set up first)
 import dpi_enroll    # noqa: E402
 
-DB_PATH = "/opt/securepi/securepi.db"
+DB_PATH = "/var/lib/securepi/securepi.db"
 ADDON_PATH = "/opt/securepi-dpi/securepi_adfilter.py"
 CHECK_INTERVAL_S = 15 * 60
 

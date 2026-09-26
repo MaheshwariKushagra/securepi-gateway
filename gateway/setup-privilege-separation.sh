@@ -11,14 +11,17 @@
 #      (console + DNS admin passwords) to /etc/securepi, where the new
 #      user's own group can reach them - /root itself is 700, so no
 #      permission change on a file INSIDE it would ever have helped
-#   3. re-permissions the two data paths the console still needs
-#      direct read/write access to (its own SQLite database, and the
-#      Tier 2 rule-set JSON file) so the new group can use them,
-#      without granting write access to the CODE alongside them (the
-#      sticky bit on each directory means only root, or a file's own
-#      owner, can rename or delete an existing entry there - a group
-#      member can add a new file, or edit one it already owns, but not
-#      overwrite or remove app/webapp.py itself)
+#   3. puts everything the console WRITES in dedicated data directories
+#      (/var/lib/securepi for the database and orchestrator lock,
+#      /var/lib/securepi-dpi for the Tier 2 rule-set JSON) and makes the
+#      CODE directories (/opt/securepi, /opt/securepi-dpi) root-owned and
+#      writable by root only. Code and writable data must never share a
+#      directory: root services import Python from /opt/securepi and
+#      /opt/securepi-dpi, and Python looks in a script's own directory
+#      BEFORE the standard library, so a console that could create a
+#      file there (say, a fake json.py) could get its code run as root.
+#      The sticky bit the earlier version of this step relied on doesn't
+#      stop that - it only protects files that already exist.
 #   4. fixes up the console's TLS private key (step 3.2) to be group-
 #      readable, if it already exists - it's generated root-only, which
 #      only worked because the console used to run as root itself
@@ -65,40 +68,47 @@ for pair in "/root/.securepi-console-password:/etc/securepi/console-password" \
     fi
 done
 
-echo "==> 3/6  console database directory and file"
-# 1775, not 775: the sticky bit (leading 1) means only root or a file's
-# own owner may rename/delete an entry in this directory, even though
-# the securepi group can write to it - without it, group write alone
-# would let a compromised web process delete or replace webapp.py
-# itself, which is a much bigger problem than "can write its own data".
-sudo chown root:securepi /opt/securepi
-sudo chmod 1775 /opt/securepi
-sudo chown root:securepi /opt/securepi/securepi.db
-sudo chmod 664 /opt/securepi/securepi.db
-# WAL mode's sidecar files: chgrp/chmod them if they already exist
-# (created by root's securepi-ingest so far); if they don't exist yet,
-# the securepi-web user creating them fresh will already own them
-# correctly once the directory itself is group-writable.
-for f in /opt/securepi/securepi.db-wal /opt/securepi/securepi.db-shm; do
-    [ -f "$f" ] && sudo chown root:securepi "$f" && sudo chmod 664 "$f"
+echo "==> 3/6  data directories (database, lock, rule set)"
+# 2770: owner root, group securepi, read/write/enter for both, nothing
+# for anyone else. The leading 2 (setgid) makes every new file created
+# inside - including SQLite's -wal/-shm sidecars and the console's
+# temporary files during an atomic save - belong to the securepi group
+# automatically, whichever process created it.
+for d in /var/lib/securepi /var/lib/securepi-dpi; do
+    sudo mkdir -p "$d"
+    sudo chown root:securepi "$d"
+    sudo chmod 2770 "$d"
 done
+# /etc/securepi holds the console password. It becomes group-writable
+# too (still no access for anyone else) so the console can replace the
+# password file atomically - write a temporary file, then rename it over
+# the old one - instead of emptying and rewriting it in place, which
+# briefly left the file empty (Audit.md C2). Nothing in it is code.
+sudo chmod 2770 /etc/securepi
+if sudo test -f /var/lib/securepi/securepi.db; then
+    sudo chown root:securepi /var/lib/securepi/securepi.db
+    sudo chmod 664 /var/lib/securepi/securepi.db
+    for f in /var/lib/securepi/securepi.db-wal /var/lib/securepi/securepi.db-shm; do
+        if sudo test -f "$f"; then
+            sudo chown root:securepi "$f"
+            sudo chmod 664 "$f"
+        fi
+    done
+elif sudo test -f /opt/securepi/securepi.db; then
+    echo "   ** the database is still at /opt/securepi/securepi.db -"
+    echo "      run gateway/migrate-data-dirs.sh to move it (it stops the services first) **"
+fi
 
-echo "==> 4/6  Tier 2 rule-set file"
-sudo chown root:securepi /opt/securepi-dpi
-sudo chmod 1775 /opt/securepi-dpi
-if [ -f /opt/securepi-dpi/adfilter-rules.json ]; then
-    # Owned by securepi-web ITSELF, not root:securepi like the other
-    # data files above - found live, the hard way: webapp.py's rule
-    # editor writes this file via an atomic tmp-then-rename (so the DPI
-    # addon, a separate process, never reads a half-written file), and
-    # the sticky bit on this directory only lets a file's OWNER replace
-    # it via rename - group write access alone isn't enough for a
-    # rename onto an EXISTING file, only for creating a brand new one.
-    # A root-owned rules.json would make every rule-set edit fail with
-    # "Operation not permitted", confirmed by hitting exactly that
-    # before this ownership was corrected.
-    sudo chown securepi-web:securepi /opt/securepi-dpi/adfilter-rules.json
-    sudo chmod 664 /opt/securepi-dpi/adfilter-rules.json
+echo "==> 4/6  code directories: root-owned, root-writable only"
+for d in /opt/securepi /opt/securepi-dpi; do
+    if sudo test -d "$d"; then
+        sudo chown root:root "$d"
+        sudo chmod 755 "$d"
+    fi
+done
+if sudo test -f /var/lib/securepi-dpi/adfilter-rules.json; then
+    sudo chown root:securepi /var/lib/securepi-dpi/adfilter-rules.json
+    sudo chmod 664 /var/lib/securepi-dpi/adfilter-rules.json
 fi
 
 echo "==> 5/6  console TLS private key (if step 3.2 already ran)"

@@ -276,6 +276,26 @@ class ValidateRulesTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             adfilter_rules.validate_rules(bad)
 
+    def test_a_selector_that_ends_the_style_element_is_rejected(self):
+        # Audit.md: selectors are pasted into a <style> element on other
+        # sites' pages - "</style><script>" would inject a script.
+        bad = dict(adfilter_rules.DEFAULT_RULES)
+        bad["cosmetic_selectors"] = ["x</style><script>alert(1)</script>"]
+        with self.assertRaises(ValueError):
+            adfilter_rules.validate_rules(bad)
+
+    def test_a_selector_that_adds_its_own_css_rules_is_rejected(self):
+        for sel in ("a{background:url(//evil)}", "a;b", "@import url(x)", "a/*x*/", "a\\3c"):
+            bad = dict(adfilter_rules.DEFAULT_RULES)
+            bad["cosmetic_selectors"] = [sel]
+            with self.assertRaises(ValueError, msg=sel):
+                adfilter_rules.validate_rules(bad)
+
+    def test_ordinary_selectors_including_child_combinators_are_valid(self):
+        ok = dict(adfilter_rules.DEFAULT_RULES)
+        ok["cosmetic_selectors"] = ["ytd-ad-slot-renderer", "div.ad > span", "[id^='ad-']", "#banner"]
+        adfilter_rules.validate_rules(ok)  # must not raise
+
 
 class ApplyDefaultsTests(unittest.TestCase):
     """apply_defaults() is what lets an adfilter-rules.json written before
@@ -367,14 +387,34 @@ class CspLoosenForInlineStyleTests(unittest.TestCase):
         out = addon.loosen_csp_for_inline_style(csp)
         self.assertEqual(out, csp)
 
-    def test_no_style_src_falls_back_to_loosening_default_src(self):
+    def test_no_style_src_adds_a_style_src_copied_from_default_src(self):
         csp = "default-src 'self' example.com; script-src 'self'"
         out = addon.loosen_csp_for_inline_style(csp)
-        self.assertIn("default-src 'self' example.com 'unsafe-inline'", out)
+        self.assertIn("style-src 'self' example.com 'unsafe-inline'", out)
         # script-src must NOT be touched - this function only ever loosens
         # style, never script (see its own docstring on why that matters).
         self.assertIn("script-src 'self'", out)
         self.assertNotIn("script-src 'self' 'unsafe-inline'", out)
+
+    def test_default_src_itself_is_never_loosened(self):
+        # Audit.md ad-blocking #1: with no script-src, default-src is what
+        # governs scripts - adding 'unsafe-inline' to it allowed inline
+        # SCRIPTS, not just the injected style.
+        csp = "default-src 'self'"
+        out = addon.loosen_csp_for_inline_style(csp)
+        self.assertIn("default-src 'self';", out + ";")
+        self.assertNotIn("default-src 'self' 'unsafe-inline'", out)
+        self.assertIn("style-src 'self' 'unsafe-inline'", out)
+
+    def test_default_src_none_is_not_copied_into_the_new_style_src(self):
+        out = addon.loosen_csp_for_inline_style("default-src 'none'")
+        self.assertIn("default-src 'none'", out)
+        self.assertIn("style-src 'unsafe-inline'", out)
+
+    def test_style_src_elem_also_gets_unsafe_inline(self):
+        csp = "style-src 'self'; style-src-elem 'self'"
+        out = addon.loosen_csp_for_inline_style(csp)
+        self.assertIn("style-src-elem 'self' 'unsafe-inline'", out)
 
     def test_neither_style_src_nor_default_src_present_is_unchanged(self):
         csp = "script-src 'self'; img-src *"

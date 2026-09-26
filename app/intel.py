@@ -44,7 +44,7 @@ import urllib.request
 
 import adguard
 
-DB_PATH = "/opt/securepi/securepi.db"
+DB_PATH = "/var/lib/securepi/securepi.db"
 DOMAIN_BLOCKLIST_DIR = "/opt/securepi/static"
 DOMAIN_BLOCKLIST_PATH = DOMAIN_BLOCKLIST_DIR + "/ioc-domains.txt"
 # AdGuard's add_url endpoint validates the URL scheme server-side and

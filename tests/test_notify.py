@@ -183,3 +183,49 @@ class RequestShapeTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ErrorRedactionTests(unittest.TestCase):
+    """Audit.md H7: Telegram's bot token is part of the request URL's
+    PATH, so an error quoting the URL stored the token in the database."""
+
+    TOKEN = "123456:AAH-very-secret-bot-token"
+
+    def _fail_with(self, exc):
+        import urllib.request
+        original = urllib.request.urlopen
+
+        def fake_urlopen(*args, **kwargs):
+            raise exc
+        urllib.request.urlopen = fake_urlopen
+        self.addCleanup(setattr, urllib.request, "urlopen", original)
+
+    def test_an_http_error_never_contains_the_telegram_token(self):
+        import io
+        import urllib.error
+        url = "https://api.telegram.org/bot%s/sendMessage" % self.TOKEN
+        body = io.BytesIO(b'{"ok":false,"description":"Bad Request: chat not found"}')
+        self._fail_with(urllib.error.HTTPError(url, 400, "Bad Request", {}, body))
+        with self.assertRaises(notify.NotifyError) as ctx:
+            notify.send("telegram", {"bot_token": self.TOKEN, "chat_id": "1"}, "t", "b")
+        message = str(ctx.exception)
+        self.assertNotIn(self.TOKEN, message)
+        self.assertIn("api.telegram.org", message)
+        self.assertIn("chat not found", message)  # the useful clue survives
+
+    def test_a_secret_echoed_by_the_provider_is_scrubbed(self):
+        import io
+        import urllib.error
+        body = io.BytesIO(("rejected key %s" % WEBHOOK["secret"]).encode())
+        self._fail_with(urllib.error.HTTPError(WEBHOOK["url"], 401, "Unauthorized", {}, body))
+        with self.assertRaises(notify.NotifyError) as ctx:
+            notify.send("webhook", WEBHOOK, "t", "b")
+        self.assertNotIn(WEBHOOK["secret"], str(ctx.exception))
+        self.assertIn("***", str(ctx.exception))
+
+    def test_an_unreachable_host_names_only_the_host(self):
+        import urllib.error
+        self._fail_with(urllib.error.URLError("timed out"))
+        with self.assertRaises(notify.NotifyError) as ctx:
+            notify.send("telegram", {"bot_token": self.TOKEN, "chat_id": "1"}, "t", "b")
+        self.assertNotIn(self.TOKEN, str(ctx.exception))

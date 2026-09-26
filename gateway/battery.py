@@ -65,7 +65,7 @@ import time
 sys.path.insert(0, "/opt/securepi")
 import registry  # noqa: E402
 
-DB_PATH = "/opt/securepi/securepi.db"
+DB_PATH = "/var/lib/securepi/securepi.db"
 NS = "ns_attacker"
 VICTIM_NS = "ns_victim"
 VICTIM_IP = "10.10.0.221"

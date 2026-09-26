@@ -2,7 +2,7 @@
 """Run the real SecurePi console (app/webapp.py, unmodified on disk) locally on
 the Mac against the synthetic demo DB, with gateway-only dependencies (AdGuard
 Home's API, nftables, the CA file) replaced by in-memory stand-ins."""
-import datetime, os, sys, threading, time, types, json, sqlite3
+import datetime, os, shutil, sys, threading, time, types, json, sqlite3
 
 # The repository root, two folders up from docs/demo/.
 REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -111,11 +111,18 @@ dpi_enroll.enroll = lambda ip, hours=24: SETS["enrolled"].__setitem__(ip, time.t
 dpi_enroll.unenroll = lambda ip: SETS["enrolled"].pop(ip, None)
 orchestrator.LOCK_PATH = os.path.join(HERE, "orchestrator.lock")
 
+# ---- The demo edits its OWN copy of the DPI rule set, never the tracked
+# dpi/adfilter-rules.json - saving a rule change in the demo console used
+# to rewrite the real, deployed rules file in the repository. The copy is
+# refreshed from the repository each time the demo starts.
+DEMO_RULES = os.path.join(HERE, "adfilter-rules.demo.json")
+shutil.copyfile(os.path.join(REPO, "dpi/adfilter-rules.json"), DEMO_RULES)
+
 # ---- Load webapp.py with its gateway paths pointed at the repo / demo DB
 src = open(os.path.join(REPO, "app/webapp.py")).read()
 src = (src.replace('"/opt/securepi/static"', repr(os.path.join(REPO, "app/static")))
           .replace('"/opt/securepi/templates"', repr(os.path.join(REPO, "app/templates")))
-          .replace('DB_PATH = "/opt/securepi/securepi.db"', "DB_PATH = %r" % DB)
+          .replace('DB_PATH = "/var/lib/securepi/securepi.db"', "DB_PATH = %r" % DB)
           # step 3.1: a successful login rewrites this file with a fresh
           # hash (see session_auth.needs_rehash) - point that at a local,
           # writable path instead of the real gateway's one (moved out
@@ -123,8 +130,8 @@ src = (src.replace('"/opt/securepi/static"', repr(os.path.join(REPO, "app/static
           # which this Mac has no matching group for anyway).
           .replace('CONSOLE_PASSWORD_FILE = "/etc/securepi/console-password"',
                     "CONSOLE_PASSWORD_FILE = %r" % os.path.join(HERE, "console-password.demo"))
-          .replace('DPI_RULES_PATH = "/opt/securepi-dpi/adfilter-rules.json"',
-                   "DPI_RULES_PATH = %r" % os.path.join(REPO, "dpi/adfilter-rules.json"))
+          .replace('DPI_RULES_PATH = "/var/lib/securepi-dpi/adfilter-rules.json"',
+                   "DPI_RULES_PATH = %r" % DEMO_RULES)
           .replace('"/var/log/securepi/dpi-rule-stats.json"', repr(os.path.join(HERE, "dpi-rule-stats.json"))))
 webapp = types.ModuleType("webapp")
 webapp.__file__ = os.path.join(REPO, "app/webapp.py")

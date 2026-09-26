@@ -27,6 +27,16 @@
 #     their own careful, manual deploy paths (GATEWAY-SETUP-RUNBOOK.md
 #     "Lockout insurance", dpi/deploy-dpi.sh) because a firewall or CA
 #     mistake is a lockout or a privacy-scope risk, not just a bug.
+# The first line of `deploy` refuses to run until the database has moved
+# to /var/lib/securepi (Audit.md C1: writable data lives outside the
+# root-only code directory now). Without that check, new code pointed at
+# the new path would start against an empty, freshly created database
+# while the real one sat untouched in /opt/securepi.
+#
+# dpi/adfilter_rules.py goes into /opt/securepi alongside app/: the
+# console imports it (`import adfilter_rules`) to validate DPI rule-set
+# edits, and it only lives under dpi/ in the repository.
+#
 # Restart order (ingest, then engine, then web) matches every deploy
 # logged in ENHANCEMENT-PLAN.md - ingest owns schema-adjacent state the
 # other two read.
@@ -58,9 +68,11 @@ test:
 	python3 -m unittest discover -s tests -p 'test_*.py' -v
 
 deploy:
+	ssh $(GATEWAY_HOST) 'sudo test -f /var/lib/securepi/securepi.db' || \
+		{ echo "** /var/lib/securepi/securepi.db not found on the gateway - run gateway/migrate-data-dirs.sh there first **"; exit 1; }
 	rsync -az --no-owner --no-group --exclude '__pycache__' --exclude '*.pyc' --exclude '.DS_Store' \
 		--rsync-path="sudo rsync" \
-		app/ $(GATEWAY_HOST):$(GATEWAY_APP)/
+		app/ dpi/adfilter_rules.py $(GATEWAY_HOST):$(GATEWAY_APP)/
 	ssh $(GATEWAY_HOST) 'sudo systemctl restart securepi-ingest securepi-engine securepi-web'
 	ssh $(GATEWAY_HOST) 'sudo securepi status'
 

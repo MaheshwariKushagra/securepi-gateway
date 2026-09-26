@@ -105,3 +105,44 @@ class HelperScriptTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class CodeAndDataSeparationTests(unittest.TestCase):
+    """Audit.md C1: root services import Python from /opt/securepi and
+    /opt/securepi-dpi, so nothing the unprivileged console WRITES may live
+    there - a directory the console can create files in is a directory it
+    can plant a module in. Structural guards only; the real permissions
+    can only be checked on the gateway (gateway/migrate-data-dirs.sh
+    prints anything in those directories not owned by root)."""
+
+    WRITABLE_PATH_CONSTANTS = (
+        ("app/webapp.py", "DB_PATH"), ("app/webapp.py", "DPI_RULES_PATH"),
+        ("app/ingest.py", "DB_PATH"), ("app/correlation.py", "DB_PATH"),
+        ("app/health.py", "DB_PATH"), ("app/intel.py", "DB_PATH"),
+        ("app/orchestrator.py", "LOCK_PATH"), ("app/status.py", "DB"),
+        ("dpi/privacy_canary.py", "DB_PATH"), ("dpi/securepi_adfilter.py", "RULES_PATH"),
+    )
+
+    def _source(self, relpath):
+        with open(os.path.join(REPO_ROOT, relpath)) as fh:
+            return fh.read()
+
+    def test_every_writable_path_lives_under_var_lib(self):
+        for relpath, name in self.WRITABLE_PATH_CONSTANTS:
+            m = re.search(r'^%s = "([^"]+)"' % name, self._source(relpath), re.M)
+            self.assertIsNotNone(m, "%s not found in %s" % (name, relpath))
+            self.assertTrue(m.group(1).startswith("/var/lib/securepi"),
+                            "%s.%s = %s is not in a data directory" % (relpath, name, m.group(1)))
+
+    def test_setup_script_never_makes_a_code_directory_group_writable(self):
+        src = self._source("gateway/setup-privilege-separation.sh")
+        for line in src.splitlines():
+            if line.strip().startswith("#"):
+                continue
+            self.assertNotRegex(line, r"chmod\s+\d*7[57]\s+/opt/securepi",
+                                "code directory made group-writable: %s" % line.strip())
+
+    def test_setup_script_makes_the_code_directories_root_owned(self):
+        src = self._source("gateway/setup-privilege-separation.sh")
+        self.assertIn('sudo chown root:root "$d"', src)
+        self.assertIn('for d in /opt/securepi /opt/securepi-dpi; do', src)

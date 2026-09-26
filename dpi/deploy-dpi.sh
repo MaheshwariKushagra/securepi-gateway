@@ -11,7 +11,20 @@ set -e
 
 DPI=/opt/securepi-dpi
 echo "==> 1/5  installing addon"
-sudo install -m 644 "$(dirname "$0")/securepi_adfilter.py" $DPI/securepi_adfilter.py
+sudo install -m 644 -o root -g root "$(dirname "$0")/securepi_adfilter.py" $DPI/securepi_adfilter.py
+# The addon imports its rule-set validation from this shared module
+# (`from adfilter_rules import ...`) - it has to sit next to the addon.
+# The console's own copy goes to /opt/securepi via `make deploy`.
+sudo install -m 644 -o root -g root "$(dirname "$0")/adfilter_rules.py" $DPI/adfilter_rules.py
+# The rule set itself is DATA the console edits, so it lives outside the
+# root-only code directory (Audit.md C1). Seeded from the repository copy
+# only if there isn't one yet - never overwrites the live, edited rules.
+sudo mkdir -p /var/lib/securepi-dpi
+sudo chown root:securepi /var/lib/securepi-dpi
+sudo chmod 2770 /var/lib/securepi-dpi
+if ! sudo test -f /var/lib/securepi-dpi/adfilter-rules.json; then
+    sudo install -m 664 -o root -g securepi "$(dirname "$0")/adfilter-rules.json" /var/lib/securepi-dpi/adfilter-rules.json
+fi
 
 echo "==> 2/5  creating the proxy service"
 sudo tee /etc/systemd/system/securepi-dpi.service >/dev/null <<'UNIT'

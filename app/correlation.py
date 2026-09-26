@@ -1520,15 +1520,22 @@ SIGNALS = [port_scan_signal, network_sweep_signal, slow_scan_signal, dns_bypass_
 
 
 def run_all(conn):
-    """Run every signal once. Returns {signal_name: incidents_fired}."""
+    """Run every signal once. Returns {signal_name: incidents_fired}.
+
+    Each signal's work is committed as soon as that signal finishes, and
+    thrown away (rolled back) if it fails part-way. Previously one commit
+    at the very end saved everything - including whatever a failed signal
+    had half-written (say, an incident raised but its window position not
+    yet moved on), which then made it process the same events again."""
     results = {}
     for fn in SIGNALS:
         try:
             results[fn.__name__] = fn(conn)
+            conn.commit()
         except Exception as exc:
+            conn.rollback()
             print("correlation: %s failed: %s" % (fn.__name__, exc), flush=True)
             results[fn.__name__] = None
-    conn.commit()
     return results
 
 

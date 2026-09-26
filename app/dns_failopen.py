@@ -94,9 +94,17 @@ def is_active():
 def activate():
     """Idempotent: a call while already active does nothing. Adds both a
     UDP and a TCP rule - a resolver reply too large for one UDP packet
-    falls back to TCP, and that fallback needs to be redirected too."""
-    if is_active():
+    falls back to TCP, and that fallback needs to be redirected too.
+
+    "Already active" means BOTH rules are there. If only one is - the
+    other add failed last time - it is removed and both are added again.
+    Treating one rule as "active" used to leave the other transport
+    unredirected for as long as the fail-open lasted (Audit.md)."""
+    handles = _handles()
+    if len(handles) >= 2:
         return
+    if handles:
+        deactivate()
     for proto in ("udp", "tcp"):
         result = _run(_add_rule_argv(proto))
         if result.returncode != 0:

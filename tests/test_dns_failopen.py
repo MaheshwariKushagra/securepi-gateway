@@ -18,6 +18,8 @@ import sys
 import unittest
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import fixtures  # noqa: E402,F401  (puts app/ on the import path)
+
 import dns_failopen  # noqa: E402
 
 
@@ -113,6 +115,28 @@ class ActivateDeactivateTests(unittest.TestCase):
         self.assertEqual(len(add_calls), 2)
         protos = {c[c.index("dport") - 1] for c in add_calls}
         self.assertEqual(protos, {"udp", "tcp"})
+
+    def test_a_half_installed_failopen_is_rebuilt_with_both_rules(self):
+        # Audit.md: one leftover rule used to count as "active", so the
+        # missing transport was never redirected.
+        only_udp = BASE_LIST_OUTPUT.replace(
+            "\t}\n}\n",
+            '\t\tiifname "ap0" ip daddr 10.10.0.1 udp dport 53 counter packets 0 bytes 0 dnat to 1.1.1.1:53'
+            ' comment "dns-failopen" # handle 7\n'
+            "\t}\n}\n",
+        )
+        calls = []
+
+        def fake_run(args):
+            calls.append(args)
+            return _FakeResult(stdout=only_udp)
+        dns_failopen._run = fake_run
+
+        dns_failopen.activate()
+        deletes = [c for c in calls if c[:2] == ["delete", "rule"]]
+        adds = [c for c in calls if c[:2] == ["add", "rule"]]
+        self.assertEqual(len(deletes), 1)
+        self.assertEqual({c[c.index("dport") - 1] for c in adds}, {"udp", "tcp"})
 
     def test_activate_raises_if_nft_refuses_the_add(self):
         def fake_run(args):

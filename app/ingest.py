@@ -28,6 +28,7 @@ import sqlite3
 import subprocess
 import sys
 import time
+import urllib.parse
 
 import adguard
 import health
@@ -38,6 +39,7 @@ SCHEMA_PATH = "/opt/securepi/schema.sql"
 EVE_PATH = "/var/log/suricata/eve.json"
 AGH_QUERYLOG_PATH = "/opt/AdGuardHome/data/querylog.json"
 AGH_API_PAGE_SIZE = 500  # comfortably covers real accumulation between 2s polls - see read_agh_api's docstring
+AGH_API_MAX_PAGES = 20   # up to 10,000 entries per poll when catching up after a gap (restart, outage)
 AGH_WATERMARK_STARTUP_LOOKBACK_SECONDS = 300  # first-ever run: start 5 minutes back, not from epoch 0
 DPI_EVENTS_PATH = "/var/log/securepi/dpi-events.jsonl"
 NFT_LOG_STARTUP_LOOKBACK_SECONDS = 300  # same first-run convention as AdGuard's watermark above
@@ -526,13 +528,21 @@ def read_eve(conn):
 
     read = errors = 0
     rows = []
-    with open(EVE_PATH, "r") as fh:
+    # Binary mode + readline(), not `for line in fh` in text mode: after
+    # leaving a text-mode `for` loop early, fh.tell() raises "telling
+    # position disabled by next() call" - so a half-written last line
+    # crashed the whole ingest pass (Audit.md H4). Counting the bytes of
+    # each complete line gives the exact offset to resume from instead.
+    with open(EVE_PATH, "rb") as fh:
         fh.seek(offset)
-        for line in fh:
-            # A partial final line means Suricata is mid-write. Stop here and
-            # pick it up next pass rather than storing a corrupt record.
-            if not line.endswith("\n"):
+        while True:
+            line = fh.readline()
+            # Empty = end of file. No trailing newline = Suricata is still
+            # writing this line. Either way stop, with `offset` still at
+            # the start of the unfinished line, and read it whole next pass.
+            if not line.endswith(b"\n"):
                 break
+            offset += len(line)
             read += 1
             try:
                 event = json.loads(line)
@@ -545,7 +555,6 @@ def read_eve(conn):
             if event.get("event_type") in SKIP_TYPES:
                 continue
             rows.append(flatten_suricata(event))
-        offset = fh.tell()
 
     saved = insert_events(conn, rows)
     save_state(conn, "suricata", EVE_PATH, stat.st_ino, offset)
@@ -609,7 +618,17 @@ def flatten_agh(entry):
 
 def read_agh_querylog(conn):
     """Read whatever is new in AdGuard's querylog.json. Same watermark and
-    rotation-by-inode approach as read_eve - see its docstring."""
+    rotation-by-inode approach as read_eve - see its docstring.
+
+    Only runs when the API is unreachable (read_agh below), and the API
+    reader is what normally imports AdGuard's queries. So entries at or
+    before the API reader's watermark are skipped - they're already in
+    the database - and the watermark moves forward past whatever this
+    reader imports, so the API doesn't import them a second time once it
+    is back. Previously the file reader kept its own separate position,
+    untouched while the API worked, and re-imported all of that history
+    on the first API outage (Audit.md H5)."""
+    already_imported_up_to = get_agh_watermark(conn)
     if not os.path.exists(AGH_QUERYLOG_PATH):
         return 0, 0, 0
 
@@ -624,22 +643,29 @@ def read_agh_querylog(conn):
 
     read = errors = 0
     rows = []
-    with open(AGH_QUERYLOG_PATH, "r") as fh:
+    # Binary mode + readline(): see read_eve() for why (Audit.md H4).
+    with open(AGH_QUERYLOG_PATH, "rb") as fh:
         fh.seek(offset)
-        for line in fh:
-            if not line.endswith("\n"):
-                break
+        while True:
+            line = fh.readline()
+            if not line.endswith(b"\n"):
+                break  # end of file, or a line still being written
+            offset += len(line)
             read += 1
             try:
                 entry = json.loads(line)
             except Exception:
                 errors += 1
                 continue
-            rows.append(flatten_agh(entry))
-        offset = fh.tell()
+            row = flatten_agh(entry)
+            if row["ts"] > already_imported_up_to:
+                rows.append(row)
 
     saved = insert_events(conn, rows)
     save_state(conn, "adguard", AGH_QUERYLOG_PATH, stat.st_ino, offset)
+    newest = max([r["ts"] for r in rows], default=None)
+    if newest is not None and newest > already_imported_up_to:
+        set_agh_watermark(conn, newest)
     conn.execute(
         "UPDATE ingest_stats SET events_read = events_read + ?,"
         " events_saved = events_saved + ?, parse_errors = parse_errors + ?,"
@@ -745,21 +771,34 @@ def read_agh_api(conn):
     to the file reader for that cycle, per this step's own "file reader
     kept as fallback".
 
-    No cursor/pagination beyond one page per poll: at this project's
-    real event volume (measured live - see ENHANCEMENT-PLAN.md step
-    6.6's note: roughly 950 DNS queries/day network-wide, under 1/minute
-    on average) one page of AGH_API_PAGE_SIZE entries per 2-second poll
-    comfortably covers what actually accumulates between polls. A gap
-    larger than one page between polls (the service down for a while, or
-    a genuine traffic spike) would silently skip the overflow rather
-    than page forward to catch up - a real, stated limitation, not a
-    silent one; the fallback-to-file path would separately still pick up
-    what the API poll missed, subject to the file's OWN latency
-    characteristics.
+    Normally one page of AGH_API_PAGE_SIZE entries per 2-second poll is
+    plenty (measured live - ENHANCEMENT-PLAN.md step 6.6: roughly 950 DNS
+    queries/day network-wide). After a gap - this service restarted or
+    down for a while, or a real traffic spike - more than one page can
+    pile up, and taking only the newest page then jumping the watermark
+    to it silently lost everything older (Audit.md H5). So this keeps
+    asking for the next-older page (AdGuard's `older_than` cursor, which
+    each reply supplies as "oldest") until a page reaches back to entries
+    already imported, up to AGH_API_MAX_PAGES pages per poll.
     """
     watermark = get_agh_watermark(conn)
-    resp = adguard._request("GET", "/control/querylog?limit=%d" % AGH_API_PAGE_SIZE)
-    data = (resp or {}).get("data") or []
+    data = []
+    older_than = None
+    for _ in range(AGH_API_MAX_PAGES):
+        path = "/control/querylog?limit=%d" % AGH_API_PAGE_SIZE
+        if older_than:
+            path += "&older_than=%s" % urllib.parse.quote(older_than)
+        resp = adguard._request("GET", path) or {}
+        page = resp.get("data") or []
+        data.extend(page)
+        # Newest first, so the page's last entry is its oldest. Stop when
+        # that already reaches the watermark, when the page wasn't full
+        # (nothing older exists), or when AdGuard gives no cursor.
+        if len(page) < AGH_API_PAGE_SIZE or not resp.get("oldest"):
+            break
+        if parse_rfc3339(page[-1].get("time", "")) <= watermark:
+            break
+        older_than = resp["oldest"]
 
     rows = []
     newest = watermark
@@ -771,7 +810,11 @@ def read_agh_api(conn):
         # A defensive duplicate guard within one fetched page - the API
         # has no stable per-entry id to key on, so this is the best
         # available "have I already queued this exact entry" check.
-        dedup_key = (ts, entry.get("client"), (entry.get("question") or {}).get("name"))
+        # Query type is part of the key: a device asks for A and AAAA
+        # records of the same name at the same instant, and those are two
+        # different queries, not a duplicate.
+        question = entry.get("question") or {}
+        dedup_key = (ts, entry.get("client"), question.get("name"), question.get("type"))
         if dedup_key in seen_this_page:
             continue
         seen_this_page.add(dedup_key)
@@ -842,11 +885,14 @@ def read_dpi_events(conn):
 
     read = errors = 0
     rows = []
-    with open(DPI_EVENTS_PATH, "r") as fh:
+    # Binary mode + readline(): see read_eve() for why (Audit.md H4).
+    with open(DPI_EVENTS_PATH, "rb") as fh:
         fh.seek(offset)
-        for line in fh:
-            if not line.endswith("\n"):
-                break
+        while True:
+            line = fh.readline()
+            if not line.endswith(b"\n"):
+                break  # end of file, or a line still being written
+            offset += len(line)
             read += 1
             try:
                 entry = json.loads(line)
@@ -854,7 +900,6 @@ def read_dpi_events(conn):
                 errors += 1
                 continue
             rows.append(flatten_dpi(entry))
-        offset = fh.tell()
 
     saved = insert_events(conn, rows)
     save_state(conn, "dpi", DPI_EVENTS_PATH, stat.st_ino, offset)
@@ -959,6 +1004,12 @@ def read_nft_log(conn):
     except Exception as exc:
         print("read_nft_log: journalctl failed: %s" % exc, file=sys.stderr, flush=True)
         return 0, 0, 0
+    if result.returncode != 0:
+        # e.g. no permission to read the kernel journal - say so, rather
+        # than quietly treating it as "no bypass attempts".
+        print("read_nft_log: journalctl exited %d: %s" % (result.returncode, (result.stderr or "").strip()[:200]),
+              file=sys.stderr, flush=True)
+        return 0, 0, 0
 
     read = errors = 0
     rows = []
@@ -982,14 +1033,19 @@ def read_nft_log(conn):
         if ts <= watermark:
             continue  # journalctl's --since is second-granularity; re-filter precisely
         read += 1
+        # The watermark moves past EVERY kernel line read, not only the
+        # ones that are ours. Otherwise, during a quiet spell with no
+        # bypass attempts, it stayed put and every poll re-read (and
+        # re-parsed) the whole kernel log since the last attempt - more
+        # and more work the longer the network stayed clean (Audit.md).
+        if ts > newest:
+            newest = ts
         row = flatten_nft_log(message)
         if row is None:
             continue
         row["ts"] = ts
         row["ts_iso"] = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(ts))
         rows.append(row)
-        if ts > newest:
-            newest = ts
 
     saved = insert_events(conn, rows)
     if newest > watermark:
@@ -1004,71 +1060,93 @@ def read_nft_log(conn):
     return read, saved, errors
 
 
+def run_step(conn, name, fn, default):
+    """Run one piece of an ingest pass on its own: if it fails, report it,
+    undo whatever half-finished database work it left behind, and return
+    `default` so the rest of the pass still runs.
+
+    Every step used to share one try/except around the whole pass, so a
+    single failing reader (a bad line, AdGuard restarting) also skipped
+    every step after it - including the DNS fail-open check, whose whole
+    job is keeping the network usable when something is broken
+    (Audit.md H4). The rollback matters too: without it, a step's
+    partly-written rows were committed by whichever later step next
+    called commit(), without the matching offset/watermark update.
+    """
+    try:
+        return fn(conn)
+    except Exception as exc:
+        print("ingest: %s failed: %s" % (name, exc), file=sys.stderr, flush=True)
+        try:
+            conn.rollback()
+        except Exception:
+            pass
+        return default
+
+
 def main():
     conn = open_db()
     print("ingest started, polling every %ds" % POLL_SECONDS, flush=True)
     total = 0
     cycle = 0
+    nothing = (0, 0, 0)  # (read, saved, errors) for a reader that failed
     while True:
-        try:
-            # Refresh the device registry before reading events, so a device
-            # that just got a lease is already known when its events arrive.
-            # Leases change slowly, so this runs every fifth pass rather than
-            # re-reading the same file every two seconds.
-            if cycle % 5 == 0:
-                registry.update_devices(conn)
-            cycle += 1
+        # Refresh the device registry before reading events, so a device
+        # that just got a lease is already known when its events arrive.
+        # Leases change slowly, so this runs every fifth pass rather than
+        # re-reading the same file every two seconds.
+        if cycle % 5 == 0:
+            run_step(conn, "device registry", registry.update_devices, None)
+        cycle += 1
 
-            read, saved, errors = read_eve(conn)
-            a_read, a_saved, a_errors = read_agh(conn)
-            d_read, d_saved, d_errors = read_dpi_events(conn)
-            saved += a_saved + d_saved
-            errors += a_errors + d_errors
-            # read_nft_log spawns a journalctl subprocess, unlike every other
-            # reader here (a pure Python file read or HTTP call) - real but
-            # small overhead that a bypass attempt's own rarity doesn't need
-            # paid every 2s. Every fifth cycle (~10s), the same cadence as
-            # the lease refresh just above, keeps detection latency well
-            # under dns_bypass_signal's own window while cutting the
-            # subprocess spawn rate by 5x.
-            if cycle % 5 == 0:
-                n_read, n_saved, n_errors = read_nft_log(conn)
-                saved += n_saved
-                errors += n_errors
-            total += saved
+        read, saved, errors = run_step(conn, "Suricata reader", read_eve, nothing)
+        a_read, a_saved, a_errors = run_step(conn, "AdGuard reader", read_agh, nothing)
+        d_read, d_saved, d_errors = run_step(conn, "DPI reader", read_dpi_events, nothing)
+        saved += a_saved + d_saved
+        errors += a_errors + d_errors
+        # read_nft_log spawns a journalctl subprocess, unlike every other
+        # reader here (a pure Python file read or HTTP call) - real but
+        # small overhead that a bypass attempt's own rarity doesn't need
+        # paid every 2s. Every fifth cycle (~10s), the same cadence as
+        # the lease refresh just above, keeps detection latency well
+        # under dns_bypass_signal's own window while cutting the
+        # subprocess spawn rate by 5x.
+        if cycle % 5 == 0:
+            n_read, n_saved, n_errors = run_step(conn, "nftables log reader", read_nft_log, nothing)
+            saved += n_saved
+            errors += n_errors
+        total += saved
 
-            # Attach events to devices. Done after insertion rather than
-            # during it, because an event may arrive fractionally before the
-            # lease that explains it - this way it gets picked up next pass
-            # instead of being permanently unattributed.
-            attributed = registry.attribute_events(conn)
+        # Attach events to devices. Done after insertion rather than
+        # during it, because an event may arrive fractionally before the
+        # lease that explains it - this way it gets picked up next pass
+        # instead of being permanently unattributed.
+        attributed = run_step(conn, "event attribution", registry.attribute_events, 0)
 
-            if saved:
-                print("stored %d events (total %d), attributed %d%s" % (
-                    saved, total, attributed,
-                    ", %d parse errors" % errors if errors else ""
-                ), flush=True)
+        if saved:
+            print("stored %d events (total %d), attributed %d%s" % (
+                saved, total, attributed,
+                ", %d parse errors" % errors if errors else ""
+            ), flush=True)
 
-            # step 3.5's health supervisor rides this loop, not
-            # engine.py's - a process can't reliably detect its own
-            # death, and securepi-ingest is a genuinely separate systemd
-            # unit from securepi-engine, so it can correctly report "the
-            # engine hasn't run recently" even if the engine crashed.
-            # Throttled internally (run_if_due) to health_check_interval_
-            # seconds, since most of these checks are too costly to
-            # repeat every 2s.
-            health.run_if_due(conn)
+        # step 3.5's health supervisor rides this loop, not
+        # engine.py's - a process can't reliably detect its own
+        # death, and securepi-ingest is a genuinely separate systemd
+        # unit from securepi-engine, so it can correctly report "the
+        # engine hasn't run recently" even if the engine crashed.
+        # Throttled internally (run_if_due) to health_check_interval_
+        # seconds, since most of these checks are too costly to
+        # repeat every 2s.
+        run_step(conn, "platform health check", health.run_if_due, False)
 
-            # step 3.6's DNS fail-open check needs a tighter, dedicated
-            # cadence than the general platform checks above - the ~30s
-            # "clients still resolve" exit criterion has no room for
-            # waiting out a full health_check_interval_seconds cycle
-            # first. Same root/same-loop reasoning as run_if_due(), just
-            # its own faster throttle.
-            health.run_dns_failopen_if_due(conn)
-        except Exception as exc:
-            # Never let one bad pass kill the service; report and carry on.
-            print("ingest error: %s" % exc, file=sys.stderr, flush=True)
+        # step 3.6's DNS fail-open check needs a tighter, dedicated
+        # cadence than the general platform checks above - the ~30s
+        # "clients still resolve" exit criterion has no room for
+        # waiting out a full health_check_interval_seconds cycle
+        # first. Same root/same-loop reasoning as run_if_due(), just
+        # its own faster throttle. Its own step, so it runs even when
+        # every reader above has failed.
+        run_step(conn, "DNS fail-open check", health.run_dns_failopen_if_due, False)
         time.sleep(POLL_SECONDS)
 
 

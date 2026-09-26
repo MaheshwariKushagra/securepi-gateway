@@ -1229,5 +1229,33 @@ class WindowSettingsTests(unittest.TestCase):
         self.assertEqual(len(rows), 2, "500s apart must not merge under a shortened 60s dedup window")
 
 
+
+class RunAllTransactionTests(unittest.TestCase):
+    """Audit.md: a signal that fails part-way must not have its half-done
+    work committed; the signals that succeeded must still be saved."""
+
+    def test_a_failing_signals_partial_work_is_rolled_back(self):
+        conn = fixtures.temp_db()
+
+        def good(c):
+            c.execute("INSERT INTO signal_state (signal_type, last_run_ts) VALUES ('good', 1)")
+            return 0
+
+        def bad(c):
+            c.execute("INSERT INTO signal_state (signal_type, last_run_ts) VALUES ('bad', 1)")
+            raise RuntimeError("boom")
+
+        original = correlation.SIGNALS
+        correlation.SIGNALS = [good, bad]
+        try:
+            results = correlation.run_all(conn)
+        finally:
+            correlation.SIGNALS = original
+        self.assertEqual(results, {"good": 0, "bad": None})
+        kinds = {r["signal_type"] for r in conn.execute("SELECT signal_type FROM signal_state")}
+        self.assertIn("good", kinds)
+        self.assertNotIn("bad", kinds)
+
+
 if __name__ == "__main__":
     unittest.main()

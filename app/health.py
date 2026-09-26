@@ -138,6 +138,23 @@ def check_services(conn, now):
         )
 
 
+# The signal_state row app/engine.py stamps once per completed cycle (and
+# once at start-up). It is the engine's own heartbeat and nothing else.
+ENGINE_HEARTBEAT = "engine_cycle"
+
+
+def record_engine_heartbeat(conn, now=None):
+    """Called by app/engine.py when it starts and after every completed
+    cycle - see check_staleness() for why it has a row of its own."""
+    now = now if now is not None else time.time()
+    conn.execute(
+        "INSERT INTO signal_state (signal_type, last_run_ts) VALUES (?, ?)"
+        " ON CONFLICT(signal_type) DO UPDATE SET last_run_ts=excluded.last_run_ts",
+        (ENGINE_HEARTBEAT, now),
+    )
+    conn.commit()
+
+
 def check_staleness(conn, now):
     """Catches a process that's still 'active' per systemd but has
     stopped actually doing anything - a hang, not a crash - which
@@ -151,8 +168,15 @@ def check_staleness(conn, now):
     if row and row["last_run"] and now - row["last_run"] > stale_after:
         stale.append("ingest")
 
-    engine_rows = conn.execute("SELECT max(last_run_ts) m FROM signal_state").fetchone()
-    if engine_rows and engine_rows["m"] and now - engine_rows["m"] > stale_after:
+    # The engine's own heartbeat row only. This used to take the newest
+    # timestamp of ANY signal_state row - but this very process (ingest)
+    # stamps rows there too, for these health checks and the DNS
+    # fail-open check, so a hung engine always looked fresh (Audit.md H9).
+    # No row yet means an engine that predates the heartbeat or hasn't
+    # started once - a start-up condition, like the event sources below.
+    engine_row = conn.execute("SELECT last_run_ts FROM signal_state WHERE signal_type=?",
+                              (ENGINE_HEARTBEAT,)).fetchone()
+    if engine_row and engine_row["last_run_ts"] and now - engine_row["last_run_ts"] > stale_after:
         stale.append("correlation engine")
 
     for label, source in (("Suricata", "suricata"), ("AdGuard", "adguard")):

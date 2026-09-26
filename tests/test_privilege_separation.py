@@ -103,9 +103,6 @@ class HelperScriptTests(unittest.TestCase):
             self.assertIn(literal, src)
 
 
-if __name__ == "__main__":
-    unittest.main()
-
 
 class CodeAndDataSeparationTests(unittest.TestCase):
     """Audit.md C1: root services import Python from /opt/securepi and
@@ -146,3 +143,7 @@ class CodeAndDataSeparationTests(unittest.TestCase):
         src = self._source("gateway/setup-privilege-separation.sh")
         self.assertIn('sudo chown root:root "$d"', src)
         self.assertIn('for d in /opt/securepi /opt/securepi-dpi; do', src)
+
+
+if __name__ == "__main__":
+    unittest.main()

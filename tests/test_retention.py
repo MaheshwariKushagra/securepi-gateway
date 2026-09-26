@@ -94,6 +94,10 @@ class PruneIncidentsTests(unittest.TestCase):
         conn.execute(
             "INSERT INTO incident_notes (id, incident_id, ts, author, note) VALUES (1, 1, ?, 'securepi', 'n')",
             (old,))
+        conn.execute("INSERT INTO notification_channels (id, kind, name, config, min_severity, enabled,"
+                     " created_at, updated_at) VALUES (1, 'webhook', 'w', '{}', 'medium', 1, ?, ?)", (old, old))
+        conn.execute("INSERT INTO notifications (channel_id, incident_id, ts, status) VALUES (1, 1, ?, 'sent')",
+                     (old,))
         conn.commit()
 
         removed = retention.prune_incidents(conn, now)
@@ -101,6 +105,7 @@ class PruneIncidentsTests(unittest.TestCase):
         self.assertEqual(conn.execute("SELECT count(*) FROM incidents").fetchone()[0], 0)
         self.assertEqual(conn.execute("SELECT count(*) FROM incident_events").fetchone()[0], 0)
         self.assertEqual(conn.execute("SELECT count(*) FROM incident_notes").fetchone()[0], 0)
+        self.assertEqual(conn.execute("SELECT count(*) FROM notifications").fetchone()[0], 0)
 
     def test_recent_incidents_are_kept(self):
         conn = fixtures.temp_db()

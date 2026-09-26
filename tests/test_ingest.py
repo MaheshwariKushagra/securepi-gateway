@@ -284,6 +284,53 @@ class ReadAghApiTests(unittest.TestCase):
         n = conn.execute("SELECT count(*) FROM events WHERE dns_rrname='dup.example.com'").fetchone()[0]
         self.assertEqual(n, 1)
 
+    def test_a_backlog_larger_than_one_page_is_paged_through(self):
+        # Audit.md H5: more than one page between polls used to lose the
+        # overflow - only the newest page was read, then the watermark
+        # jumped past everything older.
+        conn = fixtures.temp_db()
+        ingest.get_agh_watermark(conn)
+        ingest.set_agh_watermark(conn, 0)
+        old_size = ingest.AGH_API_PAGE_SIZE
+        ingest.AGH_API_PAGE_SIZE = 2
+        self.addCleanup(setattr, ingest, "AGH_API_PAGE_SIZE", old_size)
+        e = lambda n, t: fixtures.make_agh_api_entry(domain="d%d.example.com" % n, timestamp=t)
+        pages = [
+            {"data": [e(4, "2026-09-14T10:00:04Z"), e(3, "2026-09-14T10:00:03Z")], "oldest": "2026-09-14T10:00:03Z"},
+            {"data": [e(2, "2026-09-14T10:00:02Z"), e(1, "2026-09-14T10:00:01Z")], "oldest": "2026-09-14T10:00:01Z"},
+            {"data": [], "oldest": ""},
+        ]
+        with mock.patch("adguard._request", side_effect=pages) as req:
+            ingest.read_agh_api(conn)
+        self.assertIn("older_than=", req.call_args_list[1][0][1])
+        names = {r["dns_rrname"] for r in conn.execute("SELECT dns_rrname FROM events")}
+        self.assertEqual(names, {"d1.example.com", "d2.example.com", "d3.example.com", "d4.example.com"})
+
+    def test_paging_stops_once_it_reaches_already_imported_entries(self):
+        conn = fixtures.temp_db()
+        ingest.get_agh_watermark(conn)
+        ingest.set_agh_watermark(conn, ingest.parse_rfc3339("2026-09-14T10:00:03Z"))
+        old_size = ingest.AGH_API_PAGE_SIZE
+        ingest.AGH_API_PAGE_SIZE = 2
+        self.addCleanup(setattr, ingest, "AGH_API_PAGE_SIZE", old_size)
+        e = lambda n, t: fixtures.make_agh_api_entry(domain="d%d.example.com" % n, timestamp=t)
+        page = {"data": [e(4, "2026-09-14T10:00:04Z"), e(3, "2026-09-14T10:00:03Z")], "oldest": "x"}
+        with mock.patch("adguard._request", return_value=page) as req:
+            ingest.read_agh_api(conn)
+        self.assertEqual(req.call_count, 1)
+
+    def test_a_and_aaaa_queries_at_the_same_instant_are_both_kept(self):
+        conn = fixtures.temp_db()
+        ingest.get_agh_watermark(conn)
+        ingest.set_agh_watermark(conn, 0)
+        a = fixtures.make_agh_api_entry(domain="same.example.com", timestamp="2026-09-14T10:00:00Z")
+        aaaa = dict(a)
+        aaaa["question"] = dict(a["question"], type="AAAA")
+        with mock.patch("adguard._request", return_value={"data": [a, aaaa]}):
+            ingest.read_agh_api(conn)
+        n = conn.execute("SELECT count(*) FROM events WHERE dns_rrname='same.example.com'").fetchone()[0]
+        self.assertEqual(n, 2)
+
     def test_read_agh_falls_back_to_the_file_reader_when_api_unreachable(self):
         conn = fixtures.temp_db()
         with mock.patch("ingest.read_agh_api", side_effect=adguard.AdGuardError("boom")), \
@@ -291,6 +338,93 @@ class ReadAghApiTests(unittest.TestCase):
             result = ingest.read_agh(conn)
         m.assert_called_once()
         self.assertEqual(result, (0, 0, 0))
+
+
+class PartialLineTests(unittest.TestCase):
+    """Audit.md H4: a half-written last line used to make fh.tell() raise
+    ("telling position disabled by next() call"), aborting the whole
+    ingest pass. It must now be left for the next pass, then read whole."""
+
+    def setUp(self):
+        import json
+        import tempfile
+        self.json = json
+        self._dir = tempfile.TemporaryDirectory()
+        self.addCleanup(self._dir.cleanup)
+        self.path = os.path.join(self._dir.name, "eve.json")
+        self._old = ingest.EVE_PATH
+        ingest.EVE_PATH = self.path
+        self.addCleanup(setattr, ingest, "EVE_PATH", self._old)
+
+    def test_a_partial_last_line_waits_for_the_next_pass(self):
+        conn = fixtures.temp_db()
+        first = self.json.dumps(fixtures.make_eve_flow(dest_port=1111)) + "\n"
+        second = self.json.dumps(fixtures.make_eve_flow(dest_port=2222))
+        with open(self.path, "w") as fh:
+            fh.write(first + second[:25])           # Suricata mid-write
+        read, saved, errors = ingest.read_eve(conn)  # must not raise
+        self.assertEqual((read, saved, errors), (1, 1, 0))
+        self.assertEqual(ingest.get_state(conn, "suricata", self.path)[1], len(first.encode()))
+
+        with open(self.path, "a") as fh:
+            fh.write(second[25:] + "\n")            # ...and finishes the line
+        read, saved, errors = ingest.read_eve(conn)
+        self.assertEqual((read, saved, errors), (1, 1, 0))
+        ports = sorted(r["dest_port"] for r in conn.execute("SELECT dest_port FROM events"))
+        self.assertEqual(ports, [1111, 2222])
+
+    def test_non_ascii_content_does_not_break_the_offset(self):
+        conn = fixtures.temp_db()
+        event = fixtures.make_eve_dns_query(rrname="caf\u00e9.example.com")
+        line = self.json.dumps(event, ensure_ascii=False) + "\n"
+        with open(self.path, "w", encoding="utf-8") as fh:
+            fh.write(line)
+        ingest.read_eve(conn)
+        self.assertEqual(ingest.get_state(conn, "suricata", self.path)[1], len(line.encode("utf-8")))
+
+
+class AghFileFallbackTests(unittest.TestCase):
+    """Audit.md H5: the file fallback must not re-import what the API
+    reader already stored, and must move the shared watermark forward."""
+
+    def test_the_fallback_skips_entries_the_api_already_imported(self):
+        import json
+        import tempfile
+        conn = fixtures.temp_db()
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        path = os.path.join(tmp.name, "querylog.json")
+        old_path = ingest.AGH_QUERYLOG_PATH
+        ingest.AGH_QUERYLOG_PATH = path
+        self.addCleanup(setattr, ingest, "AGH_QUERYLOG_PATH", old_path)
+        with open(path, "w") as fh:
+            fh.write(json.dumps(fixtures.make_agh_entry(domain="old.example.com",
+                                                        timestamp="2026-09-14T09:00:00Z")) + "\n")
+            fh.write(json.dumps(fixtures.make_agh_entry(domain="new.example.com",
+                                                        timestamp="2026-09-14T11:00:00Z")) + "\n")
+        ingest.get_agh_watermark(conn)
+        ingest.set_agh_watermark(conn, ingest.parse_rfc3339("2026-09-14T10:00:00Z"))
+        ingest.read_agh_querylog(conn)
+        names = {r["dns_rrname"] for r in conn.execute("SELECT dns_rrname FROM events")}
+        self.assertEqual(names, {"new.example.com"})
+        self.assertAlmostEqual(ingest.get_agh_watermark(conn),
+                               ingest.parse_rfc3339("2026-09-14T11:00:00Z"), places=0)
+
+
+class RunStepTests(unittest.TestCase):
+    """Audit.md H4: one failing step must not stop the rest of the pass,
+    and must not leave half-written rows to be committed later."""
+
+    def test_a_failing_step_returns_the_default_and_rolls_back(self):
+        conn = fixtures.temp_db()
+
+        def broken(c):
+            c.execute("INSERT INTO events (ts, source, event_type) VALUES (1, 'test', 'half-written')")
+            raise RuntimeError("boom")
+        self.assertEqual(ingest.run_step(conn, "test", broken, "fallback"), "fallback")
+        conn.commit()
+        n = conn.execute("SELECT count(*) FROM events WHERE event_type='half-written'").fetchone()[0]
+        self.assertEqual(n, 0)
 
 
 class FlattenNftLogTests(unittest.TestCase):
@@ -360,7 +494,7 @@ class ReadNftLogTests(unittest.TestCase):
         ingest.set_nft_log_watermark(conn, 1000.0)
         old = self._journal_line("dot-bypass: SRC=10.10.0.1 DST=9.9.9.9 PROTO=TCP DPT=853", 500_000_000)
         new = self._journal_line("dot-bypass: SRC=10.10.0.2 DST=9.9.9.9 PROTO=TCP DPT=853", 2000_000_000)
-        fake = mock.Mock(stdout=old + "\n" + new + "\n")
+        fake = mock.Mock(returncode=0, stderr="", stdout=old + "\n" + new + "\n")
         with mock.patch("subprocess.run", return_value=fake):
             read, saved, errors = ingest.read_nft_log(conn)
         self.assertEqual(saved, 1)
@@ -372,9 +506,29 @@ class ReadNftLogTests(unittest.TestCase):
         ingest.get_nft_log_watermark(conn)  # seed the row first
         ingest.set_nft_log_watermark(conn, 1000.0)
         line = self._journal_line("quic-blocked: SRC=10.10.0.3 DST=8.8.8.8 PROTO=UDP DPT=443", 3000_000_000)
-        with mock.patch("subprocess.run", return_value=mock.Mock(stdout=line + "\n")):
+        with mock.patch("subprocess.run", return_value=mock.Mock(returncode=0, stderr="", stdout=line + "\n")):
             ingest.read_nft_log(conn)
         self.assertEqual(ingest.get_nft_log_watermark(conn), 3000.0)
+
+    def test_the_watermark_moves_past_lines_that_are_not_ours(self):
+        # Audit.md: a quiet network must not mean re-reading the whole
+        # kernel log since the last bypass attempt on every poll.
+        conn = fixtures.temp_db()
+        ingest.get_nft_log_watermark(conn)
+        ingest.set_nft_log_watermark(conn, 1000.0)
+        line = self._journal_line("audit: unrelated kernel noise", 5000_000_000)
+        with mock.patch("subprocess.run", return_value=mock.Mock(returncode=0, stderr="", stdout=line + "\n")):
+            ingest.read_nft_log(conn)
+        self.assertEqual(ingest.get_nft_log_watermark(conn), 5000.0)
+
+    def test_a_failing_journalctl_exit_code_is_reported_not_parsed(self):
+        conn = fixtures.temp_db()
+        ingest.get_nft_log_watermark(conn)
+        ingest.set_nft_log_watermark(conn, 1000.0)
+        fake = mock.Mock(returncode=1, stderr="Permission denied", stdout="")
+        with mock.patch("subprocess.run", return_value=fake):
+            self.assertEqual(ingest.read_nft_log(conn), (0, 0, 0))
+        self.assertEqual(ingest.get_nft_log_watermark(conn), 1000.0)
 
     def test_journalctl_failure_is_a_quiet_no_op(self):
         conn = fixtures.temp_db()
@@ -387,7 +541,7 @@ class ReadNftLogTests(unittest.TestCase):
         ingest.get_nft_log_watermark(conn)  # seed the row first
         ingest.set_nft_log_watermark(conn, 1000.0)
         line = self._journal_line("audit: unrelated kernel noise", 2000_000_000)
-        with mock.patch("subprocess.run", return_value=mock.Mock(stdout=line + "\n")):
+        with mock.patch("subprocess.run", return_value=mock.Mock(returncode=0, stderr="", stdout=line + "\n")):
             read, saved, errors = ingest.read_nft_log(conn)
         self.assertEqual(read, 1, "the line IS newer than the watermark, so it should be counted as read")
         self.assertEqual(saved, 0, "but it doesn't match any of our prefixes, so nothing is saved")

@@ -95,7 +95,7 @@ class CheckStalenessTests(unittest.TestCase):
         conn = fixtures.temp_db()
         now = time.time()
         conn.execute("UPDATE ingest_stats SET last_run=?", (now,))
-        conn.execute("INSERT INTO signal_state (signal_type, last_run_ts) VALUES ('port_scan', ?)", (now,))
+        health.record_engine_heartbeat(conn, now)
         fixtures.insert_device(conn, 1)
         fixtures.insert_flow(conn, 1, "1.1.1.1", 443, now)
         fixtures.insert_dns_query(conn, 1, "example.com", now)
@@ -113,6 +113,21 @@ class CheckStalenessTests(unittest.TestCase):
         rows = conn.execute("SELECT * FROM incidents WHERE signal_type='platform_stale'").fetchall()
         self.assertEqual(len(rows), 1)
         self.assertIn("ingest", rows[0]["title"])
+
+    def test_a_stalled_engine_is_flagged_even_while_ingest_keeps_writing_health_rows(self):
+        # Audit.md H9: ingest's own health/fail-open rows in signal_state
+        # used to make a hung engine look fresh.
+        conn = fixtures.temp_db()
+        now = time.time()
+        conn.execute("UPDATE ingest_stats SET last_run=?", (now,))
+        health.record_engine_heartbeat(conn, now - 3600)
+        for sig in ("platform_health", "dns_failopen_check", "privacy_scope"):
+            conn.execute("INSERT INTO signal_state (signal_type, last_run_ts) VALUES (?, ?)", (sig, now))
+        conn.commit()
+        health.check_staleness(conn, now)
+        rows = conn.execute("SELECT * FROM incidents WHERE signal_type='platform_stale'").fetchall()
+        self.assertEqual(len(rows), 1)
+        self.assertIn("correlation engine", rows[0]["title"] + rows[0]["description"])
 
     def test_no_events_ever_from_a_source_is_not_flagged_as_stale(self):
         # A fresh install with no Suricata data yet is a startup

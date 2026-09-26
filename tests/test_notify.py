@@ -123,6 +123,31 @@ class DispatchTests(unittest.TestCase):
         notify.dispatch(self.conn, now=self.now + 60, sender=s)
         self.assertEqual(len(s.sent), 1)
 
+    def test_no_write_transaction_is_open_while_a_message_is_sent(self):
+        # Audit.md H6: a slow provider must not hold SQLite's one writer
+        # slot - ingest and console logins need it too.
+        add_incident(self.conn)
+        seen = []
+
+        def sender(kind, config, title, body, severity, event):
+            seen.append(self.conn.in_transaction)
+        notify.dispatch(self.conn, now=self.now, sender=sender)
+        self.assertEqual(seen, [False])
+
+    def test_a_failed_medium_send_is_not_retried_during_quiet_hours(self):
+        # Audit.md: retries used to skip the quiet-hours rule.
+        settings.set_value(self.conn, "notify_quiet_hours_enabled", True)
+        evening = time.mktime((2026, 9, 26, 21, 0, 0, 0, 0, -1))
+        add_incident(self.conn, severity="medium")
+        notify.dispatch(self.conn, now=evening, sender=FakeSender(fail=True))
+        night = time.mktime((2026, 9, 26, 23, 30, 0, 0, 0, -1))
+        s = FakeSender()
+        notify.dispatch(self.conn, now=night, sender=s)
+        self.assertEqual(s.sent, [])
+        morning = time.mktime((2026, 9, 27, 7, 5, 0, 0, 0, -1))
+        notify.dispatch(self.conn, now=morning, sender=s)
+        self.assertEqual(len(s.sent), 1)
+
     def test_disabled_channel_sends_nothing(self):
         notify.update_channel(self.conn, self.ch, enabled=False)
         add_incident(self.conn)
@@ -181,9 +206,6 @@ class RequestShapeTests(unittest.TestCase):
         self.assertIn("Body", msg.get_content())
 
 
-if __name__ == "__main__":
-    unittest.main()
-
 
 class ErrorRedactionTests(unittest.TestCase):
     """Audit.md H7: Telegram's bot token is part of the request URL's
@@ -229,3 +251,7 @@ class ErrorRedactionTests(unittest.TestCase):
         with self.assertRaises(notify.NotifyError) as ctx:
             notify.send("telegram", {"bot_token": self.TOKEN, "chat_id": "1"}, "t", "b")
         self.assertNotIn(self.TOKEN, str(ctx.exception))
+
+
+if __name__ == "__main__":
+    unittest.main()

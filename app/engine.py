@@ -2,6 +2,7 @@
 """SecurePi Gateway - runs the correlation engine on a fixed interval."""
 import time
 import correlation
+import health
 import notify
 import orchestrator
 import rollup
@@ -12,6 +13,10 @@ INTERVAL_SECONDS = 15  # frequent enough to feel live in a demo; cheap at this e
 if __name__ == "__main__":
     conn = correlation.connect()
     print("correlation engine started, running every %ds" % INTERVAL_SECONDS, flush=True)
+    # The engine's heartbeat (health.check_staleness reads it): stamped
+    # once now, so an engine that hangs in its very first cycle is still
+    # noticed, and again after every completed cycle below.
+    health.record_engine_heartbeat(conn)
     while True:
         # step 6.1's device_hourly rollup rides this same loop rather than
         # getting its own systemd service - it is a no-op cheap enough to
@@ -45,4 +50,5 @@ if __name__ == "__main__":
                 print("notifications: %s" % sent, flush=True)
         except Exception as exc:
             print("notification error: %s" % exc, flush=True)
+        health.record_engine_heartbeat(conn)
         time.sleep(INTERVAL_SECONDS)

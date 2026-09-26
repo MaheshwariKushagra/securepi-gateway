@@ -60,6 +60,9 @@ def prune_incidents(conn, now=None):
     placeholders = ",".join("?" * len(ids))
     conn.execute("DELETE FROM incident_events WHERE incident_id IN (%s)" % placeholders, ids)
     conn.execute("DELETE FROM incident_notes WHERE incident_id IN (%s)" % placeholders, ids)
+    # Notification history for these incidents too - otherwise those rows
+    # outlive the incident they describe and pile up for ever (Audit.md).
+    conn.execute("DELETE FROM notifications WHERE incident_id IN (%s)" % placeholders, ids)
     conn.execute("DELETE FROM incidents WHERE id IN (%s)" % placeholders, ids)
     return len(ids)
 

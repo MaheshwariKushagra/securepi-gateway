@@ -401,7 +401,7 @@ def dispatch(conn, now=None, sender=None):
     conn.execute("UPDATE notify_state SET last_incident_id=? WHERE id=1", (max_id,))
     conn.commit()
 
-    _retry_failed(conn, sender, channels, now, out)
+    _retry_failed(conn, sender, channels, now, out, quiet, limit)
     if not quiet:
         _send_digests(conn, sender, channels, now, out)
     conn.commit()
@@ -409,6 +409,14 @@ def dispatch(conn, now=None, sender=None):
 
 
 def _try_send(conn, sender, ch, config, nid, title, body, severity, event, now, out):
+    # Commit BEFORE the network call. SQLite allows one writer at a time,
+    # and an uncommitted write keeps that slot for as long as it's open -
+    # so waiting up to SEND_TIMEOUT_S on a slow provider (per channel, per
+    # incident) with a write still open blocked ingest and console logins
+    # from writing at all (Audit.md H6). Committing first also makes the
+    # 'failed' row inserted just before this call a durable to-do: if the
+    # process dies mid-send, _retry_failed() picks it up next cycle.
+    conn.commit()
     try:
         sender(ch["kind"], config, title, body, severity, event)
         conn.execute("UPDATE notifications SET status='sent', attempts=attempts+1, ts=?, detail=NULL"
@@ -420,9 +428,15 @@ def _try_send(conn, sender, ch, config, nid, title, body, severity, event, now, 
                      (str(e), nid))
         _record_result(conn, ch["id"], False, str(e), now)
         out["failed"] += 1
+    conn.commit()
 
 
-def _retry_failed(conn, sender, channels, now, out):
+def _retry_failed(conn, sender, channels, now, out, quiet=False, limit=None):
+    """Try failed sends again. Retries follow the same rules as first
+    attempts (Audit.md): nothing below high severity during quiet hours,
+    and never past a channel's hourly rate limit. They used to ignore
+    both, so a failure at 22:59 could wake someone at 23:00. A retry
+    held back here simply waits for a later cycle."""
     by_id = {c["id"]: c for c in channels}
     rows = conn.execute("SELECT n.*, i.severity, i.title AS inc_title, i.description, i.device_id,"
                         " i.id AS inc_id FROM notifications n JOIN incidents i ON i.id = n.incident_id"
@@ -431,6 +445,10 @@ def _retry_failed(conn, sender, channels, now, out):
     for r in rows:
         ch = by_id.get(r["channel_id"])
         if ch is None:
+            continue
+        if quiet and r["severity"] != "high":
+            continue
+        if limit is not None and _sent_last_hour(conn, ch["id"], now) >= limit:
             continue
         config = json.loads(ch["config"])
         inc = {"id": r["inc_id"], "severity": r["severity"], "title": r["inc_title"],
@@ -454,6 +472,7 @@ def _send_digests(conn, sender, channels, now, out):
             continue
         title, body = digest_message(held)
         worst = max((r["severity"] for r in held), key=lambda s: SEVERITY_RANK.get(s, 0))
+        conn.commit()  # never hold a write open across the network call - see _try_send
         try:
             sender(ch["kind"], json.loads(ch["config"]), title, body, worst, {"type": "digest", "count": len(held)})
         except NotifyError as e:

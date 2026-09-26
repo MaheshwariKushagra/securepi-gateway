@@ -660,6 +660,36 @@ MAC; the same address came back on every reconnect).
 | **2.2 QUIC** | Chrome's QUIC attempts (51) were rejected by `quic-blocked` and raised the same incident #447 |
 | **3.6 fail-open DNS** | AdGuard stopped (a 3-minute safety restart armed) → both `dns-failopen` rules in place after **16-19 s**, incident #451 raised. With AdGuard **still down**, the phone resolved four fresh names (debian.org, rust-lang.org, python.org, kernel.org) and the UDP fail-open rule's counter went **0 → 8** (A + AAAA each), so the phone's DNS really went through the redirect to 1.1.1.1. AdGuard restarted → rules removed **4 s** later, phone resolving through AdGuard again |
 
+**Second round, same day** (same phone; Chrome only - Brave, the phone's
+default browser, was never used; every setting changed on the phone was
+restored afterwards):
+
+| Check | Result |
+|---|---|
+| **6.2 fingerprint** | Device 2 classified phone / Samsung / Android, confidence high. "Samsung" rests only on the hostname pattern (`-a33`) - the MAC is randomized, so there is no manufacturer prefix - and a hostname is client-chosen; "Android" is backed by the connectivity-check lookups |
+| **Chrome Secure DNS, unenrolled** | Provider "Google (Public DNS)": pages fail with `DNS_PROBE_FINISHED_BAD_SECURE_CONFIG` - AdGuard blocks `dns.google`, so Chrome can't bootstrap. Custom provider `https://8.8.8.8/dns-query`: Chrome's own provider check failed because the forward `doh-bypass` rule rejected it (**87** packets, `10.10.0.50 → 8.8.8.8:443`, logged) |
+| **Chrome Secure DNS, enrolled (Audit H1)** | Same custom provider while enrolled: the new input rule `doh-bypass-proxied` rejected **53** packets (0 before). Logged DST is `10.10.0.1:8080`, as the rule's own comment documents |
+| **5.8 / Audit H8 pinned-app bypass** | YouTube *app* while enrolled: every decrypted host failed its handshake (the app doesn't trust user CAs), each exactly 3 times, then `pin_bypass` - "failed the handshake for youtubei.googleapis.com 3 times in a row - bypassing (undecrypted) for 24h". The app then loaded and played normally. Before the H8 fix the failures carried no hostname and the bypass could never trigger. Consequence worth stating: in a bypassed app the traffic is not decrypted, so **in-app ads are not removed** (a "Sponsored" item was visible) - ad removal is a browser feature |
+| **7.7-style: proxy down while enrolled** | `securepi-dpi` stopped (3-minute safety restart armed): **every** HTTPS site failed on the phone, not just inspected ones - Chrome `ERR_CONNECTION_REFUSED` on w3.org, because all of an enrolled device's port-443 traffic is redirected to :8080. The health supervisor raised incident #457 ("1 service not running: securepi-dpi") within seconds, but nothing restores connectivity. **Inspection fails closed, not open** - contrary to the plan's 7.7 requirement. Restarting the proxy restored browsing at once |
+| **4.3 Kids profile** | Applied to device 2: within 3 s `m.tiktok.com` and `www.snapchat.com` → `127.0.0.1`, `www.google.co.in` → `forcesafesearch.google.com`, Wikipedia unaffected |
+| **"Unbreak one site for one device"** | `allow_domain tiktok.com` for device 2 only: a TikTok host was allowed by the first check at 11.8 s (another was still blocked at 2.6 s) - inside the demo's 30 s; Snapchat stayed blocked |
+| **4.3 pause (5 min)** | `googleads.g.doubleclick.net` blocked → `stats.g.doubleclick.net` resolved while paused → `ad.doubleclick.net` blocked again once the pause ended |
+
+**Device 2's `slow_network_sweep` false positives, explained.** 117 open
+`slow_network_sweep` and 5 `network_sweep` incidents, 56,000+ evidence
+events. The evidence is ordinary internet traffic - TCP/UDP 443, TCP 80,
+NTP to Google, Meta/WhatsApp, Fastly, Cloudflare - because the sweep
+signals count distinct destination hosts per port, and a phone contacts
+dozens of internet hosts on 443 in two hours. Replaying seven days of live
+flows with one change - count only destinations on a private network **or**
+that never answered (`pkts_toclient = 0`) - kept every battery sweep
+(devices 25, 46-57: 10 hosts each) and removed the phone's normal-use
+hits: all 91 unanswered connections it made that week fell inside this
+morning's tests (82 in the 08:00 hour, around the 08:08-08:13 quarantine).
+Not changed yet - a detection change, left for 7.3. Also seen: a
+repeat-detection merge keeps the incident's first title ("port 80") while
+the description moves on ("port 443").
+
 **Not proven, named rather than implied:**
 
 - **Quarantine and Android roaming:** turning Wi-Fi off and on made the

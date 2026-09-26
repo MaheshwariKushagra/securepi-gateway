@@ -325,6 +325,16 @@ next battery).
    is clean too: extra addresses removed, 10.10.0.1 back on device 4.
 2. Look at device 2's open slow_network_sweep incidents (device 2 is the
    user's own A33 phone, so a likely false-positive pattern, for 7.3).
+2a. **Found 26 September, not fixed yet - decide before the demo:**
+   - *Inspection fails closed.* If `securepi-dpi` stops or crashes, every
+     HTTPS site breaks for enrolled devices (all their 443 traffic is
+     redirected to :8080). Proposed: `ExecStopPost=` in the unit that
+     flushes `ip nat enrolled` (the orchestrator then ends those policies
+     as "removed outside the console", the designed direction), plus a
+     health probe of :8080 for a hung-but-running proxy.
+   - *Sweep false positives* (device 2 = the A33): count only private or
+     unanswered destinations - simulated on 7 days of live data, see
+     EVALUATION-RESULTS-2.md "Real-device checks".
 3. Small fix: volume_anomaly's `first_seen` is the start of the hour, so it
    sorts first in a campaign's tactic chain ("Exfiltration → …").
 4. 7.3 precision/recall and threshold sweeps - the replay tool is the

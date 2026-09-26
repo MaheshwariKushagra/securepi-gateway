@@ -365,7 +365,7 @@ overstating what was actually done.
 
 ## Audit follow-up (26 September 2026)
 
-An external static audit (`Audit.md`, not committed) was triaged finding by
+An external static audit (`Audit.md`, in the repository root) was triaged finding by
 finding against the code; the accepted fixes are in commits `44c8c6c` to
 `5d616fa` and were deployed the same day. The two that change this review's
 own conclusions:

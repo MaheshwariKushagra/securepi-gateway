@@ -278,7 +278,7 @@ Test suite: **362**, all passing.
 
 ### Audit fixes deployed, real-phone checks done (26 September 2026)
 
-An external static audit (`Audit.md`, uncommitted) was triaged item by item;
+An external static audit (`Audit.md`, in the repository root) was triaged item by item;
 the accepted fixes are commits `44c8c6c`-`5d616fa` (tests 382 -> 442) and are
 **deployed**. What a future change needs to know:
 

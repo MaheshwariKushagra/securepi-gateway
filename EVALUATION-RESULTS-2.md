@@ -658,15 +658,10 @@ MAC; the same address came back on every reconnect).
 | **2.2 DoT bypass, layer 1** | Private DNS `dns.google`: AdGuard blocked the hostname (`\|\|dns.google^`), so the phone never attempted port 853. 9 of 10 common DoT hostnames are blocked this way (`dot.sb` is not) |
 | **2.2 DoT bypass, layer 2** | Private DNS `dot.sb`: `10.10.0.50 → 185.222.222.222:853` **rejected** by the `dot-bypass` rule, logged, ingested, and added as evidence to `dns_bypass` incident #447 |
 | **2.2 QUIC** | Chrome's QUIC attempts (51) were rejected by `quic-blocked` and raised the same incident #447 |
-| **3.6 fail-open DNS** | AdGuard stopped → both `dns-failopen` rules in place after **16 s**, incident #451 raised; removed again once AdGuard was back |
+| **3.6 fail-open DNS** | AdGuard stopped (a 3-minute safety restart armed) → both `dns-failopen` rules in place after **16-19 s**, incident #451 raised. With AdGuard **still down**, the phone resolved four fresh names (debian.org, rust-lang.org, python.org, kernel.org) and the UDP fail-open rule's counter went **0 → 8** (A + AAAA each), so the phone's DNS really went through the redirect to 1.1.1.1. AdGuard restarted → rules removed **4 s** later, phone resolving through AdGuard again |
 
 **Not proven, named rather than implied:**
 
-- **3.6:** the phone's lookups during the fail-open ran just after AdGuard
-  was restarted (a timing mistake in the test), so they don't prove the
-  phone resolved *through* the fail-open rules. The rules going in and
-  coming out, and the incident, are verified. A stricter rerun (lookups
-  while AdGuard is held down) is still to do.
 - **Quarantine and Android roaming:** turning Wi-Fi off and on made the
   phone join a different saved network with working internet (Babu_Home)
   instead of the quarantined one. Quarantine removes a device from this

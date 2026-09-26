@@ -300,7 +300,8 @@ the accepted fixes are commits `44c8c6c`-`5d616fa` (tests 382 -> 442) and are
 
 The real-phone checks (a Galaxy A33 over `adb`) passed: inspection redirect,
 quarantine surviving a reconnect, the new proxied-HTTPS rule, DoT/QUIC
-bypass detection, fail-open DNS engaging. Details and caveats:
+bypass detection, and fail-open DNS (the phone resolved through the
+redirect while AdGuard was down). Details and caveats:
 `EVALUATION-RESULTS-2.md`, "Real-device checks". **Device 2 is that phone**,
 so its open `slow_network_sweep` incidents come from ordinary phone traffic.
 
@@ -329,9 +330,8 @@ next battery).
 4. 7.3 precision/recall and threshold sweeps - the replay tool is the
    instrument for the sweeps (same capture, different settings).
 5. 7.0 seven-day run on real devices.
-6. ~~Real-phone quarantine reconnect check~~ - done 26 September. Still to
-   do from that session: a stricter fail-open DNS rerun with the phone's
-   lookups made while AdGuard is held down (see EVALUATION-RESULTS-2.md).
+6. ~~Real-phone checks (quarantine reconnect, fail-open DNS, bypass,
+   inspection redirect)~~ - all done 26 September (EVALUATION-RESULTS-2.md).
 7. Decide whether to rewrite the pushed commits that carry a `Co-Authored-By`
    line (`220e03b`, `31b70f6`, `684d2e2` and earlier ones). Rewriting means a
    force-push to `main`.

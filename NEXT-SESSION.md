@@ -290,11 +290,10 @@ the campaign-TTD change made after the last run - copy it over before the
 next battery).
 
 **Next steps, in order:**
-1. **Clean up the battery's test incidents.** 208 open incidents and 21
-   campaigns sit on the `[TEST HARNESS] battery …` devices. Resolving them
-   was blocked by the permission check this session (a write to the live
-   database). Resolve them from the console, or allow the write. The harness
-   itself is already clean: extra addresses removed, 10.10.0.1 back on device 4.
+1. ~~Clean up the battery's test incidents~~ - done 26 September: 167
+   incidents and 21 campaigns on the `[TEST HARNESS] battery …` devices
+   resolved with a note, one `incident.bulk_resolve` audit entry. The harness
+   is clean too: extra addresses removed, 10.10.0.1 back on device 4.
 2. Look at device 2's 116 open slow_network_sweep incidents (not battery
    data - a likely false-positive pattern, for 7.3).
 3. Small fix: volume_anomaly's `first_seen` is the start of the hour, so it

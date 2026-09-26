@@ -65,17 +65,6 @@ def connect():
     return conn
 
 
-def get_window_start(conn, signal_type, default_lookback):
-    """Where this signal last left off. First run looks back `default_lookback`
-    seconds so a fresh install does not have to wait for history to build up."""
-    row = conn.execute(
-        "SELECT last_run_ts FROM signal_state WHERE signal_type = ?", (signal_type,)
-    ).fetchone()
-    if row is None:
-        return time.time() - default_lookback
-    return row["last_run_ts"]
-
-
 def set_window_start(conn, signal_type, ts):
     conn.execute(
         "INSERT INTO signal_state (signal_type, last_run_ts) VALUES (?, ?)"

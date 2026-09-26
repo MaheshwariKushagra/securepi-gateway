@@ -24,6 +24,7 @@ Run via `make test`, or directly: python3 -m unittest tests.test_audit_coverage 
 
 import os
 import re
+import sys
 import unittest
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -93,6 +94,21 @@ class AuditCoverageTests(unittest.TestCase):
         real_names = {e["name"] for e in _find_endpoints(source)}
         stale = EXPLICITLY_UNAUDITED_OK - real_names
         self.assertEqual(stale, set(), "stale allowlist entries: %s" % stale)
+
+
+class AuditRecentLimitTests(unittest.TestCase):
+    """Audit.md: a negative limit passed min(limit, cap) untouched, and
+    SQLite treats LIMIT -1 as "everything"."""
+
+    def test_a_negative_limit_does_not_mean_unlimited(self):
+        sys.path.insert(0, os.path.join(REPO_ROOT, "tests"))
+        import fixtures
+        import audit
+        conn = fixtures.temp_db()
+        for i in range(3):
+            audit.log(conn, "securepi", "test.action", target=str(i))
+        self.assertEqual(len(audit.recent(conn, -1)), 1)
+        self.assertEqual(len(audit.for_target(conn, "1", -1)), 1)
 
 
 if __name__ == "__main__":

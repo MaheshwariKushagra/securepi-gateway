@@ -32,7 +32,7 @@ def log(conn, actor, action, target=None, detail=None):
 def recent(conn, limit=200):
     """Newest-first audit rows, for the console's audit viewer."""
     return conn.execute(
-        "SELECT * FROM audit_log ORDER BY id DESC LIMIT ?", (min(limit, 1000),)
+        "SELECT * FROM audit_log ORDER BY id DESC LIMIT ?", (max(1, min(limit, 1000)),)
     ).fetchall()
 
 
@@ -41,5 +41,5 @@ def for_target(conn, target, limit=50):
     status-change timeline reads this with target=str(incident_id)."""
     return conn.execute(
         "SELECT * FROM audit_log WHERE target = ? ORDER BY id DESC LIMIT ?",
-        (target, min(limit, 200)),
+        (target, max(1, min(limit, 200))),
     ).fetchall()

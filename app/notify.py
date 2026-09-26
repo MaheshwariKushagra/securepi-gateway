@@ -509,4 +509,4 @@ def recent(conn, limit=50):
     return conn.execute(
         "SELECT n.*, c.name AS channel_name, c.kind AS channel_kind FROM notifications n"
         " JOIN notification_channels c ON c.id = n.channel_id ORDER BY n.id DESC LIMIT ?",
-        (min(limit, 200),)).fetchall()
+        (max(1, min(limit, 200)),)).fetchall()

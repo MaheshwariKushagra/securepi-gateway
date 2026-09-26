@@ -45,11 +45,20 @@ fi
 # One nft invocation, flush-then-fill in the same transaction, so there is
 # no window where the set is empty - a bad actor scanning for exactly that
 # gap would need to win a race that never opens.
-{
+#
+# The result is checked explicitly: this script runs with `set -u` only
+# (not `-e`), so an nft failure here used to fall straight through to the
+# success message below and exit 0 - a failed refresh that looked like a
+# good one in `systemctl status` (Audit.md). nft -f applies the whole
+# file as one transaction, so on failure the live set is left as it was.
+if ! {
     echo "flush set inet filter doh_resolvers"
     echo -n "add element inet filter doh_resolvers { "
     echo "$addresses" | paste -sd, -
     echo " }"
-} | nft -f -
+} | nft -f -; then
+    echo "refresh-doh-set: nft rejected the update - the existing set was left untouched" >&2
+    exit 1
+fi
 
 echo "refresh-doh-set: loaded $count addresses from HaGeZi doh-ips.txt"

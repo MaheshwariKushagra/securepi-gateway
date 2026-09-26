@@ -14,7 +14,6 @@ memory-constrained gateway (see SECUREPI-15-DAY-PLAN.md 2.6).
 """
 
 import json
-import re
 import time
 import urllib.error
 import urllib.parse
@@ -147,12 +146,10 @@ def describe_rule(rule):
     parse themselves.
 
     Handles both network-wide rules (||domain^ / @@||domain^) and the
-    per-device rules add_client_rule() writes (the same shape, with a
-    trailing $client=name modifier instead of nothing after the ^, and
-    possibly a "  # securepi-expires:..." comment after that - stripped
-    here first, since AdGuard's own user_rules() mixes every rule together
-    regardless of which function wrote it, so this has to cope with the
-    comment even when called from a place that never added one)."""
+    per-device rules the orchestrator writes via domain_rule() (the same
+    shape, with a trailing $client=name modifier after the ^). A trailing
+    "  # ..." comment is stripped first: rules written by an older version
+    of this module carried one, and a live AdGuard may still hold them."""
     body = rule.partition("  #")[0]
     scope = "network"
     if "^$client=" in body:
@@ -199,47 +196,13 @@ def client_filtering_status(identifiers):
     return {"managed": True, "filtering_enabled": bool(cl.get("filtering_enabled", True))}
 
 
-def set_client_filtering(identifiers, name, enabled):
-    """Create or update the AdGuard client entry for a device, so its DNS
-    filtering can be switched independently of the network-wide default.
-
-    `identifiers` should be every MAC the device has used plus its current
-    IP (see webapp.py's _device_identifiers helper). When the client already
-    exists, its id list is MERGED with the ones passed in rather than
-    replaced, so a MAC picked up since the client was first created (a
-    randomized address rotating again) is added rather than dropped -
-    AdGuard itself never removes an id we don't ask it to.
-
-    Everything else about the client is left on AdGuard's own defaults."""
-    existing = _find_client(identifiers)
-    if existing:
-        merged_ids = sorted(set(existing.get("ids") or []) | set(identifiers))
-        existing["ids"] = merged_ids
-        existing["filtering_enabled"] = enabled
-        existing["use_global_settings"] = False
-        _request("POST", "/control/clients/update",
-                  {"name": existing["name"], "data": existing})
-    else:
-        _request("POST", "/control/clients/add", {
-            "name": name,
-            "ids": sorted(set(identifiers)),
-            "use_global_settings": False,
-            "filtering_enabled": enabled,
-            "safebrowsing_enabled": False,
-            "parental_enabled": False,
-            "use_global_blocked_services": True,
-            "blocked_services": [],
-            "tags": [],
-        })
-
-
 # --------------------------------------------------------- "why blocked?"
 
 def check_host(name, client_ip=None):
     """Ask AdGuard how it would resolve `name` right now, exactly as if a
     query for it arrived from `client_ip` - this is the engine behind the
     console's "why is this blocked?" tool. Passing client_ip matters because
-    a per-device rule (see add_client_rule below) or a per-client upstream
+    a per-device ($client=) rule or a per-client upstream
     only applies to a query AdGuard can see as coming from that client."""
     path = "/control/filtering/check_host?name=%s" % urllib.parse.quote(name)
     if client_ip:
@@ -304,118 +267,6 @@ def describe_check(result, domain):
     }
 
 
-# ------------------------------------------------- per-device allow/block
-
-_EXPIRES_RE = re.compile(r"securepi-expires:(\d+)")
-_TAG_RE = re.compile(r"securepi-tag:(\S+)")
-
-
-def add_client_rule(client_name, domain, action, expires_at=None, tag=None):
-    """A per-DEVICE allow or block rule, using AdGuard's $client rule
-    modifier so it affects only the one persistent client named
-    `client_name` (see set_client_filtering above - every device we manage
-    already has one) rather than the whole network. This is what "allow
-    this domain for this device only" and "block this domain for this
-    device only" actually are; the network-wide rules in add_user_rule()
-    are a different, coarser tool.
-
-    `expires_at`, if given, is an epoch timestamp stored as a trailing
-    comment on the rule line itself (AdGuard ignores text after '#').
-    There is no separate table for this - sweep_expired_client_rules()
-    below is what finds and removes it later. A real scheduled job belongs
-    in ENHANCEMENT-PLAN.md step 1.3/4.1; until that exists, the filtering
-    endpoints in webapp.py call the sweep opportunistically on every
-    request, which is enough for a "pause this for an hour" feature.
-
-    `tag`, if given, marks the rule as belonging to a named group in that
-    same comment (space-separated from the expiry, if both are present) -
-    used by native-tracker profiles (step 5.5) so every rule a profile
-    added can be found and removed together later by
-    remove_client_rule_group(), the same way a single temporary rule finds
-    itself again via its expiry."""
-    verb = "@@" if action == "allow" else ""
-    base = "%s||%s^$client=%s" % (verb, domain, client_name)
-    comment_bits = []
-    if expires_at:
-        comment_bits.append("securepi-expires:%d" % int(expires_at))
-    if tag:
-        comment_bits.append("securepi-tag:%s" % tag)
-    rule = ("%s  # %s" % (base, " ".join(comment_bits))) if comment_bits else base
-    rules = user_rules()
-    if not any(r.split("  #")[0] == base for r in rules):
-        rules.append(rule)
-        _request("POST", "/control/filtering/set_rules", {"rules": rules})
-    return rule
-
-
-def remove_client_rule(rule):
-    remove_user_rule(rule)
-
-
-def remove_client_rule_group(client_name, tag):
-    """Remove every rule scoped to this device AND carrying this tag in
-    one go - what "remove this native-tracker profile" (step 5.5) actually
-    does. Returns how many rules were removed."""
-    marker = "$client=%s" % client_name
-    tag_marker = "securepi-tag:%s" % tag
-    rules = user_rules()
-    keep = []
-    removed = 0
-    for r in rules:
-        base, _, comment = r.partition("  #")
-        if marker in base and tag_marker in comment:
-            removed += 1
-            continue
-        keep.append(r)
-    if removed:
-        _request("POST", "/control/filtering/set_rules", {"rules": keep})
-    return removed
-
-
-def device_scoped_rules(client_name):
-    """Every allow/block rule that was scoped to this one device, newest
-    first, for the "recently allowed/blocked for this device" panel."""
-    markers = ("$client=%s" % client_name, "$client=%s" % quote_client(client_name))
-    out = []
-    for r in user_rules():
-        base, _, comment = r.partition("  #")
-        if not any(base.endswith(m) for m in markers):
-            continue
-        desc = describe_rule(base)
-        desc["rule"] = r
-        m = _EXPIRES_RE.search(comment)
-        desc["expires_at"] = int(m.group(1)) if m else None
-        t = _TAG_RE.search(comment)
-        desc["tag"] = t.group(1) if t else None
-        out.append(desc)
-    return list(reversed(out))
-
-
-def sweep_expired_client_rules():
-    """Remove any $client rule past the expiry recorded in its own comment.
-    See add_client_rule's docstring for why this lives here instead of in a
-    scheduler. Returns True if anything was actually removed.
-
-    Matches the expiry with a regex rather than a plain substring split,
-    so it still works now that a rule's comment can carry a tag alongside
-    the expiry (add_client_rule above) instead of only ever one or the
-    other."""
-    now = time.time()
-    rules = user_rules()
-    keep = []
-    changed = False
-    for r in rules:
-        base, _, comment = r.partition("  #")
-        m = _EXPIRES_RE.search(comment)
-        if m and int(m.group(1)) < now:
-            changed = True
-            continue
-        keep.append(r)
-    if changed:
-        _request("POST", "/control/filtering/set_rules", {"rules": keep})
-    return changed
-
-
 # ------------------------------------------------------------- resolver --
 #
 # Resolver quality (step 5.5c): cache behaviour, DNSSEC, and upstream
@@ -438,8 +289,7 @@ def set_dns_tuning(upstream_dns=None, fallback_dns=None, cache_optimistic=None,
     """Update resolver settings, changing only the fields actually passed
     in - everything else is read back from the live config first and sent
     through unchanged, since AdGuard's dns_config endpoint replaces the
-    whole object rather than patching it (same pattern as
-    set_client_filtering's full-object POST). Every argument left as None
+    whole object rather than patching it. Every argument left as None
     is a no-op for that field."""
     current = dns_config()
     if upstream_dns is not None:
@@ -463,9 +313,10 @@ def set_dns_tuning(upstream_dns=None, fallback_dns=None, cache_optimistic=None,
 # compare what's there with what the console wants and put it right.
 #
 # A real bug found while building this (26 September 2026): AdGuard does
-# NOT ignore text after "#" on a rule line. add_client_rule() above stores
-# its expiry and tag as a trailing "  # securepi-..." comment, and a rule
-# written that way never matches anything - checked live with
+# NOT ignore text after "#" on a rule line. The old per-device helpers
+# (add_client_rule and friends, since removed - nothing called them any
+# more) stored an expiry and tag as a trailing "  # securepi-..." comment,
+# and a rule written that way never matches anything - checked live with
 # check_host() for four rule shapes: with the comment, none of them
 # blocked; without it, they did. So the orchestrator writes plain rules
 # with no comment at all, and remembers which ones are its own in its own

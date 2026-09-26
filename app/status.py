@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Inspect what the platform currently knows. Run on the gateway: securepi-db"""
-import sqlite3, sys
+import sqlite3
 
 DB = "/var/lib/securepi/securepi.db"
 c = sqlite3.connect(DB)

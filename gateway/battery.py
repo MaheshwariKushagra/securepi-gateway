@@ -61,6 +61,7 @@ import subprocess
 import sys
 import threading
 import time
+import traceback
 
 sys.path.insert(0, "/opt/securepi")
 import registry  # noqa: E402
@@ -500,11 +501,31 @@ def fast_track(hosts, devs):
         volume_anomaly(n, host, dev)
 
 
+# Every track (and every per-host run inside in_parallel) that crashed:
+# (name, traceback text). A thread's exception is otherwise printed and
+# forgotten - join() doesn't pass it on - so a crashed track simply went
+# missing from the summary, and the battery still looked like a clean
+# pass (Audit.md). main() writes these into the results and exits 1.
+TRACK_ERRORS = []
+
+
+def run_track(name, fn, args):
+    """Thread target: run fn(*args), recording a crash in TRACK_ERRORS
+    instead of losing it."""
+    try:
+        fn(*args)
+    except Exception:
+        with RESULTS_LOCK:
+            TRACK_ERRORS.append((name, traceback.format_exc()))
+        print("battery: track %s CRASHED - see the results file" % name, file=sys.stderr, flush=True)
+
+
 def in_parallel(fn, hosts, devs):
     """Run fn(run_number, host, device) for every host at once. The slow
     scans take ~8 minutes each, and on separate hosts they can't affect
     each other, so there's no reason to wait for one before the next."""
-    threads = [threading.Thread(target=fn, args=(n, h, devs[h])) for n, h in enumerate(hosts, start=1)]
+    threads = [threading.Thread(target=run_track, args=("%s %s" % (fn.__name__, h), fn, (n, h, devs[h])))
+               for n, h in enumerate(hosts, start=1)]
     for t in threads:
         t.start()
     for t in threads:
@@ -574,12 +595,12 @@ def main():
     t0 = time.time()
 
     tracks = [
-        threading.Thread(target=fast_track, args=(FAST_HOSTS[:args.runs], [devs[h] for h in FAST_HOSTS[:args.runs]])),
-        threading.Thread(target=in_parallel, args=(slow_port_scan, SLOW_SCAN_HOSTS[:args.runs], devs)),
-        threading.Thread(target=in_parallel, args=(slow_network_sweep, SLOW_SWEEP_HOSTS[:args.runs], devs)),
-        threading.Thread(target=dns_track, args=(args.runs, blocked)),
-        threading.Thread(target=new_device_track, args=(args.runs,)),
-        threading.Thread(target=benign, args=(BENIGN_HOST, devs[BENIGN_HOST])),
+        threading.Thread(target=run_track, args=("fast_track", fast_track, (FAST_HOSTS[:args.runs], [devs[h] for h in FAST_HOSTS[:args.runs]]))),
+        threading.Thread(target=run_track, args=("slow_port_scan", in_parallel, (slow_port_scan, SLOW_SCAN_HOSTS[:args.runs], devs))),
+        threading.Thread(target=run_track, args=("slow_network_sweep", in_parallel, (slow_network_sweep, SLOW_SWEEP_HOSTS[:args.runs], devs))),
+        threading.Thread(target=run_track, args=("dns_track", dns_track, (args.runs, blocked))),
+        threading.Thread(target=run_track, args=("new_device_track", new_device_track, (args.runs,))),
+        threading.Thread(target=run_track, args=("benign", benign, (BENIGN_HOST, devs[BENIGN_HOST]))),
     ]
     for t in tracks:
         t.start()
@@ -603,6 +624,7 @@ def main():
         "step": "7.2", "started": t0, "finished": time.time(), "runs_per_signal": args.runs,
         "engine_interval_s": 15, "ingest_poll_s": 2,
         "summary": summary, "runs": results, "not_driven": NOT_DRIVEN,
+        "track_errors": [{"track": name, "error": text} for name, text in TRACK_ERRORS],
         "pcap": os.path.basename(pcap),
         "hosts": {ip: devs[ip] for ip in hosts_all},
     }
@@ -624,6 +646,11 @@ def main():
               "%d/%d" % (s["detected"], s["runs"]) if s["expected_detection"] else "%d fired" % s["detected"],
               s["ttd_median_s"], s["ttd_p95_s"]))
     print("\nresults: %s\npcap:    %s" % (path, pcap))
+    if TRACK_ERRORS:
+        print("\n%d track(s) CRASHED - the summary above is INCOMPLETE:" % len(TRACK_ERRORS), file=sys.stderr)
+        for name, text in TRACK_ERRORS:
+            print("\n--- %s ---\n%s" % (name, text), file=sys.stderr)
+        sys.exit(1)
 
 
 if __name__ == "__main__":

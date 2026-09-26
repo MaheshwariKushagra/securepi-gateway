@@ -1087,8 +1087,11 @@ def api_incidents(severity: str = Query(""), status: str = Query(""),
     return {"incidents": out, "counts": counts}
 
 
+# ge=1 on every route's `limit` in this file: each caps it with min(limit, N), but a
+# negative number passes min() untouched, and SQLite reads LIMIT -1 as
+# "no limit at all" (Audit.md). FastAPI now refuses limit < 1 with a 422.
 @app.get("/api/events")
-def api_events(limit: int = Query(60), type: str = Query("")):
+def api_events(limit: int = Query(60, ge=1), type: str = Query("")):
     c = db()
     sql = ("SELECT e.*, d.hostname, d.friendly_name FROM events e"
            " LEFT JOIN devices d ON d.id = e.device_id")
@@ -1166,7 +1169,7 @@ def _hunt_aggregates(conn, where_sql, params):
 @app.get("/api/hunt")
 def api_hunt(device_id: int = Query(0), ip: str = Query(""), domain: str = Query(""),
               port: int = Query(0), event_type: str = Query(""), range: str = Query("1h"),
-              limit: int = Query(200)):
+              limit: int = Query(200, ge=1)):
     """Flow/DNS/TLS search with pivots, top talkers, top destinations and
     a protocol breakdown (ENHANCEMENT-PLAN.md step 6.5). Not the full
     Hunt catalogue entry's every idea - this is search + aggregates over
@@ -1552,7 +1555,7 @@ def api_filtering_remove_rule(body: RuleRemove):
 
 @app.get("/api/filtering/querylog")
 def api_filtering_querylog(domain: str = Query(""), device_id: str = Query(""),
-                            blocked: str = Query(""), limit: int = Query(50)):
+                            blocked: str = Query(""), limit: int = Query(50, ge=1)):
     """Query log search, served from our own ingested events rather than
     AdGuard's own log - we already store every DNS lookup with the device
     it resolved for, so this needs no second source of truth."""
@@ -2233,7 +2236,7 @@ def api_device_dpi_set(device_id: int, body: DpiEnrollRequest):
 
 
 @app.get("/api/devices/{device_id}/blocked")
-def api_device_blocked(device_id: int, limit: int = Query(25)):
+def api_device_blocked(device_id: int, limit: int = Query(25, ge=1)):
     """Recently blocked domains for one device, folded so a tracker that
     fires dozens of times a minute shows up as one row with a count rather
     than as noise - this is the "recently blocked" panel on the device page."""
@@ -2539,7 +2542,7 @@ def api_settings_channels():
 
 
 @app.get("/api/audit")
-def api_audit(limit: int = Query(200)):
+def api_audit(limit: int = Query(200, ge=1)):
     rows = audit.recent(db(), limit=limit)
     return {"entries": [
         {"id": r["id"], "ts": time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(r["ts"])),
@@ -2689,7 +2692,7 @@ def _end_policy(c, policy_id, reason=""):
 
 
 @app.get("/api/policies")
-def api_policies(status: str = Query("active"), device_id: int = Query(0), limit: int = Query(200)):
+def api_policies(status: str = Query("active"), device_id: int = Query(0), limit: int = Query(200, ge=1)):
     """Active policies, or the most recent ended ones (status=ended)."""
     c = db()
     now = time.time()
@@ -3134,7 +3137,7 @@ def api_notification_channel_test(channel_id: int):
 
 
 @app.get("/api/notifications/recent")
-def api_notifications_recent(limit: int = Query(40)):
+def api_notifications_recent(limit: int = Query(40, ge=1)):
     c = db()
     now = time.time()
     return {"notifications": [

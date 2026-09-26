@@ -249,8 +249,11 @@ def new_db(path):
 def detected(conn, run, device, t0, t1):
     sig = run["signal"]
     if sig == "campaign":
-        return conn.execute("SELECT 1 FROM campaigns WHERE device_id=? AND created_at >= ?",
-                            (device, t0)).fetchone() is not None
+        # Bounded at BOTH ends, like every other check here: with only a
+        # lower bound, a campaign from a LATER run on the same device
+        # could count as detecting this one (Audit.md).
+        return conn.execute("SELECT 1 FROM campaigns WHERE device_id=? AND created_at BETWEEN ? AND ?",
+                            (device, t0, t1)).fetchone() is not None
     if sig in ("any", "benign"):
         return conn.execute("SELECT 1 FROM incidents WHERE device_id=? AND created_at BETWEEN ? AND ?",
                             (device, t0, t1)).fetchone() is not None

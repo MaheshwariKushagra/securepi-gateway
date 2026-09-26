@@ -320,7 +320,8 @@ exposure but blocked the page.
 
 **Races.** The console and the engine both change the same nftables sets
 and AdGuard rule list, and they're serialised by an exclusive `flock` on
-`/opt/securepi/orchestrator.lock`. Without it, a reconcile could remove a
+`/var/lib/securepi/orchestrator.lock` (moved out of `/opt/securepi` on 26
+September - see the audit follow-up below). Without it, a reconcile could remove a
 quarantine the console had applied a moment earlier. `securepi-web` could
 hold the lock indefinitely and stall the engine's reconcile, but that
 process already has every privilege it would take to cause the same harm
@@ -361,3 +362,32 @@ clean or already fixed by Stage 3's own earlier steps) — this step's exit
 criterion is met, with the dependency-version gap and the two "not fixed"
 items above carried forward honestly rather than closed out by
 overstating what was actually done.
+
+## Audit follow-up (26 September 2026)
+
+An external static audit (`Audit.md`, not committed) was triaged finding by
+finding against the code; the accepted fixes are in commits `44c8c6c` to
+`5d616fa` and were deployed the same day. The two that change this review's
+own conclusions:
+
+- **Code and writable data no longer share a directory.** Step 3.3 made
+  `/opt/securepi` and `/opt/securepi-dpi` group-writable (sticky bit) so the
+  unprivileged console could write its database and rule set there. The
+  root services run Python from those same directories, and Python looks in
+  a script's own directory before the standard library, so a compromised
+  console could have planted a module (a fake `json.py`) that root would
+  run on the next restart - the sticky bit only protects files that already
+  exist. The database and orchestrator lock now live in `/var/lib/securepi`,
+  the rule set in `/var/lib/securepi-dpi` (both `root:securepi 2770`), and
+  both code directories are `root:root 755`
+  (`gateway/migrate-data-dirs.sh`). After the move, nothing in either code
+  directory was owned by the console's user.
+- **Proxied HTTPS now meets the quarantine and block rules.** An enrolled
+  device's HTTPS is redirected to the local proxy, so it travelled through
+  the input and output chains and never met the forward chain's
+  quarantine, blocked-IP and DoH rules. The input chain now repeats those
+  checks for port 8080. Verified on a real phone: while quarantined and
+  enrolled, 175 of its proxied HTTPS packets were dropped by the new rule.
+
+This also closes the "real redirect path not exercised by `ap0` traffic"
+item above - see `EVALUATION-RESULTS-2.md`, "Real-device checks".

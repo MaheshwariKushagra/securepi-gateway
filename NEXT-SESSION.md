@@ -238,7 +238,7 @@ renewals, and repairs anything changed outside the console (audit row +
 Full live results: `EVALUATION-RESULTS-2.md` §Stage 4.
 
 - **4.1 Orchestrator.** Console and engine share one `flock`
-  (`/opt/securepi/orchestrator.lock`). Tier 2 enrollment is the exception:
+  (`/var/lib/securepi/orchestrator.lock` since 26 September). Tier 2 enrollment is the exception:
   it's never re-added if something else turned it off.
 - **4.2 Response.** Quarantine is keyed on **MAC** (`inet filter
   quarantine_mac`, kernel timeout as a backstop) and can be timed. Block
@@ -267,7 +267,7 @@ Full live results: `EVALUATION-RESULTS-2.md` §Stage 4.
 - The console password is a one-way hash, so live checks run the orchestrator
   as `sudo -u securepi-web python3 ...` on the gateway rather than over HTTP.
 
-**Pending: one real-device check (4.2).** "Quarantine survives a DHCP renewal"
+**Done 26 September (was pending): the real-device check (4.2).** "Quarantine survives a DHCP renewal"
 needs a phone on SecurePi-Test (the harness can't reach `ap0`). Connect it,
 quarantine it for 15 min from its device page, toggle its Wi-Fi off and on,
 and confirm it stays offline, then comes back on its own when the time is up
@@ -275,6 +275,34 @@ and confirm it stays offline, then comes back on its own when the time is up
 should rise).
 
 Test suite: **362**, all passing.
+
+### Audit fixes deployed, real-phone checks done (26 September 2026)
+
+An external static audit (`Audit.md`, uncommitted) was triaged item by item;
+the accepted fixes are commits `44c8c6c`-`5d616fa` (tests 382 -> 442) and are
+**deployed**. What a future change needs to know:
+
+- **Writable data moved out of the code directories.** Database and
+  orchestrator lock: `/var/lib/securepi/`. DPI rule set:
+  `/var/lib/securepi-dpi/adfilter-rules.json`. `/opt/securepi` and
+  `/opt/securepi-dpi` are root-only code now. `make deploy` refuses to run
+  if the database isn't at the new path, and also ships
+  `dpi/adfilter_rules.py`. Pre-migration backup:
+  `/opt/securepi/securepi.db.pre-audit-fixes-20260926-075723.bak`.
+- **`/etc/nftables.conf` has four new input-chain rules** (quarantine,
+  blocked IP and DoH for proxied HTTPS on :8080). They were added live with
+  `nft -f` of just those rules - the full file starts with `flush ruleset`,
+  which would empty the quarantine/enrolled/DoH sets.
+- **`battery.py` and `evaluate.py` in the repo point at the new database
+  path**; copy them to `/opt/securepi-eval/` before the next battery.
+- Two stray files owned by `maheshwari` sit in `/opt/securepi` (`app.js`,
+  `app.css`, 13 Sep copies); harmless, can be deleted.
+
+The real-phone checks (a Galaxy A33 over `adb`) passed: inspection redirect,
+quarantine surviving a reconnect, the new proxied-HTTPS rule, DoT/QUIC
+bypass detection, fail-open DNS engaging. Details and caveats:
+`EVALUATION-RESULTS-2.md`, "Real-device checks". **Device 2 is that phone**,
+so its open `slow_network_sweep` incidents come from ordinary phone traffic.
 
 ### Stage 7: 7.1 and 7.2 done (26 September 2026)
 
@@ -294,14 +322,16 @@ next battery).
    incidents and 21 campaigns on the `[TEST HARNESS] battery …` devices
    resolved with a note, one `incident.bulk_resolve` audit entry. The harness
    is clean too: extra addresses removed, 10.10.0.1 back on device 4.
-2. Look at device 2's 116 open slow_network_sweep incidents (not battery
-   data - a likely false-positive pattern, for 7.3).
+2. Look at device 2's open slow_network_sweep incidents (device 2 is the
+   user's own A33 phone, so a likely false-positive pattern, for 7.3).
 3. Small fix: volume_anomaly's `first_seen` is the start of the hour, so it
    sorts first in a campaign's tactic chain ("Exfiltration → …").
 4. 7.3 precision/recall and threshold sweeps - the replay tool is the
    instrument for the sweeps (same capture, different settings).
 5. 7.0 seven-day run on real devices.
-6. Still pending from 4.2: the real-phone DHCP-renewal quarantine check (see above).
+6. ~~Real-phone quarantine reconnect check~~ - done 26 September. Still to
+   do from that session: a stricter fail-open DNS rerun with the phone's
+   lookups made while AdGuard is held down (see EVALUATION-RESULTS-2.md).
 7. Decide whether to rewrite the pushed commits that carry a `Co-Authored-By`
    line (`220e03b`, `31b70f6`, `684d2e2` and earlier ones). Rewriting means a
    force-push to `main`.

@@ -559,7 +559,7 @@ Never cut Stage 2, steps 5.2, 5.3, 5.7, or evaluation items 7.2–7.5.
 | 1 | **1.1 done, 1.2 done, 1.3 done, 1.4 done, 1.5 done, 1.6 done, 1.7 done, 1.8 done** (1.8 out of order - see note below) | Stage 1 complete |
 | 2 | **2.1–2.8 all done** | **Stage 2 complete** |
 | 3 | **3.1–3.6 all done** | **Stage 3 complete** |
-| 4 | **4.1–4.5 all done** (4.2's DHCP-renewal check on a real device still to run - see `EVALUATION-RESULTS-2.md` §4.2) | **Stage 4 complete** |
+| 4 | **4.1–4.5 all done** (4.2's reconnect check done on a real phone 26 September - see `EVALUATION-RESULTS-2.md`, "Real-device checks") | **Stage 4 complete** |
 | 5 | **5.1 done, 5.2 done, 5.3 done, 5.4 done, 5.5 done, 5.6 done, 5.7 done, 5.8 done, 5.9 done, 5.10 done, 5.11 done (Path 1 only)** (out of order) | 5.1–5.11 done - 5.11 scoped to Path 1 (cosmetic CSS), Path 2 (scriptlets) deferred and recorded |
 | 6 | **6.1 done, 6.2 done, 6.3 done, 6.4 done, 6.5 done, 6.6 done, 6.7 done** | Stage 6 complete |
 | 7 | **7.1 done** (deterministic replay; CTU-13 ×2 and the battery capture replayed, 45/45 agree with live) · **7.2 done** (all 15 signals 5/5, benign host quiet; four real problems found and fixed) - see `EVALUATION-RESULTS-2.md` §Stage 7 | 7.1-7.2 done, 7.0 and 7.3-7.9 to do |

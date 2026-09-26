@@ -599,7 +599,7 @@ Backups first in `/opt/securepi-backups/`: the live ruleset (`nft list ruleset`)
 | Timed quarantine (120 s) + block IP (120 s) | Kernel held both with 178 s left (policy + the 60 s backstop margin). Both policies `expired` by the orchestrator **11 s** after their time, both sets empty |
 | Auto-response on a synthetic scan → brute force → beacon chain on the victim | The real engine built campaign #3 "Discovery -> Credential Access -> Command and Control"; the orchestrator created `auto:campaign:3` (5 min, by `auto-response`) and raised incident "…test-victim was quarantined automatically". The kernel entry was extended to the longer of the two overlapping quarantines. The synthetic incidents and campaign were deleted afterwards, as in 2.8 |
 
-**Not verified live, named rather than implied:** "survives a DHCP renewal" needs a real device whose traffic arrives on `ap0` - the harness namespaces sit on `br-test`, which never touches the `iifname "ap0"` rules (the same limitation 3.6 and 5.7 record). No device was connected to SecurePi-Test this session. What *is* established: quarantine is keyed on MAC, the orchestrator follows a device's new MACs (unit-tested), and a new IP changes nothing about the set (unit-tested). Still to run: connect a phone, quarantine it for 15 min, force a renewal (toggle Wi-Fi), and confirm the `quarantined-mac` rule's counter rises and the phone stays offline until expiry.
+**Not verified live, named rather than implied:** "survives a DHCP renewal" needs a real device whose traffic arrives on `ap0` - the harness namespaces sit on `br-test`, which never touches the `iifname "ap0"` rules (the same limitation 3.6 and 5.7 record). No device was connected to SecurePi-Test this session. What *is* established: quarantine is keyed on MAC, the orchestrator follows a device's new MACs (unit-tested), and a new IP changes nothing about the set (unit-tested). Still to run: connect a phone, quarantine it for 15 min, force a renewal (toggle Wi-Fi), and confirm the `quarantined-mac` rule's counter rises and the phone stays offline until expiry. **Since done** - see "Real-device checks (26 September 2026)" below.
 
 ### 4.3 — Filtering profiles
 
@@ -634,6 +634,47 @@ A webhook channel on the gateway pointed at a small listener on the Mac (`192.16
 | Clean-up | Channel removed (the listener was temporary); #201, #206, #207 resolved with a note |
 
 Telegram and SMTP were not sent live (no accounts were set up for this). Their exact requests are unit-tested (`RequestShapeTests`), and they share the same dispatch path the webhook check proved.
+
+## Real-device checks (26 September 2026)
+
+The rules that match `iifname "ap0"` had never seen a real device's
+traffic: the test harness sits on `br-test` (see 2.2, 3.6, 4.2, 5.7). This
+session closed that gap with a Samsung Galaxy A33 (Android 16) on
+SecurePi-Test, driven from the Mac over USB with `adb`, on the code
+deployed the same morning (the `Audit.md` fixes, commits `44c8c6c` to
+`5d616fa`). Policies were created and ended through `orchestrator.py` as
+`securepi-web`, the same path the console uses. The phone is registry
+device 2, MAC `ca:25:f0:57:6d:87` (Android's persistent per-network random
+MAC; the same address came back on every reconnect).
+
+| Check | Result |
+|---|---|
+| **Deploy** (`migrate-data-dirs.sh`, `make deploy`, DPI + canary scripts, 4 new input rules added live without a flush) | All services active. Database, lock and rule set in `/var/lib/securepi*`; code directories `root:root 755`. Engine heartbeat live; privacy canary "passthrough and decrypt decisions both correct"; addon loaded rules from `/var/lib/securepi-dpi/`. Pre-deploy backup: `securepi.db.pre-audit-fixes-20260926-075723.bak` (600) |
+| **5.7 inspection redirect** (enrolled, Chrome) | `youtube.com` / `m.youtube.com` **decrypted**; `/pagead/adview` and `/youtubei/v1/log_event` blocked by the addon. `en.wikipedia.org`, `google.com`, `graph.facebook.com` and others **passed through** undecrypted |
+| **4.2 quarantine** (5 min, while enrolled) | MAC in `quarantine_mac`; internet ping 100% lost, gateway still reachable |
+| **4.2 survives a reconnect** | The phone left SecurePi-Test and came back (new association and DHCP) still quarantined: ping 100% lost, `quarantined-mac` counter 6 → 151 |
+| **Audit H1: proxied HTTPS while quarantined** | New `quarantined-mac-proxied` input rule dropped **175** packets of the phone's redirected HTTPS (64 of them from loading YouTube in Chrome, which stayed blank). Before the fix these reached the internet through the proxy |
+| **4.2 expiry** | Policy `expired` by the orchestrator **6.3 s** after its time; set empty; phone back online |
+| **2.2 DoT bypass, layer 1** | Private DNS `dns.google`: AdGuard blocked the hostname (`\|\|dns.google^`), so the phone never attempted port 853. 9 of 10 common DoT hostnames are blocked this way (`dot.sb` is not) |
+| **2.2 DoT bypass, layer 2** | Private DNS `dot.sb`: `10.10.0.50 → 185.222.222.222:853` **rejected** by the `dot-bypass` rule, logged, ingested, and added as evidence to `dns_bypass` incident #447 |
+| **2.2 QUIC** | Chrome's QUIC attempts (51) were rejected by `quic-blocked` and raised the same incident #447 |
+| **3.6 fail-open DNS** | AdGuard stopped → both `dns-failopen` rules in place after **16 s**, incident #451 raised; removed again once AdGuard was back |
+
+**Not proven, named rather than implied:**
+
+- **3.6:** the phone's lookups during the fail-open ran just after AdGuard
+  was restarted (a timing mistake in the test), so they don't prove the
+  phone resolved *through* the fail-open rules. The rules going in and
+  coming out, and the incident, are verified. A stricter rerun (lookups
+  while AdGuard is held down) is still to do.
+- **Quarantine and Android roaming:** turning Wi-Fi off and on made the
+  phone join a different saved network with working internet (Babu_Home)
+  instead of the quarantined one. Quarantine removes a device from this
+  network; it can't stop the device leaving for another network it knows.
+  The reconnect check above was done with Babu_Home's auto-reconnect off.
+- **Device 2's open `slow_network_sweep` incidents** belong to this phone,
+  so they come from ordinary phone traffic - most likely a false-positive
+  pattern, to look at in 7.3.
 
 ## Stage 7
 

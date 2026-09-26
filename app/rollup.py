@@ -19,11 +19,20 @@ still to come - see ENHANCEMENT-PLAN.md.
 
 No new systemd service: called from engine.py's existing 15-second loop,
 alongside correlation.run_all(). It is naturally cheap on every cycle
-where there is nothing new to roll up (see the docstring below for why),
-so it does not need its own timer or throttle.
+where there is nothing new to roll up (it only re-checks the last two
+closed hours - see the docstring below), so it does not need its own
+timer or throttle.
 """
 
 import time
+
+# How many of the most recently closed hours are recomputed on every call,
+# even if they were rolled up already. Events can land in an hour after
+# it closed: an event attributed to its device a few seconds late (the
+# registry refreshes every ~10s), or AdGuard's file fallback delivering
+# queries late. Re-rolling is safe - INSERT OR REPLACE simply overwrites
+# the same (device, hour) row with the corrected totals.
+REPAIR_HOURS = 2
 
 
 def _hour_start(ts):
@@ -33,15 +42,15 @@ def _hour_start(ts):
 def rollup_closed_hours(conn, now=None):
     """
     Aggregate every device's activity for each hour that has fully closed
-    (i.e. ended before `now`) and doesn't have a device_hourly row yet.
+    (i.e. ended before `now`) and hasn't been rolled up yet - plus the
+    last REPAIR_HOURS closed hours again, to catch events that arrived
+    late.
 
-    Resumes from device_hourly's own high-water mark (MAX(hour_start)),
-    the same "read state back from the data itself" approach
-    ingest_state/signal_state use elsewhere in this project - no separate
-    watermark table. On a cycle where the most recent closed hour is
-    already rolled up, the loop body never executes: this is what makes
-    it cheap enough to call unconditionally from engine.py's own loop
-    rather than needing a timer.
+    Resumes from its own progress row in signal_state ('rollup'). On a
+    cycle where nothing new has closed, it only recomputes those
+    REPAIR_HOURS hours - two small grouped queries over an hour of events
+    each - which is still cheap enough to call unconditionally from
+    engine.py's own loop rather than needing a timer.
 
     A device with zero events in some hour gets no row for that hour, not
     a zero-value row - the baseline signal (correlation.py) treats a
@@ -56,14 +65,26 @@ def rollup_closed_hours(conn, now=None):
     if last_closed_hour < 0:
         return 0
 
-    watermark = conn.execute("SELECT max(hour_start) FROM device_hourly").fetchone()[0]
-    if watermark is None:
-        earliest = conn.execute("SELECT min(ts) FROM events").fetchone()[0]
-        if earliest is None:
-            return 0  # no events at all yet - nothing to roll up
-        start_hour = _hour_start(earliest)
+    # Where the last call got to. Kept in its own signal_state row
+    # ('rollup'), not read back as MAX(hour_start) from device_hourly as it
+    # used to be: an hour with no events writes no rows, so that marker
+    # never moved past a quiet spell, and every 15-second cycle re-scanned
+    # every empty hour since (Audit.md). MAX(hour_start) is still the
+    # starting point the first time, for a database from before this row.
+    progress = conn.execute("SELECT last_run_ts FROM signal_state WHERE signal_type='rollup'").fetchone()
+    if progress is not None:
+        start_hour = int(progress["last_run_ts"]) + 3600
     else:
-        start_hour = watermark + 3600
+        watermark = conn.execute("SELECT max(hour_start) FROM device_hourly").fetchone()[0]
+        if watermark is None:
+            earliest = conn.execute("SELECT min(ts) FROM events").fetchone()[0]
+            if earliest is None:
+                return 0  # no events at all yet - nothing to roll up
+            start_hour = _hour_start(earliest)
+        else:
+            start_hour = watermark + 3600
+    # Always redo the last REPAIR_HOURS closed hours, to pick up late data.
+    start_hour = min(start_hour, last_closed_hour - (REPAIR_HOURS - 1) * 3600)
 
     written = 0
     hour = start_hour
@@ -93,5 +114,10 @@ def rollup_closed_hours(conn, now=None):
             written += 1
         hour += 3600
 
+    conn.execute(
+        "INSERT INTO signal_state (signal_type, last_run_ts) VALUES ('rollup', ?)"
+        " ON CONFLICT(signal_type) DO UPDATE SET last_run_ts=excluded.last_run_ts",
+        (last_closed_hour,),
+    )
     conn.commit()
     return written

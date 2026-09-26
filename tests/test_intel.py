@@ -145,5 +145,43 @@ class RefreshAllTests(unittest.TestCase):
         self.assertEqual(len(rows), 1, "the same indicator from the same source must not duplicate")
 
 
+class DomainBlocklistFileTests(unittest.TestCase):
+    """Audit.md: the generated blocklist must not keep blocking domains
+    a feed stopped listing long ago."""
+
+    def test_only_recently_listed_domains_are_written(self):
+        import tempfile
+        conn = fixtures.temp_db()
+        now = 1_790_000_000
+        intel._upsert_indicators(conn, "urlhaus", [("fresh.example", "domain", "x")], now)
+        intel._upsert_indicators(conn, "urlhaus", [("cleaned-up.example", "domain", "x")], now - 60 * 86400)
+        conn.commit()
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        with mock.patch("intel.DOMAIN_BLOCKLIST_DIR", tmp.name), \
+             mock.patch("intel.DOMAIN_BLOCKLIST_PATH", os.path.join(tmp.name, "ioc-domains.txt")):
+            intel._write_domain_blocklist_file(conn)
+            with open(os.path.join(tmp.name, "ioc-domains.txt")) as fh:
+                text = fh.read()
+        self.assertIn("||fresh.example^", text)
+        self.assertNotIn("cleaned-up.example", text)
+
+    def test_a_feed_that_stopped_refreshing_keeps_its_latest_list(self):
+        import tempfile
+        conn = fixtures.temp_db()
+        long_ago = 1_700_000_000
+        intel._upsert_indicators(conn, "feodo", [("still-listed.example", "domain", "x")], long_ago)
+        intel._upsert_indicators(conn, "urlhaus", [("other.example", "domain", "x")], long_ago + 90 * 86400)
+        conn.commit()
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        with mock.patch("intel.DOMAIN_BLOCKLIST_DIR", tmp.name), \
+             mock.patch("intel.DOMAIN_BLOCKLIST_PATH", os.path.join(tmp.name, "ioc-domains.txt")):
+            intel._write_domain_blocklist_file(conn)
+            with open(os.path.join(tmp.name, "ioc-domains.txt")) as fh:
+                text = fh.read()
+        self.assertIn("||still-listed.example^", text)
+
+
 if __name__ == "__main__":
     unittest.main()

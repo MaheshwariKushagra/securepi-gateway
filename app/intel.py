@@ -47,6 +47,7 @@ import adguard
 DB_PATH = "/var/lib/securepi/securepi.db"
 DOMAIN_BLOCKLIST_DIR = "/opt/securepi/static"
 DOMAIN_BLOCKLIST_PATH = DOMAIN_BLOCKLIST_DIR + "/ioc-domains.txt"
+BLOCKLIST_MAX_AGE_DAYS = 30  # see _write_domain_blocklist_file
 # AdGuard's add_url endpoint validates the URL scheme server-side and
 # rejects anything but http/https outright (confirmed live: a file://
 # URL fails with "bad enum value: \"file\"; want \"http\" or \"https\"" -
@@ -162,12 +163,27 @@ def _upsert_indicators(conn, source, indicators, now):
 
 
 def _write_domain_blocklist_file(conn):
-    """Every domain-type IOC, as a plain AdGuard-syntax blocklist file -
-    the mechanism that turns these into a Tier 1 block, not just a
+    """Every CURRENT domain-type IOC, as a plain AdGuard-syntax blocklist
+    file - the mechanism that turns these into a Tier 1 block, not just a
     correlation match. Rewritten in full each refresh; AdGuard re-reads
-    it on its own configured interval, same as any other blocklist URL."""
+    it on its own configured interval, same as any other blocklist URL.
+
+    "Current" means its feed listed it within BLOCKLIST_MAX_AGE_DAYS of
+    that same feed's most recent refresh. The ioc table deliberately
+    keeps every indicator ever seen (see _upsert_indicators) so past
+    traffic can still be matched against it - but abuse.ch feeds list a
+    lot of hacked, legitimate websites that are later cleaned up, and
+    blocking those for ever turns yesterday's warning into today's broken
+    website (Audit.md). Measured against each feed's own latest refresh,
+    not today's date, so a feed that can't be downloaded for a while
+    doesn't empty the blocklist."""
     os.makedirs(DOMAIN_BLOCKLIST_DIR, exist_ok=True)
-    rows = conn.execute("SELECT DISTINCT indicator FROM ioc WHERE ioc_type='domain'").fetchall()
+    rows = conn.execute(
+        """SELECT DISTINCT i.indicator FROM ioc i
+            WHERE i.ioc_type = 'domain'
+              AND i.last_seen >= (SELECT max(j.last_seen) FROM ioc j WHERE j.source = i.source) - ?""",
+        (BLOCKLIST_MAX_AGE_DAYS * 86400,),
+    ).fetchall()
     with open(DOMAIN_BLOCKLIST_PATH, "w") as f:
         f.write("! Title: SecurePi Gateway - offline threat intel (abuse.ch)\n")
         f.write("! Rewritten by app/intel.py - do not edit by hand\n")

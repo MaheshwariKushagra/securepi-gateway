@@ -914,6 +914,46 @@ def dns_tunneling_signal(conn):
                 )
                 fired += 1
 
+    # Pass 2 - generated APEX domains (Audit.md H11). The pass above groups
+    # by base domain and scores only what sits IN FRONT of it, so it
+    # catches "x7fq2k.evil.com, p0zr8w.evil.com, ..." - but many DGA
+    # families generate the registrable name itself: "x7fq2kp0zr.com,
+    # q9vbn3mwxt.net, ...". Each of those is its own one-row group above,
+    # with nothing in front of the base domain to score, so a device
+    # trying hundreds of them never fired. Here all of a device's
+    # NXDOMAIN lookups of bare apex names are pooled, and the generated
+    # part - the label before the suffix ("x7fq2kp0zr") - is scored.
+    # Same thresholds as the pass above. Note: per-character entropy of
+    # a label can't exceed log2(its length), so with the default 3.3-bit
+    # threshold only labels of 10+ characters can qualify - which is also
+    # what keeps ordinary mistyped names ("gooogle.com") from counting.
+    apex_nxdomain = defaultdict(list)
+    for r in rows:
+        if r["dns_rcode"] == "NXDOMAIN" and r["dns_rrname"] == _base_domain(r["dns_rrname"]):
+            apex_nxdomain[r["device_id"]].append(r)
+    for device_id, nx_rows in apex_nxdomain.items():
+        names = {r["dns_rrname"] for r in nx_rows}
+        if len(names) < settings.get(conn, "dga_min_nxdomain_count"):
+            continue
+        entropies = [_shannon_entropy(name.split(".")[0]) for name in names]
+        avg_entropy = sum(entropies) / len(entropies)
+        if avg_entropy < settings.get(conn, "dga_min_entropy"):
+            continue
+        raise_incident(
+            conn, device_id, "dga", "high",
+            title="Possible domain-generation-algorithm activity (%d random-looking domains)" % len(names),
+            description=(
+                "%d genuine NXDOMAIN lookups of %d different, random-looking domain names in %d "
+                "seconds (avg entropy %.1f bits/char) - a pattern consistent with malware searching "
+                "for its command-and-control server by trying algorithmically generated names."
+                % (len(nx_rows), len(names), window, avg_entropy)
+            ),
+            first_seen=min(r["ts"] for r in nx_rows),
+            last_seen=max(r["ts"] for r in nx_rows),
+            event_ids=[r["id"] for r in nx_rows],
+        )
+        fired += 1
+
     set_window_start(conn, "dns_tunneling", now)
     return fired
 
@@ -1438,6 +1478,7 @@ def adblock_effectiveness_signal(conn):
 # --------------------------------------------------------------------------
 BASELINE_MIN_SAMPLES = 7            # "learning badge until 7 days of data exist", per the plan
 BASELINE_MIN_BYTES_FLOOR = 5 * 1024 * 1024  # 5 MB - below this, a z-score alone is just noise
+BASELINE_FLAT_STDEV_FRACTION = 0.25  # spread assumed for a perfectly flat history - see behavioral_baseline_signal
 # The z-score threshold lives in app/settings.py (step 6.3) - see
 # port_scan_signal's own note above for why only this one of this
 # signal's three constants is console-tunable.
@@ -1492,7 +1533,14 @@ def behavioral_baseline_signal(conn):
         variance = sum((v - mean) ** 2 for v in values) / (len(values) - 1)
         stdev = variance ** 0.5
         if stdev == 0:
-            continue  # perfectly flat history - nothing to compare a deviation against
+            # A perfectly flat history (every day the same, e.g. a camera
+            # that always sends 0 bytes or exactly the same amount at this
+            # hour) used to be skipped entirely - so even a sudden 500 MB
+            # upload from it never fired (Audit.md). Instead, assume a
+            # modest natural spread: a quarter of the usual amount, and at
+            # least BASELINE_MIN_BYTES_FLOOR, so a device that normally
+            # sends nothing at all fires only on a real amount of data.
+            stdev = max(mean * BASELINE_FLAT_STDEV_FRACTION, BASELINE_MIN_BYTES_FLOOR)
 
         z = (current_bytes - mean) / stdev
         if z > z_threshold:

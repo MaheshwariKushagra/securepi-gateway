@@ -572,6 +572,37 @@ class DnsTunnelingSignalTests(unittest.TestCase):
         row = conn.execute("SELECT * FROM incidents WHERE signal_type='dga'").fetchone()
         self.assertIsNotNone(row)
 
+    def _nxdomain(self, conn, name, ts):
+        conn.execute(
+            "INSERT INTO events (ts, ts_iso, source, event_type, device_id, dns_rrname,"
+            " dns_rrtype, dns_rcode) VALUES (?, 'test', 'adguard', 'dns_query', 1, ?, 'A', 'NXDOMAIN')",
+            (ts, name))
+
+    def test_fires_dga_on_a_burst_of_random_apex_domains(self):
+        # Audit.md H11: many DGA families generate the registrable name
+        # itself (x7fq2kp0zr.com), not a subdomain under one base.
+        import random
+        rng = random.Random(7)
+        conn = fixtures.temp_db()
+        fixtures.insert_device(conn, 1)
+        now = time.time()
+        for i in range(12):
+            self._nxdomain(conn, "%s.%s" % (self._random_label(rng), ("com", "net", "org")[i % 3]), now - i)
+        conn.commit()
+        self.assertGreaterEqual(correlation.dns_tunneling_signal(conn), 1)
+        self.assertIsNotNone(conn.execute("SELECT 1 FROM incidents WHERE signal_type='dga'").fetchone())
+
+    def test_mistyped_apex_domains_do_not_fire_dga(self):
+        conn = fixtures.temp_db()
+        fixtures.insert_device(conn, 1)
+        now = time.time()
+        typos = ["gooogle.com", "facebok.com", "amazn.com", "yotube.com", "wikipeda.org", "netflx.com",
+                 "twiter.com", "redit.com", "linkdin.com", "instagarm.com", "gihub.com", "stackoverflw.com"]
+        for i, name in enumerate(typos):
+            self._nxdomain(conn, name, now - i)
+        conn.commit()
+        self.assertEqual(correlation.dns_tunneling_signal(conn), 0)
+
     def test_a_blocked_query_does_not_count_as_nxdomain_for_dga(self):
         # app/ingest.py's flatten_agh_api docstring: a query THIS gateway
         # blocked still reports dns_rcode NOERROR, not NXDOMAIN - only a
@@ -970,6 +1001,33 @@ class BehavioralBaselineSignalTests(unittest.TestCase):
         fixtures.insert_flow(conn, 1, "1.1.1.1", 443, current_hour_start + (now - current_hour_start) / 2,
                               bytes_toclient=200 * 1024 * 1024, bytes_toserver=1024)
         self.assertEqual(correlation.behavioral_baseline_signal(conn), 1)
+
+    def _seed_flat_history(self, conn, device_id, now, days, total_bytes):
+        for d in range(1, days + 1):
+            hour_start = correlation._hour_start(now) - d * 86400
+            fixtures.insert_device_hourly(conn, device_id, hour_start, bytes_down=total_bytes, bytes_up=0)
+
+    def _current_hour_flow(self, conn, now, nbytes):
+        current_hour_start = correlation._hour_start(now)
+        fixtures.insert_flow(conn, 1, "1.1.1.1", 443, current_hour_start + (now - current_hour_start) / 2,
+                              bytes_toclient=nbytes, bytes_toserver=0)
+
+    def test_a_perfectly_flat_history_still_catches_a_big_jump(self):
+        # Audit.md: stdev == 0 used to skip the device altogether.
+        conn = fixtures.temp_db()
+        now = time.time()
+        fixtures.insert_device(conn, 1, first_seen=now - 30 * 86400)
+        self._seed_flat_history(conn, 1, now, days=10, total_bytes=0)
+        self._current_hour_flow(conn, now, 500 * 1024 * 1024)
+        self.assertEqual(correlation.behavioral_baseline_signal(conn), 1)
+
+    def test_a_perfectly_flat_history_ignores_a_small_wobble(self):
+        conn = fixtures.temp_db()
+        now = time.time()
+        fixtures.insert_device(conn, 1, first_seen=now - 30 * 86400)
+        self._seed_flat_history(conn, 1, now, days=10, total_bytes=20 * 1024 * 1024)
+        self._current_hour_flow(conn, now, 30 * 1024 * 1024)   # +50%: z = 10 MB / 5 MB = 2
+        self.assertEqual(correlation.behavioral_baseline_signal(conn), 0)
 
     def test_does_not_fire_while_still_learning(self):
         conn = fixtures.temp_db()

@@ -60,12 +60,14 @@ def insert_device(conn, device_id, hostname=None, friendly_name=None,
 
 
 def insert_flow(conn, device_id, dest_ip, dest_port, ts,
-                 src_ip="10.10.0.50", bytes_toclient=0, bytes_toserver=0, flow_start=None):
+                 src_ip="10.10.0.50", bytes_toclient=0, bytes_toserver=0, flow_start=None,
+                 pkts_toclient=None):
     conn.execute(
         "INSERT INTO events (ts, ts_iso, source, event_type, src_ip, dest_ip, dest_port,"
-        " device_id, bytes_toclient, bytes_toserver, blocked, flow_start)"
-        " VALUES (?, 'test', 'suricata', 'flow', ?, ?, ?, ?, ?, ?, 0, ?)",
-        (ts, src_ip, dest_ip, dest_port, device_id, bytes_toclient, bytes_toserver, flow_start),
+        " device_id, bytes_toclient, bytes_toserver, blocked, flow_start, pkts_toclient)"
+        " VALUES (?, 'test', 'suricata', 'flow', ?, ?, ?, ?, ?, ?, 0, ?, ?)",
+        (ts, src_ip, dest_ip, dest_port, device_id, bytes_toclient, bytes_toserver, flow_start,
+         pkts_toclient),
     )
     conn.commit()
 

@@ -31,7 +31,7 @@ BASE_LIST_OUTPUT = """table ip nat {
 \t\ttype nat hook prerouting priority dstnat; policy accept;
 \t\tiifname "ap0" udp dport 53 ip daddr != 10.10.0.1 counter packets 0 bytes 0 dnat to 10.10.0.1:53 # handle 4
 \t\tiifname "ap0" tcp dport 53 ip daddr != 10.10.0.1 counter packets 0 bytes 0 dnat to 10.10.0.1:53 # handle 5
-\t\tiifname "ap0" ip saddr @enrolled tcp dport 443 counter packets 0 bytes 0 redirect to :8080 comment "dpi-redirect" # handle 6
+\t\tiifname @dpi_up ip saddr @enrolled tcp dport 443 counter packets 0 bytes 0 redirect to :8080 comment "dpi-redirect" # handle 6
 \t}
 }
 """

@@ -501,6 +501,18 @@ PLAYBOOKS = {
             "no manual step needed for that part. Resolve this incident once you've confirmed "
             "filtering is actually back, not just that the DNS filter is running.",
     },
+    "platform_dpi_unresponsive": {
+        "what_it_means": "The HTTPS inspection proxy (securepi-dpi) is still running but stopped "
+            "answering connections, so the gateway stopped sending enrolled devices' HTTPS to it. "
+            "Those devices keep browsing normally, but undecrypted: Tier 2 ad removal is off for "
+            "them until the proxy answers again (step 7.7, fail open).",
+        "how_to_check": "`sudo systemctl status securepi-dpi` and its journal "
+            "(`sudo journalctl -u securepi-dpi -n 50`) for what it was doing when it stopped "
+            "answering. `sudo nft list set ip nat dpi_up` is empty while inspection is bypassed.",
+        "recommended_action": "Restart the proxy (`sudo systemctl restart securepi-dpi`). The gate "
+            "reopens by itself once the proxy is listening again. Resolve once `dpi_up` holds ap0 "
+            "and an enrolled device's YouTube page is decrypted again.",
+    },
     "policy_drift": {
         "what_it_means": "Something outside the console changed a response policy's enforcement - "
             "a quarantine or IP block removed from nftables by hand, a rule deleted or a device's "

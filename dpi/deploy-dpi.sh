@@ -16,6 +16,8 @@ sudo install -m 644 -o root -g root "$(dirname "$0")/securepi_adfilter.py" $DPI/
 # (`from adfilter_rules import ...`) - it has to sit next to the addon.
 # The console's own copy goes to /opt/securepi via `make deploy`.
 sudo install -m 644 -o root -g root "$(dirname "$0")/adfilter_rules.py" $DPI/adfilter_rules.py
+# Opens/closes the inspection gate from the unit below (fail-open, 7.7).
+sudo install -m 755 -o root -g root "$(dirname "$0")/dpi-gate.sh" $DPI/dpi-gate.sh
 # The rule set itself is DATA the console edits, so it lives outside the
 # root-only code directory (Audit.md C1). Seeded from the repository copy
 # only if there isn't one yet - never overwrites the live, edited rules.
@@ -30,7 +32,9 @@ echo "==> 2/5  creating the proxy service"
 sudo tee /etc/systemd/system/securepi-dpi.service >/dev/null <<'UNIT'
 [Unit]
 Description=SecurePi Gateway - selective HTTPS inspection
-After=network-online.target
+# After nftables: the gate set (ip nat dpi_up) must exist before
+# ExecStartPost can open it.
+After=network-online.target nftables.service
 Wants=network-online.target
 
 [Service]
@@ -53,6 +57,10 @@ ExecStart=/opt/securepi-dpi/bin/mitmdump \
     --set block_global=false \
     --showhost \
     -s /opt/securepi-dpi/securepi_adfilter.py
+# Fail open (Stage 7.7): the redirect only happens while the gate is
+# open, and ExecStopPost runs on every stop - clean, crash or kill.
+ExecStartPost=/opt/securepi-dpi/dpi-gate.sh open
+ExecStopPost=/opt/securepi-dpi/dpi-gate.sh close
 Restart=on-failure
 RestartSec=5
 

@@ -33,6 +33,7 @@ number of incidents from a large number of raw events - the reduction ratio
 that is the point of having a correlation layer at all.
 """
 
+import ipaddress
 import math
 import sqlite3
 import statistics
@@ -266,7 +267,38 @@ def port_scan_signal(conn):
 # own note above.
 
 
+# Which destinations a horizontal sweep counts (step 7.3 precision fix).
+# Counting every distinct host a device talked to on one port made
+# ordinary phone use look like a sweep: a phone reaches dozens of
+# internet hosts on 443 in two hours (EVALUATION-RESULTS-2.md "Real-device
+# checks": device 2, 117 slow_network_sweep incidents from normal
+# traffic). A sweep is reconnaissance - probing addresses to see what is
+# there - so it shows up as destinations on the local/private network, or
+# as destinations that never answered. Replayed against seven days of
+# live flows, this kept every battery sweep and dropped every one of the
+# phone's normal-use hits. What it gives up: a sweep of INTERNET hosts
+# that do answer (open or closed-port replies) is no longer counted -
+# named in the report's limitations rather than hidden. Both sweep
+# queries (and their evidence lists) carry the same condition:
+#   AND (is_private_ip(dest_ip) OR COALESCE(pkts_toclient, 0) = 0)
+
+
+def _is_private_ip(value):
+    try:
+        return 1 if ipaddress.ip_address(value).is_private else 0
+    except (TypeError, ValueError):
+        return 0
+
+
+def _register_sql_functions(conn):
+    """is_private_ip() for the sweep queries. Registered per connection
+    (SQLite functions live on the connection); cheap, so safe to call
+    on every cycle."""
+    conn.create_function("is_private_ip", 1, _is_private_ip, deterministic=True)
+
+
 def network_sweep_signal(conn):
+    _register_sql_functions(conn)
     now = time.time()
     window = settings.get(conn, "network_sweep_window_seconds")
     since = now - window
@@ -282,6 +314,7 @@ def network_sweep_signal(conn):
          WHERE event_type = 'flow'
            AND device_id IS NOT NULL
            AND ts > ?
+           AND (is_private_ip(dest_ip) OR COALESCE(pkts_toclient, 0) = 0)
          GROUP BY device_id, dest_port
         HAVING n_hosts >= ?
         """,
@@ -293,7 +326,9 @@ def network_sweep_signal(conn):
         event_ids = [
             e["id"] for e in conn.execute(
                 """SELECT id FROM events WHERE event_type='flow' AND device_id=?
-                     AND dest_port=? AND ts > ? ORDER BY ts""",
+                     AND dest_port=? AND ts > ?
+                     AND (is_private_ip(dest_ip) OR COALESCE(pkts_toclient, 0) = 0)
+                   ORDER BY ts""",
                 (r["device_id"], r["dest_port"], since),
             )
         ]
@@ -345,6 +380,7 @@ def network_sweep_signal(conn):
 
 
 def slow_scan_signal(conn):
+    _register_sql_functions(conn)
     now = time.time()
     window = settings.get(conn, "slow_scan_window_seconds")
     since = now - window
@@ -397,6 +433,7 @@ def slow_scan_signal(conn):
          WHERE event_type = 'flow'
            AND device_id IS NOT NULL
            AND ts > ?
+           AND (is_private_ip(dest_ip) OR COALESCE(pkts_toclient, 0) = 0)
          GROUP BY device_id, dest_port
         HAVING n_hosts >= ?
         """,
@@ -406,7 +443,9 @@ def slow_scan_signal(conn):
         event_ids = [
             e["id"] for e in conn.execute(
                 """SELECT id FROM events WHERE event_type='flow' AND device_id=?
-                     AND dest_port=? AND ts > ? ORDER BY ts""",
+                     AND dest_port=? AND ts > ?
+                     AND (is_private_ip(dest_ip) OR COALESCE(pkts_toclient, 0) = 0)
+                   ORDER BY ts""",
                 (r["device_id"], r["dest_port"], since),
             )
         ]
@@ -1533,6 +1572,28 @@ def behavioral_baseline_signal(conn):
 
         z = (current_bytes - mean) / stdev
         if z > z_threshold:
+            # first_seen = the moment this hour's running total crossed the
+            # anomaly line, not the top of the hour. With the hour start, a
+            # volume anomaly always looked like the FIRST thing a device did
+            # that hour, so it led every campaign's tactic chain
+            # ("Exfiltration -> Discovery -> ...") even when the scan came
+            # first. Falls back to the hour start if the crossing can't be
+            # found (the total came from events without a single crossing row).
+            anomaly_line = mean + z_threshold * stdev
+            crossed = conn.execute(
+                """
+                SELECT ts FROM (
+                    SELECT ts, sum(COALESCE(bytes_toclient,0) + COALESCE(bytes_toserver,0))
+                               OVER (ORDER BY ts, id) running_total
+                      FROM events
+                     WHERE device_id = ? AND event_type = 'flow' AND ts >= ? AND ts < ?
+                )
+                 WHERE running_total > ?
+                 ORDER BY ts LIMIT 1
+                """,
+                (device_id, current_hour_start, now, anomaly_line),
+            ).fetchone()
+            anomaly_start = crossed["ts"] if crossed else current_hour_start
             raise_incident(
                 conn, device_id, "volume_anomaly", "medium",
                 title="Unusual data volume for this device at this time of day",
@@ -1542,7 +1603,7 @@ def behavioral_baseline_signal(conn):
                     "heavy session." % (current_bytes / 1e6, len(values), mean / 1e6,
                                          current_hour_of_day, z)
                 ),
-                first_seen=current_hour_start, last_seen=now, event_ids=[],
+                first_seen=anomaly_start, last_seen=now, event_ids=[],
             )
             fired += 1
 

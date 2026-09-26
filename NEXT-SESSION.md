@@ -305,46 +305,69 @@ redirect while the DNS filter was down). Details and caveats:
 `EVALUATION-RESULTS-2.md`, "Real-device checks". **Device 2 is that phone**,
 so its open `slow_network_sweep` incidents come from ordinary phone traffic.
 
-### Stage 7: 7.1 and 7.2 done (26 September 2026)
+### Stage 7: 7.1 and 7.2 done, pre-run fixes deployed (26 September 2026)
 
-Full results in `EVALUATION-RESULTS-2.md` §Stage 7. In short: the final
-five-run battery detected **every signal 5/5** and the benign host stayed quiet.
-The battery's own capture replayed on the Mac agreed on all 45 scored runs,
-and the replay is deterministic.
+Full results in `EVALUATION-RESULTS-2.md` §Stage 7. In short: the first
+five-run battery (05:43) detected **every signal 5/5** and the benign host
+stayed quiet; its capture replayed on the Mac agreed on all 45 scored runs.
 
-Deployed and live on the gateway: the dns_bypass canary fix, `events.flow_start`
-with the beacon timing fix, the harness offload fix
-(`/opt/securepi/setup-test-harness.sh`) and the current `battery.py` (except
-the campaign-TTD change made after the last run - copy it over before the
-next battery).
+**Later the same day - the three fixes Stage 7 needed before its final
+measurements, all deployed and live** (details in EVALUATION-RESULTS-2.md,
+"Pre-run fixes"):
+- **Inspection now fails open** (7.7's requirement). New `ip nat dpi_up`
+  gate set: the dpi-redirect rule only fires while it holds "ap0". The
+  proxy's unit opens it once listening and closes it on any stop
+  (`dpi/dpi-gate.sh`); `app/health.py` closes it for a hung-but-running
+  proxy and reopens it when the proxy answers (`app/dpi_gate.py`).
+  Measured live: stop → closed at once; frozen proxy → closed in 27 s
+  (incident #476, a test - resolve it); resumed → reopened in 28 s.
+  `/etc/nftables.conf` updated (backup `/etc/nftables.conf.pre-dpi-gate-*.bak`).
+- **Sweep false positives fixed:** network_sweep and slow_network_sweep now
+  count only private or unanswered destinations.
+- **volume_anomaly `first_seen`** is now when the hour's total crossed the
+  anomaly line, so campaign tactic chains read in the right order.
+
+**In flight when the session ended:** the 7.2 battery re-run on this final
+code (started 10:13, unit `securepi-battery`, runs unattended). Results land
+on the gateway in `/var/tmp/securepi-battery/battery-20260926-101333.{json,labels.json,pcap}`.
 
 **Next steps, in order:**
-1. ~~Clean up the battery's test incidents~~ - done 26 September: 167
-   incidents and 21 campaigns on the `[TEST HARNESS] battery …` devices
-   resolved with a note, one `incident.bulk_resolve` audit entry. The harness
-   is clean too: extra addresses removed, 10.10.0.1 back on device 4.
-2. Look at device 2's open slow_network_sweep incidents (device 2 is the
-   user's own A33 phone, so a likely false-positive pattern, for 7.3).
-2a. **Found 26 September, not fixed yet - decide before the demo:**
-   - *Inspection fails closed.* If `securepi-dpi` stops or crashes, every
-     HTTPS site breaks for enrolled devices (all their 443 traffic is
-     redirected to :8080). Proposed: `ExecStopPost=` in the unit that
-     flushes `ip nat enrolled` (the orchestrator then ends those policies
-     as "removed outside the console", the designed direction), plus a
-     health probe of :8080 for a hung-but-running proxy.
-   - *Sweep false positives* (device 2 = the A33): count only private or
-     unanswered destinations - simulated on 7 days of live data, see
-     EVALUATION-RESULTS-2.md "Real-device checks".
-3. Small fix: volume_anomaly's `first_seen` is the start of the hour, so it
-   sorts first in a campaign's tactic chain ("Exfiltration → …").
-4. 7.3 precision/recall and threshold sweeps - the replay tool is the
-   instrument for the sweeps (same capture, different settings).
-5. 7.0 seven-day run on real devices.
-6. ~~Real-phone checks (quarantine reconnect, fail-open DNS, bypass,
-   inspection redirect)~~ - all done 26 September (EVALUATION-RESULTS-2.md).
+1. **Collect the battery re-run:** copy the three files to `eval/results/`,
+   `eval/labels/` and `eval/pcaps/battery/`, check every signal is still 5/5
+   (the sweep fix must not have cost a detection), and replay the new capture
+   with `tools/replay.py`. Then clean up its test incidents the same way as
+   before (resolve with a note on the `[TEST HARNESS] battery …` devices).
+2. **7.3 precision / recall / F1 and threshold sweeps.** Plan worked out, not
+   built yet: a `tools/sweep.py` that runs the IDS once per capture, then
+   re-runs `replay.run_engine()` many times with different `settings` rows
+   on fresh databases. Positives = the labelled battery captures (+ CTU-13);
+   negatives = the real devices' own history exported from the live DB
+   (device 2 the A33, 30k events over 14 days; device 13 `kaushik-pc`;
+   device 1). Exclude the phone's deliberate test windows on 26 September
+   (08:00-09:00) for dns_bypass. Step every 60 s and skip steps with no new
+   events to keep each point fast. If a threshold changes, deploy it before 3.
+3. **7.4** slow-scan advantage vs. signatures, beacon jitter curve, ablation
+   (raw / dedup / dedup + campaigns) - all from the same sweep instrument.
+4. **7.0 seven-day run** - freeze gateway code first, and **put the Dell on
+   its charger** (it was on battery, 73%, this session). Nothing disruptive
+   during the run; tag any harness work so it stays out of the FP counts.
+5. During the run: 7.5's offline parts (re-run `tools/blocklist_utility.py`
+   with `--days 7` at the end for final numbers; DNS latency p50/p95 from
+   `dns_elapsed_ms` plus `dig` against the ISP resolver), 8.2 installer on a
+   Mac VM, 8.1's non-results sections.
+6. After the run: 7.5 benchmark (Mac joins SecurePi-Test; YouTube Tier 2 on
+   the phone), 7.6 identity accuracy, 7.7 chaos tests, 7.8 performance,
+   7.9 usability study.
 7. Decide whether to rewrite the pushed commits that carry a `Co-Authored-By`
    line (`220e03b`, `31b70f6`, `684d2e2` and earlier ones). Rewriting means a
    force-push to `main`.
+
+**Needs you (can't be done from the Mac alone):**
+- The Dell on its charger before 7.0 starts.
+- The A33 on USB (`adb`) for the real-browser fail-open check: enrol it,
+  stop `securepi-dpi`, confirm sites still load in Chrome.
+- 7.5: the Mac temporarily on SecurePi-Test; 30 YouTube videos on the phone.
+- 7.9: 5-8 people for the usability study.
 
 **When running the battery again:** kill processes with bracketed patterns
 (`pkill -f "[h]ttp.server"`), never a bare `http.server` - that also kills

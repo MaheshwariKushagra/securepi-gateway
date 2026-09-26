@@ -158,6 +158,49 @@ class NetworkSweepSignalTests(unittest.TestCase):
         self.assertEqual(rows[0]["evidence_count"], 10)
 
 
+    # Step 7.3 precision fix: only private or unanswered destinations count.
+    def test_ordinary_answered_internet_traffic_is_not_a_sweep(self):
+        # A phone talking to 12 internet hosts on 443, every one answering -
+        # the pattern behind device 2's false positives.
+        conn = fixtures.temp_db()
+        fixtures.insert_device(conn, 1)
+        now = time.time()
+        for i in range(12):
+            fixtures.insert_flow(conn, 1, "142.250.%d.10" % i, 443, now - 10, pkts_toclient=20)
+        self.assertEqual(correlation.network_sweep_signal(conn), 0)
+        self.assertEqual(correlation.slow_scan_signal(conn), 0)
+
+    def test_unanswered_internet_hosts_still_count(self):
+        conn = fixtures.temp_db()
+        fixtures.insert_device(conn, 1)
+        now = time.time()
+        for i in range(8):
+            fixtures.insert_flow(conn, 1, "142.250.%d.10" % i, 443, now - 10, pkts_toclient=0)
+        self.assertEqual(correlation.network_sweep_signal(conn), 1)
+
+    def test_answered_private_hosts_still_count(self):
+        # A LAN sweep that finds live hosts (they answer) is exactly what
+        # this signal is for.
+        conn = fixtures.temp_db()
+        fixtures.insert_device(conn, 1)
+        now = time.time()
+        for i in range(8):
+            fixtures.insert_flow(conn, 1, "10.10.0.%d" % (100 + i), 22, now - 10, pkts_toclient=3)
+        self.assertEqual(correlation.network_sweep_signal(conn), 1)
+
+    def test_evidence_lists_only_the_counted_destinations(self):
+        conn = fixtures.temp_db()
+        fixtures.insert_device(conn, 1)
+        now = time.time()
+        for i in range(8):
+            fixtures.insert_flow(conn, 1, "10.10.0.%d" % (100 + i), 22, now - 10, pkts_toclient=3)
+        for i in range(5):  # ordinary answered internet traffic on the same port
+            fixtures.insert_flow(conn, 1, "142.250.%d.10" % i, 22, now - 10, pkts_toclient=20)
+        correlation.network_sweep_signal(conn)
+        row = conn.execute("SELECT * FROM incidents WHERE signal_type='network_sweep'").fetchone()
+        self.assertEqual(row["evidence_count"], 8)
+
+
 class SlowScanSignalTests(unittest.TestCase):
     """ENHANCEMENT-PLAN.md step 2.1's 'slow-scan variants': the same two
     shapes as port_scan/network_sweep, but over a much longer window - so
@@ -1001,6 +1044,25 @@ class BehavioralBaselineSignalTests(unittest.TestCase):
         fixtures.insert_flow(conn, 1, "1.1.1.1", 443, current_hour_start + (now - current_hour_start) / 2,
                               bytes_toclient=200 * 1024 * 1024, bytes_toserver=1024)
         self.assertEqual(correlation.behavioral_baseline_signal(conn), 1)
+
+    def test_first_seen_is_when_the_volume_became_unusual(self):
+        # Not the top of the hour: a campaign orders its tactic chain by
+        # first_seen, and a scan earlier in the same hour must come first.
+        conn = fixtures.temp_db()
+        now = time.time()
+        fixtures.insert_device(conn, 1, first_seen=now - 30 * 86400)
+        hour_of_day = time.localtime(correlation._hour_start(now)).tm_hour
+        self._seed_history(conn, 1, hour_of_day, now, days=10, avg_bytes=10 * 1024 * 1024)
+        start = correlation._hour_start(now)
+        span = now - start
+        fixtures.insert_flow(conn, 1, "1.1.1.1", 443, start + span * 0.2,
+                              bytes_toclient=1024 * 1024)          # ordinary traffic
+        big_ts = start + span * 0.6
+        fixtures.insert_flow(conn, 1, "1.1.1.1", 443, big_ts,
+                              bytes_toclient=300 * 1024 * 1024)    # the jump
+        self.assertEqual(correlation.behavioral_baseline_signal(conn), 1)
+        row = conn.execute("SELECT first_seen FROM incidents WHERE signal_type='volume_anomaly'").fetchone()
+        self.assertAlmostEqual(row["first_seen"], big_ts, places=3)
 
     def _seed_flat_history(self, conn, device_id, now, days, total_bytes):
         for d in range(1, days + 1):

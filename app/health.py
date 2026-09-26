@@ -50,6 +50,7 @@ import time
 
 import correlation
 import dns_failopen
+import dpi_gate
 import retention
 import settings
 
@@ -242,12 +243,65 @@ def check_wan(conn, now):
         )
 
 
+DPI_SERVICE = "securepi-dpi"
+
+
+def check_dpi_proxy(conn, now):
+    """Stage 7.7: keep the HTTPS inspection gate (app/dpi_gate.py) in step
+    with whether the proxy is actually answering.
+
+    The proxy's own unit already opens the gate when it starts and closes
+    it when it stops, so a stopped or crashed proxy never needs this. What
+    systemd can't see is a proxy that is running but hung: every enrolled
+    device's HTTPS would hang with it. So, while the unit is active:
+
+      - proxy answering, gate closed -> reopen it (it was closed by an
+        earlier hang, or a reload of nftables.conf emptied the set)
+      - proxy not answering          -> close the gate (enrolled devices
+        browse undecrypted) and raise an incident saying so
+
+    When the unit isn't active the gate should already be closed; it is
+    closed again here in case the unit's own ExecStopPost never ran. The
+    'service not running' incident itself is check_services' job."""
+    active = _is_active(DPI_SERVICE)
+    if active is None:
+        return
+    if not active:
+        if dpi_gate.is_open():
+            dpi_gate.close_gate()
+        return
+
+    state = dpi_gate.probe()
+    if state != dpi_gate.ANSWERING:
+        # One retry, so a single slow moment doesn't bypass inspection.
+        state = dpi_gate.probe()
+    gate_open = dpi_gate.is_open()
+
+    if state == dpi_gate.ANSWERING:
+        if not gate_open:
+            dpi_gate.open_gate()
+            print("health: inspection proxy answering again - inspection gate reopened", flush=True)
+        return
+
+    if gate_open:
+        dpi_gate.close_gate()
+        print("health: inspection proxy %s - inspection gate closed (fail open)" % state, flush=True)
+    correlation.raise_incident(
+        conn, None, "platform_dpi_unresponsive", "high",
+        "HTTPS inspection bypassed: proxy not answering",
+        "%s is running but its listener was %s on two probes, so the inspection gate is "
+        "closed: enrolled devices' HTTPS now goes out undecrypted instead of hanging. "
+        "Inspection resumes by itself once the proxy answers again." % (DPI_SERVICE, state),
+        now, now, [],
+    )
+
+
 def check_platform_health(conn, now=None):
     """Runs every check above. Never lets one check's failure stop the
     rest - the same 'never let one bad pass kill the service' principle
     app/ingest.py's own main loop already applies at the outer level."""
     now = now if now is not None else time.time()
-    for check in (check_services, check_staleness, check_disk, check_db_size, check_wan):
+    for check in (check_services, check_staleness, check_disk, check_db_size, check_wan, check_dpi_proxy):
         try:
             check(conn, now)
         except Exception as exc:

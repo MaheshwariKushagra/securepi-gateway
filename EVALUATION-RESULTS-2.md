@@ -705,6 +705,80 @@ the description moves on ("port 443").
 
 In progress: 7.1 and 7.2 are done, 7.0 and 7.3-7.9 are still to run.
 
+### Pre-run fixes (26 September 2026, after the first battery)
+
+Three changes Stage 7's own measurements depend on, made before any final
+numbers are taken. All deployed and live; 465 tests pass on the Mac.
+
+**1. Inspection fails open (7.7's requirement).** The real-device check had
+shown the opposite: with `securepi-dpi` stopped, every HTTPS site failed on an
+enrolled phone. Flushing the `enrolled` set on stop (the earlier proposal) was
+rejected because every routine restart would then un-enrol everyone. Instead:
+
+- a new gate set, `ip nat dpi_up` (type `ifname`), and the dpi-redirect rule
+  now matches `iifname @dpi_up` - it only redirects while the set holds "ap0";
+- the proxy's unit opens the gate once the proxy is listening and closes it
+  on every stop, clean or crash (`dpi/dpi-gate.sh`, `ExecStartPost`/`ExecStopPost`);
+- `app/health.py`'s new `check_dpi_proxy` probes the proxy every 30 s with a
+  direct TLS handshake (`app/dpi_gate.py`). A healthy transparent-mode proxy
+  closes a direct connection at once (measured: EOF after ~20 ms), a stopped
+  one refuses it, a hung one never answers. Hung → close the gate and raise
+  `platform_dpi_unresponsive`; answering again → reopen. The probe leaves no
+  trace in the proxy's logs (checked).
+
+The rule was swapped live in one atomic `nft -f` transaction with no device
+enrolled. Measured on the gateway:
+
+| Case | Result |
+|---|---|
+| `systemctl stop securepi-dpi` | gate closed immediately |
+| `systemctl start securepi-dpi` | gate reopened once listening |
+| Proxy frozen (`kill -STOP`) - systemd still says "active" | gate closed after **27 s**, incident #476 raised (a test incident) |
+| Proxy resumed (`kill -CONT`) | gate reopened after **28 s** |
+
+Not yet shown with a real enrolled browser - that needs the phone on USB.
+
+**2. Sweep false positives (for 7.3).** network_sweep and slow_network_sweep
+now count only destinations on a private network or ones that never answered
+(`pkts_toclient = 0`), both in the count and in the evidence list - the rule
+simulated on seven days of live data in "Real-device checks" above. Given up,
+and stated as a limitation: a sweep of internet hosts that do answer.
+
+**3. volume_anomaly's `first_seen`** is now the moment the hour's running total
+crossed the anomaly line (mean + z × stdev), not the top of the hour, so a
+campaign's tactic chain no longer starts with "Exfiltration".
+
+A second five-run battery on this code was started at 10:13 and was still
+running when the session ended; its results are recorded in the next session.
+
+### 7.5 (first pass) - blocklist utility and overlap
+
+`tools/blocklist_utility.py` downloads every enabled list, checks each domain
+devices actually queried against each list on its own, and reports what only
+one list blocks (its marginal utility). Its matching is checked against the
+DNS filter's own recorded decisions rather than trusted: it agreed on
+**99.44%** of 1,426 blocked queries credited to a list and **99.47%** of 31,180
+allowed ones. Only aggregate counts are saved
+(`eval/results/blocklist-utility-20260926-101656.json`); the domain list itself
+stays off the repository.
+
+First pass over all 14 days of history (6,438 domains, 34,580 queries) - the
+final numbers come from the 7-day run:
+
+| List | Domains blocked | Queries | Unique domains | Unique queries | Marginal utility |
+|---|---|---|---|---|---|
+| HaGeZi Pro | 259 | 2,892 | 23 | 359 | 10.12% |
+| AdGuard DNS filter | 200 | 2,430 | 2 | 8 | 0.23% |
+| OISD Big | 201 | 2,073 | 0 | 0 | 0.00% |
+| Peter Lowe List | 114 | 1,825 | 3 | 80 | 2.26% |
+| AdAway Default Blocklist | 89 | 1,108 | 0 | 0 | 0.00% |
+| HaGeZi Encrypted DNS Bypass (DoH) | 5 | 146 | 5 | 146 | 4.12% |
+| Offline Threat Intel (abuse.ch) | 1 | 2 | 1 | 2 | 0.06% |
+
+On this traffic, OISD Big and AdAway block nothing another list doesn't
+already block. Caveat: the lists were downloaded today, while the history
+spans 14 days of daily list updates.
+
 ### 7.2 — Detection battery, five runs per signal
 
 `gateway/battery.py` drives every signal with real traffic through the

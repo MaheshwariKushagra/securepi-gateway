@@ -637,9 +637,82 @@ Telegram and SMTP were not sent live (no accounts were set up for this). Their e
 
 ## Stage 7
 
-In progress. 7.2's battery (`gateway/battery.py`) has had one smoke run so far
-(`eval/results/battery-smoke-20260926-011621.log`); the five-run battery is
-still to do. The table of detection rates goes here when it has run.
+In progress: 7.1 and 7.2 are done, 7.0 and 7.3-7.9 are still to run.
+
+### 7.2 — Detection battery, five runs per signal
+
+`gateway/battery.py` drives every signal with real traffic through the
+test harness (the DNS signals through the gateway's own resolver). Each run
+uses its own source host, and it only counts as detected when an incident
+links an event *from that run*. Final battery: 26 September 2026, 05:43-06:12,
+`eval/results/battery-20260926-054306.json`.
+
+| Signal | Detected | Median TTD | p95 TTD |
+|---|---|---|---|
+| threat_intel | 5/5 | 11.6 s | 11.6 s |
+| malicious_domain | 5/5 | 12.2 s | 12.2 s |
+| dns_tunneling | 5/5 | 9.5 s | 11.6 s |
+| dga | 5/5 | 8.5 s | 10.5 s |
+| dns_bypass | 5/5 | 11.6 s | 11.7 s |
+| ids_alert (rule 2100498) | 5/5 | 14.1 s | 15.1 s |
+| new_device | 5/5 | 43.2 s | 45.1 s |
+| brute_force | 5/5 | 75.6 s | 76.6 s |
+| port_scan | 5/5 | 91.2 s | 91.2 s |
+| network_sweep | 5/5 | 91.1 s | 91.2 s |
+| volume_anomaly | 5/5 | 105.5 s | 105.5 s |
+| beacon (10 s ±10%) | 5/5 | 152.0 s | 154.8 s |
+| campaign (scan → brute force → beacon) | 5/5 | 151.2 s * | 154.1 s * |
+| slow_port_scan (9 probes, 50 s apart) | 5/5 | 486.2 s | 486.2 s |
+| slow_network_sweep (50 s apart) | 5/5 | 580.5 s | 580.6 s |
+| **benign host** (irregular web fetches, 4 min) | **nothing fired** (correct) | | |
+
+\* The engine's own `campaigns.created_at` (137-154 s). The battery's check
+only starts once the beacon thread finishes, so it logged 261-274 s; it now
+uses `created_at` (fixed in `battery.py` after this run).
+
+Most of the scan and brute-force TTD is Suricata's TCP flow timeout (a flow
+is only logged ~60 s after its last packet), then one 15 s engine cycle.
+The slow signals' TTD is dominated by the attack itself: nine probes, 50 s
+apart, take 400 s.
+
+**What the battery found, in order (four real problems, none guessed):**
+
+1. **dns_bypass - fixed.** AdGuard never logs the Firefox canary
+   `use-application-dns.net`, so the signal never had evidence (smoke test).
+   It is now also counted from Suricata's DNS records. 0/1 → 5/5.
+2. **beacon - fixed (engine bug).** Found through the replay's determinism
+   check (see 7.1 below). Live evidence from the smoke test: logged gaps of
+   5.0-14.9 s for a 10 s beacon, score 0.73 against 0.8. It now times from
+   `flow_start`. 0/1 in the smoke test → 5/5 in both five-run batteries.
+3. **volume_anomaly - harness problem, not an engine bug.** First five-run
+   battery (04:53, `eval/results/battery-20260926-045314.json`): 0/5. Each
+   150 MB transfer was logged as ~0.98 MB. The namespaces' `eth0` had
+   segmentation offload on, so the veth carried 64 KB packets and Suricata
+   kept only part of each (54 reassembly gaps, no kernel drops).
+   `setup-test-harness.sh` now turns TSO/GSO/GRO off inside both namespaces,
+   on every boot. With offloads off, an unthrottled transfer (~420 Mbit/s)
+   then outran the single veth capture thread: of 50 MB, 10.3 MB was counted,
+   with 29,856 kernel drops. At 40 Mbit/s all of it was counted, with no drops.
+   The AP is 2.4 GHz, so real clients never approach 420 Mbit/s. The battery
+   now caps the transfer at 40 Mbit/s, and line-rate capture belongs to step
+   7.8's throughput sweep. 0/5 → 5/5.
+4. **new_device run 1 in the first battery was invalid (battery bug).** Its
+   hostname `battery-new-device-1` was reused from the smoke test, so the
+   registry rightly treated it as a known device with a re-randomized MAC.
+   The check accepted the smoke test's old incident: "detected in 0.1 s".
+   Hostnames are now unique per battery, and only incidents created after
+   the run started count. All five runs in the final battery are genuine.
+
+**Also seen, not yet acted on:**
+- Every battery campaign's tactic chain reads "Exfiltration → Command and
+  Control → Discovery → …", though the volume transfer came last:
+  volume_anomaly sets `first_seen` to the start of the hour, so it sorts
+  first. The console shows a kill chain in the wrong order. Small fix, for later.
+- Device 2 (not a battery device) has 116 open slow_network_sweep incidents.
+  It looks like a false-positive pattern; look at it in 7.0/7.3.
+- On `make deploy` the engine ran one cycle before ingest had added the
+  new column: one `beacon_signal failed: no such column: flow_start`, then
+  normal. This only happens on a deploy that adds a column.
 
 ### 7.1 — PCAP replay pipeline
 
@@ -694,5 +767,28 @@ capture was replayed three times, with the same result sha256 each time.
 
 Full results: `eval/results/replay-ctu13-donbot.json` and `replay-ctu13-sogou.json`.
 These captures are labelled only at the host level ("this host is
-infected"), so they show detection, not per-signal precision. That needs the
-battery's own labelled capture, which is still to be replayed.
+infected"), so they show detection, not per-signal precision.
+
+**The battery's own capture** (final battery, 16 harness hosts, 46 labelled
+runs; the DNS and new_device runs don't cross this link) was replayed twice,
+with an identical result sha256 (`286d068a34d1`):
+
+| Label | Runs | Detected | Correct | Replay median TTD | Live median TTD |
+|---|---|---|---|---|---|
+| ids_alert | 5 | 5 | 5 | 6.7 s | 14.1 s |
+| brute_force | 5 | 5 | 5 | 69.4 s | 75.6 s |
+| network_sweep | 5 | 5 | 5 | 79.2 s | 91.1 s |
+| port_scan | 5 | 5 | 5 | 80.9 s | 91.2 s |
+| beacon | 5 | 5 | 5 | 140.9 s | 152.0 s |
+| campaign | 5 | 5 | 5 | 140.9 s | 151.2 s |
+| slow_port_scan | 5 | 5 | 5 | 485.8 s | 486.2 s |
+| slow_network_sweep | 5 | 5 | 5 | 515.8 s | 580.5 s |
+| benign | 1 | 0 | 1 | - | - |
+| volume_anomaly | 5 | not replayable (bulk data left out of the capture, needs hourly rollups) | | | |
+
+The replay agrees with the live battery on every run (45/45 correct). Its
+detection times are 0-12 s earlier. That's expected: the replay logs each
+flow exactly at its timeout, while the live flow manager and the 2 s ingest
+poll add a little on top. The one larger gap, slow_network_sweep (65 s),
+hasn't been looked into yet.
+`eval/results/replay-battery-20260926-054306.json`.

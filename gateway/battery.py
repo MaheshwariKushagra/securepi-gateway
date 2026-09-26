@@ -335,8 +335,14 @@ def volume_anomaly(n, host, dev):
     server = subprocess.Popen(["ip", "netns", "exec", VICTIM_NS, "iperf3", "-s", "-1", "-p", str(port)],
                               stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     time.sleep(1)
-    run = Run("volume_anomaly", n, host, dev, target="150 MB to %s, baseline synthetic" % VICTIM_IP, expect=True)
-    sh(["iperf3", "-c", VICTIM_IP, "-p", str(port), "-B", host, "-n", "150M"], ns=NS, timeout=120)
+    run = Run("volume_anomaly", n, host, dev, target="150 MB at 40 Mbit/s to %s, baseline synthetic" % VICTIM_IP,
+              expect=True)
+    # Capped at a Wi-Fi-like rate. Unthrottled, the veth carries ~420 Mbit/s,
+    # which outruns Suricata's single veth-atk capture thread on this laptop
+    # (a 50 MB test: 10 MB counted, 29,856 kernel drops; at 40 Mbit/s: all
+    # of it, no drops). The AP is 2.4 GHz, so real clients never get near
+    # that; line-rate capture is step 7.8's throughput sweep.
+    sh(["iperf3", "-c", VICTIM_IP, "-p", str(port), "-B", host, "-n", "150M", "-b", "40M"], ns=NS, timeout=120)
     server.wait(timeout=20)
     run.ended()
     run.wait(lambda: db().execute(
@@ -444,17 +450,23 @@ def dns_track(runs, blocked):
 
 
 def new_device_track(runs):
+    # The hostname must be new to the registry too, not just the MAC: a
+    # familiar hostname is (rightly) matched to the existing device as a
+    # re-randomized MAC. A fixed "battery-new-device-1" matched the previous
+    # battery's device, and its old incident counted as a detection in 0.1 s.
+    batch = rand_label(6)
     for n in range(1, runs + 1):
         conn = db()
         mac = "02:00:00:7e:%02x:%02x" % (n, random.randrange(256))
-        run = Run("new_device", n, mac, None, target="registry.resolve_device() with a never-seen MAC", expect=True)
-        dev = registry.resolve_device(conn, mac, "battery-new-device-%d" % n, run.t_start)
+        run = Run("new_device", n, mac, None, target="registry.resolve_device() with a never-seen MAC and hostname",
+                  expect=True)
+        dev = registry.resolve_device(conn, mac, "battery-new-device-%s-%d" % (batch, n), run.t_start)
         conn.execute("UPDATE devices SET friendly_name=? WHERE id=?", ("[TEST HARNESS] battery new device %d" % n, dev))
         conn.commit()
         run.device = dev
         run.ended()
-        run.wait(lambda: db().execute("SELECT 1 FROM incidents WHERE signal_type='new_device' AND device_id=?",
-                                      (dev,)).fetchone() is not None)
+        run.wait(lambda: db().execute("SELECT 1 FROM incidents WHERE signal_type='new_device' AND device_id=?"
+                                      " AND created_at >= ?", (dev, run.t_start)).fetchone() is not None)
         record(run)
 
 
@@ -477,8 +489,13 @@ def fast_track(hosts, devs):
         run.t_start = camp_start
         run.ended()
         run.wait(lambda: db().execute("SELECT 1 FROM campaigns WHERE device_id=?", (dev,)).fetchone() is not None)
-        tactics = db().execute("SELECT tactics FROM campaigns WHERE device_id=?", (dev,)).fetchone()
-        run.label["tactics"] = tactics[0] if tactics else None
+        row = db().execute("SELECT min(created_at), tactics FROM campaigns WHERE device_id=?", (dev,)).fetchone()
+        # This check only starts once the beacon thread is done, so the
+        # moment it sees the campaign is later than when the engine made
+        # it (273 s vs 151 s on 26 September). Use the engine's own time.
+        if row and row[0] is not None and run.t_detect is not None:
+            run.t_detect = row[0]
+        run.label["tactics"] = row[1] if row else None
         record(run)
         volume_anomaly(n, host, dev)
 

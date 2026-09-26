@@ -1,0 +1,395 @@
+{
+ "pcap": "battery-20260926-054306.pcap",
+ "source": "step 7.2 battery on the live gateway harness (second five-run battery, 26 September 2026)",
+ "licence": "own capture, test harness traffic only",
+ "sha256": "5a559da3ef4bb3f4bcaa6bd30de6f5b52f825dd2a2859a9a110d1ab6303f1414",
+ "note": "Captured on veth-atk with tcpdump -s 1024, iperf3 bulk data (ports 5301-5310) left out. DNS-driven and new_device runs happen outside this link and aren't labelled here.",
+ "hosts": {
+  "10.10.0.231": "battery host 231",
+  "10.10.0.232": "battery host 232",
+  "10.10.0.233": "battery host 233",
+  "10.10.0.234": "battery host 234",
+  "10.10.0.235": "battery host 235",
+  "10.10.0.236": "battery host 236",
+  "10.10.0.237": "battery host 237",
+  "10.10.0.238": "battery host 238",
+  "10.10.0.239": "battery host 239",
+  "10.10.0.240": "battery host 240",
+  "10.10.0.241": "battery host 241",
+  "10.10.0.242": "battery host 242",
+  "10.10.0.243": "battery host 243",
+  "10.10.0.244": "battery host 244",
+  "10.10.0.245": "battery host 245",
+  "10.10.0.246": "battery host 246"
+ },
+ "runs": [
+  {
+   "signal": "beacon",
+   "run": 1,
+   "host": "10.10.0.231",
+   "t_start": 1790381589.148,
+   "t_end": 1790381679.741,
+   "expect": true
+  },
+  {
+   "signal": "beacon",
+   "run": 2,
+   "host": "10.10.0.232",
+   "t_start": 1790381966.788,
+   "t_end": 1790382055.524,
+   "expect": true
+  },
+  {
+   "signal": "beacon",
+   "run": 3,
+   "host": "10.10.0.233",
+   "t_start": 1790382334.375,
+   "t_end": 1790382425.393,
+   "expect": true
+  },
+  {
+   "signal": "beacon",
+   "run": 4,
+   "host": "10.10.0.234",
+   "t_start": 1790382713.995,
+   "t_end": 1790382803.924,
+   "expect": true
+  },
+  {
+   "signal": "beacon",
+   "run": 5,
+   "host": "10.10.0.235",
+   "t_start": 1790383093.597,
+   "t_end": 1790383183.72,
+   "expect": true
+  },
+  {
+   "signal": "benign",
+   "run": 1,
+   "host": "10.10.0.246",
+   "t_start": 1790381590.173,
+   "t_end": 1790381831.546,
+   "expect": false
+  },
+  {
+   "signal": "brute_force",
+   "run": 1,
+   "host": "10.10.0.231",
+   "t_start": 1790381678.408,
+   "t_end": 1790381679.867,
+   "expect": true
+  },
+  {
+   "signal": "brute_force",
+   "run": 2,
+   "host": "10.10.0.232",
+   "t_start": 1790382044.984,
+   "t_end": 1790382046.394,
+   "expect": true
+  },
+  {
+   "signal": "brute_force",
+   "run": 3,
+   "host": "10.10.0.233",
+   "t_start": 1790382425.593,
+   "t_end": 1790382427.051,
+   "expect": true
+  },
+  {
+   "signal": "brute_force",
+   "run": 4,
+   "host": "10.10.0.234",
+   "t_start": 1790382805.208,
+   "t_end": 1790382806.653,
+   "expect": true
+  },
+  {
+   "signal": "brute_force",
+   "run": 5,
+   "host": "10.10.0.235",
+   "t_start": 1790383184.81,
+   "t_end": 1790383186.284,
+   "expect": true
+  },
+  {
+   "signal": "campaign",
+   "run": 1,
+   "host": "10.10.0.231",
+   "t_start": 1790381589.148,
+   "t_end": 1790381861.213,
+   "expect": true
+  },
+  {
+   "signal": "campaign",
+   "run": 2,
+   "host": "10.10.0.232",
+   "t_start": 1790381966.788,
+   "t_end": 1790382227.735,
+   "expect": true
+  },
+  {
+   "signal": "campaign",
+   "run": 3,
+   "host": "10.10.0.233",
+   "t_start": 1790382334.375,
+   "t_end": 1790382607.402,
+   "expect": true
+  },
+  {
+   "signal": "campaign",
+   "run": 4,
+   "host": "10.10.0.234",
+   "t_start": 1790382713.995,
+   "t_end": 1790382987.994,
+   "expect": true
+  },
+  {
+   "signal": "campaign",
+   "run": 5,
+   "host": "10.10.0.235",
+   "t_start": 1790383093.597,
+   "t_end": 1790383367.63,
+   "expect": true
+  },
+  {
+   "signal": "ids_alert",
+   "run": 1,
+   "host": "10.10.0.231",
+   "t_start": 1790381846.15,
+   "t_end": 1790381850.197,
+   "expect": true
+  },
+  {
+   "signal": "ids_alert",
+   "run": 2,
+   "host": "10.10.0.232",
+   "t_start": 1790382213.674,
+   "t_end": 1790382217.72,
+   "expect": true
+  },
+  {
+   "signal": "ids_alert",
+   "run": 3,
+   "host": "10.10.0.233",
+   "t_start": 1790382593.339,
+   "t_end": 1790382597.388,
+   "expect": true
+  },
+  {
+   "signal": "ids_alert",
+   "run": 4,
+   "host": "10.10.0.234",
+   "t_start": 1790382972.935,
+   "t_end": 1790382976.978,
+   "expect": true
+  },
+  {
+   "signal": "ids_alert",
+   "run": 5,
+   "host": "10.10.0.235",
+   "t_start": 1790383353.567,
+   "t_end": 1790383357.615,
+   "expect": true
+  },
+  {
+   "signal": "network_sweep",
+   "run": 1,
+   "host": "10.10.0.231",
+   "t_start": 1790381753.994,
+   "t_end": 1790381767.038,
+   "expect": true
+  },
+  {
+   "signal": "network_sweep",
+   "run": 2,
+   "host": "10.10.0.232",
+   "t_start": 1790382121.531,
+   "t_end": 1790382134.562,
+   "expect": true
+  },
+  {
+   "signal": "network_sweep",
+   "run": 3,
+   "host": "10.10.0.233",
+   "t_start": 1790382501.183,
+   "t_end": 1790382514.229,
+   "expect": true
+  },
+  {
+   "signal": "network_sweep",
+   "run": 4,
+   "host": "10.10.0.234",
+   "t_start": 1790382880.787,
+   "t_end": 1790382893.823,
+   "expect": true
+  },
+  {
+   "signal": "network_sweep",
+   "run": 5,
+   "host": "10.10.0.235",
+   "t_start": 1790383261.42,
+   "t_end": 1790383274.457,
+   "expect": true
+  },
+  {
+   "signal": "port_scan",
+   "run": 1,
+   "host": "10.10.0.231",
+   "t_start": 1790381589.149,
+   "t_end": 1790381602.236,
+   "expect": true
+  },
+  {
+   "signal": "port_scan",
+   "run": 2,
+   "host": "10.10.0.232",
+   "t_start": 1790381966.788,
+   "t_end": 1790381979.824,
+   "expect": true
+  },
+  {
+   "signal": "port_scan",
+   "run": 3,
+   "host": "10.10.0.233",
+   "t_start": 1790382334.376,
+   "t_end": 1790382347.416,
+   "expect": true
+  },
+  {
+   "signal": "port_scan",
+   "run": 4,
+   "host": "10.10.0.234",
+   "t_start": 1790382713.996,
+   "t_end": 1790382727.044,
+   "expect": true
+  },
+  {
+   "signal": "port_scan",
+   "run": 5,
+   "host": "10.10.0.235",
+   "t_start": 1790383093.597,
+   "t_end": 1790383106.642,
+   "expect": true
+  },
+  {
+   "signal": "slow_network_sweep",
+   "run": 1,
+   "host": "10.10.0.241",
+   "t_start": 1790381589.151,
+   "t_end": 1790382169.674,
+   "expect": true
+  },
+  {
+   "signal": "slow_network_sweep",
+   "run": 2,
+   "host": "10.10.0.242",
+   "t_start": 1790381589.158,
+   "t_end": 1790382169.707,
+   "expect": true
+  },
+  {
+   "signal": "slow_network_sweep",
+   "run": 3,
+   "host": "10.10.0.243",
+   "t_start": 1790381589.168,
+   "t_end": 1790382169.708,
+   "expect": true
+  },
+  {
+   "signal": "slow_network_sweep",
+   "run": 4,
+   "host": "10.10.0.244",
+   "t_start": 1790381589.169,
+   "t_end": 1790382169.664,
+   "expect": true
+  },
+  {
+   "signal": "slow_network_sweep",
+   "run": 5,
+   "host": "10.10.0.245",
+   "t_start": 1790381589.169,
+   "t_end": 1790382169.648,
+   "expect": true
+  },
+  {
+   "signal": "slow_port_scan",
+   "run": 1,
+   "host": "10.10.0.236",
+   "t_start": 1790381589.149,
+   "t_end": 1790382052.306,
+   "expect": true
+  },
+  {
+   "signal": "slow_port_scan",
+   "run": 2,
+   "host": "10.10.0.237",
+   "t_start": 1790381589.151,
+   "t_end": 1790382052.317,
+   "expect": true
+  },
+  {
+   "signal": "slow_port_scan",
+   "run": 3,
+   "host": "10.10.0.238",
+   "t_start": 1790381589.155,
+   "t_end": 1790382052.313,
+   "expect": true
+  },
+  {
+   "signal": "slow_port_scan",
+   "run": 4,
+   "host": "10.10.0.239",
+   "t_start": 1790381589.157,
+   "t_end": 1790382052.251,
+   "expect": true
+  },
+  {
+   "signal": "slow_port_scan",
+   "run": 5,
+   "host": "10.10.0.240",
+   "t_start": 1790381589.157,
+   "t_end": 1790382052.321,
+   "expect": true
+  },
+  {
+   "signal": "volume_anomaly",
+   "run": 1,
+   "host": "10.10.0.231",
+   "t_start": 1790381862.247,
+   "t_end": 1790381893.686,
+   "expect": true
+  },
+  {
+   "signal": "volume_anomaly",
+   "run": 2,
+   "host": "10.10.0.232",
+   "t_start": 1790382228.832,
+   "t_end": 1790382260.272,
+   "expect": true
+  },
+  {
+   "signal": "volume_anomaly",
+   "run": 3,
+   "host": "10.10.0.233",
+   "t_start": 1790382608.449,
+   "t_end": 1790382639.89,
+   "expect": true
+  },
+  {
+   "signal": "volume_anomaly",
+   "run": 4,
+   "host": "10.10.0.234",
+   "t_start": 1790382989.056,
+   "t_end": 1790383020.497,
+   "expect": true
+  },
+  {
+   "signal": "volume_anomaly",
+   "run": 5,
+   "host": "10.10.0.235",
+   "t_start": 1790383368.692,
+   "t_end": 1790383400.134,
+   "expect": true
+  }
+ ]
+}

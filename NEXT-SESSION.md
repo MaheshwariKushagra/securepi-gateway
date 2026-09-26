@@ -276,78 +276,42 @@ should rise).
 
 Test suite: **362**, all passing.
 
-### Stage 7: where 7.1 and 7.2 stand (26 September 2026, paused mid-way)
+### Stage 7: 7.1 and 7.2 done (26 September 2026)
 
-**7.2 detection battery - `gateway/battery.py` (committed, installed on the
-gateway at `/opt/securepi-eval/battery.py`).** Runs every signal real traffic
-can drive, from its own source host per run (secondary addresses .231-.246
-in `ns_attacker`, each a separate device), and counts a run as detected only
-when an incident links an event *from that run*. The old `evaluate.py`
-counted "updated_at moved", which the previous run's leftovers satisfy within
-one cycle, so its back-to-back runs weren't independent. It also records
-a labelled pcap of `veth-atk` for 7.1.
+Full results in `EVALUATION-RESULTS-2.md` §Stage 7. In short: the final
+five-run battery detected **every signal 5/5** and the benign host stayed quiet.
+The battery's own capture replayed on the Mac agreed on all 45 scored runs,
+and the replay is deterministic.
 
-Smoke test (`--runs 1`, stopped before the slow scans and the volume run
-finished - log in `eval/results/battery-smoke-20260926-011621.log`):
-
-| Signal | Result |
-|---|---|
-| threat_intel, malicious_domain, dns_tunneling, dga | detected in 13-14 s |
-| ids_alert (rule 2100498, inside the harness) | 14 s |
-| new_device | 33 s |
-| port_scan, brute_force, network_sweep | 77-91 s (most of it is Suricata's 60 s TCP flow timeout before a flow is logged - worth confirming) |
-| campaign (scan → brute force → beacon) | 261 s |
-| benign host | nothing fired (correct) |
-| **beacon** | **NOT detected** - investigate first (10 connections at 10 s ±10% to a closed port: check the flows were logged and the regularity score) |
-| **dns_bypass** | **NOT detected** - real bug, see below |
-| slow_port_scan, slow_network_sweep, volume_anomaly | not reached |
-
-**dns_bypass bug (fixed and committed, NOT deployed):** AdGuard never writes the
-Firefox canary `use-application-dns.net` to its query log (checked live; the
-iCloud canaries are logged), so that part of step 2.2 never produced
-evidence. `app/correlation.py` now also counts that one domain from Suricata's
-own DNS records (Suricata sees `ap0`), without double-counting the logged ones.
-Two new tests. The battery's DNS run now uses `mask.icloud.com`. Deploy with
-`make deploy` next session, then run the battery.
-
-**7.1 replay - done (26 September 2026, second session).** `tools/replay.py`
-is reviewed, tested (`tests/test_replay.py`) and deterministic: each CTU-13
-capture replayed three times with the same result sha256, and both infected
-hosts were detected (results in `EVALUATION-RESULTS-2.md` §Stage 7 and
-`eval/results/replay-ctu13-*.json`). Inputs stay out of git; `eval/README.md`
-says how to set them up on a fresh Mac.
-
-**The determinism check found the cause of the beacon miss** (confirmed on
-the smoke test's live data: logged gaps 5-15 s for a 10 s beacon, score 0.73
-against 0.8). A flow
-record's `ts` is when Suricata *logged* the flow, in batches after it timed
-out, and `beacon_signal` measured intervals from it. Ingest now stores
-`events.flow_start` (new column, applied by the migration list when ingest
-starts), and the beacon signal times from that. It's committed and tested,
-but **not deployed yet** - the battery's beacon runs after deploying are the
-end-to-end check.
+Deployed and live on the gateway: the dns_bypass canary fix, `events.flow_start`
+with the beacon timing fix, the harness offload fix
+(`/opt/securepi/setup-test-harness.sh`) and the current `battery.py` (except
+the campaign-TTD change made after the last run - copy it over before the
+next battery).
 
 **Next steps, in order:**
-1. Bring up the management link (the gateway was unreachable this session -
-   Internet Sharing), then `./session-start.sh`.
-2. `make deploy` - ships both the dns_bypass fix and the flow_start/beacon fix.
-   Check the journals, and check that the migration added the column:
-   `sudo sqlite3 /opt/securepi/securepi.db "PRAGMA table_info(events)" | grep flow_start`
-3. Copy the updated `gateway/battery.py` to `/opt/securepi-eval/` and run
-   `sudo python3 /opt/securepi-eval/battery.py --runs 5` (~25 min). The beacon
-   runs are the live confirmation of the fix. Afterwards: remove any leftover
-   .231-.246 addresses, resolve the battery devices' incidents, point
-   10.10.0.1 back at device 4 (the script does this itself on a clean finish).
-   **Kill processes with bracketed patterns** (`pkill -f "[h]ttp.server"`) and
-   never a bare `http.server` - that also kills `securepi-ca-server` and
-   `securepi-static`.
-4. Copy the battery's pcap and labels.json to `eval/pcaps/` and `eval/labels/`,
-   replay it, and compare per-signal against the live battery. Record both in
-   `EVALUATION-RESULTS-2.md` §Stage 7.
-5. Still pending from 4.2: the real-phone DHCP-renewal quarantine check (see above).
-6. Decide whether to rewrite the pushed commits that carry a `Co-Authored-By`
-   line (`220e03b`, `31b70f6`, `684d2e2` and earlier ones). New commits no longer
-   add it. Rewriting means a force-push to `main`.
+1. **Clean up the battery's test incidents.** 208 open incidents and 21
+   campaigns sit on the `[TEST HARNESS] battery …` devices. Resolving them
+   was blocked by the permission check this session (a write to the live
+   database). Resolve them from the console, or allow the write. The harness
+   itself is already clean: extra addresses removed, 10.10.0.1 back on device 4.
+2. Look at device 2's 116 open slow_network_sweep incidents (not battery
+   data - a likely false-positive pattern, for 7.3).
+3. Small fix: volume_anomaly's `first_seen` is the start of the hour, so it
+   sorts first in a campaign's tactic chain ("Exfiltration → …").
+4. 7.3 precision/recall and threshold sweeps - the replay tool is the
+   instrument for the sweeps (same capture, different settings).
+5. 7.0 seven-day run on real devices.
+6. Still pending from 4.2: the real-phone DHCP-renewal quarantine check (see above).
+7. Decide whether to rewrite the pushed commits that carry a `Co-Authored-By`
+   line (`220e03b`, `31b70f6`, `684d2e2` and earlier ones). Rewriting means a
+   force-push to `main`.
+
+**When running the battery again:** kill processes with bracketed patterns
+(`pkill -f "[h]ttp.server"`), never a bare `http.server` - that also kills
+`securepi-ca-server` and `securepi-static`. Run it as a transient unit so it
+survives an SSH drop:
+`sudo systemd-run --unit securepi-battery --collect /usr/bin/python3 -u /opt/securepi-eval/battery.py --runs 5`
 
 ### Known real bugs found and fixed (for context, not action)
 

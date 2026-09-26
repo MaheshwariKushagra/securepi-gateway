@@ -300,10 +300,26 @@ def device_macs(conn, device_id):
 
 
 def device_ip(conn, device_id):
+    """The device's current IP address, or None if it doesn't have one
+    any more.
+
+    "The last address this device was seen on" is not enough: once a
+    device leaves, DHCP can hand that address to a different device. If
+    it has, enrolling or restricting the old device by IP would hit the
+    NEW one instead - decrypting someone else's HTTPS, say (Audit.md H3).
+    So the address only counts if no other device has been seen on it
+    more recently than this one."""
     row = conn.execute(
-        "SELECT ip FROM device_ips WHERE device_id=? ORDER BY last_seen DESC LIMIT 1",
+        "SELECT ip, last_seen FROM device_ips WHERE device_id=? ORDER BY last_seen DESC LIMIT 1",
         (device_id,)).fetchone()
-    return row["ip"] if row else None
+    if row is None:
+        return None
+    newer_owner = conn.execute(
+        "SELECT 1 FROM device_ips WHERE ip=? AND device_id != ? AND last_seen > ? LIMIT 1",
+        (row["ip"], device_id, row["last_seen"])).fetchone()
+    if newer_owner is not None:
+        return None
+    return row["ip"]
 
 
 def _validate(conn, kind, device_id, target, expires_at, now):
@@ -514,6 +530,13 @@ def _load_state(conn):
     }
 
 
+def managed_rules(conn):
+    """The AdGuard rule lines this orchestrator put there itself (from
+    policies). The console's hand-edited rule list must not remove these -
+    the next reconcile would only put them straight back."""
+    return set(_load_state(conn)["applied"].get("rules") or [])
+
+
 def _save_applied(conn, applied):
     conn.execute("UPDATE orchestrator_state SET applied=? WHERE id=1", (json.dumps(applied, sort_keys=True),))
     conn.commit()
@@ -714,7 +737,15 @@ def _domain_matches(domain, want, have, applied, now):
             cl = _find_client(have, c["ids"])
             if cl is None:
                 return False
-            if not set(c["ids"]) <= set(i.lower() for i in cl.get("ids") or []):
+            have_ids = set(i.lower() for i in cl.get("ids") or [])
+            if not set(c["ids"]) <= have_ids:
+                return False
+            # An old LAN address still on the client is drift too: DHCP may
+            # have given it to another device, which AdGuard would then
+            # treat as this one (Audit.md H3). Matches what
+            # _converge_clients() removes - it keeps other ids (MACs,
+            # names) and drops only LAN IPs this device no longer has.
+            if any(_is_lan_ip(i) and i not in c["ids"] for i in have_ids):
                 return False
             if c["settings"] is not None and not profiles.client_matches(c["settings"], cl):
                 return False
@@ -1116,7 +1147,15 @@ def _reconcile_enrolled(conn, b, desired, have, applied_enrolled, now, restored_
     for ip, info in list(want.items()):
         p = _row(conn, info["policy_id"])
         last_ip = (json.loads(p["applied_state"]) if p["applied_state"] else {}).get("ip")
-        if ip not in have and last_ip == ip:
+        # "Was applied, and the address it was applied at has since gone
+        # from the set" - whatever the device's address is NOW. This used
+        # to test last_ip == ip, so a device that came back on a DIFFERENT
+        # address after a reboot or a privacy flush was quietly enrolled
+        # again at the new one, breaking the "inspection is always off
+        # after a reboot" rule (Audit.md, enrollment after reboot). An
+        # ordinary IP change keeps working: the old address is still in
+        # the set until _converge_enrolled moves it across.
+        if ip not in have and last_ip is not None and last_ip not in have:
             why = ("the gateway restarted" if restored_after_boot
                    else "it was removed outside the console (privacy fail-safe or CLI)")
             conn.execute("UPDATE policies SET status='removed', ended_at=?, ended_by=?, ended_reason=?"

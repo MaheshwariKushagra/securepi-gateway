@@ -16,6 +16,41 @@ import fixtures  # noqa: E402
 import registry  # noqa: E402
 
 
+
+class ResolveDeviceHostnameTests(unittest.TestCase):
+    """Audit.md H2: a new MAC reusing a known hostname must never inherit
+    an APPROVED device's identity (and with it, its approval)."""
+
+    def _device_with_mac(self, conn, device_id, hostname, trust, mac):
+        fixtures.insert_device(conn, device_id, hostname=hostname)
+        conn.execute("UPDATE devices SET trust=? WHERE id=?", (trust, device_id))
+        conn.execute("INSERT INTO device_macs (device_id, mac, first_seen, last_seen) VALUES (?, ?, 0, 0)",
+                     (device_id, mac))
+        conn.commit()
+
+    def test_a_known_mac_resolves_to_its_device(self):
+        conn = fixtures.temp_db()
+        self._device_with_mac(conn, 1, "phone", "approved", "aa:bb:cc:00:00:01")
+        self.assertEqual(registry.resolve_device(conn, "aa:bb:cc:00:00:01", "phone", time.time()), 1)
+
+    def test_a_new_mac_claiming_an_approved_hostname_becomes_a_new_unknown_device(self):
+        conn = fixtures.temp_db()
+        self._device_with_mac(conn, 1, "Kushagras-iPhone", "approved", "aa:bb:cc:00:00:01")
+        new_id = registry.resolve_device(conn, "de:ad:be:ef:00:02", "Kushagras-iPhone", time.time())
+        self.assertNotEqual(new_id, 1)
+        trust = conn.execute("SELECT trust FROM devices WHERE id=?", (new_id,)).fetchone()["trust"]
+        self.assertEqual(trust, "unknown")
+
+    def test_a_new_mac_on_an_unknown_devices_hostname_still_merges(self):
+        conn = fixtures.temp_db()
+        self._device_with_mac(conn, 1, "tablet", "unknown", "aa:bb:cc:00:00:01")
+        self.assertEqual(registry.resolve_device(conn, "de:ad:be:ef:00:02", "tablet", time.time()), 1)
+
+    def test_a_blocked_device_cannot_escape_by_changing_its_mac(self):
+        conn = fixtures.temp_db()
+        self._device_with_mac(conn, 1, "bad-laptop", "blocked", "aa:bb:cc:00:00:01")
+        self.assertEqual(registry.resolve_device(conn, "de:ad:be:ef:00:02", "bad-laptop", time.time()), 1)
+
 class AttributeEventsOverlapTieBreakTests(unittest.TestCase):
     """Regression tests for finding G6: two device_ips intervals for the
     SAME address that overlap in time used to be resolved arbitrarily

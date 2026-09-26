@@ -552,10 +552,9 @@ def device_identifiers(c, device_id):
     """
     macs = [r["mac"] for r in c.execute(
         "SELECT mac FROM device_macs WHERE device_id=?", (device_id,))]
-    ip_row = c.execute(
-        "SELECT ip FROM device_ips WHERE device_id=? ORDER BY last_seen DESC LIMIT 1",
-        (device_id,)).fetchone()
-    current_ip = ip_row["ip"] if ip_row else None
+    # The orchestrator's rule for "current IP", not a second copy of it:
+    # an address since handed to another device doesn't count (Audit.md H3).
+    current_ip = orchestrator.device_ip(c, device_id)
     identifiers = list(macs)
     if current_ip:
         identifiers.append(current_ip)
@@ -1506,15 +1505,28 @@ def api_filtering_remove_list(body: BlocklistUrl):
     return {"ok": True}
 
 
+# Both endpoints below read AdGuard's whole rule list, change it, and
+# write the whole list back. The orchestrator does exactly the same with
+# its policy rules, so each one holds the orchestrator's lock while it
+# works (Audit.md H10). Without it, two writers could each read the list,
+# and whichever wrote second would silently erase the other's change.
+
 @app.post("/api/filtering/rules")
 def api_filtering_add_rule(body: RuleAdd):
-    domain = body.domain.strip().lower()
-    if not domain:
-        raise HTTPException(400, "domain is required")
     if body.action not in ("block", "allow"):
         raise HTTPException(400, "action must be 'block' or 'allow'")
+    # The same domain check the orchestrator applies to policy rules - it
+    # also stops rule syntax ("^", "|", "$client=", newlines) being
+    # smuggled into AdGuard's rule list through the domain field.
     try:
-        adguard.add_user_rule(domain, body.action)
+        domain = orchestrator.normalize_domain(body.domain)
+    except orchestrator.PolicyError as e:
+        raise HTTPException(400, str(e))
+    try:
+        with orchestrator.lock():
+            adguard.add_user_rule(domain, body.action)
+    except orchestrator.OrchestratorBusy as e:
+        raise HTTPException(409, str(e))
     except adguard.AdGuardError as e:
         raise HTTPException(502, str(e))
     audit.log(db(), CONSOLE_USERNAME, "filtering.add_rule", target=domain, detail=body.action)
@@ -1523,11 +1535,18 @@ def api_filtering_add_rule(body: RuleAdd):
 
 @app.post("/api/filtering/rules/remove")
 def api_filtering_remove_rule(body: RuleRemove):
+    c = db()
+    if body.rule in orchestrator.managed_rules(c):
+        raise HTTPException(409, "this rule belongs to an active policy - end that policy instead "
+                                 "(removing the rule by hand would only see it put back)")
     try:
-        adguard.remove_user_rule(body.rule)
+        with orchestrator.lock():
+            adguard.remove_user_rule(body.rule)
+    except orchestrator.OrchestratorBusy as e:
+        raise HTTPException(409, str(e))
     except adguard.AdGuardError as e:
         raise HTTPException(502, str(e))
-    audit.log(db(), CONSOLE_USERNAME, "filtering.remove_rule", target=body.rule)
+    audit.log(c, CONSOLE_USERNAME, "filtering.remove_rule", target=body.rule)
     return {"ok": True}
 
 

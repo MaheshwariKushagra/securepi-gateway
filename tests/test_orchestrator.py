@@ -271,6 +271,18 @@ class DriftTests(OrchestratorTestCase):
         self.assertTrue(summary["drift"])
         self.assertTrue(self.b.client_list[0]["safesearch_enabled"])
 
+    def test_a_stale_lan_ip_left_on_a_client_is_removed_quietly(self):
+        # Audit.md H3: the old "subset" check accepted a client still
+        # carrying an address DHCP had since handed to another device, so
+        # it was never cleaned up. It is ordinary DHCP churn, not someone
+        # tampering, so it's corrected without a drift incident.
+        self.create("profile", 1, "kids")
+        self.b.client_list[0]["ids"].append("10.10.0.99")
+        summary = self.reconcile()
+        self.assertEqual(summary["drift"], [])
+        self.assertNotIn("10.10.0.99", self.b.client_list[0]["ids"])
+        self.assertIn("aa:bb:cc:00:00:01", self.b.client_list[0]["ids"])
+
     def test_after_a_reboot_the_empty_set_is_restored_quietly(self):
         self.create("quarantine", 1)
         self.reconcile()
@@ -409,6 +421,15 @@ class ProfileAndPauseTests(OrchestratorTestCase):
             self.create("pause", 1, minutes=25 * 60)
 
 
+class ManagedRulesTests(OrchestratorTestCase):
+    def test_a_policy_rule_is_reported_as_managed_and_hand_rules_are_not(self):
+        # Audit.md H10: the console refuses to hand-remove these.
+        self.create("block_domain", None, "tracker.example")
+        managed = orchestrator.managed_rules(self.conn)
+        self.assertIn(adguard.domain_rule("tracker.example", "block"), managed)
+        self.assertNotIn("||hand-added.example^", managed)
+
+
 class EnrollTests(OrchestratorTestCase):
     def test_enrollment_follows_the_device_to_a_new_ip(self):
         self.create("enroll", 1, minutes=120)
@@ -427,6 +448,30 @@ class EnrollTests(OrchestratorTestCase):
         self.assertEqual(self.b.enroll_set, {})
         row = self.conn.execute("SELECT status FROM policies WHERE id=?", (p["id"],)).fetchone()
         self.assertEqual(row["status"], "removed")
+
+    def test_a_reboot_ends_enrollment_even_if_the_device_comes_back_on_a_new_ip(self):
+        # Audit.md: inspection is always off after a reboot - including
+        # for a device DHCP hands a different address this time.
+        p = self.create("enroll", 1, minutes=120)
+        self.b.enroll_set.clear()   # the reboot empties the kernel set
+        self.boot = "boot-2"
+        self.conn.execute("INSERT INTO device_ips (device_id, ip, first_seen, last_seen) VALUES (1, '10.10.0.77', ?, ?)",
+                          (self.clock() + 1, self.clock() + 1))
+        self.conn.commit()
+        self.reconcile()
+        self.assertEqual(self.b.enroll_set, {})
+        row = self.conn.execute("SELECT status FROM policies WHERE id=?", (p["id"],)).fetchone()
+        self.assertEqual(row["status"], "removed")
+
+    def test_an_address_reassigned_to_another_device_is_not_enrolled(self):
+        # Audit.md H3: device 1 left; DHCP gave its old address to device 2.
+        # Enrolling device 1 must not decrypt device 2's traffic.
+        self.conn.execute("UPDATE device_ips SET last_seen=? WHERE device_id=1", (self.clock() - 7200,))
+        self.conn.execute("INSERT INTO device_ips (device_id, ip, first_seen, last_seen) VALUES (2, '10.10.0.31', ?, ?)",
+                          (self.clock() + 1, self.clock() + 1))
+        self.conn.commit()
+        self.assertIsNone(orchestrator.device_ip(self.conn, 1))
+        self.assertEqual(orchestrator.device_ip(self.conn, 2), "10.10.0.31")
 
     def test_cli_enrollment_is_adopted_not_removed(self):
         self.b.enroll_set["10.10.0.32"] = self.clock() + 3600

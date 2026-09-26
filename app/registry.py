@@ -131,17 +131,31 @@ def resolve_device(conn, mac, hostname, now):
     if row is not None:
         return row["device_id"]
 
-    # 2. New MAC, familiar hostname: the same phone with a re-randomized
-    #    address. Attach the new MAC to the existing device.
+    # 2. New MAC, familiar hostname: probably the same phone with a
+    #    re-randomized address - attach the new MAC to the existing device.
+    #
+    #    But ONLY if that device isn't 'approved'. A hostname is whatever
+    #    the device says it is: any newcomer can call itself "Kushagras-
+    #    iPhone". Merging into an approved device would hand the newcomer
+    #    that device's approval - and with restrict_unknown_devices on,
+    #    that's a way past the quarantine every unknown device gets
+    #    (Audit.md H2). Merging into an 'unknown' or 'blocked' device
+    #    can't raise anyone's trust (a brand-new device is 'unknown'
+    #    anyway, and 'blocked' is stricter), so that continuity is kept.
+    #    A genuinely re-randomized approved phone shows up as a new
+    #    unknown device; the operator approves it again.
     if hostname:
         row = conn.execute(
-            "SELECT id FROM devices WHERE hostname = ? ORDER BY first_seen LIMIT 1",
+            "SELECT id, trust FROM devices WHERE hostname = ? ORDER BY first_seen LIMIT 1",
             (hostname,),
         ).fetchone()
-        if row is not None:
+        if row is not None and row["trust"] != "approved":
             print("registry: %s reappeared with a new MAC %s (randomization)"
                   % (hostname, mac), flush=True)
             return row["id"]
+        if row is not None:
+            print("registry: new MAC %s claims the hostname of approved device %d (%s) -"
+                  " registering it as a separate, unknown device" % (mac, row["id"], hostname), flush=True)
 
     # 3. Genuinely new.
     # trust='unknown' is written explicitly rather than left to the column

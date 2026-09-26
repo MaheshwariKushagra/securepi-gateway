@@ -430,5 +430,80 @@ class CspLoosenForInlineStyleTests(unittest.TestCase):
         self.assertIn("script-src 'self' 'nonce-abc123'", out)
 
 
+def _quiet_addon():
+    """A real SecurePiAdFilter with its disk-writing side effects (the
+    telemetry log, rule-hit stats, rule-file reloads) switched off."""
+    a = addon.SecurePiAdFilter()
+    a._log_event = lambda *args, **kwargs: None
+    a._write_rule_stats = lambda: None
+    a._ensure_rules_fresh = lambda: None
+    return a
+
+
+def _tls_data(ip="10.10.0.5", sni="www.youtube.com"):
+    """Shaped like mitmproxy's TlsData: the client connection (with the
+    requested server name) is data.conn; there is NO data.client_hello."""
+    return types.SimpleNamespace(
+        conn=types.SimpleNamespace(sni=sni),
+        context=types.SimpleNamespace(client=types.SimpleNamespace(peername=(ip, 51000))),
+    )
+
+
+class TlsFailureBypassTests(unittest.TestCase):
+    """Audit.md H8: tls_failed_client read data.client_hello.sni, which
+    TlsData doesn't have, so the pinning bypass could never trigger."""
+
+    def test_repeated_failures_start_a_bypass_for_that_device_and_host(self):
+        a = _quiet_addon()
+        for _ in range(addon.PIN_FAILURE_THRESHOLD):
+            a.tls_failed_client(_tls_data())
+        self.assertIn(("10.10.0.5", "www.youtube.com"), a._pin_bypass_until)
+
+    def test_a_successful_handshake_resets_the_count(self):
+        a = _quiet_addon()
+        for _ in range(addon.PIN_FAILURE_THRESHOLD - 1):
+            a.tls_failed_client(_tls_data())
+        a.tls_established_client(_tls_data())
+        a.tls_failed_client(_tls_data())
+        self.assertNotIn(("10.10.0.5", "www.youtube.com"), a._pin_bypass_until)
+
+    def test_failures_for_another_device_do_not_count(self):
+        a = _quiet_addon()
+        for i in range(addon.PIN_FAILURE_THRESHOLD):
+            a.tls_failed_client(_tls_data(ip="10.10.0.%d" % (10 + i)))
+        self.assertEqual(a._pin_bypass_until, {})
+
+
+class BlockedPathMatchingTests(unittest.TestCase):
+    """Rules match the request PATH, not its query string."""
+
+    def setUp(self):
+        self._orig_response = getattr(addon.http, "Response", None)
+        addon.http.Response = types.SimpleNamespace(make=lambda code: ("response", code))
+
+    def tearDown(self):
+        if self._orig_response is None:
+            del addon.http.Response
+        else:
+            addon.http.Response = self._orig_response
+
+    def _flow(self, path):
+        return types.SimpleNamespace(
+            request=types.SimpleNamespace(path=path, host="www.youtube.com"),
+            response=None,
+            client_conn=types.SimpleNamespace(address=("10.10.0.5", 51000)),
+        )
+
+    def test_a_blocked_endpoint_is_blocked(self):
+        flow = self._flow("/pagead/conversion?x=1")
+        _quiet_addon().request(flow)
+        self.assertEqual(flow.response, ("response", 204))
+
+    def test_rule_text_inside_the_query_string_is_not_blocked(self):
+        flow = self._flow("/results?search_query=/pagead/")
+        _quiet_addon().request(flow)
+        self.assertIsNone(flow.response)
+
+
 if __name__ == "__main__":
     unittest.main()

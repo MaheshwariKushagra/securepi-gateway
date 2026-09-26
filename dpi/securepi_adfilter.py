@@ -393,6 +393,38 @@ class SecurePiAdFilter:
             self.decrypted += 1
             self._log_event(src_ip, "decrypt", sni=sni)
 
+    @staticmethod
+    def _tls_pair(data):
+        """(device IP, server name) for a tls_failed_client or
+        tls_established_client event. Both hooks receive mitmproxy's
+        TlsData - NOT the ClientHelloData tls_clienthello gets - and the
+        server name the client asked for is on the client connection,
+        data.conn.sni. This used to read data.client_hello.sni, which
+        TlsData doesn't have: the error was swallowed, the name was always
+        None, and the automatic bypass below could never trigger
+        (Audit.md H8)."""
+        src_ip = sni = None
+        try:
+            src_ip = data.context.client.peername[0]
+        except Exception:
+            pass
+        try:
+            sni = data.conn.sni
+        except Exception:
+            pass
+        return src_ip, sni
+
+    def tls_established_client(self, data):
+        """
+        Runs when the TLS handshake with the CLIENT succeeds. Clears that
+        (device, host) pair's failure count, so PIN_FAILURE_THRESHOLD
+        really means that many failures IN A ROW, as documented - not that
+        many failures in total, however many successes came in between.
+        """
+        src_ip, sni = self._tls_pair(data)
+        if src_ip is not None and sni:
+            self._pin_fail_count.pop((src_ip, sni), None)
+
     def tls_failed_client(self, data):
         """
         Runs when the TLS handshake between mitmproxy and the CLIENT fails,
@@ -415,21 +447,19 @@ class SecurePiAdFilter:
         them, that pair backs off into auto-passthrough - see
         tls_clienthello above - rather than trying, and failing, forever.
         """
-        sni = None
-        try:
-            sni = data.client_hello.sni
-        except Exception:
-            pass
-        src_ip = None
-        try:
-            src_ip = data.context.client.peername[0]
-        except Exception:
-            pass
+        src_ip, sni = self._tls_pair(data)
         self._log_event(src_ip, "tls_failed", sni=sni)
 
         if src_ip is None or not sni:
             return  # nothing to key a (device, host) pair on
         key = (src_ip, sni)
+        # Keep this state small: forget bypasses that have run out, and
+        # start counting afresh if a flood of distinct pairs piles up.
+        now = time.time()
+        for old_key in [k for k, until in self._pin_bypass_until.items() if until <= now]:
+            del self._pin_bypass_until[old_key]
+        if len(self._pin_fail_count) > 5000:
+            self._pin_fail_count.clear()
         self._pin_fail_count[key] = self._pin_fail_count.get(key, 0) + 1
         if self._pin_fail_count[key] >= PIN_FAILURE_THRESHOLD:
             self._pin_bypass_until[key] = time.time() + PIN_BYPASS_HOURS * 3600
@@ -458,11 +488,15 @@ class SecurePiAdFilter:
                 100.0 * self.passed_through / total,
             )
 
+        # Match against the path only, never the query string after "?":
+        # a harmless request like "/search?q=/pagead/" used to be blocked
+        # just because the query happened to contain a rule's text.
+        request_path = flow.request.path.split("?")[0]
         for path in self._rules["blocked_paths"]:
-            if path in flow.request.path:
+            if path in request_path:
                 flow.response = http.Response.make(204)  # empty, no content
                 self.blocked_urls += 1
-                blocked_path = flow.request.path.split("?")[0]
+                blocked_path = request_path
                 logger.info("securepi: blocked ad endpoint %s", blocked_path)
                 try:
                     src_ip = flow.client_conn.address[0]

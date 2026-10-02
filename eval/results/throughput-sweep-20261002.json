@@ -1,0 +1,96 @@
+{
+ "steps": [
+  {
+   "rate": "10M",
+   "seconds": 20.0,
+   "sent_bytes": 25034752,
+   "sent_mbit_s": 10.0,
+   "logged_bytes": 26226321,
+   "logged_share": 1.048,
+   "ids_cpu_core_share": 0.01,
+   "kernel_packets": 18106,
+   "kernel_drops": 0,
+   "drop_pct": 0.0,
+   "logged_bytes_as_run": 26226321
+  },
+  {
+   "rate": "25M",
+   "seconds": 20.0,
+   "sent_bytes": 62521344,
+   "sent_mbit_s": 25.0,
+   "logged_bytes": 65480769,
+   "logged_share": 1.047,
+   "ids_cpu_core_share": 0.02,
+   "kernel_packets": 44832,
+   "kernel_drops": 0,
+   "drop_pct": 0.0,
+   "logged_bytes_as_run": 65480769
+  },
+  {
+   "rate": "50M",
+   "seconds": 20.0,
+   "sent_bytes": 125042688,
+   "sent_mbit_s": 50.0,
+   "logged_bytes": 130987507,
+   "logged_share": 1.048,
+   "ids_cpu_core_share": 0.05,
+   "kernel_packets": 90506,
+   "kernel_drops": 0,
+   "drop_pct": 0.0,
+   "logged_bytes_as_run": 130987507
+  },
+  {
+   "rate": "100M",
+   "seconds": 20.0,
+   "sent_bytes": 250085376,
+   "sent_mbit_s": 100.0,
+   "logged_bytes": 261902479,
+   "logged_share": 1.047,
+   "ids_cpu_core_share": 0.09,
+   "kernel_packets": 179089,
+   "kernel_drops": 0,
+   "drop_pct": 0.0,
+   "logged_bytes_as_run": 2654
+  },
+  {
+   "rate": "200M",
+   "seconds": 20.0,
+   "sent_bytes": 500039680,
+   "sent_mbit_s": 200.0,
+   "logged_bytes": 523579622,
+   "logged_share": 1.047,
+   "ids_cpu_core_share": 0.16,
+   "kernel_packets": 356668,
+   "kernel_drops": 0,
+   "drop_pct": 0.0,
+   "logged_bytes_as_run": 2639
+  },
+  {
+   "rate": "400M",
+   "seconds": 20.0,
+   "sent_bytes": 1000079360,
+   "sent_mbit_s": 400.0,
+   "logged_bytes": 1047202241,
+   "logged_share": 1.047,
+   "ids_cpu_core_share": 0.34,
+   "kernel_packets": 713972,
+   "kernel_drops": 0,
+   "drop_pct": 0.0,
+   "logged_bytes_as_run": 2656
+  },
+  {
+   "rate": "0",
+   "seconds": 20.0,
+   "sent_bytes": 15097135104,
+   "sent_mbit_s": 6038.5,
+   "logged_bytes": 2003112113,
+   "logged_share": 0.133,
+   "ids_cpu_core_share": 0.96,
+   "kernel_packets": 10783643,
+   "kernel_drops": 9161411,
+   "drop_pct": 84.96,
+   "logged_bytes_as_run": 2770
+  }
+ ],
+ "note": "logged_bytes corrected from the database after the run: the script returned once the first of the two flows per transfer (iperf3 control + data) was logged, so rows from 100M up first read ~2.6 KB (kept as logged_bytes_as_run). The script now waits for both."
+}

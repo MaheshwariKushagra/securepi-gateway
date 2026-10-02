@@ -67,7 +67,11 @@ def flow_bytes_logged(port, since):
             " WHERE event_type='flow' AND src_ip=? AND dest_ip=? AND dest_port=? AND ts >= ?",
             (ATTACKER_IP, VICTIM_IP, port, since)).fetchone()
         conn.close()
-        if row[0]:
+        # Two flows per transfer: iperf3's small control connection and the
+        # data connection. Waiting for "any flow" returned as soon as the
+        # control one was logged, before the data one (the first sweep's
+        # 100M+ rows read ~2.6 KB "logged"; corrected from the database).
+        if row[0] >= 2:
             return row[1] or 0
         time.sleep(5)
     return None

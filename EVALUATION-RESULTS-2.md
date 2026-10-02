@@ -1418,6 +1418,29 @@ audit's M-finding ("dashboard polling scans entire time windows every 5 s")
 measured: fine at household volume, about a second per refresh at a busy
 day's volume. Precomputing these from the hourly rollups would remove it.
 
+**Throughput and drops** (`gateway/throughput_sweep.py`, `eval/results/throughput-sweep-20261002.json`):
+iperf3 between the test harness's namespaces for 20 s per rate, across the
+link the IDS watches as `veth-atk` (one capture thread, offloads off so packets
+are ordinary-sized), with the gateway's full service set running.
+
+| Rate | Kernel drops | Share of the transfer in the IDS's flow record | IDS CPU |
+|---|---|---|---|
+| 10 Mbit/s | 0 | 104.8% | 0.01 core |
+| 25 Mbit/s | 0 | 104.7% | 0.02 |
+| 50 Mbit/s | 0 | 104.8% | 0.05 |
+| 100 Mbit/s | 0 | 104.7% | 0.09 |
+| 200 Mbit/s | 0 | 104.7% | 0.16 |
+| 400 Mbit/s | 0 | 104.7% | 0.34 |
+| unthrottled (6.0 Gbit/s on the virtual link) | **85.0%** | **13.3%** | 0.96 (saturated) |
+
+(>100%: the flow record counts headers and the reverse direction too.) **No
+loss up to 400 Mbit/s** on one capture thread at a third of a core - far above
+what the 2.4 GHz access point can carry - and a clear ceiling where a single
+thread saturates. The sweep script first under-read the logged share from
+100 Mbit/s up: it stopped waiting once iperf3's small control connection was
+logged, before the data connection; the figures above are corrected from the
+database, and the script now waits for both flows.
+
 ### 7.6 — Identity accuracy (2 October 2026, before the forward run)
 
 Ground truth: the physical devices that have joined SecurePi-Test, from their

@@ -1,0 +1,758 @@
+{
+ "capture": "battery-20260926-101333.pcap",
+ "capture_seconds": 1792.8,
+ "capture_sha256": "bff769a38c5dd0af1b46bb60cd50861f9cd27aa7f03d326d3ffdfa1f544efdf5",
+ "engine_steps": 140,
+ "events": 1546,
+ "incidents_by_type": {
+  "beacon": 5,
+  "brute_force": 5,
+  "ids_other": 5,
+  "network_sweep": 5,
+  "port_scan": 5,
+  "slow_network_sweep": 10,
+  "slow_port_scan": 10
+ },
+ "licence": null,
+ "result_sha256": "ab6ec0a26efc7affeeff449fd4bb8b98e0e36ff691748fd6421eb73489f30c5b",
+ "rules": "suricata.rules",
+ "rules_sha256": "82aa107f079b2b1122e210260d0c24bb6fbb4cbe0b85ef373cd51b825c3caaef",
+ "runs": [
+  {
+   "correct": true,
+   "detected": true,
+   "expect": true,
+   "host": "10.10.0.231",
+   "incidents_on_host": [
+    "beacon",
+    "brute_force",
+    "ids_other",
+    "network_sweep",
+    "port_scan",
+    "slow_network_sweep",
+    "slow_port_scan"
+   ],
+   "run": 1,
+   "signal": "beacon",
+   "ttd_s": 143.6
+  },
+  {
+   "correct": true,
+   "detected": true,
+   "expect": true,
+   "host": "10.10.0.232",
+   "incidents_on_host": [
+    "beacon",
+    "brute_force",
+    "ids_other",
+    "network_sweep",
+    "port_scan",
+    "slow_network_sweep",
+    "slow_port_scan"
+   ],
+   "run": 2,
+   "signal": "beacon",
+   "ttd_s": 132.9
+  },
+  {
+   "correct": true,
+   "detected": true,
+   "expect": true,
+   "host": "10.10.0.233",
+   "incidents_on_host": [
+    "beacon",
+    "brute_force",
+    "ids_other",
+    "network_sweep",
+    "port_scan",
+    "slow_network_sweep",
+    "slow_port_scan"
+   ],
+   "run": 3,
+   "signal": "beacon",
+   "ttd_s": 136.2
+  },
+  {
+   "correct": true,
+   "detected": true,
+   "expect": true,
+   "host": "10.10.0.234",
+   "incidents_on_host": [
+    "beacon",
+    "brute_force",
+    "ids_other",
+    "network_sweep",
+    "port_scan",
+    "slow_network_sweep",
+    "slow_port_scan"
+   ],
+   "run": 4,
+   "signal": "beacon",
+   "ttd_s": 141.5
+  },
+  {
+   "correct": true,
+   "detected": true,
+   "expect": true,
+   "host": "10.10.0.235",
+   "incidents_on_host": [
+    "beacon",
+    "brute_force",
+    "ids_other",
+    "network_sweep",
+    "port_scan",
+    "slow_network_sweep",
+    "slow_port_scan"
+   ],
+   "run": 5,
+   "signal": "beacon",
+   "ttd_s": 130.8
+  },
+  {
+   "correct": true,
+   "detected": false,
+   "expect": false,
+   "host": "10.10.0.246",
+   "incidents_on_host": [],
+   "run": 1,
+   "signal": "benign",
+   "ttd_s": null
+  },
+  {
+   "correct": true,
+   "detected": true,
+   "expect": true,
+   "host": "10.10.0.231",
+   "incidents_on_host": [
+    "beacon",
+    "brute_force",
+    "ids_other",
+    "network_sweep",
+    "port_scan",
+    "slow_network_sweep",
+    "slow_port_scan"
+   ],
+   "run": 1,
+   "signal": "brute_force",
+   "ttd_s": 66.3
+  },
+  {
+   "correct": true,
+   "detected": true,
+   "expect": true,
+   "host": "10.10.0.232",
+   "incidents_on_host": [
+    "beacon",
+    "brute_force",
+    "ids_other",
+    "network_sweep",
+    "port_scan",
+    "slow_network_sweep",
+    "slow_port_scan"
+   ],
+   "run": 2,
+   "signal": "brute_force",
+   "ttd_s": 70.6
+  },
+  {
+   "correct": true,
+   "detected": true,
+   "expect": true,
+   "host": "10.10.0.233",
+   "incidents_on_host": [
+    "beacon",
+    "brute_force",
+    "ids_other",
+    "network_sweep",
+    "port_scan",
+    "slow_network_sweep",
+    "slow_port_scan"
+   ],
+   "run": 3,
+   "signal": "brute_force",
+   "ttd_s": 74.0
+  },
+  {
+   "correct": true,
+   "detected": true,
+   "expect": true,
+   "host": "10.10.0.234",
+   "incidents_on_host": [
+    "beacon",
+    "brute_force",
+    "ids_other",
+    "network_sweep",
+    "port_scan",
+    "slow_network_sweep",
+    "slow_port_scan"
+   ],
+   "run": 4,
+   "signal": "brute_force",
+   "ttd_s": 63.2
+  },
+  {
+   "correct": true,
+   "detected": true,
+   "expect": true,
+   "host": "10.10.0.235",
+   "incidents_on_host": [
+    "beacon",
+    "brute_force",
+    "ids_other",
+    "network_sweep",
+    "port_scan",
+    "slow_network_sweep",
+    "slow_port_scan"
+   ],
+   "run": 5,
+   "signal": "brute_force",
+   "ttd_s": 68.6
+  },
+  {
+   "correct": true,
+   "detected": true,
+   "expect": true,
+   "host": "10.10.0.231",
+   "incidents_on_host": [
+    "beacon",
+    "brute_force",
+    "ids_other",
+    "network_sweep",
+    "port_scan",
+    "slow_network_sweep",
+    "slow_port_scan"
+   ],
+   "run": 1,
+   "signal": "campaign",
+   "ttd_s": 143.6
+  },
+  {
+   "correct": true,
+   "detected": true,
+   "expect": true,
+   "host": "10.10.0.232",
+   "incidents_on_host": [
+    "beacon",
+    "brute_force",
+    "ids_other",
+    "network_sweep",
+    "port_scan",
+    "slow_network_sweep",
+    "slow_port_scan"
+   ],
+   "run": 2,
+   "signal": "campaign",
+   "ttd_s": 132.9
+  },
+  {
+   "correct": true,
+   "detected": true,
+   "expect": true,
+   "host": "10.10.0.233",
+   "incidents_on_host": [
+    "beacon",
+    "brute_force",
+    "ids_other",
+    "network_sweep",
+    "port_scan",
+    "slow_network_sweep",
+    "slow_port_scan"
+   ],
+   "run": 3,
+   "signal": "campaign",
+   "ttd_s": 136.2
+  },
+  {
+   "correct": true,
+   "detected": true,
+   "expect": true,
+   "host": "10.10.0.234",
+   "incidents_on_host": [
+    "beacon",
+    "brute_force",
+    "ids_other",
+    "network_sweep",
+    "port_scan",
+    "slow_network_sweep",
+    "slow_port_scan"
+   ],
+   "run": 4,
+   "signal": "campaign",
+   "ttd_s": 141.5
+  },
+  {
+   "correct": true,
+   "detected": true,
+   "expect": true,
+   "host": "10.10.0.235",
+   "incidents_on_host": [
+    "beacon",
+    "brute_force",
+    "ids_other",
+    "network_sweep",
+    "port_scan",
+    "slow_network_sweep",
+    "slow_port_scan"
+   ],
+   "run": 5,
+   "signal": "campaign",
+   "ttd_s": 130.8
+  },
+  {
+   "correct": true,
+   "detected": true,
+   "expect": true,
+   "host": "10.10.0.231",
+   "incidents_on_host": [
+    "ids_other"
+   ],
+   "run": 1,
+   "signal": "ids_alert",
+   "ttd_s": 15.6
+  },
+  {
+   "correct": true,
+   "detected": true,
+   "expect": true,
+   "host": "10.10.0.232",
+   "incidents_on_host": [
+    "ids_other"
+   ],
+   "run": 2,
+   "signal": "ids_alert",
+   "ttd_s": 4.9
+  },
+  {
+   "correct": true,
+   "detected": true,
+   "expect": true,
+   "host": "10.10.0.233",
+   "incidents_on_host": [
+    "ids_other"
+   ],
+   "run": 3,
+   "signal": "ids_alert",
+   "ttd_s": 8.2
+  },
+  {
+   "correct": true,
+   "detected": true,
+   "expect": true,
+   "host": "10.10.0.234",
+   "incidents_on_host": [
+    "ids_other"
+   ],
+   "run": 4,
+   "signal": "ids_alert",
+   "ttd_s": 12.4
+  },
+  {
+   "correct": true,
+   "detected": true,
+   "expect": true,
+   "host": "10.10.0.235",
+   "incidents_on_host": [
+    "ids_other"
+   ],
+   "run": 5,
+   "signal": "ids_alert",
+   "ttd_s": 2.8
+  },
+  {
+   "correct": true,
+   "detected": true,
+   "expect": true,
+   "host": "10.10.0.231",
+   "incidents_on_host": [
+    "ids_other",
+    "network_sweep",
+    "port_scan",
+    "slow_network_sweep",
+    "slow_port_scan"
+   ],
+   "run": 1,
+   "signal": "network_sweep",
+   "ttd_s": 78.7
+  },
+  {
+   "correct": true,
+   "detected": true,
+   "expect": true,
+   "host": "10.10.0.232",
+   "incidents_on_host": [
+    "ids_other",
+    "network_sweep",
+    "port_scan",
+    "slow_network_sweep",
+    "slow_port_scan"
+   ],
+   "run": 2,
+   "signal": "network_sweep",
+   "ttd_s": 83.0
+  },
+  {
+   "correct": true,
+   "detected": true,
+   "expect": true,
+   "host": "10.10.0.233",
+   "incidents_on_host": [
+    "ids_other",
+    "network_sweep",
+    "port_scan",
+    "slow_network_sweep",
+    "slow_port_scan"
+   ],
+   "run": 3,
+   "signal": "network_sweep",
+   "ttd_s": 87.4
+  },
+  {
+   "correct": true,
+   "detected": true,
+   "expect": true,
+   "host": "10.10.0.234",
+   "incidents_on_host": [
+    "ids_other",
+    "network_sweep",
+    "port_scan",
+    "slow_network_sweep",
+    "slow_port_scan"
+   ],
+   "run": 4,
+   "signal": "network_sweep",
+   "ttd_s": 76.6
+  },
+  {
+   "correct": true,
+   "detected": true,
+   "expect": true,
+   "host": "10.10.0.235",
+   "incidents_on_host": [
+    "ids_other",
+    "network_sweep",
+    "port_scan",
+    "slow_network_sweep",
+    "slow_port_scan"
+   ],
+   "run": 5,
+   "signal": "network_sweep",
+   "ttd_s": 81.0
+  },
+  {
+   "correct": true,
+   "detected": true,
+   "expect": true,
+   "host": "10.10.0.231",
+   "incidents_on_host": [
+    "beacon",
+    "brute_force",
+    "ids_other",
+    "network_sweep",
+    "port_scan",
+    "slow_network_sweep",
+    "slow_port_scan"
+   ],
+   "run": 1,
+   "signal": "port_scan",
+   "ttd_s": 83.6
+  },
+  {
+   "correct": true,
+   "detected": true,
+   "expect": true,
+   "host": "10.10.0.232",
+   "incidents_on_host": [
+    "beacon",
+    "brute_force",
+    "ids_other",
+    "network_sweep",
+    "port_scan",
+    "slow_network_sweep",
+    "slow_port_scan"
+   ],
+   "run": 2,
+   "signal": "port_scan",
+   "ttd_s": 87.9
+  },
+  {
+   "correct": true,
+   "detected": true,
+   "expect": true,
+   "host": "10.10.0.233",
+   "incidents_on_host": [
+    "beacon",
+    "brute_force",
+    "ids_other",
+    "network_sweep",
+    "port_scan",
+    "slow_network_sweep",
+    "slow_port_scan"
+   ],
+   "run": 3,
+   "signal": "port_scan",
+   "ttd_s": 76.2
+  },
+  {
+   "correct": true,
+   "detected": true,
+   "expect": true,
+   "host": "10.10.0.234",
+   "incidents_on_host": [
+    "beacon",
+    "brute_force",
+    "ids_other",
+    "network_sweep",
+    "port_scan",
+    "slow_network_sweep",
+    "slow_port_scan"
+   ],
+   "run": 4,
+   "signal": "port_scan",
+   "ttd_s": 81.5
+  },
+  {
+   "correct": true,
+   "detected": true,
+   "expect": true,
+   "host": "10.10.0.235",
+   "incidents_on_host": [
+    "beacon",
+    "brute_force",
+    "ids_other",
+    "network_sweep",
+    "port_scan",
+    "slow_network_sweep",
+    "slow_port_scan"
+   ],
+   "run": 5,
+   "signal": "port_scan",
+   "ttd_s": 85.8
+  },
+  {
+   "correct": true,
+   "detected": true,
+   "expect": true,
+   "host": "10.10.0.241",
+   "incidents_on_host": [
+    "slow_network_sweep"
+   ],
+   "run": 1,
+   "signal": "slow_network_sweep",
+   "ttd_s": 518.6
+  },
+  {
+   "correct": true,
+   "detected": true,
+   "expect": true,
+   "host": "10.10.0.242",
+   "incidents_on_host": [
+    "slow_network_sweep"
+   ],
+   "run": 2,
+   "signal": "slow_network_sweep",
+   "ttd_s": 518.6
+  },
+  {
+   "correct": true,
+   "detected": true,
+   "expect": true,
+   "host": "10.10.0.243",
+   "incidents_on_host": [
+    "slow_network_sweep"
+   ],
+   "run": 3,
+   "signal": "slow_network_sweep",
+   "ttd_s": 518.6
+  },
+  {
+   "correct": true,
+   "detected": true,
+   "expect": true,
+   "host": "10.10.0.244",
+   "incidents_on_host": [
+    "slow_network_sweep"
+   ],
+   "run": 4,
+   "signal": "slow_network_sweep",
+   "ttd_s": 518.6
+  },
+  {
+   "correct": true,
+   "detected": true,
+   "expect": true,
+   "host": "10.10.0.245",
+   "incidents_on_host": [
+    "slow_network_sweep"
+   ],
+   "run": 5,
+   "signal": "slow_network_sweep",
+   "ttd_s": 518.6
+  },
+  {
+   "correct": true,
+   "detected": true,
+   "expect": true,
+   "host": "10.10.0.236",
+   "incidents_on_host": [
+    "slow_port_scan"
+   ],
+   "run": 1,
+   "signal": "slow_port_scan",
+   "ttd_s": 473.6
+  },
+  {
+   "correct": true,
+   "detected": true,
+   "expect": true,
+   "host": "10.10.0.237",
+   "incidents_on_host": [
+    "slow_port_scan"
+   ],
+   "run": 2,
+   "signal": "slow_port_scan",
+   "ttd_s": 473.6
+  },
+  {
+   "correct": true,
+   "detected": true,
+   "expect": true,
+   "host": "10.10.0.238",
+   "incidents_on_host": [
+    "slow_port_scan"
+   ],
+   "run": 3,
+   "signal": "slow_port_scan",
+   "ttd_s": 473.6
+  },
+  {
+   "correct": true,
+   "detected": true,
+   "expect": true,
+   "host": "10.10.0.239",
+   "incidents_on_host": [
+    "slow_port_scan"
+   ],
+   "run": 4,
+   "signal": "slow_port_scan",
+   "ttd_s": 473.6
+  },
+  {
+   "correct": true,
+   "detected": true,
+   "expect": true,
+   "host": "10.10.0.240",
+   "incidents_on_host": [
+    "slow_port_scan"
+   ],
+   "run": 5,
+   "signal": "slow_port_scan",
+   "ttd_s": 473.6
+  },
+  {
+   "expect": true,
+   "host": "10.10.0.231",
+   "not_replayable": "needs 7 days of hourly rollups (device_hourly)",
+   "run": 1,
+   "signal": "volume_anomaly"
+  },
+  {
+   "expect": true,
+   "host": "10.10.0.232",
+   "not_replayable": "needs 7 days of hourly rollups (device_hourly)",
+   "run": 2,
+   "signal": "volume_anomaly"
+  },
+  {
+   "expect": true,
+   "host": "10.10.0.233",
+   "not_replayable": "needs 7 days of hourly rollups (device_hourly)",
+   "run": 3,
+   "signal": "volume_anomaly"
+  },
+  {
+   "expect": true,
+   "host": "10.10.0.234",
+   "not_replayable": "needs 7 days of hourly rollups (device_hourly)",
+   "run": 4,
+   "signal": "volume_anomaly"
+  },
+  {
+   "expect": true,
+   "host": "10.10.0.235",
+   "not_replayable": "needs 7 days of hourly rollups (device_hourly)",
+   "run": 5,
+   "signal": "volume_anomaly"
+  }
+ ],
+ "signal_failures": {},
+ "source": "step 7.2 battery on the live gateway harness",
+ "summary": {
+  "beacon": {
+   "correct": 5,
+   "detected": 5,
+   "runs": 5,
+   "ttd_max_s": 143.6,
+   "ttd_median_s": 136.2
+  },
+  "benign": {
+   "correct": 1,
+   "detected": 0,
+   "runs": 1,
+   "ttd_max_s": null,
+   "ttd_median_s": null
+  },
+  "brute_force": {
+   "correct": 5,
+   "detected": 5,
+   "runs": 5,
+   "ttd_max_s": 74.0,
+   "ttd_median_s": 68.6
+  },
+  "campaign": {
+   "correct": 5,
+   "detected": 5,
+   "runs": 5,
+   "ttd_max_s": 143.6,
+   "ttd_median_s": 136.2
+  },
+  "ids_alert": {
+   "correct": 5,
+   "detected": 5,
+   "runs": 5,
+   "ttd_max_s": 15.6,
+   "ttd_median_s": 8.2
+  },
+  "network_sweep": {
+   "correct": 5,
+   "detected": 5,
+   "runs": 5,
+   "ttd_max_s": 87.4,
+   "ttd_median_s": 81.0
+  },
+  "port_scan": {
+   "correct": 5,
+   "detected": 5,
+   "runs": 5,
+   "ttd_max_s": 87.9,
+   "ttd_median_s": 83.6
+  },
+  "slow_network_sweep": {
+   "correct": 5,
+   "detected": 5,
+   "runs": 5,
+   "ttd_max_s": 518.6,
+   "ttd_median_s": 518.6
+  },
+  "slow_port_scan": {
+   "correct": 5,
+   "detected": 5,
+   "runs": 5,
+   "ttd_max_s": 473.6,
+   "ttd_median_s": 473.6
+  },
+  "volume_anomaly": {
+   "not_replayable": "needs 7 days of hourly rollups (device_hourly)"
+  }
+ },
+ "suricata": "This is Suricata version 8.0.7 RELEASE"
+}

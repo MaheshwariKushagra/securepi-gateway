@@ -1,0 +1,392 @@
+{
+ "pcap": "battery-20260926-101333.pcap",
+ "source": "step 7.2 battery on the live gateway harness",
+ "hosts": {
+  "10.10.0.231": "battery host 231",
+  "10.10.0.232": "battery host 232",
+  "10.10.0.233": "battery host 233",
+  "10.10.0.234": "battery host 234",
+  "10.10.0.235": "battery host 235",
+  "10.10.0.236": "battery host 236",
+  "10.10.0.237": "battery host 237",
+  "10.10.0.238": "battery host 238",
+  "10.10.0.239": "battery host 239",
+  "10.10.0.240": "battery host 240",
+  "10.10.0.241": "battery host 241",
+  "10.10.0.242": "battery host 242",
+  "10.10.0.243": "battery host 243",
+  "10.10.0.244": "battery host 244",
+  "10.10.0.245": "battery host 245",
+  "10.10.0.246": "battery host 246"
+ },
+ "runs": [
+  {
+   "signal": "beacon",
+   "run": 1,
+   "host": "10.10.0.231",
+   "t_start": 1790397816.416,
+   "t_end": 1790397907.072,
+   "expect": true
+  },
+  {
+   "signal": "beacon",
+   "run": 2,
+   "host": "10.10.0.232",
+   "t_start": 1790398187.099,
+   "t_end": 1790398275.834,
+   "expect": true
+  },
+  {
+   "signal": "beacon",
+   "run": 3,
+   "host": "10.10.0.233",
+   "t_start": 1790398573.812,
+   "t_end": 1790398664.831,
+   "expect": true
+  },
+  {
+   "signal": "beacon",
+   "run": 4,
+   "host": "10.10.0.234",
+   "t_start": 1790398958.536,
+   "t_end": 1790399048.463,
+   "expect": true
+  },
+  {
+   "signal": "beacon",
+   "run": 5,
+   "host": "10.10.0.235",
+   "t_start": 1790399344.206,
+   "t_end": 1790399434.327,
+   "expect": true
+  },
+  {
+   "signal": "benign",
+   "run": 1,
+   "host": "10.10.0.246",
+   "t_start": 1790397817.444,
+   "t_end": 1790398058.825,
+   "expect": false
+  },
+  {
+   "signal": "brute_force",
+   "run": 1,
+   "host": "10.10.0.231",
+   "t_start": 1790397893.686,
+   "t_end": 1790397895.156,
+   "expect": true
+  },
+  {
+   "signal": "brute_force",
+   "run": 2,
+   "host": "10.10.0.232",
+   "t_start": 1790398279.368,
+   "t_end": 1790398280.851,
+   "expect": true
+  },
+  {
+   "signal": "brute_force",
+   "run": 3,
+   "host": "10.10.0.233",
+   "t_start": 1790398666.04,
+   "t_end": 1790398667.515,
+   "expect": true
+  },
+  {
+   "signal": "brute_force",
+   "run": 4,
+   "host": "10.10.0.234",
+   "t_start": 1790399051.797,
+   "t_end": 1790399053.277,
+   "expect": true
+  },
+  {
+   "signal": "brute_force",
+   "run": 5,
+   "host": "10.10.0.235",
+   "t_start": 1790399436.446,
+   "t_end": 1790399437.912,
+   "expect": true
+  },
+  {
+   "signal": "campaign",
+   "run": 1,
+   "host": "10.10.0.231",
+   "t_start": 1790397816.415,
+   "t_end": 1790398079.502,
+   "expect": true
+  },
+  {
+   "signal": "campaign",
+   "run": 2,
+   "host": "10.10.0.232",
+   "t_start": 1790398187.099,
+   "t_end": 1790398465.209,
+   "expect": true
+  },
+  {
+   "signal": "campaign",
+   "run": 3,
+   "host": "10.10.0.233",
+   "t_start": 1790398573.812,
+   "t_end": 1790398850.854,
+   "expect": true
+  },
+  {
+   "signal": "campaign",
+   "run": 4,
+   "host": "10.10.0.234",
+   "t_start": 1790398958.536,
+   "t_end": 1790399236.626,
+   "expect": true
+  },
+  {
+   "signal": "campaign",
+   "run": 5,
+   "host": "10.10.0.235",
+   "t_start": 1790399344.206,
+   "t_end": 1790399622.268,
+   "expect": true
+  },
+  {
+   "signal": "ids_alert",
+   "run": 1,
+   "host": "10.10.0.231",
+   "t_start": 1790398064.44,
+   "t_end": 1790398068.487,
+   "expect": true
+  },
+  {
+   "signal": "ids_alert",
+   "run": 2,
+   "host": "10.10.0.232",
+   "t_start": 1790398450.141,
+   "t_end": 1790398454.186,
+   "expect": true
+  },
+  {
+   "signal": "ids_alert",
+   "run": 3,
+   "host": "10.10.0.233",
+   "t_start": 1790398836.8,
+   "t_end": 1790398840.841,
+   "expect": true
+  },
+  {
+   "signal": "ids_alert",
+   "run": 4,
+   "host": "10.10.0.234",
+   "t_start": 1790399222.559,
+   "t_end": 1790399226.605,
+   "expect": true
+  },
+  {
+   "signal": "ids_alert",
+   "run": 5,
+   "host": "10.10.0.235",
+   "t_start": 1790399607.197,
+   "t_end": 1790399611.25,
+   "expect": true
+  },
+  {
+   "signal": "network_sweep",
+   "run": 1,
+   "host": "10.10.0.231",
+   "t_start": 1790397971.28,
+   "t_end": 1790397984.327,
+   "expect": true
+  },
+  {
+   "signal": "network_sweep",
+   "run": 2,
+   "host": "10.10.0.232",
+   "t_start": 1790398356.976,
+   "t_end": 1790398370.023,
+   "expect": true
+  },
+  {
+   "signal": "network_sweep",
+   "run": 3,
+   "host": "10.10.0.233",
+   "t_start": 1790398742.648,
+   "t_end": 1790398755.682,
+   "expect": true
+  },
+  {
+   "signal": "network_sweep",
+   "run": 4,
+   "host": "10.10.0.234",
+   "t_start": 1790399128.402,
+   "t_end": 1790399141.443,
+   "expect": true
+  },
+  {
+   "signal": "network_sweep",
+   "run": 5,
+   "host": "10.10.0.235",
+   "t_start": 1790399514.047,
+   "t_end": 1790399527.083,
+   "expect": true
+  },
+  {
+   "signal": "port_scan",
+   "run": 1,
+   "host": "10.10.0.231",
+   "t_start": 1790397816.416,
+   "t_end": 1790397829.536,
+   "expect": true
+  },
+  {
+   "signal": "port_scan",
+   "run": 2,
+   "host": "10.10.0.232",
+   "t_start": 1790398187.099,
+   "t_end": 1790398200.138,
+   "expect": true
+  },
+  {
+   "signal": "port_scan",
+   "run": 3,
+   "host": "10.10.0.233",
+   "t_start": 1790398573.812,
+   "t_end": 1790398586.851,
+   "expect": true
+  },
+  {
+   "signal": "port_scan",
+   "run": 4,
+   "host": "10.10.0.234",
+   "t_start": 1790398958.536,
+   "t_end": 1790398971.58,
+   "expect": true
+  },
+  {
+   "signal": "port_scan",
+   "run": 5,
+   "host": "10.10.0.235",
+   "t_start": 1790399344.206,
+   "t_end": 1790399357.25,
+   "expect": true
+  },
+  {
+   "signal": "slow_network_sweep",
+   "run": 1,
+   "host": "10.10.0.241",
+   "t_start": 1790397816.419,
+   "t_end": 1790398396.986,
+   "expect": true
+  },
+  {
+   "signal": "slow_network_sweep",
+   "run": 2,
+   "host": "10.10.0.242",
+   "t_start": 1790397816.421,
+   "t_end": 1790398396.892,
+   "expect": true
+  },
+  {
+   "signal": "slow_network_sweep",
+   "run": 3,
+   "host": "10.10.0.243",
+   "t_start": 1790397816.443,
+   "t_end": 1790398397.0,
+   "expect": true
+  },
+  {
+   "signal": "slow_network_sweep",
+   "run": 4,
+   "host": "10.10.0.244",
+   "t_start": 1790397816.449,
+   "t_end": 1790398396.994,
+   "expect": true
+  },
+  {
+   "signal": "slow_network_sweep",
+   "run": 5,
+   "host": "10.10.0.245",
+   "t_start": 1790397816.449,
+   "t_end": 1790398396.968,
+   "expect": true
+  },
+  {
+   "signal": "slow_port_scan",
+   "run": 1,
+   "host": "10.10.0.236",
+   "t_start": 1790397816.416,
+   "t_end": 1790398279.562,
+   "expect": true
+  },
+  {
+   "signal": "slow_port_scan",
+   "run": 2,
+   "host": "10.10.0.237",
+   "t_start": 1790397816.418,
+   "t_end": 1790398279.592,
+   "expect": true
+  },
+  {
+   "signal": "slow_port_scan",
+   "run": 3,
+   "host": "10.10.0.238",
+   "t_start": 1790397816.421,
+   "t_end": 1790398279.524,
+   "expect": true
+  },
+  {
+   "signal": "slow_port_scan",
+   "run": 4,
+   "host": "10.10.0.239",
+   "t_start": 1790397816.427,
+   "t_end": 1790398279.589,
+   "expect": true
+  },
+  {
+   "signal": "slow_port_scan",
+   "run": 5,
+   "host": "10.10.0.240",
+   "t_start": 1790397816.442,
+   "t_end": 1790398279.592,
+   "expect": true
+  },
+  {
+   "signal": "volume_anomaly",
+   "run": 1,
+   "host": "10.10.0.231",
+   "t_start": 1790398080.564,
+   "t_end": 1790398112.003,
+   "expect": true
+  },
+  {
+   "signal": "volume_anomaly",
+   "run": 2,
+   "host": "10.10.0.232",
+   "t_start": 1790398466.268,
+   "t_end": 1790398497.709,
+   "expect": true
+  },
+  {
+   "signal": "volume_anomaly",
+   "run": 3,
+   "host": "10.10.0.233",
+   "t_start": 1790398852.001,
+   "t_end": 1790398883.444,
+   "expect": true
+  },
+  {
+   "signal": "volume_anomaly",
+   "run": 4,
+   "host": "10.10.0.234",
+   "t_start": 1790399237.659,
+   "t_end": 1790399269.1,
+   "expect": true
+  },
+  {
+   "signal": "volume_anomaly",
+   "run": 5,
+   "host": "10.10.0.235",
+   "t_start": 1790399623.333,
+   "t_end": 1790399654.773,
+   "expect": true
+  }
+ ]
+}

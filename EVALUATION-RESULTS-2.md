@@ -749,7 +749,77 @@ crossed the anomaly line (mean + z × stdev), not the top of the hour, so a
 campaign's tactic chain no longer starts with "Exfiltration".
 
 A second five-run battery on this code was started at 10:13 and was still
-running when the session ended; its results are recorded in the next session.
+running when the session ended; its results are recorded below.
+
+### 7.2 re-run on the final code (10:13, collected 2 October 2026)
+
+`eval/results/battery-20260926-101333.json`, capture and labels beside the
+first battery's. Nothing was lost to the sweep fix: **every signal is still
+5/5, and the benign host still raised nothing.**
+
+| Signal | First battery (05:43) median / p95 | Re-run (10:13) median / p95 |
+|---|---|---|
+| threat_intel | 11.6 / 11.6 s | 11.6 / 11.9 s |
+| malicious_domain | 12.2 / 12.2 s | 12.4 / 13.2 s |
+| dns_tunneling | 9.5 / 11.6 s | 11.6 / 11.8 s |
+| dga | 8.5 / 10.5 s | 10.5 / 10.6 s |
+| dns_bypass | 11.6 / 11.7 s | 11.7 / 12.1 s |
+| ids_alert | 14.1 / 15.1 s | 15.1 / 15.1 s |
+| new_device | 43.2 / 45.1 s | 31.2 / 46.1 s |
+| brute_force | 75.6 / 76.6 s | 77.6 / 77.6 s |
+| port_scan | 91.2 / 91.2 s | 92.2 / 93.3 s |
+| network_sweep | 91.1 / 91.2 s | 92.2 / 93.2 s |
+| volume_anomaly | 105.5 / 105.5 s | 106.5 / 107.5 s |
+| beacon | 152.0 / 154.8 s | 139.2 / 155.1 s |
+| campaign | 151.2 / 154.1 s * | 138.8 / 154.4 s |
+| slow_port_scan | 486.2 / 486.2 s | 494.2 / 494.3 s |
+| slow_network_sweep | 580.5 / 580.6 s | 580.5 / 580.6 s |
+
+\* From `campaigns.created_at`, as explained under 7.2 below; the re-run's
+battery already measures it that way.
+
+**Replayed on the Mac** (`tools/replay.py`, `eval/results/replay-battery-20260926-101333.json`,
+result sha256 `ab6ec0a2…`): 1,546 events over 1,793 s of capture, 140 engine
+cycles, 6.0 s to replay. All 45 scored runs (nine replayable signals × 5)
+detected and attributed to the right run; the benign host correct;
+volume_anomaly not replayable (needs seven days of hourly rollups), as before.
+The live and offline pipelines agree on this capture too.
+
+**Clean-up:** the 136 incidents still open on `[TEST HARNESS] battery …`
+devices (this run's and the earlier batteries') were resolved with a note
+and an `incident.status_change` audit row each - the same writes the
+console's own resolve makes. Database backed up first
+(`securepi.db.pre-battery-cleanup-20261002-170751.bak`, mode 600).
+
+### CODEBASE_AUDIT.md H1 and H2 (2 October 2026, before 7.0's code freeze)
+
+**H2, default-deny input chain - deployed and verified live.** Before the
+change, `ss -tulpn` showed sshd on `0.0.0.0:22`, i.e. reachable from the
+uplink Wi-Fi (Babu_Home); everything else was already bound to `10.10.0.1`
+or loopback. Applied with `gateway/apply-input-chain.sh` (swaps only the
+input chain, so the live sets were untouched; automatic undo armed) after
+checking that the live `/etc/nftables.conf` was identical to the repo's
+pre-change copy. Checked before confirming:
+
+| From | Check | Result |
+|---|---|---|
+| Mac, management cable | new SSH connection | works |
+| Mac, management cable | console through a fresh SSH tunnel | 200 |
+| Mac on Babu_Home (the uplink network) | TCP 22 on the gateway's WAN address | **blocked** (was open) |
+| Mac on Babu_Home | ping the gateway's WAN address | dropped |
+| Galaxy A33 joining SecurePi-Test | DHCP | lease 10.10.0.50 |
+| A33 | DNS / internet | example.com resolved and answered; doubleclick.net blocked |
+| A33 | console 8000, CA download 8081 | open |
+| A33 | SSH 22, DNS-filter admin 3000 | closed |
+| A33, enrolled for inspection | HTTPS page in Chrome via the proxy | loaded; dpi-redirect counter 24 packets |
+
+Then confirmed: `/etc/nftables.conf` is now the repo file (passes
+`nft -c`), the old one kept as `/etc/nftables.conf.pre-input-drop-*.bak`.
+The phone was un-enrolled afterwards. 7 new structural tests
+(`tests/test_firewall_config.py`).
+
+**H1, console path re-enabling flushed inspection - fixed in code, 3 new
+tests (failed before the fix), not yet deployed** (`make deploy` pending).
 
 ### 7.5 (first pass) - blocklist utility and overlap
 

@@ -1271,6 +1271,50 @@ can see (one long-lived UDP flow to one address) but doesn't flag.
   real household use this is weak evidence; the top-50 breakage test is the
   stronger measure.
 
+### 7.8 — Performance (2 October 2026)
+
+**Storage before and after retention** (a copy of the live database, 2 Oct
+17:23; `app/retention.py`'s own `run_retention()` with a moved clock, then
+`VACUUM`):
+
+| State | File | Events | Notes |
+|---|---|---|---|
+| As it is | 29.4 MB | 62,269 | 1.5 MB of free pages - retention had already removed 12,822 old flows that morning; SQLite reuses freed pages rather than shrinking the file |
+| Compacted | 24.5 MB | 62,269 | what is actually in use |
+| Retention as of +14 days | 14.9 MB | 32,759 | 29,510 events past their window removed |
+| Retention as of +30 days | 7.0 MB | 7,670 | 54,599 removed; what stays is evidence still linked to kept incidents (365 days) |
+
+Retention works as designed. The file never shrinks on its own (no
+auto-`VACUUM`), so its size reflects the busiest period within the retention
+windows - tonight's tests alone added ~330,000 events (below), which the
+seven-day run's storage-growth figure will show.
+
+**Console API latency** (`gateway/dash_latency.py`: 15 sequential requests per
+endpoint through the real HTTPS server on the gateway, a short-lived session
+made with the app's own `session_auth`, deleted afterwards). Measured twice,
+at very different data volumes:
+
+| Endpoint | p50 / p95 at ~80k events in 24 h (18:55, benchmark running) | p50 / p95 at 337k events in 24 h (21:26) |
+|---|---|---|
+| `/api/overview?range=1h` | 314 / 1,544 ms | 234 / 533 ms |
+| `/api/overview?range=24h` | 309 / 1,484 ms | **926 / 1,132 ms** |
+| `/api/overview?range=7d` | 351 / 1,704 ms | **963 / 1,177 ms** |
+| `/api/filtering/analytics?range=24h` | 312 / 1,515 ms | **872 / 1,089 ms** |
+| `/api/filtering/analytics?range=7d` | 382 / 2,125 ms | **946 / 1,082 ms** |
+| `/api/heatmap` | 208 / 1,718 ms | 554 / 649 ms |
+| `/api/hunt?q=dns` | 752 / 2,565 ms | 392 / 829 ms |
+| `/api/devices` | 124 / 462 ms | 266 / 416 ms |
+| `/api/filtering/lists/health` | 250 / 632 ms | 396 / 507 ms |
+| `/api/incidents`, policies, audit, weekly report, device series/baseline, resolver | 43-122 / 47-405 ms | 44-106 / 47-222 ms |
+
+Two effects. Under concurrent load (the benchmark pushing traffic through
+the gateway) the tail grows to 1.5-2.6 s; and the windowed aggregates grow
+with the number of events in their window - the 24 h and 7 d views tripled
+when tonight's tests put 337,000 events into the last day. That is the
+audit's M-finding ("dashboard polling scans entire time windows every 5 s")
+measured: fine at household volume, about a second per refresh at a busy
+day's volume. Precomputing these from the hourly rollups would remove it.
+
 ### 7.6 — Identity accuracy (2 October 2026, before the forward run)
 
 Ground truth: the physical devices that have joined SecurePi-Test, from their

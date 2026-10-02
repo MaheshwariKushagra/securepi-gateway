@@ -1,0 +1,135 @@
+{
+ "/api/overview?range=1h": {
+  "status": 200,
+  "p50_ms": 234.1,
+  "p95_ms": 532.7,
+  "max_ms": 532.7,
+  "bytes": 9211
+ },
+ "/api/overview?range=24h": {
+  "status": 200,
+  "p50_ms": 925.5,
+  "p95_ms": 1132.2,
+  "max_ms": 1132.2,
+  "bytes": 9497
+ },
+ "/api/overview?range=7d": {
+  "status": 200,
+  "p50_ms": 963.4,
+  "p95_ms": 1177.2,
+  "max_ms": 1177.2,
+  "bytes": 10055
+ },
+ "/api/devices": {
+  "status": 200,
+  "p50_ms": 266.4,
+  "p95_ms": 415.7,
+  "max_ms": 415.7,
+  "bytes": 46485
+ },
+ "/api/incidents": {
+  "status": 200,
+  "p50_ms": 76.8,
+  "p95_ms": 221.3,
+  "max_ms": 221.3,
+  "bytes": 370280
+ },
+ "/api/incidents?status=new": {
+  "status": 200,
+  "p50_ms": 63.1,
+  "p95_ms": 192.0,
+  "max_ms": 192.0,
+  "bytes": 220197
+ },
+ "/api/heatmap": {
+  "status": 200,
+  "p50_ms": 553.6,
+  "p95_ms": 649.2,
+  "max_ms": 649.2,
+  "bytes": 469
+ },
+ "/api/dns-status": {
+  "status": 200,
+  "p50_ms": 43.8,
+  "p95_ms": 565.8,
+  "max_ms": 565.8,
+  "bytes": 40
+ },
+ "/api/filtering/analytics?range=24h": {
+  "status": 200,
+  "p50_ms": 871.6,
+  "p95_ms": 1088.5,
+  "max_ms": 1088.5,
+  "bytes": 2277
+ },
+ "/api/filtering/analytics?range=7d": {
+  "status": 200,
+  "p50_ms": 945.6,
+  "p95_ms": 1082.4,
+  "max_ms": 1082.4,
+  "bytes": 3298
+ },
+ "/api/filtering/resolver?range=24h": {
+  "status": 200,
+  "p50_ms": 105.5,
+  "p95_ms": 190.3,
+  "max_ms": 190.3,
+  "bytes": 476
+ },
+ "/api/filtering/lists/health": {
+  "status": 200,
+  "p50_ms": 396.4,
+  "p95_ms": 507.0,
+  "max_ms": 507.0,
+  "bytes": 2744
+ },
+ "/api/devices/2/series?range=24h": {
+  "status": 200,
+  "p50_ms": 89.9,
+  "p95_ms": 218.0,
+  "max_ms": 218.0,
+  "bytes": 461
+ },
+ "/api/devices/2/baseline": {
+  "status": 200,
+  "p50_ms": 44.0,
+  "p95_ms": 134.1,
+  "max_ms": 134.1,
+  "bytes": 86
+ },
+ "/api/incidents/737": {
+  "status": 405,
+  "p50_ms": 43.6,
+  "p95_ms": 45.8,
+  "max_ms": 45.8,
+  "bytes": 0
+ },
+ "/api/hunt?q=dns": {
+  "status": 200,
+  "p50_ms": 391.7,
+  "p95_ms": 829.1,
+  "max_ms": 829.1,
+  "bytes": 33737
+ },
+ "/api/policies?status=active": {
+  "status": 200,
+  "p50_ms": 44.4,
+  "p95_ms": 46.7,
+  "max_ms": 46.7,
+  "bytes": 594
+ },
+ "/api/reports/weekly": {
+  "status": 200,
+  "p50_ms": 89.4,
+  "p95_ms": 194.2,
+  "max_ms": 194.2,
+  "bytes": 2355
+ },
+ "/api/audit?limit=100": {
+  "status": 200,
+  "p50_ms": 45.2,
+  "p95_ms": 133.1,
+  "max_ms": 133.1,
+  "bytes": 16387
+ }
+}

@@ -1,0 +1,8 @@
+1790956015 cloudflare doh=https://mozilla.cloudflare-dns.com/dns-query via 1.1.1.1 curl_exit=6 http=000 verdict=blocked
+1790956020 google doh=https://dns.google/dns-query via 8.8.8.8 curl_exit=6 http=000 verdict=blocked
+1790956024 quad9 doh=https://dns.quad9.net/dns-query via 9.9.9.9 curl_exit=6 http=000 verdict=blocked
+1790956028 dns.sb doh=https://doh.dns.sb/dns-query via 185.222.222.222 curl_exit=6 http=000 verdict=blocked
+1790956032 mullvad doh=https://dns.mullvad.net/dns-query via 194.242.2.2 curl_exit=6 http=000 verdict=blocked
+1790956036 alidns doh=https://dns.alidns.com/dns-query via 223.5.5.5 curl_exit=6 http=000 verdict=blocked
+1790956040 adguard doh=https://dns.adguard-dns.com/dns-query via 94.140.14.14 curl_exit=6 http=000 verdict=blocked
+1790956044 nextdns doh=https://dns.nextdns.io/dns-query via 45.90.28.0 curl_exit=6 http=000 verdict=blocked

@@ -1,0 +1,170 @@
+{
+ "distinct_domains": 1348,
+ "total_queries": 16157,
+ "domains_blocked_by_any_list": 130,
+ "queries_blocked_by_any_list": 2170,
+ "per_list": [
+  {
+   "id": 1,
+   "name": "AdGuard DNS filter",
+   "rules_count": 177575,
+   "parsed_rules": 177118,
+   "skipped_rules": 512,
+   "domains_blocked": 85,
+   "queries_blocked": 1217,
+   "unique_domains": 2,
+   "unique_queries": 17,
+   "marginal_utility_pct": 0.78
+  },
+  {
+   "id": 2,
+   "name": "AdAway Default Blocklist",
+   "rules_count": 6540,
+   "parsed_rules": 6540,
+   "skipped_rules": 0,
+   "domains_blocked": 38,
+   "queries_blocked": 536,
+   "unique_domains": 0,
+   "unique_queries": 0,
+   "marginal_utility_pct": 0.0
+  },
+  {
+   "id": 1789173079,
+   "name": "HaGeZi Pro",
+   "rules_count": 227573,
+   "parsed_rules": 227572,
+   "skipped_rules": 0,
+   "domains_blocked": 118,
+   "queries_blocked": 1904,
+   "unique_domains": 21,
+   "unique_queries": 540,
+   "marginal_utility_pct": 24.88
+  },
+  {
+   "id": 1789173080,
+   "name": "OISD Big",
+   "rules_count": 244739,
+   "parsed_rules": 244464,
+   "skipped_rules": 0,
+   "domains_blocked": 70,
+   "queries_blocked": 1055,
+   "unique_domains": 0,
+   "unique_queries": 0,
+   "marginal_utility_pct": 0.0
+  },
+  {
+   "id": 1789173081,
+   "name": "Peter Lowe List",
+   "rules_count": 3553,
+   "parsed_rules": 3551,
+   "skipped_rules": 0,
+   "domains_blocked": 55,
+   "queries_blocked": 991,
+   "unique_domains": 1,
+   "unique_queries": 20,
+   "marginal_utility_pct": 0.92
+  },
+  {
+   "id": 1789385985,
+   "name": "HaGeZi Encrypted DNS Bypass (DoH)",
+   "rules_count": 3317,
+   "parsed_rules": 3316,
+   "skipped_rules": 0,
+   "domains_blocked": 4,
+   "queries_blocked": 104,
+   "unique_domains": 4,
+   "unique_queries": 104,
+   "marginal_utility_pct": 4.79
+  },
+  {
+   "id": 1789385987,
+   "name": "Offline Threat Intel (abuse.ch, via SecurePi)",
+   "rules_count": 7593,
+   "parsed_rules": 8830,
+   "skipped_rules": 0,
+   "domains_blocked": 0,
+   "queries_blocked": 0,
+   "unique_domains": 0,
+   "unique_queries": 0,
+   "marginal_utility_pct": 0.0
+  }
+ ],
+ "overlap_pct_row_also_blocked_by_column": {
+  "1": {
+   "1": 100.0,
+   "2": 37.6,
+   "1789173079": 91.8,
+   "1789173080": 69.4,
+   "1789173081": 48.2,
+   "1789385985": 0.0,
+   "1789385987": 0.0
+  },
+  "2": {
+   "1": 84.2,
+   "2": 100.0,
+   "1789173079": 86.8,
+   "1789173080": 81.6,
+   "1789173081": 78.9,
+   "1789385985": 0.0,
+   "1789385987": 0.0
+  },
+  "1789173079": {
+   "1": 66.1,
+   "2": 28.0,
+   "1789173079": 100.0,
+   "1789173080": 59.3,
+   "1789173081": 41.5,
+   "1789385985": 0.0,
+   "1789385987": 0.0
+  },
+  "1789173080": {
+   "1": 84.3,
+   "2": 44.3,
+   "1789173079": 100.0,
+   "1789173080": 100.0,
+   "1789173081": 47.1,
+   "1789385985": 0.0,
+   "1789385987": 0.0
+  },
+  "1789173081": {
+   "1": 74.5,
+   "2": 54.5,
+   "1789173079": 89.1,
+   "1789173080": 60.0,
+   "1789173081": 100.0,
+   "1789385985": 0.0,
+   "1789385987": 0.0
+  },
+  "1789385985": {
+   "1": 0.0,
+   "2": 0.0,
+   "1789173079": 0.0,
+   "1789173080": 0.0,
+   "1789173081": 0.0,
+   "1789385985": 100.0,
+   "1789385987": 0.0
+  },
+  "1789385987": {
+   "1": null,
+   "2": null,
+   "1789173079": null,
+   "1789173080": null,
+   "1789173081": null,
+   "1789385985": null,
+   "1789385987": null
+  }
+ },
+ "generated": "2026-10-02 21:09:00",
+ "history_from": "2026-09-25 23:42",
+ "history_to": "2026-10-02 21:08",
+ "plain_domain_lines_cover_subdomains": true,
+ "agreement_with_the_filter": {
+  "blocked_credited_queries": 2108,
+  "blocked_credited_agree_pct": 97.87,
+  "allowed_queries": 14032,
+  "allowed_agree_pct": 99.56
+ },
+ "excluded_devices": [
+  99
+ ]
+}

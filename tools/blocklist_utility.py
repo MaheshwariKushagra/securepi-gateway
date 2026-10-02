@@ -66,13 +66,15 @@ print(json.dumps([{k: f.get(k) for k in ("id", "name", "url", "enabled", "rules_
 EXPORT_SNIPPET = r"""
 import json, sqlite3, sys, time
 days = float(sys.argv[1])
+exclude = [int(x) for x in sys.argv[2].split(",") if x] if len(sys.argv) > 2 else []
 c = sqlite3.connect("/var/lib/securepi/securepi.db")
 since = time.time() - days * 86400
 rows = c.execute(
     "SELECT lower(rtrim(dns_rrname, '.')), blocked, dns_filter_list_id, count(*)"
     "  FROM events"
     " WHERE event_type = 'dns_query' AND ts > ? AND dns_rrname IS NOT NULL"
-    " GROUP BY 1, 2, 3", (since,)).fetchall()
+    "   AND (device_id IS NULL OR device_id NOT IN (%s))"
+    " GROUP BY 1, 2, 3" % ",".join(str(d) for d in exclude or [-1]), (since,)).fetchall()
 span = c.execute("SELECT min(ts), max(ts) FROM events WHERE event_type='dns_query' AND ts > ?",
                  (since,)).fetchone()
 print(json.dumps({"since": span[0], "until": span[1], "rows": rows}))
@@ -88,7 +90,7 @@ def _ssh_python(snippet, *args):
     return json.loads(out.stdout)
 
 
-def fetch_inputs(workdir, days):
+def fetch_inputs(workdir, days, exclude=()):
     os.makedirs(os.path.join(workdir, "lists"), exist_ok=True)
     lists = _ssh_python(LISTS_SNIPPET)
     for lst in lists:
@@ -108,7 +110,7 @@ def fetch_inputs(workdir, days):
     with open(os.path.join(workdir, "lists.json"), "w") as f:
         json.dump(lists, f, indent=1)
 
-    export = _ssh_python(EXPORT_SNIPPET, str(days))
+    export = _ssh_python(EXPORT_SNIPPET, str(days), ",".join(str(d) for d in exclude))
     with open(os.path.join(workdir, "queries.json"), "w") as f:
         json.dump(export, f)
     print("  exported %d (domain, verdict, list) rows" % len(export["rows"]))
@@ -322,11 +324,15 @@ def main():
                     help="local directory for downloaded lists and the query export (kept out of the repo)")
     ap.add_argument("--days", type=float, default=7.0, help="how many days of query history to use")
     ap.add_argument("--offline", action="store_true", help="reuse what is already in --workdir")
+    ap.add_argument("--exclude-device", action="append", type=int, default=[],
+                    help="leave out a device's queries - e.g. one deliberately run with filtering off "
+                         "(step 7.5's benchmark Mac), whose allowed ad lookups would count as the "
+                         "filter disagreeing with its own lists")
     args = ap.parse_args()
 
     if not args.offline:
         print("== fetching lists and query history")
-        fetch_inputs(args.workdir, args.days)
+        fetch_inputs(args.workdir, args.days, args.exclude_device)
 
     with open(os.path.join(args.workdir, "lists.json")) as f:
         lists = json.load(f)
@@ -353,6 +359,7 @@ def main():
         "history_to": time.strftime("%Y-%m-%d %H:%M", time.localtime(export["until"])),
         "plain_domain_lines_cover_subdomains": subtree,
         "agreement_with_the_filter": agree,
+        "excluded_devices": args.exclude_device,
     })
 
     print("\nhistory %s -> %s: %d distinct domains, %d queries" % (

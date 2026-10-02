@@ -1,0 +1,21 @@
+== 1790955136 private DNS = dns.google
+fresh_fail
+fresh_fail
+fresh_fail
+ping: unknown host doubleclick.net
+== 1790955206 private DNS = dot.sb
+fresh_fail
+fresh_fail
+fresh_fail
+ping: unknown host doubleclick.net
+== 1790955275 private DNS = one.one.one.one
+fresh_fail
+fresh_fail
+fresh_fail
+ping: unknown host doubleclick.net
+== 1790955330 restored: mode=null spec=null
+== after restore
+fresh_ok
+fresh_ok
+fresh_ok
+PING doubleclick.net (127.0.0.1) 56(84) bytes of data.

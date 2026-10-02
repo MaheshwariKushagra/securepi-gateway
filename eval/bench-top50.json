@@ -1,0 +1,239 @@
+{
+ "about": "First 50 loadable homepages from Tranco list Y83YG (picked with filtering off).",
+ "sites": [
+  "https://google.com/",
+  "https://cloudflare.com/",
+  "https://facebook.com/",
+  "https://amazonaws.com/",
+  "https://microsoft.com/",
+  "https://youtube.com/",
+  "https://apple.com/",
+  "https://instagram.com/",
+  "https://mail.ru/",
+  "https://fbcdn.net/",
+  "https://twitter.com/",
+  "https://dzen.ru/",
+  "https://linkedin.com/",
+  "https://office.com/",
+  "https://live.com/",
+  "https://amazon.com/",
+  "https://azure.com/",
+  "https://github.com/",
+  "https://wikipedia.org/",
+  "https://bing.com/",
+  "https://whatsapp.net/",
+  "https://fastly.net/",
+  "https://doubleclick.net/",
+  "https://cloud.microsoft/",
+  "https://sharepoint.com/",
+  "https://netflix.com/",
+  "https://gandi.net/",
+  "https://youtu.be/",
+  "https://x.com/",
+  "https://wordpress.org/",
+  "https://digicert.com/",
+  "https://skype.com/",
+  "https://icloud.com/",
+  "https://pinterest.com/",
+  "https://tiktok.com/",
+  "https://whatsapp.com/",
+  "https://googledomains.com/",
+  "https://cloudflare.net/",
+  "https://yahoo.com/",
+  "https://googlesyndication.com/",
+  "https://roblox.com/",
+  "https://endpoints.news/",
+  "https://adobe.com/",
+  "https://spotify.com/",
+  "https://wa.me/",
+  "https://myfritz.net/",
+  "https://zoom.us/",
+  "https://ntp.org/",
+  "https://qq.com/",
+  "https://nginx.org/"
+ ],
+ "skipped": [
+  {
+   "domain": "gstatic.com",
+   "status": 404,
+   "error": null,
+   "title": "Error 404 (Not Found)!!1",
+   "text_len": 92
+  },
+  {
+   "domain": "googleapis.com",
+   "status": 404,
+   "error": null,
+   "title": "Error 404 (Not Found)!!1",
+   "text_len": 92
+  },
+  {
+   "domain": "akamai.net",
+   "status": null,
+   "error": "Page.goto: net::ERR_NAME_NOT_RESOLVED at https://akamai.net/",
+   "title": "akamai.net",
+   "text_len": 103
+  },
+  {
+   "domain": "ezviz7.com",
+   "status": null,
+   "error": "Page.goto: net::ERR_NAME_NOT_RESOLVED at https://ezviz7.com/",
+   "title": "ezviz7.com",
+   "text_len": 103
+  },
+  {
+   "domain": "domaincontrol.com",
+   "status": null,
+   "error": "Page.goto: net::ERR_CONNECTION_REFUSED at https://domaincontrol.com/",
+   "title": "domaincontrol.com",
+   "text_len": 170
+  },
+  {
+   "domain": "googlevideo.com",
+   "status": null,
+   "error": "Page.goto: net::ERR_CERT_COMMON_NAME_INVALID at https://googlevideo.com/",
+   "title": "Privacy error",
+   "text_len": 315
+  },
+  {
+   "domain": "akamaiedge.net",
+   "status": null,
+   "error": "Page.goto: net::ERR_NAME_NOT_RESOLVED at https://akamaiedge.net/",
+   "title": "akamaiedge.net",
+   "text_len": 107
+  },
+  {
+   "domain": "googletagmanager.com",
+   "status": 404,
+   "error": null,
+   "title": "Error 404 (Not Found)!!1",
+   "text_len": 92
+  },
+  {
+   "domain": "akadns.net",
+   "status": null,
+   "error": "Page.goto: net::ERR_NAME_NOT_RESOLVED at https://akadns.net/",
+   "title": "akadns.net",
+   "text_len": 103
+  },
+  {
+   "domain": "hicloudcam.com",
+   "status": null,
+   "error": "Page.goto: net::ERR_NAME_NOT_RESOLVED at https://hicloudcam.com/",
+   "title": "hicloudcam.com",
+   "text_len": 107
+  },
+  {
+   "domain": "gtld-servers.net",
+   "status": null,
+   "error": "Page.goto: net::ERR_NAME_NOT_RESOLVED at https://gtld-servers.net/",
+   "title": "gtld-servers.net",
+   "text_len": 109
+  },
+  {
+   "domain": "appsflyersdk.com",
+   "status": 403,
+   "error": null,
+   "title": "",
+   "text_len": 226
+  },
+  {
+   "domain": "apple-dns.net",
+   "status": null,
+   "error": "Page.goto: net::ERR_NAME_NOT_RESOLVED at https://apple-dns.net/",
+   "title": "apple-dns.net",
+   "text_len": 106
+  },
+  {
+   "domain": "aaplimg.com",
+   "status": null,
+   "error": "Page.goto: net::ERR_NAME_NOT_RESOLVED at https://aaplimg.com/",
+   "title": "aaplimg.com",
+   "text_len": 104
+  },
+  {
+   "domain": "googleusercontent.com",
+   "status": 404,
+   "error": null,
+   "title": "Error 404 (Not Found)!!1",
+   "text_len": 92
+  },
+  {
+   "domain": "office.net",
+   "status": null,
+   "error": "Page.goto: net::ERR_NAME_NOT_RESOLVED at https://office.net/",
+   "title": "office.net",
+   "text_len": 103
+  },
+  {
+   "domain": "microsoftonline.com",
+   "status": null,
+   "error": "Page.goto: net::ERR_NAME_NOT_RESOLVED at https://microsoftonline.com/",
+   "title": "microsoftonline.com",
+   "text_len": 112
+  },
+  {
+   "domain": "trafficmanager.net",
+   "status": null,
+   "error": "Page.goto: net::ERR_NAME_NOT_RESOLVED at https://trafficmanager.net/",
+   "title": "trafficmanager.net",
+   "text_len": 111
+  },
+  {
+   "domain": "cloudfront.net",
+   "status": null,
+   "error": "Page.goto: net::ERR_NAME_NOT_RESOLVED at https://cloudfront.net/",
+   "title": "cloudfront.net",
+   "text_len": 107
+  },
+  {
+   "domain": "goo.gl",
+   "status": 400,
+   "error": null,
+   "title": "Invalid Dynamic Link",
+   "text_len": 231
+  },
+  {
+   "domain": "gvt1.com",
+   "status": null,
+   "error": "Page.goto: net::ERR_NAME_NOT_RESOLVED at https://gvt1.com/",
+   "title": "gvt1.com",
+   "text_len": 101
+  },
+  {
+   "domain": "windows.net",
+   "status": null,
+   "error": "Page.goto: net::ERR_CERT_COMMON_NAME_INVALID at https://windows.net/",
+   "title": "Privacy error",
+   "text_len": 311
+  },
+  {
+   "domain": "pv-cdn.net",
+   "status": null,
+   "error": "Page.goto: net::ERR_NAME_NOT_RESOLVED at https://pv-cdn.net/",
+   "title": "pv-cdn.net",
+   "text_len": 103
+  },
+  {
+   "domain": "windowsupdate.com",
+   "status": null,
+   "error": "Page.goto: net::ERR_NAME_NOT_RESOLVED at https://windowsupdate.com/",
+   "title": "windowsupdate.com",
+   "text_len": 110
+  },
+  {
+   "domain": "msn.com",
+   "status": 200,
+   "error": null,
+   "title": "MSN | Personalized News, Top Headlines, Live Updates and more",
+   "text_len": 0
+  },
+  {
+   "domain": "root-servers.net",
+   "status": null,
+   "error": "Page.goto: net::ERR_NAME_NOT_RESOLVED at https://root-servers.net/",
+   "title": "root-servers.net",
+   "text_len": 109
+  }
+ ]
+}

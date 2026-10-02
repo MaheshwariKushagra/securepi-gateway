@@ -1040,6 +1040,237 @@ The raw IDS alerts from the same devices were 80 and 128: dedup is what
 stops a signal that fires every cycle while a scan lasts from producing
 hundreds of alerts per attack.
 
+### 7.5 — Ad-blocking benchmark (2 October 2026)
+
+**Set-up.** `tools/adblock_bench.py` with Playwright's Chromium 153 (new
+headless mode, ordinary Chrome user agent, 1366×768) on the Mac, joined to
+SecurePi-Test as registry device 99. 20 ad-heavy sites (`eval/bench-sites.json`:
+Indian and international news, sport, weather, tech, entertainment) × 3 runs ×
+4 conditions = **240 page loads**, conditions interleaved run by run so time of
+day can't favour one (`tools/bench_run.sh`). Each condition is the Mac's
+**real filtering profile**, applied through the orchestrator, and checked
+with the DNS filter's own verdict for `doubleclick.net` before every block:
+
+| Condition | Gateway profile | Browser |
+|---|---|---|
+| none | Unrestricted | plain |
+| tier1 | Standard (the network blocklists) | plain |
+| tier1_lists | Strict privacy (+ 5.5 vendor-telemetry lists) | plain |
+| ubol (reference) | Unrestricted | **uBlock Origin Lite** 2026.930.1227 |
+
+Every load is a fresh browser process with a fresh profile, Chromium's own DNS
+client forced on, so no DNS answer cached under one condition leaks into the
+next, and QUIC off. Load until `load` (45 s limit) + 5 s for late ad slots;
+each load in its own process with a hard 150 s limit. Tracker companies:
+Disconnect's tracking-protection list (CC BY-NC-SA 4.0, © Disconnect, Inc.;
+Advertising, Analytics, Social, Fingerprinting, Cryptomining categories),
+downloaded at run time, not committed. Raw data `eval/results/bench/*.jsonl`,
+summary `eval/results/bench/summary.json` (medians per site over its runs,
+then summed or medianed across sites).
+
+**Deviation, stated:** the plan's reference is uBlock Origin. uBO 1.75 is a
+Manifest V2 extension and current Chromium no longer loads MV2 at all (tried,
+including the old override flags: no service worker, no background page).
+The reference is therefore **uBlock Origin Lite**, the same author's MV3
+version, with its default lists and filtering mode.
+
+| Condition | Requests | Third-party requests | Bytes | Third-party bytes | Tracker companies | Median onLoad | Median LCP | `load` never fired (of 60) |
+|---|---|---|---|---|---|---|---|---|
+| none | 13,561 | 12,250 | 117.2 MB | 75.1 MB | 971 | 3.9 s | 1.20 s | **19** |
+| **tier1** | 2,262 (**−83%**) | 844 (**−93%**) | 49.8 MB (**−58%**) | 24.8 MB (**−67%**) | 9 (**−99%**) | 1.5 s | 1.06 s | 0 |
+| tier1_lists | 2,268 (−83%) | 859 (−93%) | 49.8 MB (−57%) | 24.4 MB (−68%) | 9 (−99%) | 1.5 s | 1.07 s | 0 |
+| ubol | 2,393 (−82%) | 962 (−92%) | 69.1 MB (−41%) | 28.6 MB (−62%) | 41 (−96%) | 1.5 s | 0.86 s | 0 |
+
+(Requests and bytes: those that completed, i.e. reached the network. A
+DNS-blocked request fails with no answer; a uBO-Lite-blocked one never
+leaves the browser.) Per site, Tier 1 reached **no more tracker companies
+than uBO Lite on 20 of 20 sites** (median 0 vs 2 per site).
+
+- **Network DNS filtering alone matches the in-browser blocker** on requests,
+  and beats it on bytes and tracker companies: the gateway's lists catch
+  tracker domains uBO Lite's default rule sets let through.
+- **Pages finish loading.** Unfiltered, 19 of 60 loads never reached the
+  `load` event in 45 s (endless ad auctions); filtered, none did. Median
+  onLoad 3.9 s → 1.5 s.
+- **LCP** improves less (1.20 → 1.06 s): the largest element is usually
+  first-party. uBO Lite does best on LCP (0.86 s) - it also hides
+  cosmetic ad containers, which DNS filtering cannot.
+- **tier1_lists ≈ tier1**, as expected: the 5.5 lists target device
+  telemetry (Apple, Samsung, Xiaomi, Windows, TikTok), not web ads.
+- Two of the 240 loads hit the 150 s limit (hindustantimes.com run 1 and
+  indianexpress.com run 2, both unfiltered); those sites' figures use their
+  remaining runs.
+- Building the harness turned up two Playwright/Chromium hazards worth
+  knowing: a page can wedge a call that has no timeout (one load sat 8
+  minutes), and Chromium leaves its process group and keeps inherited pipes
+  open - hence one process per load, results through a file, and every
+  process using the load's profile killed at the end.
+
+**Side effect, recorded as held-out evidence.** Running the benchmark *was*
+240 ad-heavy page loads from a real browser on a real device - traffic the
+7.3 fixes were never tuned on. The final engine raised on the Mac: two
+`ids_other` (priority-2 rules "ET INFO Observed DNS Query to .biz TLD",
+"ET DNS Query for .cc TLD"), one `network_sweep` on 443 (516 SYN-only
+attempts to ad servers that never answered, during an unfiltered run), one
+`dga` under `omnitagjs.com` (ad tech; entropy 3.3, like the `whatsapp.com`
+case) and `malicious_domain` (56 distinct blocked domains). Not acted on
+mid-evaluation: severity metadata can't separate the TLD rules from the
+battery's own attack rule (2100498 is also `signature_severity
+Informational`, class `bad-unknown`), and the frozen seven-day run will
+measure how often each happens in ordinary use.
+
+#### DNS latency
+
+**From the DNS filter's own records** (`dns_elapsed_ms`, 12 Sep - 2 Oct,
+`eval/results/dns-elapsed-history-20261002.json`): 91% of answers come from
+cache in ~0.1 ms. Uncached answers: median 43 ms, p95 104 ms; all answers p95
+36 ms - **excluding 15 Sep 14:00-16:30**, the afternoon of the uplink-roaming
+fix, when uncached p95 reached 12.4 s. Only 18 answers predate 5.5's deploy
+(the field wasn't captured), so a before/after from history isn't possible.
+
+**Controlled A/B** (`gateway/dns_ab.py`, `eval/results/dns-latency-ab-20261002.json`):
+150 names from Tranco ranks 1,000-3,600 (none the gateway blocks), `dig` from
+the gateway, the DNS filter's cache cleared before each cold pass.
+
+| Resolver | Cold p50 | Cold p95 | Cold max | Warm p50 | Warm p95 | Timeouts |
+|---|---|---|---|---|---|---|
+| Gateway as configured | 68 ms | 411 ms | 1,911 ms | 0 ms | 0 ms | 0 |
+| Gateway + 5.5 tuning | **47 ms** | **281 ms** | **494 ms** | 0 ms | 0 ms | 0 |
+| ISP resolver (home router) | 61 ms | 894 ms | 2,457 ms | 15 ms | 394 ms | 4 |
+
+**Found on the way: 5.5's resolver tuning was never switched on.** The plan
+note for 5.5 says the apply endpoint is confirm-gated and "has not been called
+against the live gateway"; the live resolver is Cloudflare DoT only,
+load-balanced, no optimistic cache, no fallback. For this measurement it was
+applied for a few minutes (Cloudflare + Quad9 DoT in parallel, Cloudflare and
+Quad9 secondaries as fallback, optimistic caching, DNSSEC) and then **restored
+field for field** (checked: `restored_ok: true`, and read back afterwards).
+It cuts cold-lookup latency ~30% and removes the long tail; whether to keep it
+is the operator's call (it changes DNS for every device), raised with the user.
+
+#### Breakage on the top 50
+
+The first 50 Tranco (list `Y83YG`) domains whose homepage really is a
+website (loads, has a title and text; 26 infrastructure domains skipped,
+recorded in `eval/bench-top50.json`), each loaded unfiltered and under Tier 1
+(`tools/breakage_run.sh`, `eval/results/bench/top50_*.jsonl`). The automatic
+checklist (loaded, title present, at least half the visible text, no
+first-party request newly failing) flagged 16; each was then checked:
+
+- **2 are ad domains themselves** (`doubleclick.net`, `googlesyndication.com`):
+  blocked as intended.
+- **14 flagged only because a first-party *telemetry or ad* subdomain was
+  blocked** (`securemetrics.apple.com`, `target.microsoft.com`,
+  `collector.github.com`, `ad.mail.ru`, `unagi.amazon.com`, `ct.pinterest.com`,
+  `metrics.roblox.com` ...). On all 14 the status and title were identical and
+  the visible text 75-139% of the unfiltered page; the two lowest (google.com
+  0.75 - the blocked host serves the account bar's ad pings; yahoo.com 0.86)
+  were looked at in a screenshot: both fully usable, Yahoo with empty
+  "Advertisement" boxes where its ads were.
+
+**Breakage: 0 of 48 real sites (95% Wilson interval 0-7.4%).** The checklist's
+first-party rule is too broad for a scorer on its own - first-party telemetry
+subdomains are exactly what the lists are for - so it stays a "look at this"
+list, as designed.
+
+#### Per-list marginal utility and overlap (5.4), re-run
+
+`tools/blocklist_utility.py --days 7` (25 Sep - 2 Oct). New option
+`--exclude-device`: the benchmark Mac ran half its loads with filtering off
+on purpose, so the DNS filter *allowed* thousands of ad lookups the lists
+would block, and the tool's own sanity check (its rule parser vs the filter's
+recorded decisions) dropped to 52% on allowed queries. Without it, agreement
+is **97.9% on blocked and 99.6% on allowed** queries, as in the first pass.
+
+| List | Household only (16,157 queries): blocked only by this list | Including the benchmark's ad-heavy browsing (67,338): only this list |
+|---|---|---|
+| HaGeZi Pro | 21 domains, 540 queries - **24.9%** of blocked queries | 99 domains, 1,719 queries (4.9%) |
+| AdGuard DNS filter | 2 domains, 17 queries (0.8%) | 18, 236 (0.7%) |
+| Peter Lowe | 1, 20 (0.9%) | 10, 660 (1.9%) |
+| AdAway | 0 | 11, 203 (0.6%) |
+| OISD Big | 0 | 6, 152 (0.4%) |
+| HaGeZi DoH (bypass) | 4, 104 (4.8%) | 4, 108 |
+| Offline threat intel | 0 (nothing malicious queried) | 0 |
+
+HaGeZi Pro does almost all the unique work; OISD Big and AdAway add nothing
+the others don't on household traffic and very little on heavy browsing - the
+case for dropping them (memory, update time) is now measured, not guessed.
+Results: `eval/results/blocklist-utility-20261002-210900.json` (household)
+and `-210934.json` (inclusive).
+
+#### Tier 2: YouTube pre-rolls in mobile Chrome
+
+30 popular music videos (`eval/youtube-videos.json`, verified via YouTube
+oEmbed), the Galaxy A33's Chrome, driven over USB with the Chrome DevTools
+protocol (`tools/youtube_tier2.py`): each video opened by an ordinary Android
+intent, playback started through YouTube's own player API (muted - Android
+Chrome won't start sound without a real tap), and the player's state read
+every second for 15 s (`ad-showing` class, skip button, ad badge), with a
+screenshot ~5 s in. A detection was checked by eye on screenshots (an ad
+creative on screen instead of the video).
+
+| Condition | Videos | Pre-roll shown | Rate (95% Wilson) |
+|---|---|---|---|
+| DNS filtering only (Tier 1) | 30 | **30** | 100% (89-100%) |
+| HTTPS inspection on (Tier 2) | 29 valid, 1 inconclusive | **0** | 0% (0-12%) |
+
+**First-party ad block rate with Tier 2: 29/29, 95% CI 88-100%.** Three
+things the method had to get right, each found by trying it:
+
+- **Enrolment only affects new connections.** With the phone just enrolled,
+  the first 6 videos still had pre-rolls: Chrome kept reusing connections to
+  `www.youtube.com` and `youtubei.googleapis.com` opened *before* enrolment,
+  which never pass the redirect (the proxy log showed only video hosts).
+  After force-stopping Chrome, none. A user who turns ad removal on mid-session
+  sees it work only after their browser reconnects - worth a line in the
+  console ("restart the browser or wait a few minutes"). The 6 are kept in
+  `eval/results/youtube/tier2_before_chrome_restart/`.
+- Tabs Playwright opened itself over DevTools could not resolve any name on
+  the phone; pages opened by intent could. Hence intents + raw DevTools.
+- A DevTools click is not a real tap, so playback was started through the
+  player API instead (sound off).
+
+`pin_bypass` history checked: the A33's bypasses for YouTube hosts date from
+the 26 September app test and had expired; nothing was bypassed during this run.
+
+#### Bypass matrix
+
+| Bypass | How tested | Blocked? | Detected? | Leaked? |
+|---|---|---|---|---|
+| **DoH to a known resolver** (Cloudflare, Google, Quad9, AdGuard, NextDNS) | curl's own DoH resolver with the provider's address as bootstrap, from the Mac (`tools/bypass_doh.sh`) | yes - TCP 443 to the resolver rejected (`doh-bypass`) | yes - logged per attempt, `dns_bypass` incident #737 | no |
+| **DoH to lesser-known resolvers** (dns.sb, Mullvad, AliDNS) | same | yes - all three addresses are in the daily DoH set | yes | no |
+| **Firefox's own DoH roll-out** (TRR mode 2) | the canary `use-application-dns.net` answered NXDOMAIN, so Firefox stays off DoH - verified in 7.2's battery (`dns_bypass` 10/10 via the IDS's DNS records) | yes | yes | no |
+| **Chrome Secure DNS** | phone, 26 September (Real-device checks): `dns.google` blocked by name; custom `https://8.8.8.8/dns-query` rejected by `doh-bypass`, 87 packets logged | yes | yes | no |
+| **Android Private DNS** `dns.google`, `one.one.one.one` (strict) | Lenovo Tab M7, Android 9 (`tools/bypass_private_dns.sh`) | yes - provider name blocked, so no DNS at all (fails closed) | no rejected connection to log | no |
+| **Android Private DNS** `dot.sb` (strict) | same | yes - DoT 853 rejected (`dot-bypass`, 4 lines, two server addresses); the tablet had no DNS until reverted | yes - `dns_bypass` incident #731 | no |
+| **iCloud Private Relay** | the MacBook queried the canary `mask.icloud.com` 6 times while on SecurePi-Test; the gateway answers it NXDOMAIN, which tells macOS to turn Private Relay off for the network | yes (by Apple's own opt-out) | counted by `dns_bypass` (canary) | no |
+| **VPN** | no VPN app on the test devices; from the Mac: 5 WireGuard handshake-shaped packets to Cloudflare WARP's endpoint, and the setup domains of 8 VPN services (`tools/bypass_vpn.py`) | **no** - forwarded (IDS flow: 5 packets, 950 bytes out); 7 of 8 setup domains resolve (only `api.cloudflareclient.com` is on a list) | **no** - no rule, no incident | **yes** |
+
+Firefox itself could not be run in this environment: both Playwright's
+Firefox and the official release exit at start-up with "Could not find
+profile folder" inside the command sandbox, and running it outside the
+sandbox was refused. curl's DoH resolver does on the wire what Firefox's
+"DoH only" mode does, and the canary behaviour was already measured.
+
+**VPNs are the gap**, as expected for a DNS- and IP-list-based gateway: the
+"HaGeZi DoH/VPN/Proxy Bypass" list exists on the gateway but is disabled,
+and no IDS rule matches a WireGuard handshake. The IoT profile already
+blocks VPN *services* by DNS (`group:privacy`) for devices that have no
+business using one; for everything else a VPN is a user's choice the gateway
+can see (one long-lived UDP flow to one address) but doesn't flag.
+
+#### Privacy-scope canary, allowlist churn
+
+- **Canary:** about 250 checks since 13 September (every 15 minutes while the
+  gateway was up), **zero wrong decisions** - every non-"ok" line is a
+  service start. The forward seven-day run collects its own window
+  (`gateway/collect_run.sh`).
+- **Allowlist churn (5.2):** the only allow/block rules ever created were the
+  phone tests of 26 September (`tiktok.com` ×2) and the 4.1 drift test - no
+  genuine "unbreak this site" request in the period. With only a few days of
+  real household use this is weak evidence; the top-50 breakage test is the
+  stronger measure.
+
 ### 7.6 — Identity accuracy (2 October 2026, before the forward run)
 
 Ground truth: the physical devices that have joined SecurePi-Test, from their
@@ -1051,7 +1282,7 @@ sessions. The forward seven-day run repeats this on the frozen code.
 | Galaxy A33 (test phone) | device 2 | 1 (20 days, persistent per-network random MAC) | Android ✓ | phone ✓ | Samsung ✓ (hostname) |
 | Galaxy S21 FE (`divye-s-s21-fe`) | device 1 | 1 | Android ✓ | phone ✓ | Samsung ✓ (hostname) |
 | Windows laptop (`kaushik-pc`, red-team host) | device 13 | 1 | Windows ✓ | computer ✓ | - |
-| Motorola phone (joined 2 Oct 18:06; OUI `84:B8:B8` = Motorola Mobility) | device 98 | 1 | Android ✓ (medium) | - | - |
+| Lenovo Tab M7 TB-7305X (joined 2 Oct 18:06; OUI `84:B8:B8` = Motorola Mobility, a Lenovo company) | device 98 | 1 | Android ✓ (medium) | - (tablet) | - (Lenovo) |
 | MacBook Air (joined for 7.5) | device 99 | 1 | iOS/macOS ✓ (medium) | - | - |
 
 - **Device identity: 5/5 physical devices are exactly one registry device**
@@ -1061,9 +1292,9 @@ sessions. The forward seven-day run repeats this on the frozen code.
   unattributed, none to another device).
 - **Classification: OS 5/5 right; category 3/5, vendor 2/5 - the rest "unknown",
   none wrong.** The two "unknown" categories are the newcomers: the Mac's
-  MAC is randomised and macOS sends no hostname, and the Motorola's real
-  OUI isn't in the fingerprinter's deliberately short prefix table (a wrong
-  vendor label being worse than none). The Motorola also queried
+  MAC is randomised and macOS sends no hostname, and the tablet's real
+  OUI (registered to Motorola Mobility, Lenovo's subsidiary) isn't in the fingerprinter's deliberately short prefix table (a wrong
+  vendor label being worse than none). The tablet also queried
   `captive.apple.com` as well as Android's check, so its OS confidence stayed
   "medium" - an app's behaviour, not the device's.
 - **Presence was wrong for 2/5 devices (fixed).** The registry treated every

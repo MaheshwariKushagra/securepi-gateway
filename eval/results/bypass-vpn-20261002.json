@@ -1,0 +1,96 @@
+{
+ "dns": {
+  "api.cloudflareclient.com": {
+   "answers": [
+    "0.0.0.0"
+   ],
+   "blocked": true,
+   "resolved": false
+  },
+  "engage.cloudflareclient.com": {
+   "answers": [
+    "162.159.192.1"
+   ],
+   "blocked": false,
+   "resolved": true
+  },
+  "api.protonvpn.ch": {
+   "answers": [
+    "185.159.159.170"
+   ],
+   "blocked": false,
+   "resolved": true
+  },
+  "account.protonvpn.com": {
+   "answers": [
+    "185.159.159.143"
+   ],
+   "blocked": false,
+   "resolved": true
+  },
+  "api.nordvpn.com": {
+   "answers": [
+    "104.16.208.203",
+    "104.19.159.190"
+   ],
+   "blocked": false,
+   "resolved": true
+  },
+  "www.expressvpn.com": {
+   "answers": [
+    "54.230.27.92",
+    "54.230.27.118",
+    "54.230.27.114"
+   ],
+   "blocked": false,
+   "resolved": true
+  },
+  "api.surfshark.com": {
+   "answers": [
+    "104.18.121.34",
+    "104.18.120.34"
+   ],
+   "blocked": false,
+   "resolved": true
+  },
+  "www.windscribe.com": {
+   "answers": [
+    "104.20.2.154",
+    "104.20.1.154"
+   ],
+   "blocked": false,
+   "resolved": true
+  }
+ },
+ "wireguard_probe": {
+  "to": "162.159.192.1:2408",
+  "packets": [
+   {
+    "t": 1790956071.985465,
+    "bytes": 148,
+    "reply_bytes": 0
+   },
+   {
+    "t": 1790956074.990837,
+    "bytes": 148,
+    "reply_bytes": 0
+   },
+   {
+    "t": 1790956077.993598,
+    "bytes": 148,
+    "reply_bytes": 0
+   },
+   {
+    "t": 1790956081.000839,
+    "bytes": 148,
+    "reply_bytes": 0
+   },
+   {
+    "t": 1790956084.004215,
+    "bytes": 148,
+    "reply_bytes": 0
+   }
+  ],
+  "local_port": 58312
+ }
+}

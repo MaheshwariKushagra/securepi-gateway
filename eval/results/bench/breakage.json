@@ -1,0 +1,103 @@
+{
+ "sites": 50,
+ "flagged": [
+  {
+   "url": "https://google.com/",
+   "reasons": [
+    "first-party requests failed: ogads-pa.clients6.google.com"
+   ]
+  },
+  {
+   "url": "https://microsoft.com/",
+   "reasons": [
+    "first-party requests failed: target.microsoft.com"
+   ]
+  },
+  {
+   "url": "https://apple.com/",
+   "reasons": [
+    "first-party requests failed: securemetrics.apple.com"
+   ]
+  },
+  {
+   "url": "https://mail.ru/",
+   "reasons": [
+    "first-party requests failed: a-72582609-6-575-0nm12d-000.pms.mail.ru, ad.mail.ru, an.mail.ru, b2.mail.ru, rs.mail.ru"
+   ]
+  },
+  {
+   "url": "https://linkedin.com/",
+   "reasons": [
+    "first-party requests failed: platform.linkedin.com"
+   ]
+  },
+  {
+   "url": "https://live.com/",
+   "reasons": [
+    "first-party requests failed: eu-office.events.data.microsoft.com"
+   ]
+  },
+  {
+   "url": "https://amazon.com/",
+   "reasons": [
+    "first-party requests failed: fls-na.amazon.com, unagi-na.amazon.com, unagi.amazon.com"
+   ]
+  },
+  {
+   "url": "https://github.com/",
+   "reasons": [
+    "first-party requests failed: collector.github.com"
+   ]
+  },
+  {
+   "url": "https://doubleclick.net/",
+   "reasons": [
+    "did not load (Page.goto: net::ERR_CONNECTION_REFUSED at https://doubleclick.net/)",
+    "visible text 168 vs 4182 unfiltered"
+   ]
+  },
+  {
+   "url": "https://netflix.com/",
+   "reasons": [
+    "first-party requests failed: ichnaea-web.netflix.com"
+   ]
+  },
+  {
+   "url": "https://digicert.com/",
+   "reasons": [
+    "first-party requests failed: smetrics.digicert.com"
+   ]
+  },
+  {
+   "url": "https://pinterest.com/",
+   "reasons": [
+    "first-party requests failed: ct.pinterest.com"
+   ]
+  },
+  {
+   "url": "https://yahoo.com/",
+   "reasons": [
+    "first-party requests failed: c2shb-oao.ssp.yahoo.com, geo.yahoo.com, noa.yahoo.com, opus.analytics.yahoo.com"
+   ]
+  },
+  {
+   "url": "https://googlesyndication.com/",
+   "reasons": [
+    "did not load (Page.goto: net::ERR_CONNECTION_REFUSED at https://googlesyndication.com/)"
+   ]
+  },
+  {
+   "url": "https://roblox.com/",
+   "reasons": [
+    "first-party requests failed: ecsv2.roblox.com, metrics.roblox.com"
+   ]
+  },
+  {
+   "url": "https://qq.com/",
+   "reasons": [
+    "first-party requests failed: appcfg.v.qq.com, h.trace.qq.com, h5.ssp.qq.com, mark.l.qq.com, news.ssp.qq.com"
+   ]
+  }
+ ],
+ "flag_rate": 0.32
+}

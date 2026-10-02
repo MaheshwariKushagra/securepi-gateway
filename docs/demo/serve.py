@@ -76,8 +76,52 @@ def fake_request(method, path, body=None):
                 "upstream_mode": "parallel", "cache_enabled": True, "cache_optimistic": True,
                 "cache_size": 4194304, "dnssec_enabled": True}
     if path.startswith("/control/filtering/check_host"):
-        return {"reason": "FilteredBlackList", "rules": [{"text": "||doubleclick.net^", "filter_list_id": 1}]}
+        return demo_check_host(path)
     return {}
+
+
+def _matches(name, domain):
+    return name == domain or name.endswith("." + domain)
+
+
+def demo_check_host(path):
+    """The DNS filter's "would this be blocked for this device?" answer, worked
+    out from the demo's own rules - so a usability-study participant who
+    allows a domain for one device sees it allowed for that device only
+    (step 7.9). Order as in the real filter: allow rules, then block rules,
+    then the blocklists (here: every domain the seed recorded as blocked)."""
+    from urllib.parse import parse_qs, urlsplit
+    query = parse_qs(urlsplit(path).query)
+    name = (query.get("name") or [""])[0].lower().rstrip(".")
+    client_ip = (query.get("client") or [""])[0]
+    client_name = None
+    for c in CLIENTS:
+        if client_ip and client_ip in c.get("ids", []):
+            client_name = c["name"]
+    for allow_first in (True, False):
+        for rule in USER_RULES:
+            text = rule.split("  #", 1)[0].strip()
+            is_allow = text.startswith("@@")
+            if is_allow != allow_first:
+                continue
+            body = text[2:] if is_allow else text
+            domain, _, modifiers = body.partition("$")
+            domain = domain.strip("|^")
+            if not domain or not _matches(name, domain):
+                continue
+            if "client=" in modifiers:
+                wanted = modifiers.split("client=", 1)[1].strip("'\"")
+                if wanted != client_name:
+                    continue
+            return {"reason": "NotFilteredWhiteList" if is_allow else "FilteredBlackList",
+                    "rules": [{"text": text, "filter_list_id": 0}]}
+    with sqlite3.connect(DB) as conn:
+        row = conn.execute("SELECT dns_rrname, dns_filter_list_id FROM events WHERE event_type='dns_query'"
+                           " AND blocked=1 AND (dns_rrname=? OR ? LIKE '%.' || dns_rrname) LIMIT 1",
+                           (name, name)).fetchone()
+    if row:
+        return {"reason": "FilteredBlackList", "rules": [{"text": "||%s^" % row[0], "filter_list_id": row[1] or 1}]}
+    return {"reason": "NotFilteredNotFound", "rules": []}
 
 
 adguard._request = fake_request

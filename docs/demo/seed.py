@@ -224,6 +224,14 @@ for kind, dev, target, mins, reason in [
     conn.execute("INSERT INTO policies (kind, device_id, target, reason, source, created_by, created_at,"
                  " expires_at, status) VALUES (?, ?, ?, ?, 'console', 'securepi', ?, ?, 'active')",
                  (kind, dev, target, reason, NOW - 3 * H, NOW + mins * 60 if mins else None))
+# serve.py starts with the Galaxy-S23 already in its stand-in enrolled set,
+# so it needs the matching policy - without it the real orchestrator rightly
+# "adopts" an enrolment it didn't make and raises a policy_drift incident,
+# which a usability-study participant would then trip over (step 7.9).
+conn.execute("INSERT INTO policies (kind, device_id, target, reason, source, created_by, created_at,"
+             " expires_at, status, applied_state) VALUES ('enroll', 3, NULL, ?, 'console', 'securepi', ?, ?,"
+             " 'active', ?)", ("YouTube ad removal for the shared Android phone", NOW - 5 * H + 1240,
+                               NOW + 19 * 3600 + 1240, json.dumps({"ip": "10.10.0.31"})))
 
 # ---- The live attack: an unknown device joins, scans the NAS, then brute-forces SSH
 atk_first = NOW - 14 * 60
@@ -250,6 +258,14 @@ for i, dom in enumerate(BLOCKED):
         ev(NOW - 500 + i * 18 + random.random() * 5, source="adguard", event_type="dns_query",
            src_ip="10.10.0.32", device_id=4, dns_rrname=dom, dns_rrtype="A", blocked=1,
            block_reason="FilteredBlackList", dns_filter_list_id=random.choice(LIST_IDS))
+# Step 7.9's usability task "a site is broken - fix it for one device only":
+# the Finance Laptop keeps failing to load HubSpot form links, because a
+# blocklist catches track.hubspot.com. It shows up under the laptop's
+# "Recently blocked"; the right fix is an allow rule for that laptop only.
+for i in range(14):
+    ev(NOW - 3000 + i * 190 + random.random() * 20, source="adguard", event_type="dns_query",
+       src_ip="10.10.0.22", device_id=2, dns_rrname="track.hubspot.com", dns_rrtype="A", blocked=1,
+       block_reason="FilteredBlackList", dns_filter_list_id=3)
 flush()
 
 conn.execute("UPDATE ingest_stats SET events_read=?, events_saved=?, parse_errors=0, last_run=? WHERE id=1",

@@ -1,0 +1,25 @@
+{
+ "about": "Step 7.5's fixed set of 20 ad-heavy sites (news, sport, weather, tech, entertainment, finance), chosen 2 October 2026 to be reachable from India and to carry display advertising. Each is loaded at its homepage.",
+ "sites": [
+  "https://timesofindia.indiatimes.com/",
+  "https://www.hindustantimes.com/",
+  "https://www.ndtv.com/",
+  "https://indianexpress.com/",
+  "https://www.news18.com/",
+  "https://www.livemint.com/",
+  "https://www.moneycontrol.com/",
+  "https://www.cricbuzz.com/",
+  "https://www.espncricinfo.com/",
+  "https://www.dailymail.co.uk/",
+  "https://www.theguardian.com/international",
+  "https://edition.cnn.com/",
+  "https://www.forbes.com/",
+  "https://www.cnet.com/",
+  "https://www.techradar.com/",
+  "https://weather.com/",
+  "https://www.accuweather.com/",
+  "https://www.msn.com/",
+  "https://www.bollywoodhungama.com/",
+  "https://www.fandom.com/"
+ ]
+}

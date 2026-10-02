@@ -818,8 +818,24 @@ Then confirmed: `/etc/nftables.conf` is now the repo file (passes
 The phone was un-enrolled afterwards. 7 new structural tests
 (`tests/test_firewall_config.py`).
 
-**H1, console path re-enabling flushed inspection - fixed in code, 3 new
-tests (failed before the fix), not yet deployed** (`make deploy` pending).
+**H1, console path re-enabling flushed inspection - fixed, 3 new tests
+(failed before the fix), deployed and verified live.** `orchestrator.py` on
+the gateway checksum-matches the repo. Reproduced the audit's own failure
+scenario with test-harness devices only, running the real orchestrator as
+`securepi-web` (the console's user and code path, minus HTTP):
+
+1. Enrolled `[TEST HARNESS] test-victim` (10.10.0.221) - policy 19, in the set.
+2. Stopped `securepi-engine` (so its 15 s reconcile couldn't step in) and
+   flushed `ip nat enrolled` - what the privacy canary's fail-safe does.
+3. Enrolled `[TEST HARNESS] battery host 231` (10.10.0.231) from the console path.
+
+Result: the set held **only 10.10.0.231**; policy 19 was ended as "removed
+outside the console (privacy fail-safe or CLI) - not re-applied". Before the
+fix, step 3 put 10.10.0.221 back. Engine restarted, test policy 20 ended, set
+empty, no engine errors afterwards.
+
+Noticed on the way, for 7.6: `[TEST HARNESS] test-attacker` (device 4)
+resolves to 10.10.0.1, the gateway's own address.
 
 ### 7.5 (first pass) - blocklist utility and overlap
 

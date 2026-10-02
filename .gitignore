@@ -40,3 +40,4 @@ __pycache__/
 eval/pcaps/
 eval/rules/
 eval/replay-out/
+.claude/settings.local.json

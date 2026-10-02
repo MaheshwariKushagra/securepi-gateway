@@ -1040,6 +1040,48 @@ The raw IDS alerts from the same devices were 80 and 128: dedup is what
 stops a signal that fires every cycle while a scan lasts from producing
 hundreds of alerts per attack.
 
+### 7.6 — Identity accuracy (2 October 2026, before the forward run)
+
+Ground truth: the physical devices that have joined SecurePi-Test, from their
+hostnames, MAC manufacturer prefixes and what is known about the test
+sessions. The forward seven-day run repeats this on the frozen code.
+
+| Physical device | Registry | Records | OS (fingerprint) | Category | Vendor |
+|---|---|---|---|---|---|
+| Galaxy A33 (test phone) | device 2 | 1 (20 days, persistent per-network random MAC) | Android ✓ | phone ✓ | Samsung ✓ (hostname) |
+| Galaxy S21 FE (`divye-s-s21-fe`) | device 1 | 1 | Android ✓ | phone ✓ | Samsung ✓ (hostname) |
+| Windows laptop (`kaushik-pc`, red-team host) | device 13 | 1 | Windows ✓ | computer ✓ | - |
+| Motorola phone (joined 2 Oct 18:06; OUI `84:B8:B8` = Motorola Mobility) | device 98 | 1 | Android ✓ (medium) | - | - |
+| MacBook Air (joined for 7.5) | device 99 | 1 | iOS/macOS ✓ (medium) | - | - |
+
+- **Device identity: 5/5 physical devices are exactly one registry device**
+  each - no device split into two records, no two devices merged.
+- **Event attribution: every event from the real devices' addresses went to
+  the right device** (A33 23,780, `kaushik-pc` 6,331, S21 FE 259; none
+  unattributed, none to another device).
+- **Classification: OS 5/5 right; category 3/5, vendor 2/5 - the rest "unknown",
+  none wrong.** The two "unknown" categories are the newcomers: the Mac's
+  MAC is randomised and macOS sends no hostname, and the Motorola's real
+  OUI isn't in the fingerprinter's deliberately short prefix table (a wrong
+  vendor label being worse than none). The Motorola also queried
+  `captive.apple.com` as well as Android's check, so its OS confidence stayed
+  "medium" - an app's behaviour, not the device's.
+- **Presence was wrong for 2/5 devices (fixed).** The registry treated every
+  lease in the DHCP server's file as current, expired ones included, so the
+  S21 FE (lease expired 13 Sep) and `kaushik-pc` (16 Sep) were shown as
+  "seen" every cycle into October, and their address intervals never closed -
+  an address handed to a new device could have been credited to the old one.
+  `registry.read_leases()` now skips expired leases (static ones always
+  count); 2 failing-first tests; deployed (commit `4c9c69f`); the two records
+  reset to their lease expiry with an audit entry. Verified live: after the
+  deploy only the three devices actually associated with the AP were touched.
+- **A test-harness artefact, not a production problem:** the battery sends its
+  DNS tests from the gateway itself and credits them to a test device by
+  giving that device the gateway's own address (10.10.0.1) for a while. Those
+  intervals stayed open for hours, so ~9,500 of the gateway's own background
+  DNS lookups were credited to test devices, and `[TEST HARNESS] test-attacker`
+  still "has" 10.10.0.1. Only the test tooling creates such an interval.
+
 ### 7.5 (first pass) - blocklist utility and overlap
 
 `tools/blocklist_utility.py` downloads every enabled list, checks each domain

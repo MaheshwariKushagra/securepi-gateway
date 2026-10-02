@@ -42,6 +42,9 @@ import sqlite3
 import sys
 import time
 
+# The app's own settings module: beside this file's repo when run on the Mac,
+# the gateway's code directory when run there (from /opt/securepi-eval).
+sys.path.insert(0, "/opt/securepi")
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "app"))
 import settings  # noqa: E402
 

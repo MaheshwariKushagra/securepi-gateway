@@ -463,6 +463,39 @@ class EnrollTests(OrchestratorTestCase):
         row = self.conn.execute("SELECT status FROM policies WHERE id=?", (p["id"],)).fetchone()
         self.assertEqual(row["status"], "removed")
 
+    # CODEBASE_AUDIT.md H1: the "never re-enable" rule used to live only in
+    # reconcile(), so a console enroll/unenroll on ANY device - which goes
+    # through create_policy/end_policy, not reconcile - quietly put every
+    # flushed device back into the inspection set.
+
+    def test_a_console_enroll_after_a_flush_does_not_re_add_the_flushed_device(self):
+        first = self.create("enroll", 1, minutes=120)
+        self.b.enroll_set.clear()   # the privacy canary's fail-safe flush
+        self.create("enroll", 2, minutes=120)
+        self.assertEqual(set(self.b.enroll_set), {"10.10.0.32"})
+        row = self.conn.execute("SELECT status FROM policies WHERE id=?", (first["id"],)).fetchone()
+        self.assertEqual(row["status"], "removed")
+
+    def test_a_console_unenroll_after_a_flush_does_not_re_add_the_flushed_device(self):
+        first = self.create("enroll", 1, minutes=120)
+        second = self.create("enroll", 2, minutes=120)
+        self.b.enroll_set.clear()
+        orchestrator.end_policy(self.conn, second["id"], reason="test", backends=self.b, now=self.clock())
+        self.assertEqual(self.b.enroll_set, {})
+        row = self.conn.execute("SELECT status FROM policies WHERE id=?", (first["id"],)).fetchone()
+        self.assertEqual(row["status"], "removed")
+
+    def test_a_console_enroll_after_a_reboot_does_not_re_add_the_other_device(self):
+        first = self.create("enroll", 1, minutes=120)
+        self.reconcile()            # the engine's cycle records the boot id
+        self.b.enroll_set.clear()   # the reboot empties the kernel set
+        self.boot = "boot-2"
+        self.create("enroll", 2, minutes=120)
+        self.assertEqual(set(self.b.enroll_set), {"10.10.0.32"})
+        row = self.conn.execute("SELECT status, ended_reason FROM policies WHERE id=?", (first["id"],)).fetchone()
+        self.assertEqual(row["status"], "removed")
+        self.assertIn("the gateway restarted", row["ended_reason"])
+
     def test_an_address_reassigned_to_another_device_is_not_enrolled(self):
         # Audit.md H3: device 1 left; DHCP gave its old address to device 2.
         # Enrolling device 1 must not decrypt device 2's traffic.

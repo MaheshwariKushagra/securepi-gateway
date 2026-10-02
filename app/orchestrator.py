@@ -890,9 +890,11 @@ def _converge(conn, b, domain, desired, have, applied, now):
 
 def _converge_enrolled(conn, b, want, have, applied_enrolled, now):
     """Enrollments only move in one direction on their own - see the module
-    docstring. Adds a wanted IP that isn't there only if this policy hasn't
-    been applied at that IP before (a brand-new enrollment, or the device's
-    IP changed); removes IPs no policy wants any more."""
+    docstring. Adds every wanted IP that isn't there and removes IPs no
+    policy wants any more. It does NOT decide whether a missing IP should
+    come back: _reconcile_enrolled must run first (both reconcile() and
+    _apply_and_verify do this), and it removes from `want` any enrollment
+    that was flushed or cleared by a reboot."""
     for ip in list(have):
         if ip not in want and ip in applied_enrolled:
             b.unenroll(ip)
@@ -960,6 +962,18 @@ def _apply_and_verify(conn, b, domains, now):
     new_applied = dict(applied)
     try:
         desired = desired_state(conn, b, now)
+        if "enrolled" in domains:
+            # The "never re-enable" rule has to run here too, not only in
+            # reconcile(). Without it, a console enroll or unenroll on one
+            # device put back every device the privacy fail-safe had just
+            # flushed, or a reboot had cleared (CODEBASE_AUDIT.md H1).
+            # This ends those policies and drops them from `desired`.
+            boot_id = current_boot_id()
+            restored_after_boot = bool(state["boot_id"]) and boot_id is not None and boot_id != state["boot_id"]
+            notes = _reconcile_enrolled(conn, b, desired, snap["enrolled"], applied.get("enrolled") or {},
+                                        now, restored_after_boot)
+            for note in notes:
+                audit.log(conn, ACTOR, "policy.drift_corrected", target="orchestrator", detail=note)
         for d in domains:
             new_applied[d] = _converge(conn, b, d, desired, snap[d], applied, now)
         after = _snapshot(b, domains)

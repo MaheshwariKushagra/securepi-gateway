@@ -1271,6 +1271,31 @@ can see (one long-lived UDP flow to one address) but doesn't flag.
   real household use this is weak evidence; the top-50 breakage test is the
   stronger measure.
 
+### 7.7 — Chaos tests (2 October 2026)
+
+`gateway/chaos.py` on the gateway breaks one thing at a time - an
+independent undo armed with `systemd-run` *before* anything is broken - and
+records once a second: unit state, the newest event per source in the
+database, platform incidents, the DNS fail-open rules and the inspection gate.
+At the same time a device on SecurePi-Test probes what it experiences
+(`tools/chaos_phone_probe.sh`, over adb): DNS (a never-seen `nip.io` name each
+time, so no cache answers) and a TCP connection to `example.com:443`. Mac,
+phone and gateway clocks agree to the second. Summaries:
+`tools/chaos_summary.py`, data `eval/results/chaos/`.
+
+| Fault | Unit back after | Data flowing again after | Incident | Fail-open / gate | What the A33 saw |
+|---|---|---|---|---|---|
+| IDS killed (SIGKILL) | <1 s (systemd, 100 ms) | IDS events **25 s** (rules reload) | none (faster than the 30 s check) | - | nothing (0/45 failures) |
+| Ingest killed | 5.1 s | 6.1 s, backlog caught up | none | - | nothing |
+| Engine killed | 5.1 s | events never stopped (ingest is separate); detection resumes next cycle | none | - | nothing |
+| DNS filter killed | 10.2 s | DNS-filter events 14.3 s | `platform_service_down` at **4.8 s** | fail-open not needed (restart beat its 10 s trigger) | 2 failed lookups (+2 to +3 s), then normal |
+| **DNS filter stopped for 60 s** | 61.4 s (planned) | 64.4 s | `platform_dns_failopen` at **14.5 s** | fail-open **on at +15.5 s, off at +62.4 s** (1 s after recovery) | lookups failed for the first ~13 s (5 samples), then **resolved through the redirect for the rest of the outage**; HTTPS never failed |
+
+So far: every component recovers by itself; a sensor or pipeline crash
+costs a short detection gap (≤25 s) but nothing a device notices; a DNS-filter
+outage costs devices about the first 13-15 s (the 10 s trigger plus the 5 s
+probe interval), after which fail-open carries them.
+
 ### 7.8 — Performance (2 October 2026)
 
 **Storage before and after retention** (a copy of the live database, 2 Oct

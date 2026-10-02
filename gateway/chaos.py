@@ -7,7 +7,8 @@ Run on the gateway as root, one scenario at a time:
     sudo python3 chaos.py SCENARIO [--watch SECONDS] > result.json
 
 Scenarios: kill-ids, kill-dns, kill-ingest, kill-engine, kill-proxy,
-fill-disk, drop-wan.
+stop-dns (the DNS filter down for 60 s - longer than its own restart, so
+fail-open has to act), fill-disk, drop-wan.
 
 Each one breaks one thing on purpose, then watches once a second, for
 --watch seconds, what the gateway does about it. Before anything is broken
@@ -40,7 +41,8 @@ FILL_PATH = "/var/tmp/securepi-chaos-fill"
 WAN_IF = "wlp2s0"
 
 UNITS = {"kill-ids": "suricata", "kill-dns": "AdGuardHome", "kill-ingest": "securepi-ingest",
-         "kill-engine": "securepi-engine", "kill-proxy": "securepi-dpi"}
+         "kill-engine": "securepi-engine", "kill-proxy": "securepi-dpi", "stop-dns": "AdGuardHome"}
+STOP_DNS_S = 60   # stop-dns: the DNS filter stays down this long (a kill comes back in ~10 s)
 
 
 def sh(cmd):
@@ -121,7 +123,14 @@ def main():
     before = observe(conn, s, time.time())
 
     # --- break it (with the undo armed first) ---------------------------
-    if s in UNITS:
+    if s == "stop-dns":
+        # A DNS filter that stays down - what fail-open exists for. The undo
+        # timer IS the planned restart, so it runs whatever happens here.
+        unit = UNITS[s]
+        schedule_undo("securepi-chaos-undo", STOP_DNS_S, ["/usr/bin/systemctl", "start", unit])
+        t_action = time.time()
+        sh(["systemctl", "stop", unit])
+    elif s in UNITS:
         unit = UNITS[s]
         schedule_undo("securepi-chaos-undo", 300, ["/usr/bin/systemctl", "start", unit])
         t_action = time.time()

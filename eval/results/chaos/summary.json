@@ -1,0 +1,266 @@
+[
+ {
+  "scenario": "kill-dns",
+  "service_states": [
+   [
+    0.0,
+    "active"
+   ],
+   [
+    1.0,
+    "activating"
+   ],
+   [
+    10.2,
+    "active"
+   ]
+  ],
+  "service_down_s": 10.2,
+  "first_new_event_s": {
+   "ids": 2.0,
+   "dns_filter": 14.3,
+   "proxy": null
+  },
+  "incidents": [
+   [
+    "platform_service_down",
+    4.8,
+    "1 service not running: AdGuardHome"
+   ]
+  ],
+  "failopen": [
+   [
+    0.0,
+    false
+   ]
+  ],
+  "gate_open": [
+   [
+    0.0,
+    true
+   ]
+  ],
+  "device": {
+   "samples": 51,
+   "before_fault_ok": true,
+   "dns": {
+    "failed_samples": 2,
+    "of": 45,
+    "first_fail_s": 2.2,
+    "last_fail_s": 3.2
+   },
+   "https": {
+    "failed_samples": 0,
+    "of": 45,
+    "first_fail_s": null,
+    "last_fail_s": null
+   }
+  }
+ },
+ {
+  "scenario": "kill-engine",
+  "service_states": [
+   [
+    0.0,
+    "activating"
+   ],
+   [
+    5.1,
+    "active"
+   ]
+  ],
+  "service_down_s": 5.1,
+  "first_new_event_s": {
+   "ids": 3.0,
+   "dns_filter": 3.0,
+   "proxy": null
+  },
+  "incidents": [],
+  "failopen": [
+   [
+    0.0,
+    false
+   ]
+  ],
+  "gate_open": [
+   [
+    0.0,
+    true
+   ]
+  ],
+  "device": {
+   "samples": 52,
+   "before_fault_ok": true,
+   "dns": {
+    "failed_samples": 0,
+    "of": 46,
+    "first_fail_s": null,
+    "last_fail_s": null
+   },
+   "https": {
+    "failed_samples": 0,
+    "of": 46,
+    "first_fail_s": null,
+    "last_fail_s": null
+   }
+  }
+ },
+ {
+  "scenario": "kill-ids",
+  "service_states": [
+   [
+    0.0,
+    "active"
+   ]
+  ],
+  "service_down_s": 0.0,
+  "first_new_event_s": {
+   "ids": 25.3,
+   "dns_filter": 3.0,
+   "proxy": null
+  },
+  "incidents": [],
+  "failopen": [
+   [
+    0.0,
+    false
+   ]
+  ],
+  "gate_open": [
+   [
+    0.0,
+    true
+   ]
+  ],
+  "device": {
+   "samples": 53,
+   "before_fault_ok": true,
+   "dns": {
+    "failed_samples": 0,
+    "of": 47,
+    "first_fail_s": null,
+    "last_fail_s": null
+   },
+   "https": {
+    "failed_samples": 0,
+    "of": 47,
+    "first_fail_s": null,
+    "last_fail_s": null
+   }
+  }
+ },
+ {
+  "scenario": "kill-ingest",
+  "service_states": [
+   [
+    0.0,
+    "active"
+   ],
+   [
+    1.0,
+    "activating"
+   ],
+   [
+    5.1,
+    "active"
+   ]
+  ],
+  "service_down_s": 5.1,
+  "first_new_event_s": {
+   "ids": 6.1,
+   "dns_filter": 6.1,
+   "proxy": null
+  },
+  "incidents": [],
+  "failopen": [
+   [
+    0.0,
+    false
+   ]
+  ],
+  "gate_open": [
+   [
+    0.0,
+    true
+   ]
+  ],
+  "device": {
+   "samples": 52,
+   "before_fault_ok": true,
+   "dns": {
+    "failed_samples": 0,
+    "of": 46,
+    "first_fail_s": null,
+    "last_fail_s": null
+   },
+   "https": {
+    "failed_samples": 0,
+    "of": 46,
+    "first_fail_s": null,
+    "last_fail_s": null
+   }
+  }
+ },
+ {
+  "scenario": "stop-dns",
+  "service_states": [
+   [
+    0.2,
+    "inactive"
+   ],
+   [
+    61.4,
+    "active"
+   ]
+  ],
+  "service_down_s": 61.4,
+  "first_new_event_s": {
+   "ids": 3.3,
+   "dns_filter": 64.4,
+   "proxy": 57.3
+  },
+  "incidents": [
+   [
+    "platform_dns_failopen",
+    14.5,
+    "DNS fail-open active - the DNS filter not answering queries"
+   ]
+  ],
+  "failopen": [
+   [
+    0.2,
+    false
+   ],
+   [
+    15.5,
+    true
+   ],
+   [
+    62.4,
+    false
+   ]
+  ],
+  "gate_open": [
+   [
+    0.2,
+    true
+   ]
+  ],
+  "device": {
+   "samples": 53,
+   "before_fault_ok": true,
+   "dns": {
+    "failed_samples": 5,
+    "of": 47,
+    "first_fail_s": 1.5,
+    "last_fail_s": 12.5
+   },
+   "https": {
+    "failed_samples": 0,
+    "of": 47,
+    "first_fail_s": null,
+    "last_fail_s": null
+   }
+  }
+ }
+]

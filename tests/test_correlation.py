@@ -178,6 +178,27 @@ class NetworkSweepSignalTests(unittest.TestCase):
             fixtures.insert_flow(conn, 1, "142.250.%d.10" % i, 443, now - 10, pkts_toclient=0)
         self.assertEqual(correlation.network_sweep_signal(conn), 1)
 
+    def test_rejected_quic_is_not_an_unanswered_host(self):
+        """Step 7.3: the gateway rejects every QUIC (UDP 443) packet, so a
+        phone's ordinary HTTP/3 attempts all look unanswered."""
+        conn = fixtures.temp_db()
+        fixtures.insert_device(conn, 1)
+        now = time.time()
+        for i in range(12):
+            fixtures.insert_flow(conn, 1, "142.250.%d.10" % i, 443, now - 10, pkts_toclient=0, proto="UDP")
+        self.assertEqual(correlation.network_sweep_signal(conn), 0)
+        self.assertEqual(correlation.slow_scan_signal(conn), 0)
+
+    def test_the_gateway_itself_is_not_a_swept_host(self):
+        conn = fixtures.temp_db()
+        fixtures.insert_device(conn, 1)
+        now = time.time()
+        # 7 LAN hosts plus the gateway: one short of the default threshold of 8.
+        for i in range(7):
+            fixtures.insert_flow(conn, 1, "10.10.0.%d" % (100 + i), 80, now - 10, pkts_toclient=3, proto="TCP")
+        fixtures.insert_flow(conn, 1, "10.10.0.1", 80, now - 10, pkts_toclient=3, proto="TCP")
+        self.assertEqual(correlation.network_sweep_signal(conn), 0)
+
     def test_answered_private_hosts_still_count(self):
         # A LAN sweep that finds live hosts (they answer) is exactly what
         # this signal is for.
@@ -244,6 +265,32 @@ class SlowScanSignalTests(unittest.TestCase):
         now = time.time()
         for port in range(1, 5):  # only 4 distinct ports, still spread out
             fixtures.insert_flow(conn, 1, "203.0.113.10", port, now - (4 - port) * 800)
+        self.assertEqual(correlation.slow_scan_signal(conn), 0)
+
+    def test_a_slow_sweep_with_long_gaps_stays_one_incident(self):
+        """Step 7.3: the slow signals catch probes up to ~15 minutes apart,
+        but merged repeat firings only within the shared 10-minute dedup
+        window - so one slow sweep became a new incident at every long gap."""
+        conn = fixtures.temp_db()
+        fixtures.insert_device(conn, 1)
+        start = time.time() - 7000
+        for i in range(12):
+            t = start + i * 900          # one new host every 15 minutes
+            fixtures.insert_flow(conn, 1, "10.10.0.%d" % (100 + i), 7001, t, pkts_toclient=0, proto="TCP")
+            with mock.patch.object(correlation.time, "time", return_value=t + 30):
+                correlation.slow_scan_signal(conn)
+        rows = conn.execute("SELECT * FROM incidents WHERE signal_type='slow_network_sweep'").fetchall()
+        self.assertEqual(len(rows), 1)
+
+    def test_only_lan_destinations_count_toward_a_slow_sweep(self):
+        """Step 7.3: over two hours a phone's unanswered background
+        connection attempts to internet hosts add up to the threshold on
+        their own. Unanswered internet hosts still count for the FAST sweep."""
+        conn = fixtures.temp_db()
+        fixtures.insert_device(conn, 1)
+        now = time.time()
+        for i in range(12):
+            fixtures.insert_flow(conn, 1, "52.48.%d.97" % i, 443, now - 6000 + i * 480, pkts_toclient=0, proto="TCP")
         self.assertEqual(correlation.slow_scan_signal(conn), 0)
 
     def test_does_not_fire_on_activity_older_than_the_slow_window(self):
@@ -350,13 +397,25 @@ class DnsBypassSignalTests(unittest.TestCase):
         conn = fixtures.temp_db()
         fixtures.insert_device(conn, 1)
         now = time.time()
-        fixtures.insert_bypass_attempt(conn, 1, "quic-blocked", now - 10)
+        fixtures.insert_bypass_attempt(conn, 1, "dot-bypass", now - 10)
         fixtures.insert_dns_query(conn, 1, "mask.icloud.com", now - 8, blocked=1)
         fixtures.insert_tls(conn, 1, "cloudflare-dns.com", now - 6)
         fired = correlation.dns_bypass_signal(conn)
         self.assertEqual(fired, 1, "1+1+1 across three kinds of evidence should still meet threshold 3")
         row = conn.execute("SELECT * FROM incidents WHERE signal_type='dns_bypass'").fetchone()
         self.assertEqual(row["evidence_count"], 3)
+
+    def test_rejected_quic_alone_never_counts_as_a_bypass(self):
+        """Step 7.3: the firewall rejects every QUIC packet, and phones and
+        Chrome try HTTP/3 all day before falling back to TCP. On the real
+        phone these rejections were all of this signal's false positives."""
+        conn = fixtures.temp_db()
+        fixtures.insert_device(conn, 1)
+        now = time.time()
+        for i in range(20):
+            fixtures.insert_bypass_attempt(conn, 1, "quic-blocked", now - 10 - i, dest_ip="142.250.0.1",
+                                           dest_port=443, proto="UDP")
+        self.assertEqual(correlation.dns_bypass_signal(conn), 0)
 
     def test_does_not_fire_below_threshold(self):
         conn = fixtures.temp_db()
@@ -409,9 +468,20 @@ class IdsAlertSignalTests(unittest.TestCase):
         self.assertIn("Network trojan", row["title"])
         self.assertIn("ET TROJAN Test", row["description"])
 
+    def test_informational_priority_alerts_do_not_fire_by_default(self):
+        """Step 7.3: every IDS false positive on the real devices was
+        priority 3 (ET INFO rules, protocol-decoding oddities)."""
+        conn = fixtures.temp_db()
+        fixtures.insert_device(conn, 1)
+        now = time.time()
+        for _ in range(10):
+            fixtures.insert_alert(conn, 1, "Misc activity", now - 10, alert_severity=3)
+        self.assertEqual(correlation.ids_alert_signal(conn), 0)
+
     def test_fires_on_an_uncurated_category_using_the_generic_fallback(self):
         conn = fixtures.temp_db()
         fixtures.insert_device(conn, 1)
+        settings.set_value(conn, "ids_alert_max_priority", 3)  # informational alerts on, to test their mapping
         now = time.time()
         for _ in range(3):
             fixtures.insert_alert(conn, 1, "Misc activity", now - 10, alert_severity=3)
@@ -434,6 +504,7 @@ class IdsAlertSignalTests(unittest.TestCase):
         # quietly merged into that same incident thread.
         conn = fixtures.temp_db()
         fixtures.insert_device(conn, 1)
+        settings.set_value(conn, "ids_alert_max_priority", 3)  # so the low-value burst raises its own incident
         now = time.time()
         for _ in range(3):
             fixtures.insert_alert(conn, 1, "Misc activity", now - 10, alert_severity=3)
@@ -1199,6 +1270,27 @@ class RaiseIncidentDedupAndEvidenceTests(unittest.TestCase):
         rows = conn.execute("SELECT * FROM incidents WHERE device_id=1").fetchall()
         self.assertEqual(len(rows), 1)
         self.assertEqual(rows[0]["description"], "d2")  # the later call's description wins
+
+    def test_an_older_pattern_merging_in_never_moves_last_seen_backwards(self):
+        """Step 7.3 finding: two patterns of one signal on one device at
+        once (a sweep on port 80 still growing, one on port 443 that has
+        ended) used to make a NEW incident every engine cycle. The port-443
+        merge set last_seen back to its own older time, so the next
+        port-80 firing found nothing recent enough to merge into."""
+        conn = fixtures.temp_db()
+        fixtures.insert_device(conn, 1)
+        now = time.time()
+        eids = self._insert_events(conn, 1, 3, now - 900)
+        for cycle in range(5):
+            # The growing pattern: last evidence just now.
+            correlation.raise_incident(conn, 1, "slow_network_sweep", "high", "port 80", "d",
+                                       now - 1200, now + cycle * 60, eids)
+            # The finished one: last evidence 15 minutes ago, still in the window.
+            correlation.raise_incident(conn, 1, "slow_network_sweep", "high", "port 443", "d",
+                                       now - 1500, now - 900, eids)
+        rows = conn.execute("SELECT * FROM incidents WHERE device_id=1").fetchall()
+        self.assertEqual(len(rows), 1, "five cycles of the same two patterns must stay one incident")
+        self.assertEqual(rows[0]["last_seen"], now + 4 * 60, "last_seen must never move backwards")
 
     def test_g2_regression_merges_into_an_investigating_incident_too(self):
         """Regression test for finding G2: the old code only merged into

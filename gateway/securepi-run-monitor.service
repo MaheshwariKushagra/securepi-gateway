@@ -1,0 +1,18 @@
+# SecurePi Gateway - evaluation run monitor (step 7.0). See gateway/run_monitor.py.
+# An evaluation instrument, not part of the gateway: deliberately not in
+# services.list. Read-only towards the database; writes only its own
+# JSONL files under /var/lib/securepi-eval/monitor.
+[Unit]
+Description=SecurePi evaluation run monitor (ingest lag, storage, services)
+After=securepi-ingest.service
+
+[Service]
+User=securepi-web
+Group=securepi
+ExecStart=/usr/bin/python3 /opt/securepi-eval/run_monitor.py
+Restart=on-failure
+RestartSec=10
+Nice=10
+
+[Install]
+WantedBy=multi-user.target

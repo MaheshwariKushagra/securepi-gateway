@@ -75,7 +75,7 @@ def set_window_start(conn, signal_type, ts):
 
 
 def raise_incident(conn, device_id, signal_type, severity, title, description,
-                    first_seen, last_seen, event_ids):
+                    first_seen, last_seen, event_ids, dedup_window=None):
     """
     Record a detection as an incident, merging into a recent open incident of
     the same type for the same device rather than always creating a new row.
@@ -111,7 +111,9 @@ def raise_incident(conn, device_id, signal_type, severity, title, description,
     if suppression.is_suppressed(conn, signal_type, device_id):
         return None
 
-    dedup_window = settings.get(conn, "dedup_window_seconds")
+    # A signal whose evidence is spread out more thinly than the shared
+    # dedup window (the slow-scan signals) passes its own, longer window.
+    dedup_window = max(settings.get(conn, "dedup_window_seconds"), dedup_window or 0)
     existing = conn.execute(
         # `device_id IS ?`, not `= ?` (step 3.5 finding, found before it
         # could bite): SQLite's `=` never matches NULL, even against
@@ -132,8 +134,14 @@ def raise_incident(conn, device_id, signal_type, severity, title, description,
     now = time.time()
     if existing:
         incident_id = existing["id"]
+        # max(): a merge may only move last_seen forward. When one device has
+        # two patterns of the same signal open at once (a sweep on port 80
+        # still growing, one on port 443 already over), the older one used
+        # to drag last_seen back to its own time - so the next firing of
+        # the newer one found nothing recent enough to merge into and opened
+        # a new incident, every cycle (step 7.3 finding).
         conn.execute(
-            """UPDATE incidents SET last_seen = ?, updated_at = ?, description = ?
+            """UPDATE incidents SET last_seen = max(last_seen, ?), updated_at = ?, description = ?
                WHERE id = ?""",
             (last_seen, now, description, incident_id),
         )
@@ -278,9 +286,25 @@ def port_scan_signal(conn):
 # live flows, this kept every battery sweep and dropped every one of the
 # phone's normal-use hits. What it gives up: a sweep of INTERNET hosts
 # that do answer (open or closed-port replies) is no longer counted -
-# named in the report's limitations rather than hidden. Both sweep
-# queries (and their evidence lists) carry the same condition:
+# named in the report's limitations rather than hidden.
+#
+# Step 7.3 (precision/recall over the live database) found two more things
+# that aren't reconnaissance and are now left out too:
+#   - QUIC (UDP 443): the gateway's own firewall rejects all of it
+#     (`quic-blocked`), so every QUIC attempt looks "unanswered". That
+#     silence is our doing, not a probe finding nothing.
+#   - the gateway itself (10.10.0.1): every device talks to it.
+# The fast sweep query (and its evidence list) carries this condition:
 #   AND (is_private_ip(dest_ip) OR COALESCE(pkts_toclient, 0) = 0)
+#   AND NOT (COALESCE(proto, '') = 'UDP' AND dest_port = 443)
+#   AND dest_ip != '10.10.0.1'
+# The SLOW sweep counts LAN destinations only (is_private_ip(dest_ip)
+# instead of the first line): over its two-hour window a phone's
+# occasional unanswered background connection to a cloud endpoint adds up
+# to the threshold by itself (step 7.3: all of the slow sweep's remaining
+# false positives). Unanswered internet hosts in a burst are still the
+# fast sweep's job. Given up: a sweep of internet hosts paced slower than
+# the fast window.
 
 
 def _is_private_ip(value):
@@ -315,6 +339,8 @@ def network_sweep_signal(conn):
            AND device_id IS NOT NULL
            AND ts > ?
            AND (is_private_ip(dest_ip) OR COALESCE(pkts_toclient, 0) = 0)
+           AND NOT (COALESCE(proto, '') = 'UDP' AND dest_port = 443)
+           AND dest_ip != '10.10.0.1'
          GROUP BY device_id, dest_port
         HAVING n_hosts >= ?
         """,
@@ -328,6 +354,8 @@ def network_sweep_signal(conn):
                 """SELECT id FROM events WHERE event_type='flow' AND device_id=?
                      AND dest_port=? AND ts > ?
                      AND (is_private_ip(dest_ip) OR COALESCE(pkts_toclient, 0) = 0)
+                     AND NOT (COALESCE(proto, '') = 'UDP' AND dest_port = 443)
+                     AND dest_ip != '10.10.0.1'
                    ORDER BY ts""",
                 (r["device_id"], r["dest_port"], since),
             )
@@ -420,6 +448,8 @@ def slow_scan_signal(conn):
             ),
             first_seen=r["first_seen"], last_seen=r["last_seen"],
             event_ids=event_ids,
+            # one slow scan, however long its gaps, stays one incident
+            dedup_window=window,
         )
         fired += 1
 
@@ -433,7 +463,9 @@ def slow_scan_signal(conn):
          WHERE event_type = 'flow'
            AND device_id IS NOT NULL
            AND ts > ?
-           AND (is_private_ip(dest_ip) OR COALESCE(pkts_toclient, 0) = 0)
+           AND is_private_ip(dest_ip)
+           AND NOT (COALESCE(proto, '') = 'UDP' AND dest_port = 443)
+           AND dest_ip != '10.10.0.1'
          GROUP BY device_id, dest_port
         HAVING n_hosts >= ?
         """,
@@ -444,7 +476,9 @@ def slow_scan_signal(conn):
             e["id"] for e in conn.execute(
                 """SELECT id FROM events WHERE event_type='flow' AND device_id=?
                      AND dest_port=? AND ts > ?
-                     AND (is_private_ip(dest_ip) OR COALESCE(pkts_toclient, 0) = 0)
+                     AND is_private_ip(dest_ip)
+                     AND NOT (COALESCE(proto, '') = 'UDP' AND dest_port = 443)
+                     AND dest_ip != '10.10.0.1'
                    ORDER BY ts""",
                 (r["device_id"], r["dest_port"], since),
             )
@@ -459,6 +493,8 @@ def slow_scan_signal(conn):
             ),
             first_seen=r["first_seen"], last_seen=r["last_seen"],
             event_ids=event_ids,
+            # one slow scan, however long its gaps, stays one incident
+            dedup_window=window,
         )
         fired += 1
 
@@ -473,10 +509,15 @@ def slow_scan_signal(conn):
 # its DNS around DNS-filter rather than through it, into one count per
 # device:
 #   1. nftables reject-rule hits (source='nftables', event_type=
-#      'bypass_attempt') - a device that actually tried DoT (port 853),
-#      a known-IP DoH resolver, or QUIC on 443 and got rejected. See
-#      gateway/nftables.conf's `log prefix` additions and
-#      app/ingest.py's read_nft_log.
+#      'bypass_attempt') - a device that actually tried DoT (port 853) or
+#      a known-IP DoH resolver and got rejected. See gateway/nftables.conf's
+#      `log prefix` additions and app/ingest.py's read_nft_log.
+#      NOT the `quic-blocked` hits (step 7.3): the firewall rejects every
+#      QUIC packet, and every Chrome and Android device tries HTTP/3 to
+#      Google, YouTube and others all day, then falls back to TCP. On the
+#      real phone these were 100% of the signal's false positives. A
+#      device trying DoH over QUIC still gets caught when it falls back to
+#      DoH over TCP (the doh-bypass rule, or the SNI match in 3).
 #   2. Canary-domain queries (event_type='dns_query') for
 #      use-application-dns.net (Firefox's own DoH auto-enable check) or
 #      mask.icloud.com / mask-h2.icloud.com (Apple's documented iCloud
@@ -535,7 +576,8 @@ def dns_bypass_signal(conn):
           FROM events
          WHERE device_id IS NOT NULL AND ts > ?
            AND (
-                (source='nftables' AND event_type='bypass_attempt')
+                (source='nftables' AND event_type='bypass_attempt'
+                 AND COALESCE(block_reason, '') != 'quic-blocked')
              OR (event_type='dns_query' AND dns_rrname IN ({canary_placeholders}))
              OR (source='suricata' AND event_type='dns' AND dns_type IN ('query','request')
                  AND dns_rrname IN ({suricata_placeholders}))
@@ -553,7 +595,8 @@ def dns_bypass_signal(conn):
             e["id"] for e in conn.execute(
                 f"""SELECT id FROM events WHERE device_id=? AND ts > ?
                      AND (
-                          (source='nftables' AND event_type='bypass_attempt')
+                          (source='nftables' AND event_type='bypass_attempt'
+                           AND COALESCE(block_reason, '') != 'quic-blocked')
                        OR (event_type='dns_query' AND dns_rrname IN ({canary_placeholders}))
                        OR (source='suricata' AND event_type='dns' AND dns_type IN ('query','request')
                            AND dns_rrname IN ({suricata_placeholders}))
@@ -569,6 +612,7 @@ def dns_bypass_signal(conn):
         by_reason = conn.execute(
             """SELECT block_reason reason, count(*) n FROM events
                 WHERE device_id=? AND ts > ? AND source='nftables' AND event_type='bypass_attempt'
+                  AND COALESCE(block_reason, '') != 'quic-blocked'
                 GROUP BY block_reason""",
             (r["device_id"], since),
         ).fetchall()
@@ -639,6 +683,9 @@ def ids_alert_signal(conn):
     window = settings.get(conn, "ids_alert_window_seconds")
     since = now - window
     threshold = settings.get(conn, "ids_alert_threshold")
+    # Step 7.3: priority-3 alerts (the IDS's informational tier) no longer
+    # become incidents on their own - see the setting's help text.
+    max_priority = settings.get(conn, "ids_alert_max_priority")
 
     rows = conn.execute(
         """
@@ -649,10 +696,11 @@ def ids_alert_signal(conn):
          WHERE event_type = 'alert'
            AND device_id IS NOT NULL
            AND ts > ?
+           AND COALESCE(alert_severity, 1) <= ?
          GROUP BY device_id, alert_category
         HAVING n >= ?
         """,
-        (since, threshold),
+        (since, max_priority, threshold),
     ).fetchall()
 
     fired = 0
@@ -667,14 +715,16 @@ def ids_alert_signal(conn):
         top = conn.execute(
             """SELECT alert_signature, count(*) n FROM events
                 WHERE event_type='alert' AND device_id=? AND alert_category=? AND ts > ?
+                  AND COALESCE(alert_severity, 1) <= ?
                 GROUP BY alert_signature ORDER BY n DESC LIMIT 5""",
-            (r["device_id"], r["alert_category"], since),
+            (r["device_id"], r["alert_category"], since, max_priority),
         ).fetchall()
         event_ids = [
             e["id"] for e in conn.execute(
                 """SELECT id FROM events WHERE event_type='alert' AND device_id=?
-                     AND alert_category=? AND ts > ? ORDER BY ts""",
-                (r["device_id"], r["alert_category"], since),
+                     AND alert_category=? AND ts > ? AND COALESCE(alert_severity, 1) <= ?
+                   ORDER BY ts""",
+                (r["device_id"], r["alert_category"], since, max_priority),
             )
         ]
         attack_note = ""

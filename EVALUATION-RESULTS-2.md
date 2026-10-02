@@ -837,6 +837,153 @@ empty, no engine errors afterwards.
 Noticed on the way, for 7.6: `[TEST HARNESS] test-attacker` (device 4)
 resolves to 10.10.0.1, the gateway's own address.
 
+### 7.3 — Precision, recall and threshold sweeps (2 October 2026)
+
+**Instrument: `tools/sweep.py`.** It replays a copy of the *live* database
+(62,269 events, 12 Sep - 2 Oct) through the real `correlation.py` signals on a
+simulated clock, once per settings variant, and scores each run. Replaying the
+database rather than the captures means all fifteen signals can be scored,
+including the four a capture can't drive (threat intel, malicious domain,
+new device, volume anomaly), and the events are the live IDS's own (version 7).
+One default run takes ~11 s on the Mac.
+
+Ground truth:
+
+- **Positives (156 labelled runs):** both final batteries (05:43 and 10:13 on
+  26 September), 5 runs × 15 signals each + campaigns, device and time window
+  taken from each results file. The battery deletes its test IOCs when it
+  finishes; the tool re-adds them from each run's `target`. Plus **four
+  independent positives from a different machine and tool**: on 15 September
+  device 13 (`kaushik-pc`, a Windows laptop) ran `redteam/securepi_attack.py`,
+  the project's live-demo attacker (port scan and SSH brute force against the
+  gateway, a C2 beacon) - confirmed from the 14:42 commit that moved the
+  simulator's beacon off `1.1.1.1`, the beacon target logged at 14:35.
+- **Negatives:** the real devices - device 2 (the Galaxy A33, 18,485 events
+  over 4 days), device 13 outside the red-team window (6,331 events, 1 day),
+  device 1 (`divye-s-s21-fe`, 259 events). Their deliberate test windows
+  (A33: 26 Sep 07:00-10:00 and 2 Oct 16:30-18:00) are cut out of the replay
+  entirely - 5,321 events. Every incident left on them is a false positive,
+  except a `new_device` incident raised when the device really did first join.
+
+Scoring: a run is detected if an incident of its signal on its device has
+evidence inside the run's window (+300 s). DNS runs must also involve their
+**own** target domain - the battery's DNS tests run seconds apart on one
+device, and without this the tunnelling test's NXDOMAINs were credited to the
+DGA run (caught while checking a too-good DGA curve; see below). The clock
+steps every 60 s, not the live 15 s, so the sweep scores *whether*, not *how
+fast* - the battery measured time to detect.
+
+**Result, original engine vs final engine** (same tool, same data;
+`eval/results/sweep-20261002-original-code.json` / `-final.json`):
+
+| Signal | TP | FN | FP before | FP after | Precision after |
+|---|---|---|---|---|---|
+| port_scan | 11 | 0 | 0 | 0 | 1.00 |
+| network_sweep | 10 | 0 | 1 | 0 | 1.00 |
+| slow_port_scan | 11 | 0 | 0 | 0 | 1.00 |
+| slow_network_sweep | 10 | 0 | **53** | 0 | 1.00 |
+| brute_force | 11 | 0 | 0 | 0 | 1.00 |
+| beacon | 11 | 0 | 0 | 0 | 1.00 |
+| campaign | 10 | 0 | 0 | 0 | 1.00 |
+| ids_alert | 10 | 0 | **12** | 0 | 1.00 |
+| dns_bypass | 10 | 0 | **5** | 0 | 1.00 |
+| dns_tunneling | 10 | 0 | 0 | 0 | 1.00 |
+| dga | 10 | 0 | 1 | 1 | 0.91 |
+| threat_intel | 10 | 0 | 0 | 0 | 1.00 |
+| new_device | 10 | 0 | 0 | 0 | 1.00 |
+| volume_anomaly | 10 | 0 | 0 | 0 | 1.00 |
+| malicious_domain | 10 | 0 | 14 | 14 | **0.42** |
+| **All** | **154** | **0** | **86** | **15** | **0.91** (was 0.64) |
+
+Recall is 1.00 everywhere, before and after. (One unscored `adblock_ineffective`
+incident on the A33, 15 September, is not in the table: that signal has no
+battery positives - it needs an enrolled device watching YouTube.)
+
+**What the false positives were, and what changed** - each from reading the
+evidence, not from moving a threshold. The sweeps showed that for
+slow_network_sweep, ids_alert, dns_bypass and malicious_domain *no* threshold
+removed the false positives without losing every attack: they were counting
+the wrong things.
+
+1. **Duplicate incidents (an engine bug).** `raise_incident` set `last_seen`
+   to the merging firing's value even when older. With two patterns of one
+   signal open on one device (a port-80 sweep still growing, a port-443 one
+   over), the older dragged `last_seen` back and the next firing opened a new
+   incident - every cycle (15 Sep, 14:55-15:05: a new A33 incident each
+   minute). Now `max(last_seen, ?)`. Most of the A33's 117 live open
+   slow_network_sweep incidents came from this.
+2. **Slow signals deduplicated over 10 minutes.** The slow-scan signals catch
+   probes up to ~15 min apart, so one slow scan split into an incident per
+   long gap. They now pass their own window as the dedup window.
+3. **QUIC counted as reconnaissance and as DNS bypass.** The firewall rejects
+   all QUIC, so every HTTP/3 attempt looks "unanswered" (sweeps) and logs a
+   `quic-blocked` line (dns_bypass). All five dns_bypass false positives were
+   these. QUIC rejections no longer count toward either; the gateway's own
+   address no longer counts as a swept host.
+4. **Slow sweep counted unanswered internet hosts over two hours.** What was
+   left were TCP attempts to CDNs that got no reply (1-2 packets, nothing
+   back), sprinkled over two hours - a phone's background life, ~10 distinct
+   hosts per two hours. The slow sweep now counts LAN destinations only; a
+   *burst* of unanswered internet hosts is still the fast sweep's job. Given
+   up: an internet sweep paced slower than five minutes. All battery sweeps
+   were LAN sweeps.
+5. **Informational IDS rules.** All twelve ids_alert false positives were
+   priority 3 (`ET INFO` STUN from calls, Cloudflare-DoH SNI, ipify,
+   Android connectivity check; `SURICATA STREAM` anomalies). The battery's
+   attack (rule 2100498) is priority 2. New setting `ids_alert_max_priority`
+   (default 2): priority-3 alerts stay in Hunt but don't become incidents.
+
+Tests: 482 (was 468), including a failing-first test for each change.
+Deployed 2 October; `correlation.py` and `settings.py` checksum-match.
+
+**Threshold sweeps** (one setting at a time, others at default; TP/FN/FP of
+the final engine, `eval/results/sweep-20261002-final.json`). A battery attack
+runs at one fixed intensity, so recall falls off a cliff where the threshold
+passes it - the distance from the default to the cliff is the margin.
+
+| Setting (default) | Values → TP/FN/FP | Reading |
+|---|---|---|
+| port_scan_threshold (8) | 3-12: 11/0/0; 16, 24: 10/1/0 | FP-free throughout; margin to 12 |
+| network_sweep_threshold (8) | 3: 8 FP, 4: 7, 6: 2, **8-10: 0 FP**; 12+: 0 TP | 8 is the lowest FP-free value; attacks (10 hosts) held to 10 |
+| slow_scan_threshold (8), sweeps | 3-10: 10/0/0; 12+: 0 TP | FP-free throughout |
+| slow_scan_threshold (8), ports | 3-8: 11/0/0; 10+: lost | 9-probe attacks; default sits one below the cliff |
+| slow_scan_window_seconds (7200) | 1800-28800: 11/0/0 | flat |
+| brute_force_threshold (6) | 2-8: 11/0/0; 10+: lost | FP-free throughout |
+| beacon_score_threshold (0.8) | 0.5-0.8: 11/0/0; 0.85+: 10/1/0 (red-team beacon lost) | default is the highest value keeping every beacon |
+| beacon_min_connections (8) | 4-8: 11/0/0; 10: 10/1; 12+: lost | |
+| ids_alert_threshold (3) | 1: 9 FP; **2-4: 0 FP**; 5+: lost | 3 sits mid-plateau |
+| dns_bypass_threshold (3) | 1-4: 10/0/0; 5+: lost (4 canary queries) | |
+| dns_tunneling_min_distinct_subdomains (20) | 5: 5 FP; 10-25: 10/0/0; 30+: lost (25 queries) | default mid-plateau |
+| dns_tunneling_min_entropy (3.5) | ≤3.0: 1 FP; 3.25-4.5: 10/0/0 | |
+| baseline_z_threshold (3.0) | 1.5-5.0: 10/0/0 | flat (the test transfer is z≈140) |
+| dga_min_nxdomain_count (10) | 3: 3 FP … 12: 1 FP; 15+: lost (12 lookups) | **no FP-free value keeps the attacks** |
+| dga_min_entropy (3.3) | ≤3.3: 1 FP; 3.6+: lost | **not separable** |
+| malicious_domain_threshold (15) | 5: 24 FP … 20: 6; 25+: lost (23 domains), still 4 FP | **not separable** |
+
+**Left as they are, and why:**
+
+- **dga (1 false positive):** 11 NXDOMAIN lookups under `whatsapp.com` from
+  `kaushik-pc`, average entropy 3.3. The battery's own DGA labels (random,
+  14 characters) measure 3.3-3.5: Shannon entropy of a 14-character string
+  can't exceed ~3.8, so short random labels and some real app hostnames
+  overlap. No default change is justified by one false positive; the
+  natural next step is a popular-domain allowlist, which is a feature, not a
+  calibration.
+- **malicious_domain (14 false positives, precision 0.42):** the signal counts
+  *any* blocked lookup, and every list on the gateway except the threat-intel
+  one is an ad/tracker list (AdGuard DNS filter, AdAway, HaGeZi Pro, OISD Big,
+  Peter Lowe; the DoH list belongs to dns_bypass). The battery's own
+  "malicious" test queried `doubleclick.net`, `criteo.com`, `hotjar.com` …
+  - exactly the A33's ordinary browsing. So the signal measures how ad-heavy
+  a session is, and the battery test was measuring the same thing. The only
+  genuinely malicious-domain evidence (the threat-intel list) is already
+  `threat_intel` (10/10, 0 FP). Redefining or retiring this signal is a
+  design decision, raised with the user rather than made here.
+
+**Caveat, stated plainly:** the four changes were found on the same negative
+data they are then scored on, so the "after" numbers are in-sample. The
+forward seven-day run (7.0), on the frozen final code, is the held-out check.
+
 ### 7.5 (first pass) - blocklist utility and overlap
 
 `tools/blocklist_utility.py` downloads every enabled list, checks each domain

@@ -132,6 +132,15 @@ SETTINGS_SCHEMA = {
         "label": "IDS-alert window",
         "help": "How far back (seconds) the IDS-alert signal looks when counting alerts of one category.",
     },
+    "ids_alert_max_priority": {
+        "default": 2, "type": int, "min": 1, "max": 4,
+        "label": "Lowest IDS priority that raises an incident",
+        "help": "IDS rules carry a priority, 1 (most serious) to 4. Alerts above this number "
+                "stay searchable in Hunt but don't become incidents. Priority 3 is the IDS's "
+                "informational tier (ET INFO rules, protocol-decoding oddities): in step 7.3 "
+                "every IDS false positive on the real devices was priority 3, and every attack "
+                "the battery ran was priority 2 or 1.",
+    },
     "threat_intel_threshold": {
         "default": 1, "type": int, "min": 1, "max": 100,
         "label": "Threat-intel match threshold",

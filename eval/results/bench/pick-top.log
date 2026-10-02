@@ -1,0 +1,76 @@
+ok  google.com                     200
+ok  cloudflare.com                 200
+ok  facebook.com                   200
+--  gstatic.com                    404
+ok  amazonaws.com                  200
+--  googleapis.com                 404
+--  akamai.net                     Page.goto: net::ERR_NAME_NOT_RESOLVED at https://akamai.net/
+ok  microsoft.com                  200
+ok  youtube.com                    200
+ok  apple.com                      200
+ok  instagram.com                  200
+ok  mail.ru                        200
+ok  fbcdn.net                      200
+--  ezviz7.com                     Page.goto: net::ERR_NAME_NOT_RESOLVED at https://ezviz7.com/
+ok  twitter.com                    200
+--  domaincontrol.com              Page.goto: net::ERR_CONNECTION_REFUSED at https://domaincontrol.com/
+ok  dzen.ru                        200
+ok  linkedin.com                   200
+--  googlevideo.com                Page.goto: net::ERR_CERT_COMMON_NAME_INVALID at https://googlevideo.com/
+--  akamaiedge.net                 Page.goto: net::ERR_NAME_NOT_RESOLVED at https://akamaiedge.net/
+--  googletagmanager.com           404
+ok  office.com                     200
+ok  live.com                       200
+--  akadns.net                     Page.goto: net::ERR_NAME_NOT_RESOLVED at https://akadns.net/
+--  hicloudcam.com                 Page.goto: net::ERR_NAME_NOT_RESOLVED at https://hicloudcam.com/
+ok  amazon.com                     202
+--  gtld-servers.net               Page.goto: net::ERR_NAME_NOT_RESOLVED at https://gtld-servers.net/
+ok  azure.com                      200
+ok  github.com                     200
+ok  wikipedia.org                  200
+--  appsflyersdk.com               403
+ok  bing.com                       200
+ok  whatsapp.net                   200
+--  apple-dns.net                  Page.goto: net::ERR_NAME_NOT_RESOLVED at https://apple-dns.net/
+--  aaplimg.com                    Page.goto: net::ERR_NAME_NOT_RESOLVED at https://aaplimg.com/
+ok  fastly.net                     200
+--  googleusercontent.com          404
+ok  doubleclick.net                200
+ok  cloud.microsoft                200
+--  office.net                     Page.goto: net::ERR_NAME_NOT_RESOLVED at https://office.net/
+--  microsoftonline.com            Page.goto: net::ERR_NAME_NOT_RESOLVED at https://microsoftonline.com/
+--  trafficmanager.net             Page.goto: net::ERR_NAME_NOT_RESOLVED at https://trafficmanager.net/
+ok  sharepoint.com                 200
+ok  netflix.com                    200
+ok  gandi.net                      200
+--  cloudfront.net                 Page.goto: net::ERR_NAME_NOT_RESOLVED at https://cloudfront.net/
+ok  youtu.be                       200
+ok  x.com                          200
+ok  wordpress.org                  200
+ok  digicert.com                   200
+ok  skype.com                      200
+ok  icloud.com                     200
+ok  pinterest.com                  200
+ok  tiktok.com                     200
+ok  whatsapp.com                   200
+ok  googledomains.com              200
+ok  cloudflare.net                 200
+--  goo.gl                         400
+ok  yahoo.com                      200
+ok  googlesyndication.com          200
+--  gvt1.com                       Page.goto: net::ERR_NAME_NOT_RESOLVED at https://gvt1.com/
+ok  roblox.com                     200
+ok  endpoints.news                 200
+--  windows.net                    Page.goto: net::ERR_CERT_COMMON_NAME_INVALID at https://windows.net/
+ok  adobe.com                      200
+--  pv-cdn.net                     Page.goto: net::ERR_NAME_NOT_RESOLVED at https://pv-cdn.net/
+--  windowsupdate.com              Page.goto: net::ERR_NAME_NOT_RESOLVED at https://windowsupdate.com/
+ok  spotify.com                    200
+ok  wa.me                          200
+ok  myfritz.net                    200
+--  msn.com                        200
+ok  zoom.us                        200
+ok  ntp.org                        200
+ok  qq.com                         200
+--  root-servers.net               Page.goto: net::ERR_NAME_NOT_RESOLVED at https://root-servers.net/
+ok  nginx.org                      200

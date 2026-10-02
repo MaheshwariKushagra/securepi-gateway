@@ -1,0 +1,107 @@
+== top50 condition none (gateway profile unrestricted) 20:59:05
+policy 38 active unrestricted
+doubleclick.net for 10.10.0.54: NotFilteredNotFound
+top50_none run 1  https://google.com/                           200    35 req (  35 ok)     967 kB    6.9s 
+top50_none run 1  https://cloudflare.com/                       200   198 req ( 195 ok)    2504 kB    8.6s 
+top50_none run 1  https://facebook.com/                         200    27 req (  27 ok)    2025 kB    8.0s 
+top50_none run 1  https://amazonaws.com/                        200   213 req ( 208 ok)   33440 kB   23.9s 
+top50_none run 1  https://microsoft.com/                        200   234 req ( 232 ok)    6279 kB   14.1s 
+top50_none run 1  https://youtube.com/                          200   143 req ( 136 ok)    3648 kB    8.3s 
+top50_none run 1  https://apple.com/                            200    47 req (  47 ok)    1870 kB    6.7s 
+top50_none run 1  https://instagram.com/                        200    43 req (  43 ok)    2738 kB    7.9s 
+top50_none run 1  https://mail.ru/                              200   332 req ( 319 ok)    8185 kB   20.9s 
+top50_none run 1  https://fbcdn.net/                            200    27 req (  27 ok)    2041 kB    6.8s 
+top50_none run 1  https://twitter.com/                          200   556 req ( 556 ok)    2318 kB    7.8s 
+top50_none run 1  https://dzen.ru/                              200   183 req ( 174 ok)    4702 kB   20.0s 
+top50_none run 1  https://linkedin.com/                         200    73 req (  68 ok)    1570 kB    6.8s 
+top50_none run 1  https://office.com/                           200    59 req (  59 ok)    3162 kB    7.4s 
+top50_none run 1  https://live.com/                             200   170 req ( 170 ok)    7025 kB    9.4s 
+top50_none run 1  https://amazon.com/                           202   219 req ( 217 ok)    2970 kB    6.7s 
+top50_none run 1  https://azure.com/                            200   281 req ( 279 ok)   17198 kB   16.6s 
+top50_none run 1  https://github.com/                           200   156 req ( 155 ok)    3919 kB    7.5s 
+top50_none run 1  https://wikipedia.org/                        200     7 req (   7 ok)      72 kB    5.8s 
+top50_none run 1  https://bing.com/                             200   308 req ( 308 ok)    5237 kB    6.3s 
+top50_none run 1  https://whatsapp.net/                         200    42 req (  42 ok)    1445 kB    6.6s 
+top50_none run 1  https://fastly.net/                           200    97 req (  91 ok)    1154 kB    7.5s 
+top50_none run 1  https://doubleclick.net/                      200    50 req (  41 ok)    1127 kB    6.2s 
+top50_none run 1  https://cloud.microsoft/                      200    53 req (  53 ok)    2811 kB    8.6s 
+top50_none run 1  https://sharepoint.com/                       200   195 req ( 195 ok)    8610 kB   13.9s 
+top50_none run 1  https://netflix.com/                          200   118 req ( 109 ok)    4074 kB   13.9s 
+top50_none run 1  https://gandi.net/                            200    21 req (  21 ok)     349 kB    8.8s 
+top50_none run 1  https://youtu.be/                             200   137 req ( 136 ok)    3652 kB    8.7s 
+top50_none run 1  https://x.com/                                200   556 req ( 556 ok)    2375 kB    6.8s 
+top50_none run 1  https://wordpress.org/                        200    52 req (  50 ok)    3192 kB    8.9s 
+top50_none run 1  https://digicert.com/                         200   178 req ( 178 ok)    2167 kB    8.1s 
+top50_none run 1  https://skype.com/                            200    40 req (  40 ok)    2089 kB    8.5s 
+top50_none run 1  https://icloud.com/                           200    23 req (  22 ok)    3203 kB    6.2s 
+top50_none run 1  https://pinterest.com/                        200   124 req ( 121 ok)    4136 kB    8.3s 
+top50_none run 1  https://tiktok.com/                           200    58 req (  51 ok)    5333 kB    9.4s 
+top50_none run 1  https://whatsapp.com/                         200    42 req (  42 ok)    1445 kB    7.3s 
+top50_none run 1  https://googledomains.com/                    200     7 req (   7 ok)      75 kB    6.0s 
+top50_none run 1  https://cloudflare.net/                       200   147 req ( 146 ok)    7438 kB   13.9s 
+top50_none run 1  https://yahoo.com/                            200  1314 req (1241 ok)   13935 kB   51.2s 
+top50_none run 1  https://googlesyndication.com/                200    36 req (  36 ok)     984 kB    6.6s 
+top50_none run 1  https://roblox.com/                           200   184 req ( 181 ok)    4917 kB   10.7s 
+top50_none run 1  https://endpoints.news/                       200   122 req ( 111 ok)   21197 kB   22.4s 
+top50_none run 1  https://adobe.com/                            200   176 req ( 174 ok)    4092 kB    6.2s 
+top50_none run 1  https://spotify.com/                          200   164 req ( 162 ok)    5548 kB    9.2s 
+top50_none run 1  https://wa.me/                                200    23 req (  22 ok)     975 kB   50.2s 
+top50_none run 1  https://myfritz.net/                          200    46 req (  46 ok)    1682 kB   11.8s 
+top50_none run 1  https://zoom.us/                              200   248 req ( 239 ok)    4300 kB   11.7s 
+top50_none run 1  https://ntp.org/                              200    39 req (  38 ok)     608 kB    9.1s 
+top50_none run 1  https://qq.com/                               200   186 req ( 182 ok)    8912 kB   50.3s 
+top50_none run 1  https://nginx.org/                            200     7 req (   7 ok)      41 kB    7.0s 
+== top50 condition tier1 (gateway profile standard) 21:10:33
+policy 40 active standard
+doubleclick.net for 10.10.0.54: FilteredBlackList
+top50_tier1 run 1  https://google.com/                           200    36 req (  35 ok)     983 kB    6.0s 
+top50_tier1 run 1  https://cloudflare.com/                       200   156 req ( 139 ok)    2381 kB    8.1s 
+top50_tier1 run 1  https://facebook.com/                         200    27 req (  27 ok)    2041 kB    6.9s 
+top50_tier1 run 1  https://amazonaws.com/                        200   168 req ( 115 ok)   31037 kB   25.7s 
+top50_tier1 run 1  https://microsoft.com/                        200   203 req ( 187 ok)    3316 kB   10.1s 
+top50_tier1 run 1  https://youtube.com/                          200   136 req ( 133 ok)    3649 kB    9.2s 
+top50_tier1 run 1  https://apple.com/                            200    46 req (  45 ok)    1869 kB    8.1s 
+top50_tier1 run 1  https://instagram.com/                        200    43 req (  43 ok)    2749 kB    8.7s 
+top50_tier1 run 1  https://mail.ru/                              200   220 req ( 166 ok)    6054 kB   20.3s 
+top50_tier1 run 1  https://fbcdn.net/                            200    27 req (  27 ok)    2029 kB    8.4s 
+top50_tier1 run 1  https://twitter.com/                          200   556 req ( 555 ok)    2318 kB    7.3s 
+top50_tier1 run 1  https://dzen.ru/                              200   118 req ( 101 ok)    3891 kB   19.1s 
+top50_tier1 run 1  https://linkedin.com/                         200    49 req (  42 ok)    1392 kB    6.7s 
+top50_tier1 run 1  https://office.com/                           200    51 req (  50 ok)    2783 kB    8.1s 
+top50_tier1 run 1  https://live.com/                             200   147 req ( 144 ok)    6939 kB    6.1s 
+top50_tier1 run 1  https://amazon.com/                           202   155 req ( 138 ok)    3012 kB    6.9s 
+top50_tier1 run 1  https://azure.com/                            200   220 req ( 204 ok)   16300 kB   14.3s 
+top50_tier1 run 1  https://github.com/                           200   156 req ( 153 ok)    3918 kB    6.8s 
+top50_tier1 run 1  https://wikipedia.org/                        200     7 req (   7 ok)      72 kB    7.4s 
+top50_tier1 run 1  https://bing.com/                             200    87 req (  87 ok)    1027 kB   11.7s 
+top50_tier1 run 1  https://whatsapp.net/                         200    42 req (  42 ok)    1445 kB   17.8s 
+top50_tier1 run 1  https://fastly.net/                           200    86 req (  76 ok)     827 kB   13.5s 
+top50_tier1 run 1  https://doubleclick.net/                      None     2 req (   0 ok)       0 kB    5.8s Page.goto: net::ERR_CONNECTION_REFUSED at https://doubleclick.net/
+top50_tier1 run 1  https://cloud.microsoft/                      200    55 req (  54 ok)    3134 kB   12.7s 
+top50_tier1 run 1  https://sharepoint.com/                       200   158 req ( 153 ok)    8011 kB   12.4s 
+top50_tier1 run 1  https://netflix.com/                          200    83 req (  61 ok)    3646 kB    9.5s 
+top50_tier1 run 1  https://gandi.net/                            200    21 req (  20 ok)     349 kB    7.9s 
+top50_tier1 run 1  https://youtu.be/                             200   141 req ( 132 ok)    3638 kB    9.1s 
+top50_tier1 run 1  https://x.com/                                200   556 req ( 555 ok)    2375 kB    6.9s 
+top50_tier1 run 1  https://wordpress.org/                        200    46 req (  44 ok)    2859 kB    9.8s 
+top50_tier1 run 1  https://digicert.com/                         200   176 req ( 171 ok)    2161 kB    7.9s 
+top50_tier1 run 1  https://skype.com/                            200    39 req (  36 ok)    2099 kB    8.8s 
+top50_tier1 run 1  https://icloud.com/                           200    23 req (  21 ok)    1399 kB    6.2s 
+top50_tier1 run 1  https://pinterest.com/                        200   157 req ( 154 ok)    5577 kB    9.9s 
+top50_tier1 run 1  https://tiktok.com/                           200    54 req (  44 ok)    5329 kB   10.3s 
+top50_tier1 run 1  https://whatsapp.com/                         200    42 req (  42 ok)    1445 kB    6.6s 
+top50_tier1 run 1  https://googledomains.com/                    200     7 req (   7 ok)      75 kB    6.4s 
+top50_tier1 run 1  https://cloudflare.net/                       200   158 req ( 152 ok)    8461 kB   14.5s 
+top50_tier1 run 1  https://yahoo.com/                            200   305 req ( 225 ok)    4145 kB    8.8s 
+top50_tier1 run 1  https://googlesyndication.com/                None     2 req (   0 ok)       0 kB    5.3s Page.goto: net::ERR_CONNECTION_REFUSED at https://googlesyndication.com/
+top50_tier1 run 1  https://roblox.com/                           200   193 req ( 178 ok)    5062 kB   11.0s 
+top50_tier1 run 1  https://endpoints.news/                       200    70 req (  64 ok)   19536 kB   14.0s 
+top50_tier1 run 1  https://adobe.com/                            200   205 req ( 195 ok)    5248 kB    6.1s 
+top50_tier1 run 1  https://spotify.com/                          200   152 req ( 148 ok)    5011 kB    9.9s 
+top50_tier1 run 1  https://wa.me/                                200    23 req (  22 ok)     975 kB   50.2s 
+top50_tier1 run 1  https://myfritz.net/                          200    44 req (  42 ok)    1637 kB    9.4s 
+top50_tier1 run 1  https://zoom.us/                              200   140 req ( 133 ok)    2724 kB    7.4s 
+top50_tier1 run 1  https://ntp.org/                              200    26 req (  23 ok)     363 kB    9.8s 
+top50_tier1 run 1  https://qq.com/                               200   248 req ( 121 ok)    4901 kB   13.7s 
+top50_tier1 run 1  https://nginx.org/                            200     7 req (   7 ok)      41 kB    6.4s 
+== done 21:20:41

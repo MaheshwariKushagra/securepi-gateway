@@ -703,7 +703,10 @@ the description moves on ("port 443").
 
 ## Stage 7
 
-In progress: 7.1 and 7.2 are done, 7.0 and 7.3-7.9 are still to run.
+Status at the end of 2 October 2026: 7.1-7.5, 7.7 and 7.8 done; 7.6 measured on the
+data so far (to be repeated over the seven-day run); **7.0 not yet started** (tooling
+ready, scheduled for the next session); 7.9's kit ready, the study itself needs
+5-8 participants.
 
 ### Pre-run fixes (26 September 2026, after the first battery)
 

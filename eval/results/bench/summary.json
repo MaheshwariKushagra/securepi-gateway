@@ -1,0 +1,898 @@
+{
+ "none": {
+  "loads": 60,
+  "loads_where_onload_never_fired": 19,
+  "median_over_sites": {
+   "bytes": 4726945.5,
+   "lcp_ms": 1204.0,
+   "onload_ms": 3944.449999999255,
+   "requests_attempted": 441.5,
+   "requests_completed": 415.0,
+   "third_party_bytes": 3245184.0,
+   "third_party_completed": 340.0,
+   "tracker_companies": 41.5
+  },
+  "per_site": {
+   "https://edition.cnn.com/": {
+    "bytes": 23174466,
+    "lcp_ms": 1076,
+    "onload_ms": null,
+    "requests_attempted": 1044,
+    "requests_completed": 992,
+    "third_party_bytes": 6715923,
+    "third_party_completed": 906,
+    "tracker_companies": 88
+   },
+   "https://indianexpress.com/": {
+    "bytes": 3696968,
+    "lcp_ms": 1172.0,
+    "onload_ms": 8214.79999999702,
+    "requests_attempted": 616,
+    "requests_completed": 577,
+    "third_party_bytes": 2877828,
+    "third_party_completed": 534,
+    "tracker_companies": 70
+   },
+   "https://timesofindia.indiatimes.com/": {
+    "bytes": 7209395,
+    "lcp_ms": 988,
+    "onload_ms": null,
+    "requests_attempted": 2876,
+    "requests_completed": 2759,
+    "third_party_bytes": 6814685,
+    "third_party_completed": 2736,
+    "tracker_companies": 124
+   },
+   "https://weather.com/": {
+    "bytes": 6123169,
+    "lcp_ms": 1736,
+    "onload_ms": null,
+    "requests_attempted": 1445,
+    "requests_completed": 1369,
+    "third_party_bytes": 4865151,
+    "third_party_completed": 1271,
+    "tracker_companies": 94
+   },
+   "https://www.accuweather.com/": {
+    "bytes": 1095019,
+    "lcp_ms": 1236,
+    "onload_ms": 3549.10000000149,
+    "requests_attempted": 50,
+    "requests_completed": 50,
+    "third_party_bytes": 851625,
+    "third_party_completed": 26,
+    "tracker_companies": 4
+   },
+   "https://www.bollywoodhungama.com/": {
+    "bytes": 7218776,
+    "lcp_ms": 2196,
+    "onload_ms": 3182.3000000044703,
+    "requests_attempted": 231,
+    "requests_completed": 171,
+    "third_party_bytes": 3859711,
+    "third_party_completed": 150,
+    "tracker_companies": 6
+   },
+   "https://www.cnet.com/": {
+    "bytes": 4612515,
+    "lcp_ms": 652,
+    "onload_ms": 1765.3000000044703,
+    "requests_attempted": 231,
+    "requests_completed": 221,
+    "third_party_bytes": 2216321,
+    "third_party_completed": 119,
+    "tracker_companies": 20
+   },
+   "https://www.cricbuzz.com/": {
+    "bytes": 4145262,
+    "lcp_ms": 736,
+    "onload_ms": 12329.39999999851,
+    "requests_attempted": 608,
+    "requests_completed": 582,
+    "third_party_bytes": 3376966,
+    "third_party_completed": 506,
+    "tracker_companies": 69
+   },
+   "https://www.dailymail.co.uk/": {
+    "bytes": 6854883,
+    "lcp_ms": 2340,
+    "onload_ms": 0,
+    "requests_attempted": 255,
+    "requests_completed": 250,
+    "third_party_bytes": 2524692,
+    "third_party_completed": 105,
+    "tracker_companies": 15
+   },
+   "https://www.espncricinfo.com/": {
+    "bytes": 4200604,
+    "lcp_ms": 1920,
+    "onload_ms": 4339.79999999702,
+    "requests_attempted": 291,
+    "requests_completed": 264,
+    "third_party_bytes": 3887271,
+    "third_party_completed": 257,
+    "tracker_companies": 27
+   },
+   "https://www.fandom.com/": {
+    "bytes": 4042543,
+    "lcp_ms": 1512,
+    "onload_ms": 4789,
+    "requests_attempted": 276,
+    "requests_completed": 211,
+    "third_party_bytes": 3544300,
+    "third_party_completed": 132,
+    "tracker_companies": 11
+   },
+   "https://www.forbes.com/": {
+    "bytes": 6955824,
+    "lcp_ms": 2300,
+    "onload_ms": 10421,
+    "requests_attempted": 437,
+    "requests_completed": 419,
+    "third_party_bytes": 4871754,
+    "third_party_completed": 383,
+    "tracker_companies": 44
+   },
+   "https://www.hindustantimes.com/": {
+    "bytes": 4841376,
+    "lcp_ms": 3138.0,
+    "onload_ms": null,
+    "requests_attempted": 2078,
+    "requests_completed": 2011,
+    "third_party_bytes": 3113402,
+    "third_party_completed": 1924,
+    "tracker_companies": 98
+   },
+   "https://www.livemint.com/": {
+    "bytes": 3596050,
+    "lcp_ms": 3368,
+    "onload_ms": 7665.70000000298,
+    "requests_attempted": 516,
+    "requests_completed": 478,
+    "third_party_bytes": 2881546,
+    "third_party_completed": 381,
+    "tracker_companies": 51
+   },
+   "https://www.moneycontrol.com/": {
+    "bytes": 925864,
+    "lcp_ms": 260,
+    "onload_ms": 2251.699999999255,
+    "requests_attempted": 46,
+    "requests_completed": 46,
+    "third_party_bytes": 528974,
+    "third_party_completed": 36,
+    "tracker_companies": 3
+   },
+   "https://www.msn.com/": {
+    "bytes": 5630368,
+    "lcp_ms": 2328,
+    "onload_ms": 6908.89999999851,
+    "requests_attempted": 426,
+    "requests_completed": 411,
+    "third_party_bytes": 2924089,
+    "third_party_completed": 243,
+    "tracker_companies": 9
+   },
+   "https://www.ndtv.com/": {
+    "bytes": 11493551,
+    "lcp_ms": 600,
+    "onload_ms": null,
+    "requests_attempted": 1393,
+    "requests_completed": 1260,
+    "third_party_bytes": 10269302,
+    "third_party_completed": 1218,
+    "tracker_companies": 103
+   },
+   "https://www.news18.com/": {
+    "bytes": 3681756,
+    "lcp_ms": 1092,
+    "onload_ms": 729.1000000014901,
+    "requests_attempted": 446,
+    "requests_completed": 408,
+    "third_party_bytes": 2381868,
+    "third_party_completed": 299,
+    "tracker_companies": 39
+   },
+   "https://www.techradar.com/": {
+    "bytes": 6639951,
+    "lcp_ms": 836,
+    "onload_ms": null,
+    "requests_attempted": 1055,
+    "requests_completed": 992,
+    "third_party_bytes": 5921986,
+    "third_party_completed": 946,
+    "tracker_companies": 96
+   },
+   "https://www.theguardian.com/international": {
+    "bytes": 1030799,
+    "lcp_ms": 760,
+    "onload_ms": 1305.8999999985099,
+    "requests_attempted": 100,
+    "requests_completed": 90,
+    "third_party_bytes": 675720,
+    "third_party_completed": 78,
+    "tracker_companies": 0
+   }
+  },
+  "sites": 20,
+  "sum_over_sites": {
+   "bytes": 117169139,
+   "requests_completed": 13561,
+   "third_party_bytes": 75103114,
+   "third_party_completed": 12250,
+   "tracker_companies": 971
+  }
+ },
+ "tier1": {
+  "loads": 60,
+  "loads_where_onload_never_fired": 0,
+  "median_over_sites": {
+   "bytes": 2087776.5,
+   "lcp_ms": 1064.0,
+   "onload_ms": 1485.7499999925494,
+   "requests_attempted": 129.0,
+   "requests_completed": 98.0,
+   "third_party_bytes": 788714.0,
+   "third_party_completed": 31.5,
+   "tracker_companies": 0.0
+  },
+  "per_site": {
+   "https://edition.cnn.com/": {
+    "bytes": 0,
+    "lcp_ms": 924,
+    "onload_ms": 8563.40000000596,
+    "requests_attempted": 20539,
+    "requests_completed": 90,
+    "third_party_bytes": 0,
+    "third_party_completed": 25,
+    "tracker_companies": 1
+   },
+   "https://indianexpress.com/": {
+    "bytes": 1376768,
+    "lcp_ms": 736,
+    "onload_ms": 1231.199999988079,
+    "requests_attempted": 62,
+    "requests_completed": 49,
+    "third_party_bytes": 501567,
+    "third_party_completed": 10,
+    "tracker_companies": 1
+   },
+   "https://timesofindia.indiatimes.com/": {
+    "bytes": 1485527,
+    "lcp_ms": 924,
+    "onload_ms": 1393.0999999940395,
+    "requests_attempted": 86,
+    "requests_completed": 37,
+    "third_party_bytes": 1177151,
+    "third_party_completed": 33,
+    "tracker_companies": 1
+   },
+   "https://weather.com/": {
+    "bytes": 1880857,
+    "lcp_ms": 1392,
+    "onload_ms": 1066.3999999985099,
+    "requests_attempted": 140,
+    "requests_completed": 106,
+    "third_party_bytes": 620727,
+    "third_party_completed": 16,
+    "tracker_companies": 1
+   },
+   "https://www.accuweather.com/": {
+    "bytes": 725572,
+    "lcp_ms": 960,
+    "onload_ms": 3021.2999999970198,
+    "requests_attempted": 45,
+    "requests_completed": 39,
+    "third_party_bytes": 482485,
+    "third_party_completed": 16,
+    "tracker_companies": 0
+   },
+   "https://www.bollywoodhungama.com/": {
+    "bytes": 1689805,
+    "lcp_ms": 1660,
+    "onload_ms": 2606.60000000149,
+    "requests_attempted": 74,
+    "requests_completed": 41,
+    "third_party_bytes": 1444894,
+    "third_party_completed": 30,
+    "tracker_companies": 0
+   },
+   "https://www.cnet.com/": {
+    "bytes": 2804515,
+    "lcp_ms": 696,
+    "onload_ms": 1639.9000000059605,
+    "requests_attempted": 168,
+    "requests_completed": 98,
+    "third_party_bytes": 678189,
+    "third_party_completed": 15,
+    "tracker_companies": 0
+   },
+   "https://www.cricbuzz.com/": {
+    "bytes": 1184267,
+    "lcp_ms": 724,
+    "onload_ms": 1228.0999999940395,
+    "requests_attempted": 92,
+    "requests_completed": 80,
+    "third_party_bytes": 415781,
+    "third_party_completed": 4,
+    "tracker_companies": 1
+   },
+   "https://www.dailymail.co.uk/": {
+    "bytes": 5320248,
+    "lcp_ms": 1468,
+    "onload_ms": 0,
+    "requests_attempted": 203,
+    "requests_completed": 171,
+    "third_party_bytes": 818240,
+    "third_party_completed": 29,
+    "tracker_companies": 1
+   },
+   "https://www.espncricinfo.com/": {
+    "bytes": 2550570,
+    "lcp_ms": 1708,
+    "onload_ms": 1538.5999999940395,
+    "requests_attempted": 79,
+    "requests_completed": 71,
+    "third_party_bytes": 2236209,
+    "third_party_completed": 64,
+    "tracker_companies": 0
+   },
+   "https://www.fandom.com/": {
+    "bytes": 3432225,
+    "lcp_ms": 1368,
+    "onload_ms": 3736.2000000029802,
+    "requests_attempted": 185,
+    "requests_completed": 151,
+    "third_party_bytes": 2934797,
+    "third_party_completed": 72,
+    "tracker_companies": 0
+   },
+   "https://www.forbes.com/": {
+    "bytes": 3792902,
+    "lcp_ms": 1272,
+    "onload_ms": 4538.70000000298,
+    "requests_attempted": 100,
+    "requests_completed": 81,
+    "third_party_bytes": 1750630,
+    "third_party_completed": 53,
+    "tracker_companies": 0
+   },
+   "https://www.hindustantimes.com/": {
+    "bytes": 2041093,
+    "lcp_ms": 340,
+    "onload_ms": 1348.4000000059605,
+    "requests_attempted": 115,
+    "requests_completed": 98,
+    "third_party_bytes": 193558,
+    "third_party_completed": 9,
+    "tracker_companies": 0
+   },
+   "https://www.livemint.com/": {
+    "bytes": 1870262,
+    "lcp_ms": 3788,
+    "onload_ms": 1347.9000000059605,
+    "requests_attempted": 120,
+    "requests_completed": 104,
+    "third_party_bytes": 510234,
+    "third_party_completed": 11,
+    "tracker_companies": 1
+   },
+   "https://www.moneycontrol.com/": {
+    "bytes": 3249905,
+    "lcp_ms": 1168,
+    "onload_ms": 2762.7000000029802,
+    "requests_attempted": 332,
+    "requests_completed": 317,
+    "third_party_bytes": 759188,
+    "third_party_completed": 52,
+    "tracker_companies": 1
+   },
+   "https://www.msn.com/": {
+    "bytes": 4139881,
+    "lcp_ms": 2128,
+    "onload_ms": 1432.8999999910593,
+    "requests_attempted": 216,
+    "requests_completed": 192,
+    "third_party_bytes": 1686670,
+    "third_party_completed": 73,
+    "tracker_companies": 0
+   },
+   "https://www.ndtv.com/": {
+    "bytes": 6737074,
+    "lcp_ms": 820,
+    "onload_ms": 3174.89999999851,
+    "requests_attempted": 157,
+    "requests_completed": 139,
+    "third_party_bytes": 5498085,
+    "third_party_completed": 99,
+    "tracker_companies": 1
+   },
+   "https://www.news18.com/": {
+    "bytes": 2327447,
+    "lcp_ms": 1240,
+    "onload_ms": 851.9000000059605,
+    "requests_attempted": 192,
+    "requests_completed": 185,
+    "third_party_bytes": 1029850,
+    "third_party_completed": 77,
+    "tracker_companies": 0
+   },
+   "https://www.techradar.com/": {
+    "bytes": 2134460,
+    "lcp_ms": 852,
+    "onload_ms": 2232.2000000029802,
+    "requests_attempted": 138,
+    "requests_completed": 123,
+    "third_party_bytes": 1416325,
+    "third_party_completed": 78,
+    "tracker_companies": 0
+   },
+   "https://www.theguardian.com/international": {
+    "bytes": 1031938,
+    "lcp_ms": 764,
+    "onload_ms": 1236.8999999910593,
+    "requests_attempted": 100,
+    "requests_completed": 90,
+    "third_party_bytes": 676234,
+    "third_party_completed": 78,
+    "tracker_companies": 0
+   }
+  },
+  "sites": 20,
+  "sum_over_sites": {
+   "bytes": 49775316,
+   "requests_completed": 2262,
+   "third_party_bytes": 24830814,
+   "third_party_completed": 844,
+   "tracker_companies": 9
+  }
+ },
+ "tier1_lists": {
+  "loads": 60,
+  "loads_where_onload_never_fired": 0,
+  "median_over_sites": {
+   "bytes": 2074839.0,
+   "lcp_ms": 1072.0,
+   "onload_ms": 1477.300000000745,
+   "requests_attempted": 128.0,
+   "requests_completed": 98.0,
+   "third_party_bytes": 791058.0,
+   "third_party_completed": 32.0,
+   "tracker_companies": 0.0
+  },
+  "per_site": {
+   "https://edition.cnn.com/": {
+    "bytes": 0,
+    "lcp_ms": 716,
+    "onload_ms": 8195.69999999553,
+    "requests_attempted": 17673,
+    "requests_completed": 91,
+    "third_party_bytes": 0,
+    "third_party_completed": 26,
+    "tracker_companies": 1
+   },
+   "https://indianexpress.com/": {
+    "bytes": 1376935,
+    "lcp_ms": 660,
+    "onload_ms": 1170.3999999985099,
+    "requests_attempted": 61,
+    "requests_completed": 48,
+    "third_party_bytes": 501560,
+    "third_party_completed": 10,
+    "tracker_companies": 1
+   },
+   "https://timesofindia.indiatimes.com/": {
+    "bytes": 1484556,
+    "lcp_ms": 828,
+    "onload_ms": 1133.7999999970198,
+    "requests_attempted": 86,
+    "requests_completed": 37,
+    "third_party_bytes": 1177084,
+    "third_party_completed": 33,
+    "tracker_companies": 1
+   },
+   "https://weather.com/": {
+    "bytes": 1876256,
+    "lcp_ms": 1254.0,
+    "onload_ms": 863.7999999970198,
+    "requests_attempted": 137,
+    "requests_completed": 102,
+    "third_party_bytes": 618859,
+    "third_party_completed": 14,
+    "tracker_companies": 1
+   },
+   "https://www.accuweather.com/": {
+    "bytes": 726565,
+    "lcp_ms": 1048,
+    "onload_ms": 3256.5,
+    "requests_attempted": 45,
+    "requests_completed": 39,
+    "third_party_bytes": 483461,
+    "third_party_completed": 16,
+    "tracker_companies": 0
+   },
+   "https://www.bollywoodhungama.com/": {
+    "bytes": 1628611,
+    "lcp_ms": 1644,
+    "onload_ms": 1913.7000000029802,
+    "requests_attempted": 73,
+    "requests_completed": 42,
+    "third_party_bytes": 1406142,
+    "third_party_completed": 31,
+    "tracker_companies": 0
+   },
+   "https://www.cnet.com/": {
+    "bytes": 2804564,
+    "lcp_ms": 500,
+    "onload_ms": 1494.1000000014901,
+    "requests_attempted": 168,
+    "requests_completed": 98,
+    "third_party_bytes": 678208,
+    "third_party_completed": 15,
+    "tracker_companies": 0
+   },
+   "https://www.cricbuzz.com/": {
+    "bytes": 1184385,
+    "lcp_ms": 680,
+    "onload_ms": 1210.7000000029802,
+    "requests_attempted": 92,
+    "requests_completed": 80,
+    "third_party_bytes": 415804,
+    "third_party_completed": 4,
+    "tracker_companies": 1
+   },
+   "https://www.dailymail.co.uk/": {
+    "bytes": 5907080,
+    "lcp_ms": 1244,
+    "onload_ms": 0,
+    "requests_attempted": 210,
+    "requests_completed": 174,
+    "third_party_bytes": 819994,
+    "third_party_completed": 29,
+    "tracker_companies": 1
+   },
+   "https://www.espncricinfo.com/": {
+    "bytes": 2547017,
+    "lcp_ms": 1728,
+    "onload_ms": 1460.5,
+    "requests_attempted": 79,
+    "requests_completed": 71,
+    "third_party_bytes": 2236231,
+    "third_party_completed": 64,
+    "tracker_companies": 0
+   },
+   "https://www.fandom.com/": {
+    "bytes": 3378541,
+    "lcp_ms": 1560,
+    "onload_ms": 3901.39999999851,
+    "requests_attempted": 184,
+    "requests_completed": 150,
+    "third_party_bytes": 2880443,
+    "third_party_completed": 71,
+    "tracker_companies": 0
+   },
+   "https://www.forbes.com/": {
+    "bytes": 3772151,
+    "lcp_ms": 1112,
+    "onload_ms": 2462.7000000029802,
+    "requests_attempted": 100,
+    "requests_completed": 81,
+    "third_party_bytes": 1730130,
+    "third_party_completed": 53,
+    "tracker_companies": 0
+   },
+   "https://www.hindustantimes.com/": {
+    "bytes": 2030818,
+    "lcp_ms": 356,
+    "onload_ms": 1123.5999999940395,
+    "requests_attempted": 115,
+    "requests_completed": 98,
+    "third_party_bytes": 193575,
+    "third_party_completed": 9,
+    "tracker_companies": 0
+   },
+   "https://www.livemint.com/": {
+    "bytes": 1868592,
+    "lcp_ms": 3172,
+    "onload_ms": 668.6000000014901,
+    "requests_attempted": 120,
+    "requests_completed": 105,
+    "third_party_bytes": 510742,
+    "third_party_completed": 12,
+    "tracker_companies": 1
+   },
+   "https://www.moneycontrol.com/": {
+    "bytes": 3252301,
+    "lcp_ms": 1096,
+    "onload_ms": 2843.60000000149,
+    "requests_attempted": 331,
+    "requests_completed": 316,
+    "third_party_bytes": 762122,
+    "third_party_completed": 52,
+    "tracker_companies": 1
+   },
+   "https://www.msn.com/": {
+    "bytes": 3810866,
+    "lcp_ms": 2044,
+    "onload_ms": 1580,
+    "requests_attempted": 224,
+    "requests_completed": 202,
+    "third_party_bytes": 1363831,
+    "third_party_completed": 91,
+    "tracker_companies": 0
+   },
+   "https://www.ndtv.com/": {
+    "bytes": 6715561,
+    "lcp_ms": 656,
+    "onload_ms": 3003.89999999851,
+    "requests_attempted": 156,
+    "requests_completed": 138,
+    "third_party_bytes": 5477645,
+    "third_party_completed": 98,
+    "tracker_companies": 1
+   },
+   "https://www.news18.com/": {
+    "bytes": 2315308,
+    "lcp_ms": 1340,
+    "onload_ms": 973,
+    "requests_attempted": 191,
+    "requests_completed": 184,
+    "third_party_bytes": 1018583,
+    "third_party_completed": 76,
+    "tracker_companies": 0
+   },
+   "https://www.techradar.com/": {
+    "bytes": 2118860,
+    "lcp_ms": 692,
+    "onload_ms": 2145.1999999955297,
+    "requests_attempted": 136,
+    "requests_completed": 122,
+    "third_party_bytes": 1400791,
+    "third_party_completed": 77,
+    "tracker_companies": 0
+   },
+   "https://www.theguardian.com/international": {
+    "bytes": 1031212,
+    "lcp_ms": 724,
+    "onload_ms": 1357.5999999940395,
+    "requests_attempted": 100,
+    "requests_completed": 90,
+    "third_party_bytes": 676237,
+    "third_party_completed": 78,
+    "tracker_companies": 0
+   }
+  },
+  "sites": 20,
+  "sum_over_sites": {
+   "bytes": 49830179,
+   "requests_completed": 2268,
+   "third_party_bytes": 24351442,
+   "third_party_completed": 859,
+   "tracker_companies": 9
+  }
+ },
+ "ubol": {
+  "loads": 60,
+  "loads_where_onload_never_fired": 0,
+  "median_over_sites": {
+   "bytes": 2143917.5,
+   "lcp_ms": 860.0,
+   "onload_ms": 1515.9499999955297,
+   "requests_attempted": 117.5,
+   "requests_completed": 97.5,
+   "third_party_bytes": 692747.0,
+   "third_party_completed": 44.0,
+   "tracker_companies": 2.0
+  },
+  "per_site": {
+   "https://edition.cnn.com/": {
+    "bytes": 20505318,
+    "lcp_ms": 712,
+    "onload_ms": 6721.20000000298,
+    "requests_attempted": 120,
+    "requests_completed": 96,
+    "third_party_bytes": 4299914,
+    "third_party_completed": 30,
+    "tracker_companies": 3
+   },
+   "https://indianexpress.com/": {
+    "bytes": 803076,
+    "lcp_ms": 812,
+    "onload_ms": 1105.0999999940395,
+    "requests_attempted": 59,
+    "requests_completed": 52,
+    "third_party_bytes": 248330,
+    "third_party_completed": 14,
+    "tracker_companies": 3
+   },
+   "https://timesofindia.indiatimes.com/": {
+    "bytes": 965998,
+    "lcp_ms": 700,
+    "onload_ms": 915.3999999985099,
+    "requests_attempted": 39,
+    "requests_completed": 35,
+    "third_party_bytes": 682105,
+    "third_party_completed": 32,
+    "tracker_companies": 3
+   },
+   "https://weather.com/": {
+    "bytes": 1581245,
+    "lcp_ms": 1482.0,
+    "onload_ms": 1020.2999999970198,
+    "requests_attempted": 118,
+    "requests_completed": 97,
+    "third_party_bytes": 338853,
+    "third_party_completed": 9,
+    "tracker_companies": 4
+   },
+   "https://www.accuweather.com/": {
+    "bytes": 678464,
+    "lcp_ms": 1100,
+    "onload_ms": 3199.3999999910593,
+    "requests_attempted": 40,
+    "requests_completed": 31,
+    "third_party_bytes": 520891,
+    "third_party_completed": 16,
+    "tracker_companies": 1
+   },
+   "https://www.bollywoodhungama.com/": {
+    "bytes": 2008699,
+    "lcp_ms": 1428,
+    "onload_ms": 2335.5,
+    "requests_attempted": 94,
+    "requests_completed": 88,
+    "third_party_bytes": 1751647,
+    "third_party_completed": 73,
+    "tracker_companies": 2
+   },
+   "https://www.cnet.com/": {
+    "bytes": 2422198,
+    "lcp_ms": 428,
+    "onload_ms": 1298.0999999940395,
+    "requests_attempted": 108,
+    "requests_completed": 98,
+    "third_party_bytes": 295853,
+    "third_party_completed": 15,
+    "tracker_companies": 1
+   },
+   "https://www.cricbuzz.com/": {
+    "bytes": 842821,
+    "lcp_ms": 680,
+    "onload_ms": 907.2000000029802,
+    "requests_attempted": 87,
+    "requests_completed": 80,
+    "third_party_bytes": 75331,
+    "third_party_completed": 5,
+    "tracker_companies": 2
+   },
+   "https://www.dailymail.co.uk/": {
+    "bytes": 5211637,
+    "lcp_ms": 1400,
+    "onload_ms": 0,
+    "requests_attempted": 190,
+    "requests_completed": 169,
+    "third_party_bytes": 703389,
+    "third_party_completed": 26,
+    "tracker_companies": 1
+   },
+   "https://www.espncricinfo.com/": {
+    "bytes": 2370566,
+    "lcp_ms": 1716,
+    "onload_ms": 2022.5999999940395,
+    "requests_attempted": 80,
+    "requests_completed": 75,
+    "third_party_bytes": 2059693,
+    "third_party_completed": 68,
+    "tracker_companies": 2
+   },
+   "https://www.fandom.com/": {
+    "bytes": 3378474,
+    "lcp_ms": 1408,
+    "onload_ms": 3104.39999999851,
+    "requests_attempted": 184,
+    "requests_completed": 151,
+    "third_party_bytes": 2880215,
+    "third_party_completed": 72,
+    "tracker_companies": 1
+   },
+   "https://www.forbes.com/": {
+    "bytes": 3749852,
+    "lcp_ms": 1128,
+    "onload_ms": 5297.5,
+    "requests_attempted": 102,
+    "requests_completed": 88,
+    "third_party_bytes": 1706863,
+    "third_party_completed": 59,
+    "tracker_companies": 2
+   },
+   "https://www.hindustantimes.com/": {
+    "bytes": 2058281,
+    "lcp_ms": 344,
+    "onload_ms": 1166,
+    "requests_attempted": 122,
+    "requests_completed": 110,
+    "third_party_bytes": 194506,
+    "third_party_completed": 14,
+    "tracker_companies": 3
+   },
+   "https://www.livemint.com/": {
+    "bytes": 1104358,
+    "lcp_ms": 1024,
+    "onload_ms": 1251.5,
+    "requests_attempted": 117,
+    "requests_completed": 111,
+    "third_party_bytes": 241604,
+    "third_party_completed": 15,
+    "tracker_companies": 3
+   },
+   "https://www.moneycontrol.com/": {
+    "bytes": 2881722,
+    "lcp_ms": 908,
+    "onload_ms": 2502.3999999910593,
+    "requests_attempted": 324,
+    "requests_completed": 321,
+    "third_party_bytes": 406206,
+    "third_party_completed": 56,
+    "tracker_companies": 4
+   },
+   "https://www.msn.com/": {
+    "bytes": 4414234,
+    "lcp_ms": 2144,
+    "onload_ms": 1733.7999999970198,
+    "requests_attempted": 245,
+    "requests_completed": 218,
+    "third_party_bytes": 1958629,
+    "third_party_completed": 94,
+    "tracker_companies": 0
+   },
+   "https://www.ndtv.com/": {
+    "bytes": 8784002,
+    "lcp_ms": 800,
+    "onload_ms": 3871.8999999910593,
+    "requests_attempted": 183,
+    "requests_completed": 169,
+    "third_party_bytes": 7265379,
+    "third_party_completed": 123,
+    "tracker_companies": 3
+   },
+   "https://www.news18.com/": {
+    "bytes": 2229554,
+    "lcp_ms": 744,
+    "onload_ms": 1018.7999999970198,
+    "requests_attempted": 201,
+    "requests_completed": 198,
+    "third_party_bytes": 932912,
+    "third_party_completed": 89,
+    "tracker_companies": 3
+   },
+   "https://www.techradar.com/": {
+    "bytes": 2049131,
+    "lcp_ms": 800,
+    "onload_ms": 1858.3999999985099,
+    "requests_attempted": 129,
+    "requests_completed": 117,
+    "third_party_bytes": 1333459,
+    "third_party_completed": 74,
+    "tracker_companies": 0
+   },
+   "https://www.theguardian.com/international": {
+    "bytes": 1030734,
+    "lcp_ms": 712,
+    "onload_ms": 1281.1000000089407,
+    "requests_attempted": 100,
+    "requests_completed": 89,
+    "third_party_bytes": 675934,
+    "third_party_completed": 78,
+    "tracker_companies": 0
+   }
+  },
+  "sites": 20,
+  "sum_over_sites": {
+   "bytes": 69070364,
+   "requests_completed": 2393,
+   "third_party_bytes": 28571713,
+   "third_party_completed": 962,
+   "tracker_companies": 41
+  }
+ }
+}

@@ -1,0 +1,267 @@
+{
+ "block_pct_per_device": [
+  {
+   "block_pct": 35.237173281703775,
+   "blocked": 364,
+   "device": "Shri-Maheshwari-Ji",
+   "device_id": 2,
+   "queries": 1033
+  }
+ ],
+ "events_from_real_devices": 7479,
+ "events_in_window": 19165,
+ "excluded_test_windows": [
+  "2:2026-09-26T07:00:00:2026-09-26T10:00:00"
+ ],
+ "false_positives": {
+  "by_type": {
+   "dns_bypass": 5,
+   "malicious_domain": 1,
+   "network_sweep": 1,
+   "slow_network_sweep": 2
+  },
+  "count": 9,
+  "list": [
+   {
+    "created": "2026-09-26 10:07",
+    "device": "Shri-Maheshwari-Ji",
+    "device_id": 2,
+    "id": 468,
+    "status": "new",
+    "title": "Device tried to bypass DNS filtering 11 times",
+    "type": "dns_bypass"
+   },
+   {
+    "created": "2026-09-26 10:08",
+    "device": "Shri-Maheshwari-Ji",
+    "device_id": 2,
+    "id": 469,
+    "status": "new",
+    "title": "Network sweep detected on port 443",
+    "type": "network_sweep"
+   },
+   {
+    "created": "2026-09-26 11:09",
+    "device": "Shri-Maheshwari-Ji",
+    "device_id": 2,
+    "id": 562,
+    "status": "new",
+    "title": "Device tried to bypass DNS filtering 7 times",
+    "type": "dns_bypass"
+   },
+   {
+    "created": "2026-09-26 11:35",
+    "device": "Shri-Maheshwari-Ji",
+    "device_id": 2,
+    "id": 565,
+    "status": "new",
+    "title": "Device tried to bypass DNS filtering 4 times",
+    "type": "dns_bypass"
+   },
+   {
+    "created": "2026-09-26 11:56",
+    "device": "Shri-Maheshwari-Ji",
+    "device_id": 2,
+    "id": 569,
+    "status": "new",
+    "title": "Blocked lookups against 15 distinct domains (600s window)",
+    "type": "malicious_domain"
+   },
+   {
+    "created": "2026-09-26 12:18",
+    "device": "Shri-Maheshwari-Ji",
+    "device_id": 2,
+    "id": 572,
+    "status": "new",
+    "title": "Device tried to bypass DNS filtering 7 times",
+    "type": "dns_bypass"
+   },
+   {
+    "created": "2026-09-26 12:25",
+    "device": "Shri-Maheshwari-Ji",
+    "device_id": 2,
+    "id": 573,
+    "status": "new",
+    "title": "Slow network sweep detected on port 443",
+    "type": "slow_network_sweep"
+   },
+   {
+    "created": "2026-09-26 13:01",
+    "device": "Shri-Maheshwari-Ji",
+    "device_id": 2,
+    "id": 574,
+    "status": "new",
+    "title": "Device tried to bypass DNS filtering 8 times",
+    "type": "dns_bypass"
+   },
+   {
+    "created": "2026-09-26 13:02",
+    "device": "Shri-Maheshwari-Ji",
+    "device_id": 2,
+    "id": 575,
+    "status": "new",
+    "title": "Slow network sweep detected on port 443",
+    "type": "slow_network_sweep"
+   }
+  ],
+  "per_24h": 1.2857142857142858
+ },
+ "gateway_uptime": {
+  "boots_in_window": 2,
+  "fraction": 0.08659391534391535,
+  "seconds_up": 52372,
+  "window_seconds": 604800
+ },
+ "genuine_new_device_joins": 0,
+ "harness_incidents": 314,
+ "ingest_lag": null,
+ "ingest_lag_note": "event-weighted over per-minute p95s (gateway/run_monitor.py, 2 s polling)",
+ "platform_and_policy_incidents": {
+  "count": 26,
+  "list": [
+   {
+    "created": "2026-09-25 23:42",
+    "title": "No recent activity from: Suricata, AdGuard",
+    "type": "platform_stale"
+   },
+   {
+    "created": "2026-09-26 00:24",
+    "title": "WAN uplink unreachable",
+    "type": "platform_wan_down"
+   },
+   {
+    "created": "2026-09-26 00:33",
+    "title": "A response policy was changed outside the console",
+    "type": "policy_drift"
+   },
+   {
+    "created": "2026-09-26 01:10",
+    "title": "WAN uplink unreachable",
+    "type": "platform_wan_down"
+   },
+   {
+    "created": "2026-09-26 01:26",
+    "title": "No recent activity from: Suricata",
+    "type": "platform_stale"
+   },
+   {
+    "created": "2026-09-26 02:26",
+    "title": "WAN uplink unreachable",
+    "type": "platform_wan_down"
+   },
+   {
+    "created": "2026-09-26 05:05",
+    "title": "No recent activity from: Suricata",
+    "type": "platform_stale"
+   },
+   {
+    "created": "2026-09-26 05:38",
+    "title": "WAN uplink unreachable",
+    "type": "platform_wan_down"
+   },
+   {
+    "created": "2026-09-26 05:56",
+    "title": "No recent activity from: Suricata",
+    "type": "platform_stale"
+   },
+   {
+    "created": "2026-09-26 08:03",
+    "title": "2 services not running: securepi-dpi, securepi-intel-refresh.timer",
+    "type": "platform_service_down"
+   },
+   {
+    "created": "2026-09-26 08:05",
+    "title": "WAN uplink unreachable",
+    "type": "platform_wan_down"
+   },
+   {
+    "created": "2026-09-26 08:17",
+    "title": "DNS fail-open active - AdGuard not answering queries",
+    "type": "platform_dns_failopen"
+   },
+   {
+    "created": "2026-09-26 08:17",
+    "title": "The gateway could not enforce every response policy",
+    "type": "policy_enforcement_failed"
+   },
+   {
+    "created": "2026-09-26 08:20",
+    "title": "1 service not running: AdGuardHome",
+    "type": "platform_service_down"
+   },
+   {
+    "created": "2026-09-26 08:32",
+    "title": "1 service not running: securepi-dpi",
+    "type": "platform_service_down"
+   },
+   {
+    "created": "2026-09-26 08:44",
+    "title": "No recent activity from: Suricata",
+    "type": "platform_stale"
+   },
+   {
+    "created": "2026-09-26 10:12",
+    "title": "HTTPS inspection bypassed: proxy not answering",
+    "type": "platform_dpi_unresponsive"
+   },
+   {
+    "created": "2026-09-26 10:46",
+    "title": "No recent activity from: IDS",
+    "type": "platform_stale"
+   },
+   {
+    "created": "2026-09-26 11:25",
+    "title": "WAN uplink unreachable",
+    "type": "platform_wan_down"
+   },
+   {
+    "created": "2026-09-26 11:25",
+    "title": "No recent activity from: IDS",
+    "type": "platform_stale"
+   },
+   {
+    "created": "2026-09-26 11:44",
+    "title": "No recent activity from: IDS",
+    "type": "platform_stale"
+   },
+   {
+    "created": "2026-09-26 11:57",
+    "title": "WAN uplink unreachable",
+    "type": "platform_wan_down"
+   },
+   {
+    "created": "2026-09-26 12:06",
+    "title": "No recent activity from: IDS",
+    "type": "platform_stale"
+   },
+   {
+    "created": "2026-10-02 15:59",
+    "title": "No recent activity from: IDS, DNS filter",
+    "type": "platform_stale"
+   },
+   {
+    "created": "2026-10-02 16:13",
+    "title": "WAN uplink unreachable",
+    "type": "platform_wan_down"
+   },
+   {
+    "created": "2026-10-02 16:35",
+    "title": "WAN uplink unreachable",
+    "type": "platform_wan_down"
+   }
+  ]
+ },
+ "reduction_real_devices": {
+  "events": 7479,
+  "events_per_incident": 831.0,
+  "incidents": 9
+ },
+ "resources": null,
+ "service_uptime": null,
+ "storage": null,
+ "window": {
+  "days": 7.0,
+  "end": "2026-10-02T17:00:00",
+  "start": "2026-09-25T17:00:00"
+ }
+}

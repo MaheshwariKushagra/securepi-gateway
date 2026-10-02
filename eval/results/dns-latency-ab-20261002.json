@@ -1,0 +1,105 @@
+{
+ "domains": 150,
+ "original_config": {
+  "upstream_dns": [
+   "tls://1.1.1.1",
+   "tls://1.0.0.1"
+  ],
+  "fallback_dns": [],
+  "cache_optimistic": false,
+  "dnssec_enabled": true,
+  "upstream_mode": ""
+ },
+ "tuned_config": {
+  "upstream_dns": [
+   "tls://1.1.1.1",
+   "tls://9.9.9.9"
+  ],
+  "fallback_dns": [
+   "tls://1.0.0.1",
+   "tls://149.112.112.112"
+  ],
+  "cache_optimistic": true,
+  "dnssec_enabled": true,
+  "upstream_mode": "parallel"
+ },
+ "t": 1790951730.3727572,
+ "gateway-current": {
+  "cold": {
+   "n": 150,
+   "answered": 150,
+   "timeouts": 0,
+   "p50_ms": 68,
+   "p95_ms": 411,
+   "max_ms": 1911
+  },
+  "warm": {
+   "n": 150,
+   "answered": 150,
+   "timeouts": 0,
+   "p50_ms": 0,
+   "p95_ms": 0,
+   "max_ms": 220
+  }
+ },
+ "isp": {
+  "cold": {
+   "n": 150,
+   "answered": 146,
+   "timeouts": 3,
+   "p50_ms": 61,
+   "p95_ms": 894,
+   "max_ms": 2457
+  },
+  "warm": {
+   "n": 150,
+   "answered": 149,
+   "timeouts": 1,
+   "p50_ms": 15,
+   "p95_ms": 394,
+   "max_ms": 3006
+  }
+ },
+ "applied_tuned": {
+  "upstream_dns": [
+   "tls://1.1.1.1",
+   "tls://9.9.9.9"
+  ],
+  "fallback_dns": [
+   "tls://1.0.0.1",
+   "tls://149.112.112.112"
+  ],
+  "cache_optimistic": true,
+  "dnssec_enabled": true,
+  "upstream_mode": "parallel"
+ },
+ "gateway-tuned": {
+  "cold": {
+   "n": 150,
+   "answered": 150,
+   "timeouts": 0,
+   "p50_ms": 47,
+   "p95_ms": 281,
+   "max_ms": 494
+  },
+  "warm": {
+   "n": 150,
+   "answered": 150,
+   "timeouts": 0,
+   "p50_ms": 0,
+   "p95_ms": 0,
+   "max_ms": 0
+  }
+ },
+ "restored_config": {
+  "upstream_dns": [
+   "tls://1.1.1.1",
+   "tls://1.0.0.1"
+  ],
+  "fallback_dns": [],
+  "cache_optimistic": false,
+  "dnssec_enabled": true,
+  "upstream_mode": ""
+ },
+ "restored_ok": true
+}

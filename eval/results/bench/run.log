@@ -1,0 +1,277 @@
+== run 1, condition none (gateway profile unrestricted) 18:55:03
+policy 25 active unrestricted
+doubleclick.net for 10.10.0.54: NotFilteredNotFound
+none       run 1  https://timesofindia.indiatimes.com/          200  1121 req (1064 ok)    5836 kB   50.8s 
+none       run 1  https://www.hindustantimes.com/               None     0 req (   0 ok)       0 kB  150.0s harness: load exceeded 150 s and was killed
+none       run 1  https://www.ndtv.com/                         200  1673 req (1536 ok)   11571 kB   51.3s 
+none       run 1  https://indianexpress.com/                    200   648 req ( 612 ok)    3776 kB   50.6s 
+none       run 1  https://www.news18.com/                       200   435 req ( 408 ok)    3682 kB    6.3s 
+none       run 1  https://www.livemint.com/                     200   548 req ( 513 ok)    3596 kB   14.0s 
+none       run 1  https://www.moneycontrol.com/                 200    45 req (  45 ok)     862 kB    8.3s 
+none       run 1  https://www.cricbuzz.com/                     200   616 req ( 591 ok)    4294 kB   18.2s 
+none       run 1  https://www.espncricinfo.com/                 200   324 req ( 299 ok)    4201 kB   12.3s 
+none       run 1  https://www.dailymail.co.uk/                  200   214 req ( 214 ok)    5315 kB    8.7s 
+none       run 1  https://www.theguardian.com/international     200   100 req (  90 ok)    1031 kB    7.2s 
+none       run 1  https://edition.cnn.com/                      200   891 req ( 857 ok)   23096 kB   50.8s 
+none       run 1  https://www.forbes.com/                       200   437 req ( 419 ok)    6936 kB   24.1s 
+none       run 1  https://www.cnet.com/                         200   231 req ( 221 ok)    4580 kB    7.3s 
+none       run 1  https://www.techradar.com/                    200  1114 req (1052 ok)    6640 kB   50.9s 
+none       run 1  https://weather.com/                          200  1403 req (1350 ok)    5738 kB   51.0s 
+none       run 1  https://www.accuweather.com/                  200    50 req (  50 ok)    1093 kB    8.8s 
+none       run 1  https://www.msn.com/                          200   427 req ( 415 ok)    6854 kB   12.4s 
+none       run 1  https://www.bollywoodhungama.com/             200   233 req ( 171 ok)    7219 kB    8.5s 
+none       run 1  https://www.fandom.com/                       200   277 req ( 211 ok)    4041 kB   10.0s 
+== run 1, condition tier1 (gateway profile standard) 19:05:42
+policy 26 active standard
+doubleclick.net for 10.10.0.54: FilteredBlackList
+tier1      run 1  https://timesofindia.indiatimes.com/          200    86 req (  37 ok)    1465 kB    6.3s 
+tier1      run 1  https://www.hindustantimes.com/               200   115 req (  98 ok)    2041 kB    6.7s 
+tier1      run 1  https://www.ndtv.com/                         200   158 req ( 140 ok)    7069 kB    8.6s 
+tier1      run 1  https://indianexpress.com/                    200    62 req (  49 ok)    1389 kB    6.4s 
+tier1      run 1  https://www.news18.com/                       200   192 req ( 185 ok)    2328 kB    6.1s 
+tier1      run 1  https://www.livemint.com/                     200   119 req ( 104 ok)    1873 kB    5.9s 
+tier1      run 1  https://www.moneycontrol.com/                 200   331 req ( 316 ok)    3247 kB    8.5s 
+tier1      run 1  https://www.cricbuzz.com/                     200    92 req (  80 ok)    1184 kB    6.3s 
+tier1      run 1  https://www.espncricinfo.com/                 200    80 req (  72 ok)    2559 kB    7.6s 
+tier1      run 1  https://www.dailymail.co.uk/                  200   198 req ( 170 ok)    5320 kB    6.2s 
+tier1      run 1  https://www.theguardian.com/international     200   100 req (  90 ok)    1031 kB    6.3s 
+tier1      run 1  https://edition.cnn.com/                      200  16300 req (  90 ok)       0 kB   12.1s 
+tier1      run 1  https://www.forbes.com/                       200   103 req (  84 ok)    3793 kB    9.6s 
+tier1      run 1  https://www.cnet.com/                         200   167 req (  97 ok)    2736 kB    6.8s 
+tier1      run 1  https://www.techradar.com/                    200   138 req ( 123 ok)    2134 kB    7.5s 
+tier1      run 1  https://weather.com/                          200   139 req ( 105 ok)    1879 kB    6.3s 
+tier1      run 1  https://www.accuweather.com/                  200    45 req (  39 ok)     726 kB    8.0s 
+tier1      run 1  https://www.msn.com/                          200   209 req ( 186 ok)    3831 kB    7.0s 
+tier1      run 1  https://www.bollywoodhungama.com/             200    77 req (  50 ok)    1860 kB   10.1s 
+tier1      run 1  https://www.fandom.com/                       200   184 req ( 150 ok)    3378 kB    9.0s 
+== run 1, condition tier1_lists (gateway profile strict_privacy) 19:08:49
+policy 27 active strict_privacy
+doubleclick.net for 10.10.0.54: FilteredBlackList
+tier1_lists run 1  https://timesofindia.indiatimes.com/          200    86 req (  37 ok)    1463 kB    6.4s 
+tier1_lists run 1  https://www.hindustantimes.com/               200   116 req (  99 ok)    2042 kB    6.5s 
+tier1_lists run 1  https://www.ndtv.com/                         200   157 req ( 139 ok)    7069 kB    8.0s 
+tier1_lists run 1  https://indianexpress.com/                    200    61 req (  48 ok)    1387 kB    6.2s 
+tier1_lists run 1  https://www.news18.com/                       200   178 req ( 171 ok)    1935 kB    6.2s 
+tier1_lists run 1  https://www.livemint.com/                     200   120 req ( 106 ok)    1873 kB    5.9s 
+tier1_lists run 1  https://www.moneycontrol.com/                 200   331 req ( 316 ok)    3252 kB    9.2s 
+tier1_lists run 1  https://www.cricbuzz.com/                     200    92 req (  80 ok)    1184 kB    6.1s 
+tier1_lists run 1  https://www.espncricinfo.com/                 200    79 req (  71 ok)    2545 kB    6.7s 
+tier1_lists run 1  https://www.dailymail.co.uk/                  200   204 req ( 172 ok)    5483 kB    6.5s 
+tier1_lists run 1  https://www.theguardian.com/international     200   100 req (  90 ok)    1031 kB    6.2s 
+tier1_lists run 1  https://edition.cnn.com/                      200  17673 req (  91 ok)       0 kB   11.9s 
+tier1_lists run 1  https://www.forbes.com/                       200   100 req (  81 ok)    3772 kB    7.4s 
+tier1_lists run 1  https://www.cnet.com/                         200   167 req (  97 ok)    2769 kB    6.7s 
+tier1_lists run 1  https://www.techradar.com/                    200   136 req ( 122 ok)    2119 kB    7.4s 
+tier1_lists run 1  https://weather.com/                          200    19 req (  19 ok)      80 kB    5.5s 
+tier1_lists run 1  https://www.accuweather.com/                  200    45 req (  39 ok)     725 kB    8.4s 
+tier1_lists run 1  https://www.msn.com/                          200   217 req ( 193 ok)    3811 kB    6.6s 
+tier1_lists run 1  https://www.bollywoodhungama.com/             200    87 req (  46 ok)    1629 kB    7.1s 
+tier1_lists run 1  https://www.fandom.com/                       200   184 req ( 150 ok)    3378 kB    9.2s 
+== run 1, condition ubol (gateway profile unrestricted) 19:11:51
+policy 28 active unrestricted
+doubleclick.net for 10.10.0.54: NotFilteredNotFound
+ubol       run 1  https://timesofindia.indiatimes.com/          200    39 req (  35 ok)     945 kB    6.5s 
+ubol       run 1  https://www.hindustantimes.com/               200   122 req ( 110 ok)    2069 kB    6.4s 
+ubol       run 1  https://www.ndtv.com/                         200   185 req ( 171 ok)    9147 kB    9.2s 
+ubol       run 1  https://indianexpress.com/                    200    59 req (  52 ok)    1135 kB    6.3s 
+ubol       run 1  https://www.news18.com/                       200   201 req ( 198 ok)    2254 kB    6.6s 
+ubol       run 1  https://www.livemint.com/                     200   117 req ( 111 ok)    1073 kB    6.5s 
+ubol       run 1  https://www.moneycontrol.com/                 200   325 req ( 322 ok)    2882 kB    8.0s 
+ubol       run 1  https://www.cricbuzz.com/                     200    87 req (  80 ok)     843 kB    6.1s 
+ubol       run 1  https://www.espncricinfo.com/                 200    80 req (  75 ok)    2369 kB    7.2s 
+ubol       run 1  https://www.dailymail.co.uk/                  200   190 req ( 169 ok)    5212 kB    6.3s 
+ubol       run 1  https://www.theguardian.com/international     200   100 req (  89 ok)    1031 kB    6.5s 
+ubol       run 1  https://edition.cnn.com/                      200   120 req (  96 ok)   20505 kB   11.6s 
+ubol       run 1  https://www.forbes.com/                       200   103 req (  89 ok)    3750 kB   10.6s 
+ubol       run 1  https://www.cnet.com/                         200   108 req (  98 ok)    2403 kB    6.8s 
+ubol       run 1  https://www.techradar.com/                    200   129 req ( 117 ok)    2106 kB    6.9s 
+ubol       run 1  https://weather.com/                          200    18 req (  18 ok)      78 kB    5.6s 
+ubol       run 1  https://www.accuweather.com/                  200    40 req (  31 ok)     678 kB    8.7s 
+ubol       run 1  https://www.msn.com/                          200   245 req ( 218 ok)    4350 kB    7.0s 
+ubol       run 1  https://www.bollywoodhungama.com/             200    94 req (  88 ok)    1992 kB   12.7s 
+ubol       run 1  https://www.fandom.com/                       200   184 req ( 151 ok)    3378 kB    8.4s 
+== run 2, condition none (gateway profile unrestricted) 19:16:10
+policy 29 active unrestricted
+doubleclick.net for 10.10.0.54: NotFilteredNotFound
+none       run 2  https://timesofindia.indiatimes.com/          200  2876 req (2759 ok)    7318 kB   53.0s 
+none       run 2  https://www.hindustantimes.com/               200  2078 req (2011 ok)    4841 kB   51.6s 
+none       run 2  https://www.ndtv.com/                         200  1393 req (1260 ok)   11494 kB   51.1s 
+none       run 2  https://indianexpress.com/                    None     0 req (   0 ok)       0 kB  150.0s harness: load exceeded 150 s and was killed
+none       run 2  https://www.news18.com/                       200   450 req ( 417 ok)    3560 kB    6.2s 
+none       run 2  https://www.livemint.com/                     200   410 req ( 373 ok)    3633 kB    8.0s 
+none       run 2  https://www.moneycontrol.com/                 200    46 req (  46 ok)     926 kB    7.4s 
+none       run 2  https://www.cricbuzz.com/                     200   608 req ( 582 ok)    4141 kB   16.4s 
+none       run 2  https://www.espncricinfo.com/                 200   291 req ( 264 ok)    4596 kB    9.7s 
+none       run 2  https://www.dailymail.co.uk/                  200   255 req ( 250 ok)    7621 kB    6.8s 
+none       run 2  https://www.theguardian.com/international     200   100 req (  90 ok)    1031 kB    6.5s 
+none       run 2  https://edition.cnn.com/                      200  1158 req (1109 ok)   23174 kB   51.2s 
+none       run 2  https://www.forbes.com/                       200   487 req ( 470 ok)    6956 kB   15.9s 
+none       run 2  https://www.cnet.com/                         200   231 req ( 221 ok)    4613 kB    7.0s 
+none       run 2  https://www.techradar.com/                    200  1042 req ( 979 ok)    6953 kB   50.9s 
+none       run 2  https://weather.com/                          200  1510 req (1442 ok)    6433 kB   51.2s 
+none       run 2  https://www.accuweather.com/                  200    50 req (  50 ok)    1095 kB    8.7s 
+none       run 2  https://www.msn.com/                          200   384 req ( 379 ok)    5630 kB   12.8s 
+none       run 2  https://www.bollywoodhungama.com/             200   189 req ( 154 ok)    7119 kB    8.1s 
+none       run 2  https://www.fandom.com/                       200   275 req ( 210 ok)    4054 kB   10.1s 
+== run 2, condition tier1 (gateway profile standard) 19:26:32
+policy 30 active standard
+doubleclick.net for 10.10.0.54: FilteredBlackList
+tier1      run 2  https://timesofindia.indiatimes.com/          200   111 req (  62 ok)    1620 kB    7.5s 
+tier1      run 2  https://www.hindustantimes.com/               200   115 req (  98 ok)    2055 kB    6.6s 
+tier1      run 2  https://www.ndtv.com/                         200   156 req ( 138 ok)    6737 kB    9.1s 
+tier1      run 2  https://indianexpress.com/                    200    62 req (  48 ok)    1377 kB    6.5s 
+tier1      run 2  https://www.news18.com/                       200   192 req ( 185 ok)    2327 kB    5.9s 
+tier1      run 2  https://www.livemint.com/                     200   120 req ( 105 ok)    1868 kB    6.6s 
+tier1      run 2  https://www.moneycontrol.com/                 200   332 req ( 317 ok)    3250 kB    7.9s 
+tier1      run 2  https://www.cricbuzz.com/                     200    93 req (  81 ok)    1187 kB    6.4s 
+tier1      run 2  https://www.espncricinfo.com/                 200    79 req (  71 ok)    2545 kB    6.8s 
+tier1      run 2  https://www.dailymail.co.uk/                  200   203 req ( 171 ok)    5084 kB    6.5s 
+tier1      run 2  https://www.theguardian.com/international     200   100 req (  90 ok)    1032 kB    6.5s 
+tier1      run 2  https://edition.cnn.com/                      200  23997 req (  90 ok)       0 kB   14.3s 
+tier1      run 2  https://www.forbes.com/                       200    89 req (  70 ok)    3702 kB   11.2s 
+tier1      run 2  https://www.cnet.com/                         200   168 req (  98 ok)    2805 kB    6.8s 
+tier1      run 2  https://www.techradar.com/                    200   137 req ( 122 ok)    2136 kB    7.2s 
+tier1      run 2  https://weather.com/                          200   140 req ( 106 ok)    1881 kB    6.2s 
+tier1      run 2  https://www.accuweather.com/                  200    45 req (  39 ok)     743 kB    8.2s 
+tier1      run 2  https://www.msn.com/                          200   218 req ( 194 ok)    4140 kB    6.5s 
+tier1      run 2  https://www.bollywoodhungama.com/             200    74 req (  38 ok)    1549 kB    7.8s 
+tier1      run 2  https://www.fandom.com/                       200   185 req ( 151 ok)    3432 kB    8.8s 
+== run 2, condition tier1_lists (gateway profile strict_privacy) 19:29:42
+policy 31 active strict_privacy
+doubleclick.net for 10.10.0.54: FilteredBlackList
+tier1_lists run 2  https://timesofindia.indiatimes.com/          200    86 req (  37 ok)    1485 kB    6.1s 
+tier1_lists run 2  https://www.hindustantimes.com/               200   115 req (  98 ok)    2031 kB    6.2s 
+tier1_lists run 2  https://www.ndtv.com/                         200   156 req ( 138 ok)    6711 kB    8.2s 
+tier1_lists run 2  https://indianexpress.com/                    200    61 req (  48 ok)    1377 kB    6.4s 
+tier1_lists run 2  https://www.news18.com/                       200   191 req ( 184 ok)    2315 kB    6.5s 
+tier1_lists run 2  https://www.livemint.com/                     200   119 req ( 104 ok)    1866 kB    5.9s 
+tier1_lists run 2  https://www.moneycontrol.com/                 200   330 req ( 315 ok)    3285 kB    8.2s 
+tier1_lists run 2  https://www.cricbuzz.com/                     200    92 req (  80 ok)    1184 kB    6.4s 
+tier1_lists run 2  https://www.espncricinfo.com/                 200    80 req (  72 ok)    2559 kB    8.2s 
+tier1_lists run 2  https://www.dailymail.co.uk/                  200   210 req ( 176 ok)    5907 kB    6.2s 
+tier1_lists run 2  https://www.theguardian.com/international     200   100 req (  90 ok)    1031 kB    6.7s 
+tier1_lists run 2  https://edition.cnn.com/                      200  20867 req (  91 ok)       0 kB   14.0s 
+tier1_lists run 2  https://www.forbes.com/                       200   100 req (  81 ok)    3796 kB    9.6s 
+tier1_lists run 2  https://www.cnet.com/                         200   168 req (  98 ok)    2805 kB    6.8s 
+tier1_lists run 2  https://www.techradar.com/                    200   144 req ( 129 ok)    2237 kB    7.0s 
+tier1_lists run 2  https://weather.com/                          200   137 req ( 102 ok)    1876 kB    6.3s 
+tier1_lists run 2  https://www.accuweather.com/                  200    45 req (  39 ok)     727 kB    8.0s 
+tier1_lists run 2  https://www.msn.com/                          200   224 req ( 202 ok)    3400 kB    7.1s 
+tier1_lists run 2  https://www.bollywoodhungama.com/             200    73 req (  42 ok)    1579 kB    7.7s 
+tier1_lists run 2  https://www.fandom.com/                       200   184 req ( 150 ok)    3379 kB    9.2s 
+== run 2, condition ubol (gateway profile unrestricted) 19:32:50
+policy 32 active unrestricted
+doubleclick.net for 10.10.0.54: NotFilteredNotFound
+ubol       run 2  https://timesofindia.indiatimes.com/          200    39 req (  35 ok)     967 kB    6.1s 
+ubol       run 2  https://www.hindustantimes.com/               200   122 req ( 110 ok)    2058 kB    6.6s 
+ubol       run 2  https://www.ndtv.com/                         200   183 req ( 169 ok)    8750 kB    8.3s 
+ubol       run 2  https://indianexpress.com/                    200    59 req (  52 ok)     803 kB    6.3s 
+ubol       run 2  https://www.news18.com/                       200   201 req ( 198 ok)    2229 kB    6.0s 
+ubol       run 2  https://www.livemint.com/                     200   117 req ( 111 ok)    1131 kB    6.8s 
+ubol       run 2  https://www.moneycontrol.com/                 200   321 req ( 318 ok)    2795 kB    7.7s 
+ubol       run 2  https://www.cricbuzz.com/                     200    87 req (  80 ok)     843 kB    6.1s 
+ubol       run 2  https://www.espncricinfo.com/                 200    80 req (  75 ok)    2374 kB    7.1s 
+ubol       run 2  https://www.dailymail.co.uk/                  200   189 req ( 168 ok)    5209 kB    6.1s 
+ubol       run 2  https://www.theguardian.com/international     200   100 req (  89 ok)    1029 kB    6.6s 
+ubol       run 2  https://edition.cnn.com/                      200   125 req (  99 ok)   20488 kB   14.2s 
+ubol       run 2  https://www.forbes.com/                       200    99 req (  85 ok)    3740 kB   10.8s 
+ubol       run 2  https://www.cnet.com/                         200   108 req (  98 ok)    2422 kB    6.5s 
+ubol       run 2  https://www.techradar.com/                    200   126 req ( 115 ok)    2011 kB    7.1s 
+ubol       run 2  https://weather.com/                          200   118 req (  97 ok)    1581 kB    6.3s 
+ubol       run 2  https://www.accuweather.com/                  200    40 req (  31 ok)     690 kB    8.0s 
+ubol       run 2  https://www.msn.com/                          200   247 req ( 221 ok)    4581 kB    7.8s 
+ubol       run 2  https://www.bollywoodhungama.com/             200    95 req (  89 ok)    2010 kB    7.6s 
+ubol       run 2  https://www.fandom.com/                       200   184 req ( 151 ok)    3378 kB    8.5s 
+== run 3, condition none (gateway profile unrestricted) 19:37:06
+policy 33 active unrestricted
+doubleclick.net for 10.10.0.54: NotFilteredNotFound
+none       run 3  https://timesofindia.indiatimes.com/          200  3076 req (2917 ok)    7209 kB   57.3s 
+none       run 3  https://www.hindustantimes.com/               200  3302 req (3153 ok)    5508 kB   52.7s 
+none       run 3  https://www.ndtv.com/                         200  1343 req (1213 ok)   11205 kB   51.1s 
+none       run 3  https://indianexpress.com/                    200   616 req ( 577 ok)    3697 kB   13.8s 
+none       run 3  https://www.news18.com/                       200   446 req ( 408 ok)    4042 kB    6.5s 
+none       run 3  https://www.livemint.com/                     200   516 req ( 478 ok)    3579 kB   13.2s 
+none       run 3  https://www.moneycontrol.com/                 200  2005 req (1871 ok)   10047 kB   51.5s 
+none       run 3  https://www.cricbuzz.com/                     200   539 req ( 513 ok)    4145 kB   17.8s 
+none       run 3  https://www.espncricinfo.com/                 200   256 req ( 227 ok)    4164 kB    9.2s 
+none       run 3  https://www.dailymail.co.uk/                  200   264 req ( 264 ok)    6855 kB    6.6s 
+none       run 3  https://www.theguardian.com/international     200   102 req (  92 ok)    1096 kB    6.4s 
+none       run 3  https://edition.cnn.com/                      200  1044 req ( 992 ok)   25293 kB   50.9s 
+none       run 3  https://www.forbes.com/                       200   417 req ( 400 ok)    7291 kB   15.9s 
+none       run 3  https://www.cnet.com/                         200   237 req ( 225 ok)    4679 kB    7.0s 
+none       run 3  https://www.techradar.com/                    200  1055 req ( 992 ok)    6632 kB   50.9s 
+none       run 3  https://weather.com/                          200  1445 req (1369 ok)    6123 kB   51.2s 
+none       run 3  https://www.accuweather.com/                  200    50 req (  50 ok)    1095 kB    8.2s 
+none       run 3  https://www.msn.com/                          200   426 req ( 411 ok)    5067 kB    6.7s 
+none       run 3  https://www.bollywoodhungama.com/             200   231 req ( 173 ok)    7404 kB    9.9s 
+none       run 3  https://www.fandom.com/                       200   276 req ( 211 ok)    4043 kB   10.6s 
+== run 3, condition tier1 (gateway profile standard) 19:46:03
+policy 34 active standard
+doubleclick.net for 10.10.0.54: FilteredBlackList
+tier1      run 3  https://timesofindia.indiatimes.com/          200    86 req (  37 ok)    1486 kB    6.6s 
+tier1      run 3  https://www.hindustantimes.com/               200   115 req (  98 ok)    2026 kB    6.4s 
+tier1      run 3  https://www.ndtv.com/                         200   157 req ( 139 ok)    6718 kB    8.4s 
+tier1      run 3  https://indianexpress.com/                    200    64 req (  49 ok)    1068 kB    6.4s 
+tier1      run 3  https://www.news18.com/                       200   187 req ( 180 ok)    2314 kB    6.3s 
+tier1      run 3  https://www.livemint.com/                     200   120 req ( 104 ok)    1870 kB    6.7s 
+tier1      run 3  https://www.moneycontrol.com/                 200   370 req ( 355 ok)    4595 kB    8.1s 
+tier1      run 3  https://www.cricbuzz.com/                     200    92 req (  80 ok)    1184 kB    6.4s 
+tier1      run 3  https://www.espncricinfo.com/                 200    79 req (  71 ok)    2551 kB    6.9s 
+tier1      run 3  https://www.dailymail.co.uk/                  200   208 req ( 175 ok)    5545 kB    6.5s 
+tier1      run 3  https://www.theguardian.com/international     200   102 req (  92 ok)    1095 kB    6.4s 
+tier1      run 3  https://edition.cnn.com/                      200  20539 req (  91 ok)       0 kB   14.3s 
+tier1      run 3  https://www.forbes.com/                       200   100 req (  81 ok)    3825 kB    9.8s 
+tier1      run 3  https://www.cnet.com/                         200   169 req (  99 ok)    2809 kB    8.5s 
+tier1      run 3  https://www.techradar.com/                    200   138 req ( 124 ok)    2123 kB    7.6s 
+tier1      run 3  https://weather.com/                          200   146 req ( 112 ok)    1953 kB    6.4s 
+tier1      run 3  https://www.accuweather.com/                  200    45 req (  39 ok)     715 kB    8.3s 
+tier1      run 3  https://www.msn.com/                          200   216 req ( 192 ok)    4256 kB    6.7s 
+tier1      run 3  https://www.bollywoodhungama.com/             200    73 req (  41 ok)    1690 kB    7.0s 
+tier1      run 3  https://www.fandom.com/                       200   185 req ( 151 ok)    3433 kB    9.0s 
+== run 3, condition tier1_lists (gateway profile strict_privacy) 19:49:12
+policy 35 active strict_privacy
+doubleclick.net for 10.10.0.54: FilteredBlackList
+tier1_lists run 3  https://timesofindia.indiatimes.com/          200    86 req (  37 ok)    1485 kB    6.5s 
+tier1_lists run 3  https://www.hindustantimes.com/               200   115 req (  98 ok)    2031 kB    6.3s 
+tier1_lists run 3  https://www.ndtv.com/                         200   156 req ( 138 ok)    6716 kB    8.6s 
+tier1_lists run 3  https://indianexpress.com/                    200    61 req (  48 ok)    1050 kB    6.4s 
+tier1_lists run 3  https://www.news18.com/                       200   192 req ( 185 ok)    2329 kB    6.0s 
+tier1_lists run 3  https://www.livemint.com/                     200   120 req ( 105 ok)    1869 kB    6.7s 
+tier1_lists run 3  https://www.moneycontrol.com/                 200   332 req ( 317 ok)    3239 kB    7.9s 
+tier1_lists run 3  https://www.cricbuzz.com/                     200    93 req (  81 ok)    1186 kB    6.5s 
+tier1_lists run 3  https://www.espncricinfo.com/                 200    79 req (  71 ok)    2547 kB    6.7s 
+tier1_lists run 3  https://www.dailymail.co.uk/                  200   233 req ( 174 ok)    5925 kB    6.4s 
+tier1_lists run 3  https://www.theguardian.com/international     200   102 req (  92 ok)    1094 kB    6.6s 
+tier1_lists run 3  https://edition.cnn.com/                      200  17425 req (  90 ok)       0 kB   14.0s 
+tier1_lists run 3  https://www.forbes.com/                       200    95 req (  77 ok)    3689 kB    7.7s 
+tier1_lists run 3  https://www.cnet.com/                         200   170 req ( 100 ok)    2820 kB    6.7s 
+tier1_lists run 3  https://www.techradar.com/                    200   133 req ( 119 ok)    2091 kB    8.1s 
+tier1_lists run 3  https://weather.com/                          200   155 req ( 108 ok)    1954 kB    6.1s 
+tier1_lists run 3  https://www.accuweather.com/                  200    45 req (  39 ok)     743 kB    8.5s 
+tier1_lists run 3  https://www.msn.com/                          200   229 req ( 206 ok)    4246 kB    6.9s 
+tier1_lists run 3  https://www.bollywoodhungama.com/             200    73 req (  41 ok)    1690 kB    7.0s 
+tier1_lists run 3  https://www.fandom.com/                       200   184 req ( 150 ok)    3379 kB    8.6s 
+== run 3, condition ubol (gateway profile unrestricted) 19:52:16
+policy 36 active unrestricted
+doubleclick.net for 10.10.0.54: NotFilteredNotFound
+ubol       run 3  https://timesofindia.indiatimes.com/          200    39 req (  35 ok)     966 kB    5.9s 
+ubol       run 3  https://www.hindustantimes.com/               200   122 req ( 110 ok)    2058 kB    6.4s 
+ubol       run 3  https://www.ndtv.com/                         200   183 req ( 169 ok)    8784 kB    9.1s 
+ubol       run 3  https://indianexpress.com/                    200    59 req (  52 ok)     797 kB    6.4s 
+ubol       run 3  https://www.news18.com/                       200   201 req ( 198 ok)    2230 kB    6.3s 
+ubol       run 3  https://www.livemint.com/                     200   118 req ( 112 ok)    1104 kB    6.0s 
+ubol       run 3  https://www.moneycontrol.com/                 200   324 req ( 321 ok)    2907 kB    7.9s 
+ubol       run 3  https://www.cricbuzz.com/                     200    87 req (  80 ok)     843 kB    5.9s 
+ubol       run 3  https://www.espncricinfo.com/                 200    80 req (  75 ok)    2371 kB    7.3s 
+ubol       run 3  https://www.dailymail.co.uk/                  200   192 req ( 171 ok)    5352 kB    6.8s 
+ubol       run 3  https://www.theguardian.com/international     200   103 req (  91 ok)    1094 kB    6.5s 
+ubol       run 3  https://edition.cnn.com/                      200   120 req (  96 ok)   22662 kB   12.0s 
+ubol       run 3  https://www.forbes.com/                       200   102 req (  88 ok)    4111 kB    8.6s 
+ubol       run 3  https://www.cnet.com/                         200   110 req ( 100 ok)    2438 kB    6.5s 
+ubol       run 3  https://www.techradar.com/                    200   129 req ( 118 ok)    2049 kB    7.4s 
+ubol       run 3  https://weather.com/                          200   118 req (  97 ok)    1583 kB    6.4s 
+ubol       run 3  https://www.accuweather.com/                  200    40 req (  31 ok)     672 kB    8.4s 
+ubol       run 3  https://www.msn.com/                          200   240 req ( 213 ok)    4414 kB    6.6s 
+ubol       run 3  https://www.bollywoodhungama.com/             200    94 req (  88 ok)    2009 kB    7.3s 
+ubol       run 3  https://www.fandom.com/                       200   184 req ( 151 ok)    3379 kB    8.0s 
+== done 19:56:28

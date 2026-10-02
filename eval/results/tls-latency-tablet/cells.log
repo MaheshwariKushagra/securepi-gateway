@@ -1,0 +1,86 @@
+decrypted_enrolled 0 136.0 141.6 SecurePi Gateway 
+decrypted_enrolled 1 134.0 139.5 SecurePi Gateway 
+decrypted_enrolled 2 139.8 145.9 SecurePi Gateway 
+decrypted_enrolled 3 136.2 144.9 SecurePi Gateway 
+decrypted_enrolled 4 147.6 151.5 SecurePi Gateway 
+decrypted_enrolled 5 135.8 140.8 SecurePi Gateway 
+decrypted_enrolled 6 120.6 130.4 SecurePi Gateway 
+decrypted_enrolled 7 132.4 137.4 SecurePi Gateway 
+decrypted_enrolled 8 141.2 148.1 SecurePi Gateway 
+decrypted_enrolled 9 129.3 134.5 SecurePi Gateway 
+decrypted_enrolled 10 138.2 142.7 SecurePi Gateway 
+decrypted_enrolled 11 149.7 154.6 SecurePi Gateway 
+decrypted_enrolled 12 131.9 135.3 SecurePi Gateway 
+decrypted_enrolled 13 126.7 132.4 SecurePi Gateway 
+decrypted_enrolled 14 120.8 126.8 SecurePi Gateway 
+decrypted_enrolled 15 131.4 137.1 SecurePi Gateway 
+decrypted_enrolled 16 177.9 185.9 SecurePi Gateway 
+decrypted_enrolled 17 122.5 125.8 SecurePi Gateway 
+decrypted_enrolled 18 117.6 124.9 SecurePi Gateway 
+decrypted_enrolled 19 132.5 139.0 SecurePi Gateway 
+decrypted_enrolled 20 123.8 130.7 SecurePi Gateway 
+decrypted_enrolled 21 118.3 128.0 SecurePi Gateway 
+decrypted_enrolled 22 133.8 139.4 SecurePi Gateway 
+decrypted_enrolled 23 133.4 138.1 SecurePi Gateway 
+decrypted_enrolled 24 124.9 129.3 SecurePi Gateway 
+passthrough_enrolled 0 377.0 386.2 YE2 
+passthrough_enrolled 1 326.5 331.5 YE2 
+passthrough_enrolled 2 311.0 322.0 YE2 
+passthrough_enrolled 3 333.4 341.0 YE2 
+passthrough_enrolled 4 332.6 338.3 YE2 
+passthrough_enrolled 5 325.4 329.7 YE2 
+passthrough_enrolled 6 319.9 326.1 YE2 
+passthrough_enrolled 7 318.0 321.2 YE2 
+passthrough_enrolled 8 298.3 302.8 YE2 
+passthrough_enrolled 9 322.9 328.1 YE2 
+passthrough_enrolled 10 290.8 295.4 YE2 
+passthrough_enrolled 11 315.2 320.2 YE2 
+passthrough_enrolled 12 320.8 325.5 YE2 
+passthrough_enrolled 13 315.8 322.0 YE2 
+passthrough_enrolled 14 293.2 300.7 YE2 
+passthrough_enrolled 15 338.7 342.1 YE2 
+passthrough_enrolled 16 322.0 327.3 YE2 
+passthrough_enrolled 17 321.8 326.9 YE2 
+passthrough_enrolled 18 324.1 329.6 YE2 
+passthrough_enrolled 19 325.4 329.9 YE2 
+passthrough_enrolled 20 275.7 279.0 YE2 
+passthrough_enrolled 21 326.3 331.1 YE2 
+passthrough_enrolled 22 330.2 336.5 YE2 
+passthrough_enrolled 23 321.6 325.8 YE2 
+passthrough_enrolled 24 195.5 202.0 YE2 
+policy 41 ended
+table ip nat {
+	set enrolled {
+		type ipv4_addr
+		flags timeout
+		elements = { 10.10.0.50 timeout 2h expires 1h50m26s64ms }
+	}
+}
+same_host_unenrolled 0 218.9 252.9 WE2 
+same_host_unenrolled 1 198.0 234.3 WE2 
+same_host_unenrolled 2 120.3 141.0 WE2 
+same_host_unenrolled 3 139.1 158.0 WE2 
+same_host_unenrolled 4 191.6 212.4 WE2 
+same_host_unenrolled 5 186.0 209.8 WE2 
+same_host_unenrolled 6 194.3 218.2 WE2 
+same_host_unenrolled 7 110.9 129.4 WE2 
+same_host_unenrolled 8 108.1 127.4 WE2 
+same_host_unenrolled 9 195.6 216.0 WE2 
+same_host_unenrolled 10 148.2 167.0 WE2 
+same_host_unenrolled 11 180.9 227.4 WE2 
+same_host_unenrolled 12 179.1 195.9 WE2 
+same_host_unenrolled 13 182.2 201.0 WE2 
+same_host_unenrolled 14 201.0 219.3 WE2 
+same_host_unenrolled 15 133.3 154.6 WE2 
+same_host_unenrolled 16 118.2 195.8 WE2 
+same_host_unenrolled 17 205.5 222.2 WE2 
+same_host_unenrolled 18 142.7 163.3 WE2 
+same_host_unenrolled 19 185.4 212.0 WE2 
+same_host_unenrolled 20 185.3 205.4 WE2 
+same_host_unenrolled 21 164.1 181.7 WE2 
+same_host_unenrolled 22 188.7 207.5 WE2 
+same_host_unenrolled 23 217.9 239.4 WE2 
+same_host_unenrolled 24 106.6 126.9 WE2 
+re-enrolled, policy 43
+		elements = { 10.10.0.50 timeout 2h expires 1h46m9s846ms, 10.10.0.53 timeout 2h expires 1h59m59s854ms }
+CELLS DONE

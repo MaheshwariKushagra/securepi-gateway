@@ -1259,6 +1259,43 @@ blocks VPN *services* by DNS (`group:privacy`) for devices that have no
 business using one; for everything else a VPN is a user's choice the gateway
 can see (one long-lived UDP flow to one address) but doesn't flag.
 
+#### TLS setup latency and proxy memory (Tier 2)
+
+Measured on the Lenovo tablet's Chrome by the parallel session
+(`tools/tls_latency_tablet.py`, `eval/results/tls-latency-tablet/`). Each of
+the 75 loads: Chrome force-stopped (no pooled connection survives), a neutral
+page first (so Chrome's predictor can't pre-connect), then a DevTools-observed
+fetch; Chrome's own per-request timing.
+
+| Cell | n | TLS handshake p50 / p95 | Connect p50 / p95 | Certificate issuer |
+|---|---|---|---|---|
+| m.youtube.com, enrolled (decrypted) | 25 | 132.5 / 149.7 ms | 138.1 / 154.6 ms | **SecurePi Gateway** |
+| same URL, not enrolled (direct) | 25 | 182.2 / 217.9 ms | 205.4 / 239.4 ms | Google (WE2) |
+| wikipedia.org, enrolled (passthrough) | 25 | 321.8 / 338.7 ms | 326.9 / 342.1 ms | Wikipedia's own (YE2) |
+
+The browser's handshake with inspection is **faster** (−50 ms): it completes
+with the gateway on the LAN; the proxy's own handshake upstream moves into
+time-to-first-byte, which these cells didn't record. That extension (TTFB in
+every cell, plus an unenrolled control for the passthrough host) was queued for
+after the throughput sweep. **Proxy memory:** 187 MB steady during the cells;
+87 MB idle earlier in the evening, up to 221 MB while YouTube was being decrypted.
+
+#### Pinned apps (5.8), on the tablet
+
+The YouTube **app** (21.23, Android 9) with the tablet enrolled
+(`eval/results/pinned-app-tablet/`): the video hosts were bypassed as designed
+(`redirector.googlevideo.com` after 3 failed handshakes at +3.5 s, the `rr*`
+video hosts at +11.9 s). But **`youtubei.googleapis.com`, `www.youtube.com` and
+`i.ytimg.com` each failed only twice** - this app version retries a host twice
+- so they never reached the 3-failure trigger and were never bypassed. The
+app showed "There was a problem signing in to your account" and closed by the
+second video. **5.8's auto-passthrough does not rescue this app version**; it
+did rescue the A33's YouTube app on 26 September (each host failed exactly 3
+times). Lowering the trigger to 2 failures would cover both; the cost is that
+a browser's two genuinely failed handshakes would also bypass a host for 24 h.
+(Whether relaunching the app supplies the third failure and recovers it was not
+tested.)
+
 #### Privacy-scope canary, allowlist churn
 
 - **Canary:** about 250 checks since 13 September (every 15 minutes while the
@@ -1291,10 +1328,48 @@ phone and gateway clocks agree to the second. Summaries:
 | DNS filter killed | 10.2 s | DNS-filter events 14.3 s | `platform_service_down` at **4.8 s** | fail-open not needed (restart beat its 10 s trigger) | 2 failed lookups (+2 to +3 s), then normal |
 | **DNS filter stopped for 60 s** | 61.4 s (planned) | 64.4 s | `platform_dns_failopen` at **14.5 s** | fail-open **on at +15.5 s, off at +62.4 s** (1 s after recovery) | lookups failed for the first ~13 s (5 samples), then **resolved through the redirect for the rest of the outage**; HTTPS never failed |
 
-So far: every component recovers by itself; a sensor or pipeline crash
-costs a short detection gap (≤25 s) but nothing a device notices; a DNS-filter
-outage costs devices about the first 13-15 s (the 10 s trigger plus the 5 s
-probe interval), after which fail-open carries them.
+| **Inspection proxy killed** (A33 and tablet enrolled, so their HTTPS goes through it) | 6.1 s | proxy events 7.1 s | `platform_service_down` at 2.5 s | **gate closed within 1 s**, reopened at 6.1 s | **0 HTTPS failures** (48 probes) - enrolled devices went straight out, undecrypted, until the proxy was back |
+| Disk filled to 8% free | - (file removed at +90 s) | events never stopped | `platform_disk_low` at **6.9 s** | - | nothing |
+| **Uplink cut for 120 s** | - (undo at 120 s; WAN seen back 126.7 s) | IDS/DNS-filter events kept flowing (LAN traffic) | `platform_wan_down` at **16.4 s**; `platform_dns_failopen` at 31.7 s; `platform_stale` (DNS filter) at 115.9 s | **fail-open switched on at +32 s** and off at +126.7 s | no internet from +1 s to +107 s (expected), working again from the first probe after the uplink returned |
+
+The tablet (Lenovo Tab M7, enrolled) probed alongside for kill-proxy, fill-disk
+and drop-wan: DNS ok in all samples of the first two; during drop-wan it lost
+DNS and HTTPS at the cut (22:11:01-22:11:07) and was back after the uplink.
+Two probe artefacts, stated: Android 9's toybox `nc` has no `-z`, so the shared
+probe's HTTPS column is invalid on the tablet for kill-proxy and fill-disk (a
+tablet-specific probe, `tools/chaos_tablet_probe.sh`, was used for drop-wan);
+and a probe line is stamped when its check *starts* - a DNS lookup during an
+outage can block for 30 s or more, so the tablet's 22:12:34 "ok" completed
+after the uplink returned (no SIM, no cellular fallback - checked).
+
+The first drop-wan run was **invalid** and is kept labelled as such: its
+nftables file failed to load (`fwd` is an nftables keyword) and the script
+didn't check, so the uplink was never cut. `gateway/chaos.py` now validates
+and checks the rules and aborts otherwise.
+
+**Findings:**
+
+- **Every component recovers by itself**, and **HTTPS inspection fails open**
+  - the requirement 7.7 set after 26 September's real-device check showed it
+  failing closed. A sensor or pipeline crash costs a short detection gap
+  (≤25 s, the IDS's rule reload) and nothing a device notices.
+- **A DNS-filter outage costs devices the first ~13-15 s** (the 10 s trigger
+  plus the 5 s probe), after which fail-open carries them.
+- **An uplink outage switches DNS fail-open on** - the audit's M-finding, now
+  observed: with the upstream unreachable the filter can't answer, the
+  supervisor reads that as "the DNS filter is down" and redirects DNS to
+  1.1.1.1, i.e. filtering off. Here it was harmless (nothing was reachable,
+  and it reverted the second the uplink came back), but an upstream failure
+  that leaves plain DNS to 1.1.1.1 working (DoT blocked, say) would leave
+  filtering silently off. The fix the audit names - tell a filter that is
+  down from an upstream that is down before failing open - is recorded for
+  the next code change, not made during the evaluation.
+- Noticed while checking disk use: **the IDS's `eve.json` hasn't rotated since
+  15 September and is 306 MB.** Ubuntu's `logrotate.timer` runs only on AC
+  power ("skipped because of an unmet condition check (ConditionACPower=true)"
+  today) and the gateway has often run on battery; and the IDS's rotation is
+  weekly with no size cap. Not a risk for the seven-day run (85 GB free); the
+  recommendation is a daily, size-capped rotation that doesn't depend on power.
 
 ### 7.8 — Performance (2 October 2026)
 

@@ -1,0 +1,161 @@
+{
+ "ablation": {
+  "attack_devices": {
+   "after_campaign_grouping": 70,
+   "campaigns": 20,
+   "incidents": 160,
+   "raw_ids_alerts": 80,
+   "raw_signal_firings": 32044
+  },
+  "real_devices": {
+   "after_campaign_grouping": 19,
+   "campaigns": 1,
+   "incidents": 23,
+   "raw_ids_alerts": 128,
+   "raw_signal_firings": 1082
+  },
+  "steps": 7661
+ },
+ "beacon_jitter": {
+  "curve": [
+   {
+    "constant_size": 1.0,
+    "jitter": 0.0,
+    "size_varies": 1.0
+   },
+   {
+    "constant_size": 1.0,
+    "jitter": 0.05,
+    "size_varies": 1.0
+   },
+   {
+    "constant_size": 1.0,
+    "jitter": 0.1,
+    "size_varies": 1.0
+   },
+   {
+    "constant_size": 1.0,
+    "jitter": 0.2,
+    "size_varies": 1.0
+   },
+   {
+    "constant_size": 1.0,
+    "jitter": 0.25,
+    "size_varies": 1.0
+   },
+   {
+    "constant_size": 1.0,
+    "jitter": 0.3,
+    "size_varies": 1.0
+   },
+   {
+    "constant_size": 1.0,
+    "jitter": 0.35,
+    "size_varies": 0.54
+   },
+   {
+    "constant_size": 1.0,
+    "jitter": 0.4,
+    "size_varies": 0.0
+   },
+   {
+    "constant_size": 0.96,
+    "jitter": 0.45,
+    "size_varies": 0.0
+   },
+   {
+    "constant_size": 0.56,
+    "jitter": 0.5,
+    "size_varies": 0.0
+   },
+   {
+    "constant_size": 0.06,
+    "jitter": 0.55,
+    "size_varies": 0.0
+   },
+   {
+    "constant_size": 0.0,
+    "jitter": 0.6,
+    "size_varies": 0.0
+   },
+   {
+    "constant_size": 0.0,
+    "jitter": 0.7,
+    "size_varies": 0.0
+   },
+   {
+    "constant_size": 0.0,
+    "jitter": 0.8,
+    "size_varies": 0.0
+   },
+   {
+    "constant_size": 0.0,
+    "jitter": 1.0,
+    "size_varies": 0.0
+   }
+  ],
+  "period_s": 60,
+  "seed": 7,
+  "trials": 50
+ },
+ "signatures_vs_signals": {
+  "brute_force": {
+   "runs": 11,
+   "signal_detected": 11,
+   "signature_alerted": 0,
+   "signatures_seen": [
+    "ET INFO Microsoft Connection Test",
+    "ET INFO Python SimpleHTTP ServerBanner",
+    "GPL ATTACK_RESPONSE id check returned root",
+    "SURICATA STREAM CLOSEWAIT FIN out of window",
+    "SURICATA STREAM ESTABLISHED SYN resend with different seq",
+    "SURICATA STREAM Packet with invalid ack",
+    "SURICATA STREAM SHUTDOWN RST invalid ack",
+    "SURICATA STREAM excessive retransmissions"
+   ]
+  },
+  "network_sweep": {
+   "runs": 10,
+   "signal_detected": 10,
+   "signature_alerted": 0,
+   "signatures_seen": [
+    "ET INFO Python SimpleHTTP ServerBanner",
+    "GPL ATTACK_RESPONSE id check returned root"
+   ]
+  },
+  "port_scan": {
+   "runs": 11,
+   "signal_detected": 11,
+   "signature_alerted": 0,
+   "signatures_seen": [
+    "ET INFO Microsoft Connection Test",
+    "ET INFO Python SimpleHTTP ServerBanner",
+    "GPL ATTACK_RESPONSE id check returned root",
+    "SURICATA STREAM CLOSEWAIT FIN out of window",
+    "SURICATA STREAM ESTABLISHED SYN resend with different seq",
+    "SURICATA STREAM Packet with invalid ack",
+    "SURICATA STREAM SHUTDOWN RST invalid ack",
+    "SURICATA STREAM excessive retransmissions"
+   ]
+  },
+  "slow_network_sweep": {
+   "runs": 10,
+   "signal_detected": 10,
+   "signature_alerted": 0,
+   "signatures_seen": []
+  },
+  "slow_port_scan": {
+   "runs": 11,
+   "signal_detected": 11,
+   "signature_alerted": 0,
+   "signatures_seen": [
+    "ET INFO Microsoft Connection Test",
+    "SURICATA STREAM CLOSEWAIT FIN out of window",
+    "SURICATA STREAM ESTABLISHED SYN resend with different seq",
+    "SURICATA STREAM Packet with invalid ack",
+    "SURICATA STREAM SHUTDOWN RST invalid ack",
+    "SURICATA STREAM excessive retransmissions"
+   ]
+  }
+ }
+}

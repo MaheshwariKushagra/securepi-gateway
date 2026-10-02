@@ -984,6 +984,62 @@ passes it - the distance from the default to the cliff is the margin.
 data they are then scored on, so the "after" numbers are in-sample. The
 forward seven-day run (7.0), on the frozen final code, is the held-out check.
 
+### 7.4 — Headline figures (2 October 2026)
+
+`tools/headline.py`, output `eval/results/headline-20261002.json`, on the final
+engine and the same ground truth as 7.3.
+
+**1. Behavioural signals vs the IDS's own signatures, on scans and brute force.**
+For every run, the live IDS's alerts from that run's device in its window were
+read from the live database; a run counts as caught by signatures only if an
+alert is *about* scanning or brute force (by name or rule class).
+
+| Attack | Runs | Signature rules alerted | Behavioural signal detected |
+|---|---|---|---|
+| Port scan (incl. red-team laptop) | 11 | **0** | 11 |
+| Network sweep | 10 | **0** | 10 |
+| Slow port scan (50 s between probes) | 11 | **0** | 11 |
+| Slow network sweep | 10 | **0** | 10 |
+| SSH brute force (incl. red-team, 20 attempts) | 11 | **0** | 11 |
+| **Total** | **53** | **0** | **53** |
+
+Not a broken rule set: it holds 274 `ET SCAN` rules, including "Potential SSH
+Scan" (5 attempts in 120 s). But they are written for an **outside** attacker
+(`$EXTERNAL_NET -> $HOME_NET`) or an outbound scan. Every attack here came
+from inside the LAN - a compromised phone or IoT device scanning its
+neighbours, the case a home gateway exists for - and there the signatures are
+silent. (The fast scans additionally showed none of nmap's SYN-scan
+fingerprints: the battery uses `-sT` connect scans.)
+
+**2. Beacon jitter curve.** 50 synthetic beacons per point (one check-in a
+minute, each gap drawn uniformly from 60 s ± jitter), through the real
+`beacon_signal`, seeded.
+
+| Jitter | 0-30% | 35% | 40% | 45% | 50% | 55% | 60%+ |
+|---|---|---|---|---|---|---|---|
+| Constant-size check-ins | 1.00 | 1.00 | 1.00 | 0.96 | 0.56 | 0.06 | 0 |
+| Size varies by the same jitter | 1.00 | 0.54 | 0 | 0 | 0 | 0 | 0 |
+
+This matches the score's arithmetic: uniform ±j jitter gives a timing
+coefficient of variation of j/√3, so with constant size the 0.8 threshold
+falls at j ≈ 49%, and with size varying too at j ≈ 35%. In practice: C2
+frameworks' common jitter settings of 0-30% are caught either way; an
+operator who adds ≥40% jitter *and* varies the payload size gets past it.
+The live battery's 10% beacons were caught 10/10, and the red-team laptop's
+beacon too.
+
+**3. Ablation** - what an operator would face, on a replay of the live
+database at the live engine's 15-second cycle:
+
+| | Every signal firing shown | Deduplicated incidents (the console) | + campaign grouping |
+|---|---|---|---|
+| Attack devices (batteries) | 32,044 | 160 (**200 : 1**) | 70 (20 campaigns) |
+| Real devices (incl. red-team laptop) | 1,082 | 23 (**47 : 1**) | 19 (1 campaign) |
+
+The raw IDS alerts from the same devices were 80 and 128: dedup is what
+stops a signal that fires every cycle while a scan lasts from producing
+hundreds of alerts per attack.
+
 ### 7.5 (first pass) - blocklist utility and overlap
 
 `tools/blocklist_utility.py` downloads every enabled list, checks each domain

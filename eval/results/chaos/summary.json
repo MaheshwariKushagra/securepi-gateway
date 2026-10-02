@@ -1,5 +1,153 @@
 [
  {
+  "scenario": "drop-wan",
+  "first_new_event_s": {
+   "ids": 4.0,
+   "dns_filter": 6.0,
+   "proxy": 128.7
+  },
+  "incidents": [
+   [
+    "platform_wan_down",
+    16.4,
+    "WAN uplink unreachable"
+   ],
+   [
+    "platform_dns_failopen",
+    31.7,
+    "DNS fail-open active - the DNS filter not answering queries"
+   ],
+   [
+    "platform_stale",
+    115.9,
+    "No recent activity from: DNS filter"
+   ]
+  ],
+  "failopen": [
+   [
+    0.0,
+    false
+   ],
+   [
+    32.2,
+    true
+   ],
+   [
+    126.7,
+    false
+   ]
+  ],
+  "gate_open": [
+   [
+    0.0,
+    true
+   ]
+  ],
+  "wan": [
+   [
+    0.0,
+    false
+   ],
+   [
+    126.7,
+    true
+   ],
+   [
+    148.2,
+    false
+   ]
+  ],
+  "device": {
+   "samples": 23,
+   "before_fault_ok": true,
+   "dns": {
+    "failed_samples": 8,
+    "of": 17,
+    "first_fail_s": 1.3,
+    "last_fail_s": 107.3
+   },
+   "https": {
+    "failed_samples": 8,
+    "of": 17,
+    "first_fail_s": 1.3,
+    "last_fail_s": 107.3
+   }
+  }
+ },
+ {
+  "scenario": "fill-disk",
+  "first_new_event_s": {
+   "ids": 2.1,
+   "dns_filter": 2.1,
+   "proxy": 115.2
+  },
+  "incidents": [
+   [
+    "platform_disk_low",
+    6.9,
+    "Disk 8.0% free (below 10% threshold)"
+   ]
+  ],
+  "failopen": [
+   [
+    0.1,
+    false
+   ],
+   [
+    91.0,
+    null
+   ],
+   [
+    92.0,
+    false
+   ]
+  ],
+  "gate_open": [
+   [
+    0.1,
+    true
+   ],
+   [
+    91.0,
+    null
+   ],
+   [
+    92.0,
+    true
+   ]
+  ],
+  "disk_free_pct": [
+   [
+    0.1,
+    8.0
+   ],
+   [
+    91.0,
+    null
+   ],
+   [
+    92.0,
+    86.4
+   ]
+  ],
+  "device": {
+   "samples": 54,
+   "before_fault_ok": true,
+   "dns": {
+    "failed_samples": 0,
+    "of": 48,
+    "first_fail_s": null,
+    "last_fail_s": null
+   },
+   "https": {
+    "failed_samples": 0,
+    "of": 48,
+    "first_fail_s": null,
+    "last_fail_s": null
+   }
+  }
+ },
+ {
   "scenario": "kill-dns",
   "service_states": [
    [
@@ -196,6 +344,72 @@
    "https": {
     "failed_samples": 0,
     "of": 46,
+    "first_fail_s": null,
+    "last_fail_s": null
+   }
+  }
+ },
+ {
+  "scenario": "kill-proxy",
+  "service_states": [
+   [
+    0.0,
+    "active"
+   ],
+   [
+    1.0,
+    "activating"
+   ],
+   [
+    6.1,
+    "active"
+   ]
+  ],
+  "service_down_s": 6.1,
+  "first_new_event_s": {
+   "ids": 3.1,
+   "dns_filter": 3.1,
+   "proxy": 7.1
+  },
+  "incidents": [
+   [
+    "platform_service_down",
+    2.5,
+    "1 service not running: securepi-dpi"
+   ]
+  ],
+  "failopen": [
+   [
+    0.0,
+    false
+   ]
+  ],
+  "gate_open": [
+   [
+    0.0,
+    true
+   ],
+   [
+    1.0,
+    false
+   ],
+   [
+    6.1,
+    true
+   ]
+  ],
+  "device": {
+   "samples": 54,
+   "before_fault_ok": true,
+   "dns": {
+    "failed_samples": 0,
+    "of": 48,
+    "first_fail_s": null,
+    "last_fail_s": null
+   },
+   "https": {
+    "failed_samples": 0,
+    "of": 48,
     "first_fail_s": null,
     "last_fail_s": null
    }

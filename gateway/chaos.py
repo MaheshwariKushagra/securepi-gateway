@@ -147,14 +147,23 @@ def main():
         # Drop everything leaving through the uplink (gateway's own and
         # forwarded), in its own table so removing it is one command.
         rules = ("table inet securepi_chaos {\n"
-                 " chain out { type filter hook output priority -10; oifname \"%s\" drop; }\n"
-                 " chain fwd { type filter hook forward priority -10; oifname \"%s\" drop; }\n}\n" % (WAN_IF, WAN_IF))
+                 " chain chaos_out { type filter hook output priority -10; oifname \"%s\" drop; }\n"
+                 " chain chaos_forward { type filter hook forward priority -10; oifname \"%s\" drop; }\n}\n"
+                 % (WAN_IF, WAN_IF))
+        # ("fwd" is an nftables keyword - a chain of that name made the whole
+        # file fail to load and the first run silently dropped nothing.)
         with open("/var/tmp/securepi-chaos.nft", "w") as f:
             f.write(rules)
         schedule_undo("securepi-chaos-undo", args.wan_down_s,
                       ["/usr/sbin/nft", "delete", "table", "inet", "securepi_chaos"])
+        check = sh(["nft", "-c", "-f", "/var/tmp/securepi-chaos.nft"])
+        if check.returncode != 0:
+            cancel_undo("securepi-chaos-undo")
+            sys.exit("drop-wan rules don't load: " + check.stderr.strip())
         t_action = time.time()
-        sh(["nft", "-f", "/var/tmp/securepi-chaos.nft"])
+        if sh(["nft", "-f", "/var/tmp/securepi-chaos.nft"]).returncode != 0:
+            cancel_undo("securepi-chaos-undo")
+            sys.exit("drop-wan rules failed to apply")
     timeline = []
     end = t_action + args.watch
     while time.time() < end:

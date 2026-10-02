@@ -1,0 +1,16 @@
+1790959260 dns=ok https=ok
+1790959261 dns=ok https=fail
+1790959267 dns=fail https=fail
+1790959310 dns=fail https=fail
+1790959354 dns=ok https=ok
+1790959393 dns=ok https=ok
+1790959397 dns=ok https=ok
+1790959400 dns=ok https=ok
+1790959404 dns=ok https=ok
+1790959407 dns=ok https=ok
+1790959411 dns=ok https=ok
+1790959414 dns=ok https=ok
+1790959417 dns=ok https=ok
+1790959421 dns=ok https=ok
+1790959424 dns=ok https=ok
+1790959428 dns=ok https=ok

@@ -111,3 +111,41 @@ class AttributeEventsOverlapTieBreakTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ReadLeasesTests(unittest.TestCase):
+    """Step 7.6 finding: the DHCP server keeps expired leases in its file,
+    and the registry treated every one as current - so a phone that left in
+    September was still 'seen' every cycle in October, and its address
+    interval never closed (an IP handed to a new device could have been
+    attributed to the old one)."""
+
+    def _leases(self, leases):
+        import json
+        import tempfile
+        fd, path = tempfile.mkstemp(suffix=".json")
+        with os.fdopen(fd, "w") as f:
+            json.dump({"version": 1, "leases": leases}, f)
+        self.addCleanup(os.remove, path)
+        old = registry.LEASES_PATH
+        registry.LEASES_PATH = path
+        self.addCleanup(setattr, registry, "LEASES_PATH", old)
+
+    def test_expired_leases_are_left_out(self):
+        self._leases([
+            {"mac": "AA:00:00:00:00:01", "ip": "10.10.0.50", "hostname": "current", "static": False,
+             "expires": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(time.time() + 3600))},
+            {"mac": "aa:00:00:00:00:02", "ip": "10.10.0.51", "hostname": "gone", "static": False,
+             "expires": "2026-09-13T09:14:26Z"},
+            {"mac": "aa:00:00:00:00:03", "ip": "10.10.0.60", "hostname": "fixed", "static": True, "expires": ""},
+        ])
+        names = sorted(h for _, _, h in registry.read_leases())
+        self.assertEqual(names, ["current", "fixed"])
+
+    def test_an_offset_timestamp_is_compared_correctly(self):
+        # Written with +05:30 like the live file; one hour ahead must count as current.
+        self._leases([
+            {"mac": "aa:00:00:00:00:04", "ip": "10.10.0.52", "hostname": "ist", "static": False,
+             "expires": time.strftime("%Y-%m-%dT%H:%M:%S+05:30", time.gmtime(time.time() + 3600 + 19800))},
+        ])
+        self.assertEqual([h for _, _, h in registry.read_leases()], ["ist"])

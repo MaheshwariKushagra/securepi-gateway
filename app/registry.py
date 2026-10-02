@@ -34,6 +34,7 @@ address at that moment. Attributing by current address would silently
 reassign history every time a lease rotated.
 """
 
+import datetime
 import json
 import os
 import re
@@ -63,13 +64,33 @@ def read_leases():
     except Exception:
         return []
     out = []
+    now = time.time()
     for lease in data.get("leases", []):
         mac = (lease.get("mac") or "").lower()
         ip = lease.get("ip") or ""
         host = (lease.get("hostname") or "").strip()
+        # The DHCP server keeps expired leases in this file. Counting them
+        # kept a device that left weeks ago "seen" every cycle, and its
+        # address interval open (step 7.6 finding). A static lease has no
+        # expiry and always counts.
+        if not lease.get("static") and _lease_expired(lease.get("expires"), now):
+            continue
         if mac and ip:
             out.append((mac, ip, host))
     return out
+
+
+def _lease_expired(expires, now):
+    """True if an RFC 3339 expiry time ("2026-09-13T09:14:26Z" or with a
+    +05:30 offset) is in the past. An empty or unreadable one is treated as
+    not expired, so a format change can't make every device vanish."""
+    if not expires:
+        return False
+    try:
+        when = datetime.datetime.fromisoformat(str(expires).replace("Z", "+00:00"))
+    except ValueError:
+        return False
+    return when.timestamp() < now
 
 
 def read_arp():

@@ -1,0 +1,870 @@
+{
+ "axe_version": "4.13.0",
+ "keyboard": {
+  "command_palette_opens_device": true,
+  "device_rows_reachable_by_tab": false,
+  "quarantine_menu_opens_with_enter": true,
+  "tab_presses_to_quarantine": 25
+ },
+ "pages": [
+  {
+   "path": "/",
+   "theme": "dark",
+   "violations": [
+    {
+     "help": "Elements must meet minimum color contrast ratio thresholds",
+     "id": "color-contrast",
+     "impact": "serious",
+     "nodes": 71,
+     "sample": [
+      "#pipelineSub",
+      "#cmdkTrigger > span",
+      "#cmdkTrigger > kbd"
+     ]
+    },
+    {
+     "help": "Scrollable region must have keyboard access",
+     "id": "scrollable-region-focusable",
+     "impact": "serious",
+     "nodes": 1,
+     "sample": [
+      "#eventFeed"
+     ]
+    }
+   ],
+   "width": 1440
+  },
+  {
+   "path": "/devices",
+   "theme": "dark",
+   "violations": [
+    {
+     "help": "Elements must meet minimum color contrast ratio thresholds",
+     "id": "color-contrast",
+     "impact": "serious",
+     "nodes": 37,
+     "sample": [
+      "#pipelineSub",
+      "#cmdkTrigger > span",
+      "#cmdkTrigger > kbd"
+     ]
+    }
+   ],
+   "width": 1440
+  },
+  {
+   "path": "/devices/7",
+   "theme": "dark",
+   "violations": [
+    {
+     "help": "Elements must meet minimum color contrast ratio thresholds",
+     "id": "color-contrast",
+     "impact": "serious",
+     "nodes": 84,
+     "sample": [
+      "#pipelineSub",
+      "#cmdkTrigger > span",
+      "#cmdkTrigger > kbd"
+     ]
+    },
+    {
+     "help": "Scrollable region must have keyboard access",
+     "id": "scrollable-region-focusable",
+     "impact": "serious",
+     "nodes": 1,
+     "sample": [
+      ".tall"
+     ]
+    }
+   ],
+   "width": 1440
+  },
+  {
+   "path": "/incidents",
+   "theme": "dark",
+   "violations": [
+    {
+     "help": "Elements must meet minimum color contrast ratio thresholds",
+     "id": "color-contrast",
+     "impact": "serious",
+     "nodes": 30,
+     "sample": [
+      "#pipelineSub",
+      "#cmdkTrigger > span",
+      "#cmdkTrigger > kbd"
+     ]
+    }
+   ],
+   "width": 1440
+  },
+  {
+   "path": "/incidents/8",
+   "theme": "dark",
+   "violations": [
+    {
+     "help": "Elements must meet minimum color contrast ratio thresholds",
+     "id": "color-contrast",
+     "impact": "serious",
+     "nodes": 55,
+     "sample": [
+      "#pipelineSub",
+      "#cmdkTrigger > span",
+      "#cmdkTrigger > kbd"
+     ]
+    },
+    {
+     "help": "Links must be distinguishable without relying on color",
+     "id": "link-in-text-block",
+     "impact": "serious",
+     "nodes": 1,
+     "sample": [
+      ".card-foot > .link[href$=\"devices/7\"]"
+     ]
+    },
+    {
+     "help": "Scrollable region must have keyboard access",
+     "id": "scrollable-region-focusable",
+     "impact": "serious",
+     "nodes": 1,
+     "sample": [
+      ".tall"
+     ]
+    }
+   ],
+   "width": 1440
+  },
+  {
+   "path": "/filtering",
+   "theme": "dark",
+   "violations": [
+    {
+     "help": "Elements must meet minimum color contrast ratio thresholds",
+     "id": "color-contrast",
+     "impact": "serious",
+     "nodes": 92,
+     "sample": [
+      "#pipelineSub",
+      "#cmdkTrigger > span",
+      "#cmdkTrigger > kbd"
+     ]
+    }
+   ],
+   "width": 1440
+  },
+  {
+   "path": "/response",
+   "theme": "dark",
+   "violations": [
+    {
+     "help": "Elements must meet minimum color contrast ratio thresholds",
+     "id": "color-contrast",
+     "impact": "serious",
+     "nodes": 44,
+     "sample": [
+      "#pipelineSub",
+      "#cmdkTrigger > span",
+      "#cmdkTrigger > kbd"
+     ]
+    },
+    {
+     "help": "Links must be distinguishable without relying on color",
+     "id": "link-in-text-block",
+     "impact": "serious",
+     "nodes": 1,
+     "sample": [
+      "a[href$=\"devices/7\"]"
+     ]
+    }
+   ],
+   "width": 1440
+  },
+  {
+   "path": "/hunt",
+   "theme": "dark",
+   "violations": [
+    {
+     "help": "Elements must meet minimum color contrast ratio thresholds",
+     "id": "color-contrast",
+     "impact": "serious",
+     "nodes": 61,
+     "sample": [
+      "#pipelineSub",
+      "#cmdkTrigger > span",
+      "#cmdkTrigger > kbd"
+     ]
+    },
+    {
+     "help": "Scrollable region must have keyboard access",
+     "id": "scrollable-region-focusable",
+     "impact": "serious",
+     "nodes": 2,
+     "sample": [
+      "#huntDestinations",
+      "#huntResults"
+     ]
+    }
+   ],
+   "width": 1440
+  },
+  {
+   "path": "/settings",
+   "theme": "dark",
+   "violations": [
+    {
+     "help": "Elements must meet minimum color contrast ratio thresholds",
+     "id": "color-contrast",
+     "impact": "serious",
+     "nodes": 139,
+     "sample": [
+      "#pipelineSub",
+      "#cmdkTrigger > span",
+      "#cmdkTrigger > kbd"
+     ]
+    }
+   ],
+   "width": 1440
+  },
+  {
+   "path": "/reports/weekly",
+   "theme": "dark",
+   "violations": [
+    {
+     "help": "Elements must meet minimum color contrast ratio thresholds",
+     "id": "color-contrast",
+     "impact": "serious",
+     "nodes": 17,
+     "sample": [
+      "#pipelineSub",
+      "#cmdkTrigger > span",
+      "#cmdkTrigger > kbd"
+     ]
+    }
+   ],
+   "width": 1440
+  },
+  {
+   "path": "/",
+   "theme": "dark",
+   "violations": [
+    {
+     "help": "Elements must meet minimum color contrast ratio thresholds",
+     "id": "color-contrast",
+     "impact": "serious",
+     "nodes": 67,
+     "sample": [
+      ".c2.grid:nth-child(3) > .card:nth-child(1) > .card-head > .subtle",
+      ".c2.grid:nth-child(4) > .card:nth-child(1) > .card-head > .subtle",
+      ".c3 > .card:nth-child(1) > .card-head > .subtle"
+     ]
+    },
+    {
+     "help": "Scrollable region must have keyboard access",
+     "id": "scrollable-region-focusable",
+     "impact": "serious",
+     "nodes": 1,
+     "sample": [
+      "#eventFeed"
+     ]
+    }
+   ],
+   "width": 390
+  },
+  {
+   "path": "/devices",
+   "theme": "dark",
+   "violations": [
+    {
+     "help": "Elements must meet minimum color contrast ratio thresholds",
+     "id": "color-contrast",
+     "impact": "serious",
+     "nodes": 14,
+     "sample": [
+      "th[data-key=\"name\"]",
+      "th:nth-child(2)",
+      "tr[onclick=\"location.href='/devices/5'\"] > td:nth-child(1) > .row-sub.mono"
+     ]
+    },
+    {
+     "help": "Scrollable region must have keyboard access",
+     "id": "scrollable-region-focusable",
+     "impact": "serious",
+     "nodes": 1,
+     "sample": [
+      ".table-scroll"
+     ]
+    }
+   ],
+   "width": 390
+  },
+  {
+   "path": "/devices/7",
+   "theme": "dark",
+   "violations": [
+    {
+     "help": "Elements must meet minimum color contrast ratio thresholds",
+     "id": "color-contrast",
+     "impact": "serious",
+     "nodes": 80,
+     "sample": [
+      ".c3-1 > .card > .card-head > .subtle",
+      "dt:nth-child(1)",
+      "dt:nth-child(3)"
+     ]
+    },
+    {
+     "help": "Scrollable region must have keyboard access",
+     "id": "scrollable-region-focusable",
+     "impact": "serious",
+     "nodes": 1,
+     "sample": [
+      ".tall"
+     ]
+    }
+   ],
+   "width": 390
+  },
+  {
+   "path": "/incidents",
+   "theme": "dark",
+   "violations": [
+    {
+     "help": "Elements must meet minimum color contrast ratio thresholds",
+     "id": "color-contrast",
+     "impact": "serious",
+     "nodes": 3,
+     "sample": [
+      "th:nth-child(1)",
+      "th:nth-child(2)",
+      ".false_positive"
+     ]
+    }
+   ],
+   "width": 390
+  },
+  {
+   "path": "/incidents/8",
+   "theme": "dark",
+   "violations": [
+    {
+     "help": "Elements must meet minimum color contrast ratio thresholds",
+     "id": "color-contrast",
+     "impact": "serious",
+     "nodes": 51,
+     "sample": [
+      ".section-label",
+      ".card:nth-child(2) > .card-head > .subtle",
+      "a[href$=\"incidents/6\"] > .inc-body > .inc-meta"
+     ]
+    },
+    {
+     "help": "Links must be distinguishable without relying on color",
+     "id": "link-in-text-block",
+     "impact": "serious",
+     "nodes": 1,
+     "sample": [
+      ".card-foot > .link[href$=\"devices/7\"]"
+     ]
+    },
+    {
+     "help": "Scrollable region must have keyboard access",
+     "id": "scrollable-region-focusable",
+     "impact": "serious",
+     "nodes": 1,
+     "sample": [
+      ".tall"
+     ]
+    }
+   ],
+   "width": 390
+  },
+  {
+   "path": "/filtering",
+   "theme": "dark",
+   "violations": [
+    {
+     "help": "Elements must meet minimum color contrast ratio thresholds",
+     "id": "color-contrast",
+     "impact": "serious",
+     "nodes": 89,
+     "sample": [
+      "#sec-check > .card-head > .subtle",
+      "#sec-profiles > .card-head > .subtle",
+      ".profile-row:nth-child(1) > .profile-main > .row-sub"
+     ]
+    }
+   ],
+   "width": 390
+  },
+  {
+   "path": "/response",
+   "theme": "dark",
+   "violations": [
+    {
+     "help": "Elements must meet minimum color contrast ratio thresholds",
+     "id": "color-contrast",
+     "impact": "serious",
+     "nodes": 28,
+     "sample": [
+      "th:nth-child(1)",
+      "th:nth-child(2)",
+      "th:nth-child(3)"
+     ]
+    }
+   ],
+   "width": 390
+  },
+  {
+   "path": "/hunt",
+   "theme": "dark",
+   "violations": [
+    {
+     "help": "Elements must meet minimum color contrast ratio thresholds",
+     "id": "color-contrast",
+     "impact": "serious",
+     "nodes": 58,
+     "sample": [
+      ".card:nth-child(1) > .card-head > .subtle",
+      "#huntTalkers > .list-row:nth-child(1) > .dim",
+      "#huntTalkers > .list-row:nth-child(2) > .dim"
+     ]
+    },
+    {
+     "help": "Scrollable region must have keyboard access",
+     "id": "scrollable-region-focusable",
+     "impact": "serious",
+     "nodes": 2,
+     "sample": [
+      "#huntDestinations",
+      "#huntResults"
+     ]
+    }
+   ],
+   "width": 390
+  },
+  {
+   "path": "/settings",
+   "theme": "dark",
+   "violations": [
+    {
+     "help": "Elements must meet minimum color contrast ratio thresholds",
+     "id": "color-contrast",
+     "impact": "serious",
+     "nodes": 82,
+     "sample": [
+      "#settingsChannels > .empty",
+      "#sec-notify > .card-foot",
+      "div[data-key=\"notify_rate_limit_per_hour\"] > .setting-label > .row-sub"
+     ]
+    },
+    {
+     "help": "Scrollable region must have keyboard access",
+     "id": "scrollable-region-focusable",
+     "impact": "serious",
+     "nodes": 1,
+     "sample": [
+      "#settingsAudit"
+     ]
+    }
+   ],
+   "width": 390
+  },
+  {
+   "path": "/reports/weekly",
+   "theme": "dark",
+   "violations": [
+    {
+     "help": "Elements must meet minimum color contrast ratio thresholds",
+     "id": "color-contrast",
+     "impact": "serious",
+     "nodes": 14,
+     "sample": [
+      "#reportIncidentTotal",
+      "#reportRiskiest > .list-row:nth-child(1) > .dim",
+      ".list-row:nth-child(2) > .dim"
+     ]
+    }
+   ],
+   "width": 390
+  },
+  {
+   "path": "/",
+   "theme": "light",
+   "violations": [
+    {
+     "help": "Elements must meet minimum color contrast ratio thresholds",
+     "id": "color-contrast",
+     "impact": "serious",
+     "nodes": 1,
+     "sample": [
+      "#cmdkTrigger > kbd"
+     ]
+    },
+    {
+     "help": "Scrollable region must have keyboard access",
+     "id": "scrollable-region-focusable",
+     "impact": "serious",
+     "nodes": 1,
+     "sample": [
+      "#eventFeed"
+     ]
+    }
+   ],
+   "width": 1440
+  },
+  {
+   "path": "/devices",
+   "theme": "light",
+   "violations": [
+    {
+     "help": "Elements must meet minimum color contrast ratio thresholds",
+     "id": "color-contrast",
+     "impact": "serious",
+     "nodes": 1,
+     "sample": [
+      "#cmdkTrigger > kbd"
+     ]
+    }
+   ],
+   "width": 1440
+  },
+  {
+   "path": "/devices/7",
+   "theme": "light",
+   "violations": [
+    {
+     "help": "Elements must meet minimum color contrast ratio thresholds",
+     "id": "color-contrast",
+     "impact": "serious",
+     "nodes": 1,
+     "sample": [
+      "#cmdkTrigger > kbd"
+     ]
+    },
+    {
+     "help": "Scrollable region must have keyboard access",
+     "id": "scrollable-region-focusable",
+     "impact": "serious",
+     "nodes": 1,
+     "sample": [
+      ".tall"
+     ]
+    }
+   ],
+   "width": 1440
+  },
+  {
+   "path": "/incidents",
+   "theme": "light",
+   "violations": [
+    {
+     "help": "Elements must meet minimum color contrast ratio thresholds",
+     "id": "color-contrast",
+     "impact": "serious",
+     "nodes": 2,
+     "sample": [
+      "#cmdkTrigger > kbd",
+      ".false_positive"
+     ]
+    }
+   ],
+   "width": 1440
+  },
+  {
+   "path": "/incidents/8",
+   "theme": "light",
+   "violations": [
+    {
+     "help": "Elements must meet minimum color contrast ratio thresholds",
+     "id": "color-contrast",
+     "impact": "serious",
+     "nodes": 1,
+     "sample": [
+      "#cmdkTrigger > kbd"
+     ]
+    },
+    {
+     "help": "Links must be distinguishable without relying on color",
+     "id": "link-in-text-block",
+     "impact": "serious",
+     "nodes": 1,
+     "sample": [
+      ".card-foot > .link[href$=\"devices/7\"]"
+     ]
+    },
+    {
+     "help": "Scrollable region must have keyboard access",
+     "id": "scrollable-region-focusable",
+     "impact": "serious",
+     "nodes": 1,
+     "sample": [
+      ".tall"
+     ]
+    }
+   ],
+   "width": 1440
+  },
+  {
+   "path": "/filtering",
+   "theme": "light",
+   "violations": [
+    {
+     "help": "Elements must meet minimum color contrast ratio thresholds",
+     "id": "color-contrast",
+     "impact": "serious",
+     "nodes": 3,
+     "sample": [
+      "#cmdkTrigger > kbd",
+      ".stat:nth-child(3) > .sm.stat-value > .ok.dot.chip",
+      ".stat:nth-child(4) > .sm.stat-value > .ok.dot.chip"
+     ]
+    }
+   ],
+   "width": 1440
+  },
+  {
+   "path": "/response",
+   "theme": "light",
+   "violations": [
+    {
+     "help": "Elements must meet minimum color contrast ratio thresholds",
+     "id": "color-contrast",
+     "impact": "serious",
+     "nodes": 1,
+     "sample": [
+      "#cmdkTrigger > kbd"
+     ]
+    }
+   ],
+   "width": 1440
+  },
+  {
+   "path": "/hunt",
+   "theme": "light",
+   "violations": [
+    {
+     "help": "Elements must meet minimum color contrast ratio thresholds",
+     "id": "color-contrast",
+     "impact": "serious",
+     "nodes": 1,
+     "sample": [
+      "#cmdkTrigger > kbd"
+     ]
+    },
+    {
+     "help": "Scrollable region must have keyboard access",
+     "id": "scrollable-region-focusable",
+     "impact": "serious",
+     "nodes": 2,
+     "sample": [
+      "#huntDestinations",
+      "#huntResults"
+     ]
+    }
+   ],
+   "width": 1440
+  },
+  {
+   "path": "/settings",
+   "theme": "light",
+   "violations": [
+    {
+     "help": "Elements must meet minimum color contrast ratio thresholds",
+     "id": "color-contrast",
+     "impact": "serious",
+     "nodes": 1,
+     "sample": [
+      "#cmdkTrigger > kbd"
+     ]
+    }
+   ],
+   "width": 1440
+  },
+  {
+   "path": "/reports/weekly",
+   "theme": "light",
+   "violations": [
+    {
+     "help": "Elements must meet minimum color contrast ratio thresholds",
+     "id": "color-contrast",
+     "impact": "serious",
+     "nodes": 1,
+     "sample": [
+      "#cmdkTrigger > kbd"
+     ]
+    }
+   ],
+   "width": 1440
+  },
+  {
+   "path": "/",
+   "theme": "light",
+   "violations": [
+    {
+     "help": "Scrollable region must have keyboard access",
+     "id": "scrollable-region-focusable",
+     "impact": "serious",
+     "nodes": 1,
+     "sample": [
+      "#eventFeed"
+     ]
+    }
+   ],
+   "width": 390
+  },
+  {
+   "path": "/devices",
+   "theme": "light",
+   "violations": [
+    {
+     "help": "Scrollable region must have keyboard access",
+     "id": "scrollable-region-focusable",
+     "impact": "serious",
+     "nodes": 1,
+     "sample": [
+      ".table-scroll"
+     ]
+    }
+   ],
+   "width": 390
+  },
+  {
+   "path": "/devices/7",
+   "theme": "light",
+   "violations": [
+    {
+     "help": "Scrollable region must have keyboard access",
+     "id": "scrollable-region-focusable",
+     "impact": "serious",
+     "nodes": 1,
+     "sample": [
+      ".tall"
+     ]
+    }
+   ],
+   "width": 390
+  },
+  {
+   "path": "/incidents",
+   "theme": "light",
+   "violations": [
+    {
+     "help": "Elements must meet minimum color contrast ratio thresholds",
+     "id": "color-contrast",
+     "impact": "serious",
+     "nodes": 1,
+     "sample": [
+      ".false_positive"
+     ]
+    }
+   ],
+   "width": 390
+  },
+  {
+   "path": "/incidents/8",
+   "theme": "light",
+   "violations": [
+    {
+     "help": "Links must be distinguishable without relying on color",
+     "id": "link-in-text-block",
+     "impact": "serious",
+     "nodes": 1,
+     "sample": [
+      ".card-foot > .link[href$=\"devices/7\"]"
+     ]
+    },
+    {
+     "help": "Scrollable region must have keyboard access",
+     "id": "scrollable-region-focusable",
+     "impact": "serious",
+     "nodes": 1,
+     "sample": [
+      ".tall"
+     ]
+    }
+   ],
+   "width": 390
+  },
+  {
+   "path": "/filtering",
+   "theme": "light",
+   "violations": [
+    {
+     "help": "Elements must meet minimum color contrast ratio thresholds",
+     "id": "color-contrast",
+     "impact": "serious",
+     "nodes": 2,
+     "sample": [
+      ".stat:nth-child(3) > .sm.stat-value > .ok.dot.chip",
+      ".stat:nth-child(4) > .sm.stat-value > .ok.dot.chip"
+     ]
+    }
+   ],
+   "width": 390
+  },
+  {
+   "path": "/response",
+   "theme": "light",
+   "violations": [],
+   "width": 390
+  },
+  {
+   "path": "/hunt",
+   "theme": "light",
+   "violations": [
+    {
+     "help": "Scrollable region must have keyboard access",
+     "id": "scrollable-region-focusable",
+     "impact": "serious",
+     "nodes": 2,
+     "sample": [
+      "#huntDestinations",
+      "#huntResults"
+     ]
+    }
+   ],
+   "width": 390
+  },
+  {
+   "path": "/settings",
+   "theme": "light",
+   "violations": [
+    {
+     "help": "Scrollable region must have keyboard access",
+     "id": "scrollable-region-focusable",
+     "impact": "serious",
+     "nodes": 1,
+     "sample": [
+      "#settingsAudit"
+     ]
+    }
+   ],
+   "width": 390
+  },
+  {
+   "path": "/reports/weekly",
+   "theme": "light",
+   "violations": [],
+   "width": 390
+  }
+ ],
+ "summary": {
+  "color-contrast": {
+   "help": "Elements must meet minimum color contrast ratio thresholds",
+   "impact": "serious",
+   "nodes": 1132,
+   "page_views": 32
+  },
+  "link-in-text-block": {
+   "help": "Links must be distinguishable without relying on color",
+   "impact": "serious",
+   "nodes": 5,
+   "page_views": 5
+  },
+  "scrollable-region-focusable": {
+   "help": "Scrollable region must have keyboard access",
+   "impact": "serious",
+   "nodes": 24,
+   "page_views": 20
+  }
+ }
+}

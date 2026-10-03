@@ -43,3 +43,4 @@ eval/replay-out/
 .claude/settings.local.json
 .venv-bench/
 eval/bench-data/
+.venv-demo/

@@ -1,0 +1,114 @@
+{
+ "base": "http://127.0.0.1:8765",
+ "klm_operators_s": {
+  "B": 0.1,
+  "H": 0.4,
+  "K": 0.28,
+  "M": 1.35,
+  "P": 1.1
+ },
+ "tasks": [
+  {
+   "clicks": 2,
+   "detail": "kali's page shows risk 100/100 with its port-scan and brute-force incidents",
+   "end_state_ok": true,
+   "keystrokes": 0,
+   "klm_expert_seconds": 6.7,
+   "page_loads": 2,
+   "question": "Which device is the riskiest right now, and why?",
+   "scripted_wall_seconds": 3.1,
+   "steps": [
+    "click Devices in the sidebar",
+    "click the kali row",
+    "read the risk score card"
+   ],
+   "task": 1
+  },
+  {
+   "clicks": 3,
+   "detail": "track.hubspot.com: allowed on Finance Laptop=True, still blocked on Reception PC=True",
+   "end_state_ok": true,
+   "keystrokes": 26,
+   "klm_expert_seconds": 18.7,
+   "page_loads": 2,
+   "question": "Make HubSpot forms work again on the Finance Laptop only.",
+   "scripted_wall_seconds": 4.7,
+   "steps": [
+    "click Devices in the sidebar",
+    "click the Finance Laptop row",
+    "read the Recently Blocked list",
+    "click Allow next to track.hubspot.com",
+    "type the reason into the browser prompt + Enter"
+   ],
+   "task": 2
+  },
+  {
+   "clicks": 5,
+   "detail": "quarantined=True, 3598 s left",
+   "end_state_ok": true,
+   "keystrokes": 19,
+   "klm_expert_seconds": 20.7,
+   "page_loads": 2,
+   "question": "Cut the Task 1 device off the internet for an hour.",
+   "scripted_wall_seconds": 5.1,
+   "steps": [
+    "click Devices in the sidebar",
+    "click the kali row",
+    "click Quarantine",
+    "click 1 hour",
+    "type 'suspicious scanning' into the Reason field",
+    "click Quarantine (confirm)"
+   ],
+   "task": 3
+  },
+  {
+   "clicks": 3,
+   "detail": "Blocked Blocked by a blocklist rule",
+   "end_state_ok": true,
+   "keystrokes": 16,
+   "klm_expert_seconds": 15.9,
+   "page_loads": 2,
+   "question": "Why is doubleclick.net blocked on the Manager iPhone?",
+   "scripted_wall_seconds": 3.2,
+   "steps": [
+    "click Devices in the sidebar",
+    "click the Manager iPhone row",
+    "click the domain test box",
+    "type 'doubleclick.net' into the domain test box + Enter",
+    "read the result toast"
+   ],
+   "task": 4
+  },
+  {
+   "clicks": 4,
+   "detail": "profile is now strict_privacy",
+   "end_state_ok": true,
+   "keystrokes": 0,
+   "klm_expert_seconds": 9.2,
+   "page_loads": 2,
+   "question": "Give the Reception PC the Strict privacy profile.",
+   "scripted_wall_seconds": 4.6,
+   "steps": [
+    "click Devices in the sidebar",
+    "click the Reception PC row",
+    "choose strict_privacy in DNS filtering profile"
+   ],
+   "task": 5
+  },
+  {
+   "clicks": 1,
+   "detail": "top row 'Lobby Smart TV IoT restricted'; most total bytes per the API: Lobby Smart TV",
+   "end_state_ok": true,
+   "keystrokes": 0,
+   "klm_expert_seconds": 4.0,
+   "page_loads": 1,
+   "question": "Which device used the most data?",
+   "scripted_wall_seconds": 1.2,
+   "steps": [
+    "click Devices in the sidebar",
+    "read the first row (sorted by Down)"
+   ],
+   "task": 6
+  }
+ ]
+}

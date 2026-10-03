@@ -470,6 +470,8 @@ Order: telemetry first, because every later step displays or measures it. Then T
 | 6.7 | **Responsive layout** | F§13.3 | All pages usable at ~400 px | 1 |
 
 > **Feature freeze** after Stage 6. Start the 7-day continuous run (7.0) right away.
+>
+> **As done (3 October 2026):** Stage 7 closed in one session at the user's request. The code was frozen at tag `stage7-final` after the pre-freeze fixes and two reboot tests. 7.0 and 7.9 were replaced as recorded in their rows and in the deviations note after the tracker.
 
 ### Stage 7 — Evaluation campaign 2.0 (~8 days of effort, spread over the 7-day run)
 
@@ -477,16 +479,16 @@ This restores feasibility Phase 10. ⚡ = run a first time **as soon as the feat
 
 | Step | Experiment | Metrics |
 |---|---|---|
-| 7.0 | **7-day continuous run** on real devices | FP incidents/24 h, uptime, storage growth/day, ingest lag p95, reduction ratio, **block % per device** |
+| 7.0 | ~~**7-day continuous run** on real devices~~ **Replaced (3 Oct 2026, user decision): one-session evaluation.** Held-out replay of the Mac's 7.5 benchmark on three engines; two reboot tests and four live checks on the frozen code; retrospective reliability (17 boots, every unit failure since 12 Sep), performance under 2 Oct's real load and flood, storage per event, canary history, list utility over all ordinary use | FP per device-hour / per 10k events with 95% CI, uptime as failures per boot, ingest lag p95, storage per event and projected steady state, block % per device. Limits stated: no multi-day running of the frozen code |
 | 7.1 | **PCAP replay pipeline** (`suricata -r` → ingest → engine; runnable on the Mac via a Homebrew-installed IDS; own captures + a small labelled public subset, licence cited) | Deterministic ground truth |
 | 7.2 | ⚡ Detection battery for all signals, 5 runs each | Detection rate, TTD median + p95 |
 | 7.3 | Precision / recall / F1 per signal. Threshold sensitivity sweeps | Justifies every threshold |
 | 7.4 | ⚡ Slow-scan advantage vs. signatures. ⚡ Beacon jitter curve. Ablation (raw / dedup / dedup + campaigns) | Headline figures |
 | 7.5 | **Ad-blocking benchmark (expanded).** Headless Chromium (Playwright) on the Mac, temporarily joined to `SecurePi-Test`, loads a fixed set of 20 ad-heavy sites × 3 runs under four conditions: **no filtering / Tier 1 / Tier 1 + profile lists (5.5) / reference: uBlock Origin in the browser with gateway filtering off**. Measure total and third-party requests, bytes, tracker companies contacted (entity map), onLoad/LCP. Also: ⚡ **breakage rate** on the top-50 sites (checklist + allowlist churn from 5.2), ⚡ **per-list marginal utility and overlap** (5.4), ⚡ **DNS latency** p50/p95 before/after 5.5 vs. ISP resolver, ⚡ **bypass matrix**: Firefox DoH, Chrome Secure DNS, Android Private DNS, iCloud Private Relay (if an Apple device is available), VPN app → blocked / detected / leaked. **Tier 2:** 30 YouTube videos in mobile Chrome, pre-roll shown yes/no under DNS only vs. Tier 2, ⚡ scope-canary results over 7 days, pinned-app behaviour before/after 5.8, mitmproxy RSS and added TLS setup latency | Request/byte/tracker reduction vs. uBO reference, load-time delta, breakage %, list utility, latency, bypass matrix, first-party ad block rate with confidence interval, privacy-scope uptime |
-| 7.6 | Identity accuracy over the 7-day run | Accuracy vs. ground truth |
+| 7.6 | Identity accuracy ~~over the 7-day run~~ over the 2 Oct data, then over the 3 Oct reconnects and reboots | Accuracy vs. ground truth (presence fix: follows Wi-Fi association) |
 | 7.7 | ⚡ **Chaos tests:** kill the IDS and DNS filter / ingest / engine / **mitmproxy** (inspection must fail open to plain passthrough, not break browsing), fill disk (scratch), drop WAN | MTTR, detection gap, fail-open verified |
 | 7.8 | Performance: throughput + drops sweep, dashboard query latency, memory/CPU with everything on, ⚡ storage before/after retention | System table |
-| 7.9 | **Usability study** (5–8 people): tasks include "find the riskiest device and explain why" **and "a site is broken — fix it for one device only"** + SUS | Task success, time, SUS |
+| 7.9 | ~~**Usability study** (5–8 people)~~ **Replaced (3 Oct 2026, user decision): expert review.** Heuristic evaluation, cognitive walkthrough, scripted expert paths with click counts and Keystroke-Level Model times, axe-core WCAG audit, keyboard checks, all on the study's six tasks. The participant kit stays ready | Findings by severity, end-state success of expert paths, KLM time, accessibility violations. No SUS or real success rates |
 
 ### Stage 8 — Documentation and demonstration (~5 days, restores Day 15 / feasibility Phase 11)
 
@@ -562,8 +564,40 @@ Never cut Stage 2, steps 5.2, 5.3, 5.7, or evaluation items 7.2–7.5.
 | 4 | **4.1–4.5 all done** (4.2's reconnect check done on a real phone 26 September - see `EVALUATION-RESULTS-2.md`, "Real-device checks") | **Stage 4 complete** |
 | 5 | **5.1 done, 5.2 done, 5.3 done, 5.4 done, 5.5 done, 5.6 done, 5.7 done, 5.8 done, 5.9 done, 5.10 done, 5.11 done (Path 1 only)** (out of order) | 5.1–5.11 done - 5.11 scoped to Path 1 (cosmetic CSS), Path 2 (scriptlets) deferred and recorded |
 | 6 | **6.1 done, 6.2 done, 6.3 done, 6.4 done, 6.5 done, 6.6 done, 6.7 done** | Stage 6 complete |
-| 7 | **7.1-7.5, 7.7, 7.8 done; 7.6 measured before the run** (2 Oct): 7.2 re-run all 15 signals 5/5 on the final code; 7.3 precision 0.64 → 0.91 with recall 1.00 (four detection fixes, 482 tests); 7.4 signatures 0/53 vs signals 53/53, beacon jitter curve, dedup 200:1; 7.5 Tier 1 −83% requests / −99% tracker companies (matches uBO Lite), breakage 0/48, Tier 2 pre-rolls 30/30 → 0/29, bypass matrix, DNS A/B; 7.7 everything self-recovers, inspection fails open; 7.8 storage, console latency, throughput sweep · **audit H1/H2 deployed** · **7.0 seven-day run: tooling ready (`gateway/run_monitor.py` running, `gateway/collect_run.sh`), run not yet started - next session** · **7.9 kit ready** (needs 5-8 participants) - see `EVALUATION-RESULTS-2.md` §Stage 7 | 7.0 and 7.9 to run |
+| 7 | **Complete (3 Oct 2026), with 7.0 and 7.9 replaced** (see the deviations note below). 7.1-7.5, 7.7, 7.8 as measured on 2 Oct (7.2 all 15 signals 5/5; 7.3 precision 0.64 → 0.91, recall 1.00; 7.4 signatures 0/53 vs signals 53/53; 7.5 Tier 1 −83% requests, breakage 0/48, Tier 2 pre-rolls 30/30 → 0/29; 7.7 everything self-recovers; 7.8 performance) · **3 Oct:** boot faults found and fixed ("database is locked" at every boot since 20 Sep, gate timeout, attribution count, unguarded engine steps); pre-freeze fixes (uplink-aware fail-open, IDS rotation, TLD rules, malicious_domain retired, resolver tuning on, presence by association), 541 tests, tag `stage7-final` · **7.0 replaced:** held-out FPs 126 (original) → 22 (7.3) → 14 (frozen) on the Mac's benchmark; 2 clean reboot tests; rotation 361/361 lines; fail-open held through an upstream outage; 17/17 clean shutdowns; canary 265/0 · **7.9 replaced:** expert review, 6/6 expert paths, 17 findings, top 3 severity-3 queued for Stage 8 · see `EVALUATION-RESULTS-2.md` §Stage 7 | Participant study (7.9 kit) and a multi-day run remain possible future work |
 | 8 | 8.1 · 8.2 · 8.3 · 8.4 | Not started |
+
+**Note on 3 October (Stage 7 deviations):** the user asked for Stage 7 to
+be finished in one session, so the two items that could not fit were replaced.
+The full record is in `EVALUATION-RESULTS-2.md`, "7.0 replaced" and "7.9
+replaced".
+
+- **7.0, the seven-day run.** Its job was to check 7.3's detection fixes on
+  traffic they were not tuned on, and to measure the gateway running for days.
+  - **Held-out check:** a replay of the Mac's 7.5 benchmark, which postdates
+    the data 7.3 was tuned on, through the original, 7.3 and frozen engines.
+  - **Running behaviour:** two reboot tests and four live checks on the
+    frozen code, plus a retrospective of every boot and unit failure since
+    12 September, the run monitor's 2 October load data and the canary
+    history.
+  - A live multi-hour soak was planned as part of the replacement and then
+    dropped by the user.
+  - **Not established:** days of unattended running of the frozen code, and
+    a live false-positive count on it.
+- **7.9, the usability study.** Five to eight outside participants could not
+  be recruited inside a session. It was replaced by an expert review
+  (heuristic evaluation, cognitive walkthrough, scripted expert paths, axe-core
+  audit).
+  - **Not established:** SUS, real success rates and times, and how an
+    outsider understands the console.
+  - The participant kit is unchanged, so the study can still be run.
+- **Pre-freeze decisions** (made by the user on 3 October):
+  - `malicious_domain` retired (off by default, setting kept);
+  - 5.5 resolver tuning switched on;
+  - uplink-aware DNS fail-open, IDS log rotation and the TLD-rule filter made
+    before the freeze;
+  - the YouTube-app relaunch test not run (YouTube in Chrome on the tablet
+    instead), so 5.8's pin trigger stays at 3.
 
 **Note on 14 September:** Stage 0 was picked up before Stage 2, since the
 plan says to work through stages in order and Stage 0 had never been

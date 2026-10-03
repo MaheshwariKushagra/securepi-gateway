@@ -703,10 +703,322 @@ the description moves on ("port 443").
 
 ## Stage 7
 
-Status at the end of 2 October 2026: 7.1-7.5, 7.7 and 7.8 done; 7.6 measured on the
-data so far (to be repeated over the seven-day run); **7.0 not yet started** (tooling
-ready, scheduled for the next session); 7.9's kit ready, the study itself needs
-5-8 participants.
+**Status: Stage 7 complete (3 October 2026), with two recorded deviations.**
+- **7.0:** the seven-day run was replaced by a one-session evaluation (below):
+  - two reboot tests and four targeted live checks on the frozen code;
+  - a held-out replay;
+  - retrospective reliability and performance analyses over all data since
+    12 September.
+- **7.9:** the participant study was replaced by an expert review.
+
+Both replacements were the user's decision, so that Stage 7 could close in one
+session. What they do and don't establish is stated with each result. Frozen
+code: tag `stage7-final` (commit `33c4b0d`), 541 tests.
+
+Status at the end of 2 October 2026 (kept for the record): 7.1-7.5, 7.7 and
+7.8 done; 7.6 measured on the data so far; 7.0 not yet started; 7.9's kit ready.
+
+### 7.0 replaced: the one-session evaluation (3 October 2026)
+
+**Why not seven days, and what replaces them.** The seven-day run was meant to
+give:
+- FP incidents per 24 h on real devices, as the held-out check of 7.3's four
+  fixes, which were scored in-sample;
+- uptime, storage growth, ingest lag p95, reduction ratio and block % per
+  device;
+- 7.6 identity, the canary log and list utility over the week.
+
+It was replaced by:
+1. **Held-out replay.** The Mac's 7.5 benchmark (2 Oct 18:25-21:29) postdates
+   the database copy 7.3's fixes were tuned on, so for those fixes it is
+   held out. It was replayed on three engines.
+2. **Live checks on the frozen code.** Two reboot tests, a forced IDS log
+   rotation under traffic, an upstream-DNS outage, Tier 2 on and off with
+   timed expiry, and a log scan.
+3. **Retrospective analysis.** All 17 earlier boots and every unit failure
+   systemd logged since 12 September; the run monitor's 2 October data
+   (heavy real browsing, then a 245,000-alert flood) for lag, memory and
+   storage; the canary history; list utility over all ordinary use.
+
+A planned multi-hour live soak was dropped at the user's request. The frozen
+code therefore never ran unattended on fresh traffic for hours: a slow leak
+or a multi-day fault can't be ruled out.
+
+#### Boot faults found and fixed before the freeze
+
+The 07:30 boot (after a night powered off) failed in two ways:
+- `securepi-engine` and `securepi-ingest` crashed with **"database is
+  locked"**, and were back 5 s later only because systemd restarted them;
+- `securepi-dpi` failed its first start, because `dpi-gate.sh` waited only
+  30 s for the proxy.
+
+The journal shows **lock errors in the first minute of every boot from
+20 September on**: 20 Sep (engine and canary), 21 Sep (ingest and canary),
+25 Sep (engine signals and canary), 2 Oct (canary), and today. They also
+crashed the engine outright on 26 Sep, when its rollup step hit a lock as the
+battery started.
+
+Causes, each fixed with a test written to fail first:
+- **Every connection used Python's 5 s busy timeout.** New `app/dbconn.py`:
+  30 s, plus a 32 MiB WAL size limit. Ingest start-up and the engine's first
+  heartbeat retry while locked.
+- **The WAL survived at 137 MB, left by one ingest pass that swallowed about
+  245,000 harness alerts.** Every file reader now takes at most 5,000 lines
+  per pass. The WAL dropped to exactly 32 MiB at deploy.
+- **Each 2-second attribution pass ended with a count over about 640,000
+  events inside its write transaction,** only to print a total: 13 s on a cold
+  cache (measured), found by the first reboot test.
+- **The engine loop guarded only some of its steps.** Every step now goes
+  through `engine.run_step`.
+- **logrotate (AC power only, weekly, copytruncate) compressed a 306 MB IDS
+  log in the middle of the boot.**
+  - It is replaced by a daily or 100 MB rotation by rename + HUP, every
+    15 min, with no AC-power condition and never in the first 15 min after
+    boot.
+  - Ingest now finishes the renamed file first; before, lines written after
+    its last read were lost.
+- **The gate script's 30 s wait** is now 75 s, and a timeout leaves the gate
+  closed (fail-open) instead of failing the unit.
+
+Pre-freeze changes made at the same time (decisions in ENHANCEMENT-PLAN.md):
+- DNS fail-open now probes a name the filter answers itself, so an uplink
+  outage no longer switches filtering off (CODEBASE_AUDIT.md M2).
+- 26 IDS rules that flag only a lookup's TLD no longer raise incidents.
+- `malicious_domain` is retired (off by default).
+- 5.5's resolver tuning is on: applied through the console's confirm-gated
+  endpoint with exactly the configuration 7.5 measured; it persisted through
+  both reboots.
+- Registry presence follows Wi-Fi association. Found by the identity check:
+  with a 24 h lease, a device that had left still showed as present for up to
+  a day.
+
+Tests 484 → 541.
+
+#### Reboot tests (frozen code)
+
+| | 07:30 boot (before) | 1st reboot test | 2nd reboot test (after the attribution fix) |
+|---|---|---|---|
+| Userspace boot | 87 s | 40 s | 55 s |
+| Failed units | engine, ingest, dpi | none | none |
+| "database is locked" | 3 crashes | 1 (a signal timed out, caught) | **0** |
+| Inspection proxy | failed first start | up first time | up first time |
+| Ingest start → first stored event | - | 53 s | 36 s |
+| Tier 2 enrolment after boot | empty (by design) | empty | empty |
+| Resolver tuning | - | persisted | persisted |
+| Device records | kept | kept | kept |
+
+The remaining 36 s is the first attribution pass on a cold cache. There were no
+errors. One clean reboot can't recreate the morning's exact combination (a
+large WAL plus a logrotate catch-up); that case rests on the mechanism and the
+contention tests.
+
+#### Targeted live checks (frozen code)
+
+- **IDS log rotation under traffic.** Forced while the tablet browsed: **361
+  log lines in the 85 s window and 361 database rows**, 201 of them written to
+  the renamed file. Ingest logged "finished the rotated file, moving to the new
+  one". An idle repeat matched 10/10.
+- **Upstream DNS outage.** The gateway's outbound DoT (853) was dropped for
+  75 s, leaving plain DNS and ICMP working, which is the failure that used to
+  turn filtering off.
+  - Upstream names timed out throughout (326 packets dropped).
+  - The local probe answered every time.
+  - **Fail-open never engaged**, so filtering stayed in place.
+  - Resolution recovered as soon as the block was removed.
+- **Tier 2 on and off.** A policy expiring after 150 s:
+  - YouTube hosts were decrypted and everything else passed through (correct
+    scope).
+  - The orchestrator expired it at +157 s ("time limit reached", engine cycle
+    15 s).
+  - Afterwards the redirect counter stayed still and the tablet produced 0
+    DPI events.
+- **Log scan since the reboot.** No errors. The only matches were the DNS
+  filter's API not yet up 4 s after boot (ingest falls back by design) and
+  "blocked ad endpoint" lines.
+
+#### Held-out false positives
+
+`tools/heldout_replay.py`. It replays only the Mac's events in its benchmark
+window (306,390 events, 3.05 device-hours) through the real signals, on
+sweep.py's simulated clock. Results files are
+`eval/results/heldout-replay-20261003-*.json`.
+
+| Engine | False positives | Per device-hour | Per 10k events (95% CI) | At 8,000 events/device-day |
+|---|---|---|---|---|
+| Original (before 7.3, `d6b5d5b^`) | **126**: beacon 99, ids_other 6, network_sweep 6, dga 5, malicious_domain 4, dns_bypass 4, slow_network_sweep 2 | 41 | 4.11 (3.43-4.90) | 3.3 |
+| Final 7.3 engine (2 October settings) | **22**: beacon 5, dga 5, ids_other 4, malicious_domain 4, network_sweep 3, dns_bypass 1 | 7.2 | 0.72 (0.45-1.09) | 0.57 (0.36-0.87) |
+| Frozen engine (3 October defaults) | **14**: beacon 5, dga 5, network_sweep 3, dns_bypass 1 | 4.6 | 0.46 (0.25-0.77) | 0.37 (0.20-0.61) |
+
+- **The 22 match the live engine exactly:** it raised 22 non-join incidents on
+  the Mac that evening. So the replay reproduces live behaviour.
+- **Held-out verdict on 7.3's fixes: 126 → 22 (−83%)** on traffic they were
+  never tuned on. Most of the drop is the dedup fix (99 → 5 beacon incidents).
+- **The 3 October changes are not held-out evidence.** They remove the 4
+  malicious_domain and 4 TLD-rule incidents, but were motivated by this same
+  benchmark, so the 22 → 14 step is in-sample.
+- **What remains is real and unexplained by tuning,** and is the queue for the
+  next detection work:
+  - **beacon** (5): Google port 80, a STUN server on 3478, Google push on
+    5228 - periodic traffic from ordinary apps;
+  - **dga** (5): `omnitagjs.com` ad tech and `in-addr.arpa` reverse lookups;
+    short labels overlap with random ones, as in 7.3's `whatsapp.com` case;
+  - **network_sweep** (3): SYN-only attempts to ad servers during the
+    unfiltered and uBO conditions;
+  - **dns_bypass** (1).
+- **Caveats:**
+  - One device on scripted desktop browsing (fresh profiles, three of four
+    conditions with gateway filtering relaxed). That is heavier and stranger
+    than household traffic: the 3 hours hold about 40 days of one phone's
+    volume.
+  - The per-device-day column scales by events, at 8,000 per day (the A33's
+    fullest ordinary day, 12 Sep; its flow records have since been pruned,
+    so this is a lower bound).
+  - Slow-scan, beacon and baseline signals have long windows that 3 hours
+    under-samples.
+  - Earlier held-out evidence points the same way: the red-team laptop's
+    attacks were caught and its other traffic was quiet.
+
+#### Reliability over all data (12 September - 3 October)
+
+From `collect_run.sh mark`: boots, how each ended, and systemd's lifecycle
+lines for every unit.
+- **17 earlier boots, all ended with a clean shutdown;** none was a crash or a
+  power loss. The gateway was powered off between sessions, so a calendar
+  uptime percentage means nothing. Failures per boot are what count.
+- Unit failures by cause:
+  - **deliberate:** 5 chaos kills (2 Oct);
+  - **development and deploys:** 12-20 Sep (dpi setup, IDS config, the web
+    console's privilege separation);
+  - **a CA-server boot race** on 13-15 Sep (bind before the AP address; fixed
+    then, no failure since);
+  - **the "database is locked" family above:** in the first minute of the
+    boots on 20, 21 and 25 Sep, 2 Oct and 3 Oct (engine, ingest and canary
+    variously), and the engine on 26 Sep under battery load. All recovered by
+    systemd within 5-16 s. The cause is now fixed, and both of today's reboot
+    tests were clean.
+- **Privacy canary:** 265 checks since 13 September, **0 failures**, 29
+  starts.
+
+#### Performance under load (run monitor, 2 and 3 October)
+
+| Window | Events | Ingest lag p95: IDS / DNS filter / DPI | Peak memory: IDS / DNS filter / web / ingest |
+|---|---|---|---|
+| Heavy real browsing, 2 Oct 18:25-21:25 | 330k | 4.1 / 4.2 / 5.2 s | 871 / 365 / 294 / 216 MB |
+| Harness alert flood, 22:15-22:31 | 246k | **15.7** / 4.4 / 3.7 s | 831 / 262 / 256 / 248 MB |
+| Normal running, 3 Oct 07:31-09:34 | 9k | 4.3 / 4.2 / 4.1 s | 629 / 306 / 311 / 74 MB |
+
+- The nftables log reader's 12 s lag is by design (it runs every fifth pass).
+- 3 October's worst minutes (up to 106 s) are catch-up after the reboots.
+- All services were active in every monitor snapshot. The monitor doesn't run
+  during a reboot, so reboot gaps are measured above instead.
+- Load average peaked at 3.8 to 4.9 on 4 cores; RAM is 3.9 GB.
+
+**Storage.**
+- About **414 bytes per event**, all-in: indexes, incidents and rollups,
+  from the frozen database's logical size of 275 MB for 664,366 events.
+- For one device at 8,000 events a day: **about 3.3 MB a day** while it fills.
+  Retention keeps flow, TLS and QUIC events (about a third) for 14 days and
+  everything else for 30, so it **levels off at about 200,000 events, about
+  80 MB per device.**
+- The file is currently dominated by 2 October's tests until retention clears
+  them. The run monitor's file-size slope swings with the WAL and can't be
+  used.
+
+#### 7.6 identity over the session
+
+- **Reconnects tested:** the morning Wi-Fi rejoin of both devices and three
+  reboots.
+- **No new device records,** each device kept exactly one MAC and one address
+  interval, and there were **0 unattributed LAN events**.
+- **Presence was wrong before today's fix:** the Mac (gone since 21:29) and
+  the A33 (dropped off in the morning) both showed as seen at 09:34. Now only
+  associated devices update (verified live).
+- What wasn't tested: a forced address change and MAC re-randomisation.
+
+#### Blocklist utility over all ordinary use (5.4 final)
+
+`eval/results/blocklist-utility-20261003-094041.json`.
+- **Data:** 36,331 queries and 4,324 domains since 12 September. Harness
+  devices and the benchmark Mac are excluded; the gateway's own lookups are
+  still included.
+- **HaGeZi Pro** is the only list carrying unique weight: 38 domains and
+  **21.3%** of blocked queries are caught by it alone.
+- **Peter Lowe** 1.4%, **the DoH list** 2.5% (which is its job); AdGuard DNS
+  filter, OISD Big and AdAway together 0.6%.
+- **Agreement with the filter's own decisions:** 97.9% of blocks and 99.7% of
+  allows.
+
+#### Tablet TLS cells with time to first byte (completes 7.5's TLS latency)
+
+`eval/results/tls-latency-tablet-ttfb/`: 4 cells × 25 loads, the tablet's
+Chrome, connections fresh each time.
+
+| Cell | Handshake p50 / p95 | TTFB p50 / p95 | Total p50 / p95 | Issuer |
+|---|---|---|---|---|
+| m.youtube.com, enrolled (decrypted) | 126 / 138 ms | 74 / 178 ms | 206 / 326 ms | SecurePi Gateway |
+| m.youtube.com, not enrolled | 163 / 188 ms | 62 / 69 ms | 246 / 274 ms | Google |
+| wikipedia.org, enrolled (passthrough) | 319 / 332 ms | 393 / 783 ms | 715 / 1,099 ms | Wikipedia |
+| wikipedia.org, not enrolled (new control) | 266 / 280 ms | 351 / 539 ms | 675 / 866 ms | Wikipedia |
+
+- **Decrypted:** the handshake ends at the gateway (−37 ms). The proxy's own
+  upstream connection shows up as a longer TTFB tail (+109 ms at p95). At p50,
+  total time is *shorter* with inspection.
+- **Passthrough** adds about 40 ms at p50 (relayed through the proxy) and more
+  in the tail.
+
+The YouTube-app relaunch test (5.8) was not run. The tablet's YouTube app turned
+out to be disabled and back at its factory version, and the user chose to keep
+YouTube in Chrome on the tablet. The pin trigger stays at 3, and the 2-retry
+app version remains unrescued, as recorded in 5.8's row.
+
+#### What the replacement does not establish
+
+- No multi-day continuous running on the final code: slow leaks, timer-driven
+  faults past one day, and retention under steady load are untested.
+- The false-positive rate rests on one device's scripted browsing over 3 hours.
+- With no soak, there is no live false-positive count on the frozen build.
+- The household projections (per device-day, storage) rest on an assumed
+  8,000 events per day.
+
+### 7.9 replaced: expert review (3 October 2026)
+
+- `docs/usability-study/heuristic-evaluation.md`: 17 severity-rated findings.
+- `docs/usability-study/cognitive-walkthrough.md`.
+- Measurements from `tools/usability_expert.py` (`eval/results/usability/`).
+
+The review used the demo console, served with the gateway's own FastAPI and
+Starlette versions.
+
+**Scripted expert paths.**
+- All six study tasks reached the correct end state, checked through the API,
+  in **1-5 clicks**.
+- Keystroke-Level Model expert times: **4.0 to 20.7 s** (task 6 fastest, task 3
+  slowest).
+- Keyboard only: **device rows can't be reached with Tab** (the command
+  palette is the keyboard route). Quarantine is 25 Tab presses from the top of
+  a device page.
+
+**axe-core 4.13 (WCAG 2.1 A/AA), 40 page views.**
+- Only 2 were clean.
+- **Colour contrast** in the default dark theme: about 1,100 elements, because
+  `--text-3`/`--muted` reach 3.4-4.2:1 on the card surfaces.
+- Six scrolling regions can't be scrolled by keyboard.
+- Links inside sentences are marked by colour only.
+
+**Top findings (severity 3):**
+- the Devices list doesn't show risk, although the API returns it (F9);
+- device rows aren't keyboard-reachable (F10);
+- dark-theme contrast (F13).
+
+**Also found:** the console's templates use a Starlette call removed in 1.x
+(F17), so an Ubuntu upgrade of `python3-starlette` would break the console.
+
+The recommendations are queued for Stage 8; no UI code changed during the
+evaluation.
+
+**Limits.** One evaluator, who built the system: no SUS, no real success rates
+or times, and no outsider's mental model. The participant kit is unchanged and
+ready; running it with 5-8 people remains the way to get those numbers.
 
 ### Pre-run fixes (26 September 2026, after the first battery)
 
@@ -985,7 +1297,9 @@ passes it - the distance from the default to the cliff is the margin.
 
 **Caveat, stated plainly:** the four changes were found on the same negative
 data they are then scored on, so the "after" numbers are in-sample. The
-forward seven-day run (7.0), on the frozen final code, is the held-out check.
+held-out check, done on 3 October in place of the seven-day run, is in "7.0
+replaced" above: on the Mac's benchmark traffic, which the fixes were never
+tuned on, the original engine raised 126 false positives and the final one 22.
 
 ### 7.4 — Headline figures (2 October 2026)
 
@@ -1279,8 +1593,9 @@ fetch; Chrome's own per-request timing.
 The browser's handshake with inspection is **faster** (−50 ms): it completes
 with the gateway on the LAN; the proxy's own handshake upstream moves into
 time-to-first-byte, which these cells didn't record. That extension (TTFB in
-every cell, plus an unenrolled control for the passthrough host) was queued for
-after the throughput sweep. **Proxy memory:** 187 MB steady during the cells;
+every cell, plus an unenrolled control for the passthrough host) was done on
+3 October - see "Tablet TLS cells with time to first byte" under "7.0
+replaced" above. **Proxy memory:** 187 MB steady during the cells;
 87 MB idle earlier in the evening, up to 221 MB while YouTube was being decrypted.
 
 #### Pinned apps (5.8), on the tablet
@@ -1297,7 +1612,8 @@ did rescue the A33's YouTube app on 26 September (each host failed exactly 3
 times). Lowering the trigger to 2 failures would cover both; the cost is that
 a browser's two genuinely failed handshakes would also bypass a host for 24 h.
 (Whether relaunching the app supplies the third failure and recovers it was not
-tested.)
+tested: on 3 October the tablet's YouTube app was found disabled and back at its
+factory version, and the user chose to keep YouTube in Chrome there.)
 
 #### Privacy-scope canary, allowlist churn
 

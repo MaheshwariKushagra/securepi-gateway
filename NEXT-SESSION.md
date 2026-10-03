@@ -79,8 +79,8 @@ compact summary. Results from Stage 1 onward are in `EVALUATION-RESULTS-2.md`.
 | **4** | Response & orchestration — policy orchestrator, MAC-keyed timed quarantine, IP/domain blocks, auto-response, filtering profiles & schedules, device trust, notifications | **Complete** (one real-device check pending, see below) |
 | **5** | Ad blocking & privacy filtering (5.11 scoped to Path 1; Path 2 deferred with reasoning recorded) | **Complete** |
 | **6** | Intelligence & console — behavioural baselines, device fingerprinting, settings, incident workbench, hunt/explorer, weekly report, responsive layout | **Complete** |
-| **7** | Evaluation 2.0 — expanded benchmark battery | **Nearly complete** — everything except the 7.0 seven-day run (not yet started) and the 7.9 usability study (needs people); see below |
-| 8 | Documentation & demo | Not started |
+| **7** | Evaluation 2.0 — expanded benchmark battery | **Complete** (3 Oct 2026). 7.0 and 7.9 were replaced by one-session equivalents (user decision); see below |
+| **8** | Documentation & demo | **Next** |
 
 Stages 5 and 6 were built before Stages 1–2 deliberately, then Stages 1 and 2
 were completed in later sessions — each such out-of-order decision is recorded
@@ -327,94 +327,135 @@ measurements, all deployed and live** (details in EVALUATION-RESULTS-2.md,
 - **volume_anomaly `first_seen`** is now when the hour's total crossed the
   anomaly line, so campaign tactic chains read in the right order.
 
-### Stage 7 almost done (2 October 2026, one long session)
+### Stage 7 complete (3 October 2026, one session)
 
-All results and method notes are in `EVALUATION-RESULTS-2.md` §Stage 7. Headlines:
+Everything is in `EVALUATION-RESULTS-2.md` §Stage 7 ("7.0 replaced" and "7.9
+replaced"), with the deviations recorded in `ENHANCEMENT-PLAN.md` (the note
+after the tracker). **Frozen code: tag `stage7-final` (commit `33c4b0d`), 541
+tests**, deployed and checksum-verified (48/48 app files, plus the DPI gate
+script, canary and log-rotation units).
 
-| Step | Result |
-|---|---|
-| Audit H1/H2 (`CODEBASE_AUDIT.md`) | Both deployed and verified live: a flushed enrolment stays off; the gateway's own input chain is default-deny (SSH from the uplink now blocked) |
-| 7.2 re-run | All 15 signals 5/5 on the final code, benign host quiet, Mac replay agrees 45/45 |
-| 7.3 | `tools/sweep.py` over a copy of the live DB: 156 labelled attacks vs the real devices' traffic. False positives 86 → 15, recall 1.00 both. Four detection fixes (dedup `last_seen`, slow-scan dedup window + LAN-only, QUIC not a bypass/sweep host, `ids_alert_max_priority`), 482 tests |
-| 7.4 | Signatures 0/53 on LAN scans/brute force vs signals 53/53; beacon caught to 45% jitter (30% if sizes vary too); dedup 32,044 firings → 160 incidents |
-| 7.5 | Tier 1 −83% requests, −93% third-party, −58% bytes, −99% tracker companies (matches/beats uBO Lite); breakage 0/48; Tier 2 pre-rolls 30/30 → 0/29; bypass matrix (DoH ×8, Private DNS blocked + detected; VPN leaks); DNS A/B; list utility |
-| 7.6 (pre-run) | 5/5 devices one record each, attribution correct, OS 5/5; expired-lease presence bug fixed |
-| 7.7 | 8 faults: everything self-recovers; inspection fails open; fail-open carries a DNS-filter outage after ~15 s |
-| 7.8 | Retention, console latency at two data volumes, throughput/drops sweep |
-| 7.9 | Kit ready in `docs/usability-study/` (piloted), study not run |
+**What the day did:**
+- **Boot faults found and fixed.**
+  - Engine, ingest and the canary hit "database is locked" in the first
+    minute of every boot since 20 Sep.
+  - The fixes:
+    - `app/dbconn.py`: 30 s timeout and a 32 MiB WAL cap;
+    - the readers take 5,000 lines per pass;
+    - the attribution pass no longer counts the whole events table;
+    - every engine step is guarded;
+    - the DPI gate waits 75 s and fails open instead of failing the unit.
+  - Two reboot tests afterwards: clean.
+- **Pre-freeze decisions (user):**
+  - `malicious_domain` retired (setting `malicious_domain_enabled`, off);
+  - resolver tuning ON (applied via the console endpoint; Cloudflare + Quad9
+    DoT, parallel, optimistic cache);
+  - DNS fail-open probes `use-application-dns.net` (uplink-aware);
+  - 26 TLD-lookup IDS rules don't raise incidents (setting
+    `ids_raise_tld_lookup_rules`, off);
+  - new IDS log rotation;
+  - registry presence follows Wi-Fi association.
+- **New IDS log rotation:**
+  - `securepi-ids-logrotate.timer` (every 15 min, daily or 100 MB, by rename
+    + HUP), config `/etc/securepi/logrotate-suricata.conf`;
+  - Ubuntu's `/etc/logrotate.d/suricata` is diverted with `dpkg-divert` (to
+    `/etc/securepi/logrotate-suricata.packaged`);
+  - the timer is in `services.list`;
+  - installer: `gateway/install-ids-logrotate.sh`.
+- **7.0 replaced, headline results:**
+  - held-out false positives on the Mac's benchmark: 126 (original engine) →
+    22 (7.3) → 14 (frozen);
+  - rotation 361/361 lines;
+  - fail-open held through a 75 s upstream-DNS outage;
+  - 17/17 earlier shutdowns clean;
+  - canary 265 checks, 0 failures;
+  - about 414 B per event.
+- **7.9 replaced:** expert review in `docs/usability-study/`
+  (`heuristic-evaluation.md`, `cognitive-walkthrough.md`); all 6 expert paths
+  succeed; axe audit.
+- **A multi-hour soak was dropped by the user.** There is no multi-day run of
+  the frozen code; that is stated as a limit.
 
-**The seven-day run (7.0) has NOT started** — scheduled for the next session.
-The run monitor (`securepi-run-monitor.service`, ingest lag + system
-snapshots) is already running and stays running; it is harmless and its data
-before the run's start time is simply outside the window.
+**Next: Stage 8 (documentation and demo).** Queued inputs from Stage 7:
+1. **The 7.9 recommendations** (`heuristic-evaluation.md`, end), worst first:
+   - dark-theme contrast: `--text-3`/`--muted` → about `#8792a6`;
+   - a Risk column on the Devices list;
+   - device names as real links;
+   - keyboard-scrollable regions;
+   - a persistent domain-test result with the list named;
+   - the console dialog instead of `prompt()` for Allow.
+2. **F17:** switch the 13 `TemplateResponse(name, ctx)` calls to
+   `TemplateResponse(request, name, ctx)`. Starlette 1.x has removed the old
+   form, so an Ubuntu upgrade would break the console.
+3. **The remaining held-out false positives**, for the next detection work:
+   - beacon on ordinary periodic app traffic (Google push 5228, STUN 3478,
+     port 80 checks);
+   - dga on `omnitagjs.com` and `in-addr.arpa` (a popular-domain allowlist was
+     already suggested in 7.3);
+   - network_sweep on unanswered ad servers with filtering off.
+4. **Optional, if wanted:** the participant study (kit in
+   `docs/usability-study/README.md`) and a multi-day run (the collector is
+   ready: `sudo /opt/securepi-eval/collect_run.sh mark|collect`).
 
-**Next steps, in order:**
+**Housekeeping for the next session:**
+- **Test incidents to resolve** (they come from deliberate tests, not real
+  detections):
+  - tablet (98): #761 beacon (the TTFB cells' repeated fetches), #760 and
+    #764 adblock_ineffective (relaunch and TTFB testing);
+  - A33 (2) and tablet: the 2 Oct incidents raised during the 7.7 chaos runs
+    and the tablet tests;
+  - older ones: #476 (from 26 Sep).
+- **The run monitor** (`securepi-run-monitor.service`) is still running. It is
+  harmless and useful for any later run; stop and disable it if not wanted.
+- **On the gateway:** `/var/lib/securepi-eval/soak-2026-10-03T093855/mark`
+  holds the freeze manifest and a 275 MB database copy (mode 600, root only).
+  It can be deleted once the write-up is final.
+- **The journal purge from Day 15 is now safe:** `collect_run.sh mark`
+  extracted the boot, unit and canary history that the reliability table
+  needed.
+- **Fixed in passing:** a stray database backup in
+  `/opt/securepi/.bak-3.6-1789930809/` was mode 644 (world-readable). It is
+  now 600.
 
-1. **Before freezing, decide (user):**
-   - `malicious_domain`: redefine or retire? It counts every blocked lookup, ad
-     lists included (precision 0.42; its battery test used ad domains).
-   - 5.5 resolver tuning: keep it on? (A/B: cold p50 68 → 47 ms, p95 411 → 281
-     ms; it changes DNS for every device, so it needs the operator's yes.)
-   - Fix before the run, or measure as-is: DNS fail-open engages when the
-     *uplink* is down (seen live in 7.7); the IDS TLD-rule noise ("ET INFO …
-     .biz TLD", "ET DNS … .cc TLD") and the fast network sweep on ad-heavy
-     browsing; the YouTube app's 2-retry pin bypass (trigger 3 → 2?);
-     the IDS log rotation (logrotate skips on battery; weekly, no size cap).
-   Any code change → tests, `make deploy`, checksum check, then freeze.
-2. **Freeze and start 7.0:** tag the deployed commit (`git tag stage7-run`),
-   record checksums (`sha256sum /opt/securepi/*.py`), note the start time,
-   and install the collector: copy `gateway/collect_run.sh` and
-   `tools/run_report.py` to `/opt/securepi-eval/`, then a persistent timer
-   (`OnCalendar=<start + 7 days>`, `Persistent=true`) running
-   `collect_run.sh START END`. Keep the Dell on its charger. Nothing
-   disruptive during the run; tag any test work so it's excluded.
-3. **Optional, before the freeze:** the tablet TTFB extension for 7.5's
-   TLS-latency cells (time-to-first-byte in every cell + an unenrolled control
-   for the passthrough host) - the browser's handshake is *faster* through the
-   proxy because it ends on the LAN; the proxy's upstream handshake shows up in
-   TTFB, which wasn't recorded. Script: `tools/tls_latency_tablet.py` (already
-   records `ttfb_ms`), driven by `tools/tls_cells.sh`. Also untested: whether
-   relaunching the YouTube app on the tablet adds the 3rd handshake failure
-   and so recovers it via 5.8's bypass (`tools/pinned_app.sh`).
-   Note `tools/chaos_phone_probe.sh`'s HTTPS check is invalid on Android 9.
-4. **After the run:** `collect_run.sh` output → 7.0 write-up (FP/24 h, uptime,
-   storage growth, ingest lag p95, reduction ratio, block % per device) and 7.6
-   over the run; the canary log for the week; re-run
-   `tools/blocklist_utility.py --days 7 --exclude-device <benchmark Mac>`.
-5. **7.9 usability study** with 5-8 people (`docs/usability-study/README.md`).
-6. Stage 8 (documentation & demo).
-7. Still open from before: whether to rewrite the pushed commits that carry a
-   `Co-Authored-By` line (force-push to `main`).
+**Test devices:**
+- **Galaxy A33:** adb `RZCT30NYTSB`, registry device 2, 10.10.0.50.
+  - It drifted back to Babu_Home twice today.
+  - Before relying on it, rejoin SecurePi-Test (and turn off Auto reconnect
+    for Babu_Home on the phone while testing).
+  - The only C-to-C cable is shared with the Mac's charger.
+- **Lenovo Tab M7:** adb `HA13T683`, registry device 98, 10.10.0.53,
+  Android 9, Chrome 77, CA trusted.
+  - **Now cabled to the Dell, not the Mac.** The Dell has `adb` (apt) and a
+    udev rule (`/etc/udev/rules.d/51-securepi-tablet.rules`, Lenovo vendor
+    17ef).
+  - Reach it from the Mac through an SSH tunnel:
+    ```
+    ssh -f -N -L 5038:127.0.0.1:5037 -L 9223:127.0.0.1:9223 maheshwari@192.168.2.5
+    export ANDROID_ADB_SERVER_PORT=5038      # every adb command then goes to the Dell
+    adb -s HA13T683 forward tcp:9223 localabstract:chrome_devtools_remote
+    ```
+  - The tunnel drops at every gateway reboot. Re-open it, and run
+    `adb start-server` on the Dell if `adb devices` is empty.
+  - Its YouTube app is disabled (factory 17.49), and the user's choice is
+    YouTube in Chrome on the tablet.
+- Phone/tablet Chrome is driven with raw DevTools; open pages by Android
+  intent (`... com.android.chrome`), never Brave.
 
-**Test devices (both on SecurePi-Test, USB debugging on):**
-- Galaxy A33 — adb `RZCT30NYTSB`, registry device 2, 10.10.0.50, mobile data off.
-- Lenovo Tab M7 TB-7305X — adb `HA13T683`, registry device 98 (the "Motorola"
-  OUI: Motorola Mobility is Lenovo's), 10.10.0.53, Android 9, Chrome 77, CA
-  trusted, no SIM. Android 9's toybox `nc` has no `-z`: use
-  `tools/chaos_tablet_probe.sh` for probes on it.
-- With both attached, every adb call needs `-s SERIAL` (or `ANDROID_SERIAL`).
-- Drive phone Chrome with raw DevTools (`adb forward tcp:9222
-  localabstract:chrome_devtools_remote`); open pages by Android intent - tabs
-  Playwright creates over DevTools can't resolve names on these phones.
-- Inspection only affects connections made after enrolment: force-stop Chrome
-  after enrolling a device for any Tier 2 test.
-
-**Environment notes from this session:**
-- The Mac's SSH key was regenerated on 28 Sep; the Dell's `authorized_keys`
-  was updated by hand on 2 Oct. Claude Code allow-rules for `make deploy`,
-  `ssh maheshwari@192.168.2.5` and `scp` are in `.claude/settings.local.json`
-  (git-ignored) — remove them when no longer wanted.
-- Benchmark tooling lives in `.venv-bench/` (Playwright, Selenium,
-  websocket-client, FastAPI for the demo) and `eval/bench-data/` (uBO Lite,
-  Disconnect list, Tranco list, Firefox, geckodriver) — both git-ignored.
-- Firefox cannot start inside this environment's command sandbox ("Could not
-  find profile folder"); the Firefox-DoH row was measured with curl's DoH.
-
-**When running the battery again:** kill processes with bracketed patterns
-(`pkill -f "[h]ttp.server"`), never a bare `http.server` - that also kills
-`securepi-ca-server` and `securepi-static`. Run it as a transient unit so it
-survives an SSH drop:
-`sudo systemd-run --unit securepi-battery --collect /usr/bin/python3 -u /opt/securepi-eval/battery.py --runs 5`
+**Environment notes:**
+- **Demo console:** run it with `.venv-demo` (git-ignored). It is pinned to
+  the gateway's FastAPI 0.101.0 / Starlette 0.31.1 / pydantic v1. The
+  benchmark venv's Starlette 1.7 can't render the templates (F17).
+  `.venv-bench/` still holds Playwright and the other benchmark tools.
+- **Tool commands:**
+  - Held-out replay: `tools/heldout_replay.py`.
+  - Expert paths and axe audit: `tools/usability_expert.py`. axe-core is
+    installed outside the repo: `npm install axe-core`, then pass `--axe`.
+- **Claude Code allow-rules** for `make deploy`, `ssh` and `scp` are in
+  `.claude/settings.local.json` (git-ignored). Remove them when no longer
+  wanted.
+- **Killing processes:** use bracketed patterns (`pkill -f "[h]ttp.server"`).
+  Run the battery as a transient unit:
+  `sudo systemd-run --unit securepi-battery --collect /usr/bin/python3 -u /opt/securepi-eval/battery.py --runs 5`.
 
 ### Known real bugs found and fixed (for context, not action)
 

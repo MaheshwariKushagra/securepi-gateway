@@ -113,6 +113,33 @@ def read_arp():
     return out
 
 
+def read_associated():
+    """MAC addresses currently associated with the access point, as a set,
+    from `iw dev ap0 station dump` - the one authoritative answer to "is
+    this device on the Wi-Fi right now". Returns None (meaning "don't know")
+    if the command can't be run, so a missing tool never makes every device
+    look absent.
+
+    Why it exists (3 October 2026, Stage 7 identity check): the DHCP lease
+    lasts 24 hours, and a lease alone used to count as presence, so a device
+    that had left still showed as seen for up to a day."""
+    try:
+        result = subprocess.run(
+            ["iw", "dev", "ap0", "station", "dump"],
+            capture_output=True, text=True, timeout=5,
+        )
+    except Exception:
+        return None
+    if result.returncode != 0:
+        return None
+    macs = set()
+    for line in result.stdout.splitlines():
+        match = re.match(r"^Station\s+(\S+)", line)
+        if match:
+            macs.add(match.group(1).lower())
+    return macs
+
+
 def touch_interval(conn, table, device_id, value, column, now):
     """
     Record that a device is using this MAC or IP right now.
@@ -195,8 +222,14 @@ def update_devices(conn):
     """Refresh the registry from DHCP leases and the neighbour table."""
     now = time.time()
     seen = 0
+    # Who is actually on the Wi-Fi right now (None = couldn't tell). A lease
+    # or a neighbour-table entry only counts as presence for an associated
+    # MAC - see read_associated() for why.
+    associated = read_associated()
 
     for mac, ip, hostname in read_leases():
+        if associated is not None and mac.lower() not in associated:
+            continue  # still holds a lease, but has left the network
         device_id = resolve_device(conn, mac, hostname, now)
         touch_interval(conn, "device_macs", device_id, mac, "mac", now)
         touch_interval(conn, "device_ips", device_id, ip, "ip", now)
@@ -211,6 +244,8 @@ def update_devices(conn):
     for ip, mac in read_arp().items():
         if not ip.startswith(LAN_PREFIX):
             continue
+        if associated is not None and mac.lower() not in associated:
+            continue  # a leftover (stale) entry for a device that has left
         row = conn.execute("SELECT device_id FROM device_macs WHERE mac = ?", (mac,)).fetchone()
         if row is None:
             device_id = resolve_device(conn, mac, "", now)

@@ -1,0 +1,821 @@
+{
+ "device_hours": 3.05,
+ "devices": [
+  99
+ ],
+ "end": "2026-10-02T21:35:00",
+ "engine_commit_note": "the engine is whatever app/ this was run from",
+ "exposure": {
+  "99": {
+   "active_clock_hours": 4,
+   "events": 306390,
+   "span_hours": 3.05
+  }
+ },
+ "live_db": "securepi-start.db",
+ "reference_events_per_day": 8000.0,
+ "start": "2026-10-02T18:20:00",
+ "step_s": 60,
+ "total_events": 306390,
+ "variants": {
+  "defaults": {
+   "by_signal": {
+    "beacon": 99,
+    "dga": 5,
+    "dns_bypass": 4,
+    "ids_other": 6,
+    "malicious_domain": 4,
+    "network_sweep": 6,
+    "slow_network_sweep": 2
+   },
+   "failures": {},
+   "false_positives": [
+    {
+     "device_id": 99,
+     "first_seen": 1790945784.5364,
+     "signal_type": "dns_bypass",
+     "title": "Device tried to bypass DNS filtering 8 times"
+    },
+    {
+     "device_id": 99,
+     "first_seen": 1790945863.183845,
+     "signal_type": "network_sweep",
+     "title": "Network sweep detected on port 443"
+    },
+    {
+     "device_id": 99,
+     "first_seen": 1790945863.183845,
+     "signal_type": "slow_network_sweep",
+     "title": "Slow network sweep detected on port 443"
+    },
+    {
+     "device_id": 99,
+     "first_seen": 1790945863.183845,
+     "signal_type": "slow_network_sweep",
+     "title": "Slow network sweep detected on port 443"
+    },
+    {
+     "device_id": 99,
+     "first_seen": 1790945900.495498,
+     "signal_type": "ids_other",
+     "title": "Misc activity (8 alerts)"
+    },
+    {
+     "device_id": 99,
+     "first_seen": 1790945920.621555,
+     "signal_type": "dga",
+     "title": "Possible domain-generation-algorithm activity under omnitagjs.com"
+    },
+    {
+     "device_id": 99,
+     "first_seen": 1790946739.148305,
+     "signal_type": "ids_other",
+     "title": "Misc activity (13 alerts)"
+    },
+    {
+     "device_id": 99,
+     "first_seen": 1790948159.729058,
+     "signal_type": "malicious_domain",
+     "title": "Blocked lookups against 73 distinct domains (600s window)"
+    },
+    {
+     "device_id": 99,
+     "first_seen": 1790948354.329934,
+     "signal_type": "beacon",
+     "title": "Possible C2 beacon to 172.217.24.206:80"
+    },
+    {
+     "device_id": 99,
+     "first_seen": 1790948833.530832,
+     "signal_type": "dga",
+     "title": "Possible domain-generation-algorithm activity under omnitagjs.com"
+    },
+    {
+     "device_id": 99,
+     "first_seen": 1790948893.730888,
+     "signal_type": "network_sweep",
+     "title": "Network sweep detected on port 443"
+    },
+    {
+     "device_id": 99,
+     "first_seen": 1790949100.355435,
+     "signal_type": "dns_bypass",
+     "title": "Device tried to bypass DNS filtering 36 times"
+    },
+    {
+     "device_id": 99,
+     "first_seen": 1790949409.620984,
+     "signal_type": "malicious_domain",
+     "title": "Blocked lookups against 56 distinct domains (600s window)"
+    },
+    {
+     "device_id": 99,
+     "first_seen": 1790949411.792748,
+     "signal_type": "beacon",
+     "title": "Possible C2 beacon to 142.251.175.188:5228"
+    },
+    {
+     "device_id": 99,
+     "first_seen": 1790949411.792748,
+     "signal_type": "beacon",
+     "title": "Possible C2 beacon to 142.251.175.188:5228"
+    },
+    {
+     "device_id": 99,
+     "first_seen": 1790949457.276935,
+     "signal_type": "beacon",
+     "title": "Possible C2 beacon to 142.251.221.110:80"
+    },
+    {
+     "device_id": 99,
+     "first_seen": 1790949790.321041,
+     "signal_type": "beacon",
+     "title": "Possible C2 beacon to 74.125.200.188:5228"
+    },
+    {
+     "device_id": 99,
+     "first_seen": 1790949790.321041,
+     "signal_type": "beacon",
+     "title": "Possible C2 beacon to 74.125.200.188:5228"
+    },
+    {
+     "device_id": 99,
+     "first_seen": 1790949790.321041,
+     "signal_type": "beacon",
+     "title": "Possible C2 beacon to 74.125.200.188:5228"
+    },
+    {
+     "device_id": 99,
+     "first_seen": 1790949790.321041,
+     "signal_type": "beacon",
+     "title": "Possible C2 beacon to 74.125.200.188:5228"
+    },
+    {
+     "device_id": 99,
+     "first_seen": 1790949790.321041,
+     "signal_type": "beacon",
+     "title": "Possible C2 beacon to 74.125.200.188:5228"
+    },
+    {
+     "device_id": 99,
+     "first_seen": 1790949790.321041,
+     "signal_type": "beacon",
+     "title": "Possible C2 beacon to 74.125.200.188:5228"
+    },
+    {
+     "device_id": 99,
+     "first_seen": 1790949790.321041,
+     "signal_type": "beacon",
+     "title": "Possible C2 beacon to 74.125.200.188:5228"
+    },
+    {
+     "device_id": 99,
+     "first_seen": 1790949790.321041,
+     "signal_type": "beacon",
+     "title": "Possible C2 beacon to 74.125.200.188:5228"
+    },
+    {
+     "device_id": 99,
+     "first_seen": 1790949790.321041,
+     "signal_type": "beacon",
+     "title": "Possible C2 beacon to 74.125.200.188:5228"
+    },
+    {
+     "device_id": 99,
+     "first_seen": 1790949790.321041,
+     "signal_type": "beacon",
+     "title": "Possible C2 beacon to 74.125.200.188:5228"
+    },
+    {
+     "device_id": 99,
+     "first_seen": 1790949790.321041,
+     "signal_type": "beacon",
+     "title": "Possible C2 beacon to 74.125.200.188:5228"
+    },
+    {
+     "device_id": 99,
+     "first_seen": 1790949790.321041,
+     "signal_type": "beacon",
+     "title": "Possible C2 beacon to 74.125.200.188:5228"
+    },
+    {
+     "device_id": 99,
+     "first_seen": 1790949790.321041,
+     "signal_type": "beacon",
+     "title": "Possible C2 beacon to 74.125.200.188:5228"
+    },
+    {
+     "device_id": 99,
+     "first_seen": 1790949790.321041,
+     "signal_type": "beacon",
+     "title": "Possible C2 beacon to 74.125.200.188:5228"
+    },
+    {
+     "device_id": 99,
+     "first_seen": 1790950093.570712,
+     "signal_type": "dga",
+     "title": "Possible domain-generation-algorithm activity under omnitagjs.com"
+    },
+    {
+     "device_id": 99,
+     "first_seen": 1790950103.360147,
+     "signal_type": "ids_other",
+     "title": "Misc activity (8 alerts)"
+    },
+    {
+     "device_id": 99,
+     "first_seen": 1790950108.52242,
+     "signal_type": "dns_bypass",
+     "title": "Device tried to bypass DNS filtering 84 times"
+    },
+    {
+     "device_id": 99,
+     "first_seen": 1790950142.488691,
+     "signal_type": "network_sweep",
+     "title": "Network sweep detected on port 443"
+    },
+    {
+     "device_id": 99,
+     "first_seen": 1790950580.449868,
+     "signal_type": "beacon",
+     "title": "Possible C2 beacon to 142.251.106.102:80"
+    },
+    {
+     "device_id": 99,
+     "first_seen": 1790950580.449868,
+     "signal_type": "beacon",
+     "title": "Possible C2 beacon to 142.251.106.102:80"
+    },
+    {
+     "device_id": 99,
+     "first_seen": 1790950580.449868,
+     "signal_type": "beacon",
+     "title": "Possible C2 beacon to 142.251.106.102:80"
+    },
+    {
+     "device_id": 99,
+     "first_seen": 1790950580.449868,
+     "signal_type": "beacon",
+     "title": "Possible C2 beacon to 142.251.106.102:80"
+    },
+    {
+     "device_id": 99,
+     "first_seen": 1790950580.449868,
+     "signal_type": "beacon",
+     "title": "Possible C2 beacon to 142.251.106.102:80"
+    },
+    {
+     "device_id": 99,
+     "first_seen": 1790950580.449868,
+     "signal_type": "beacon",
+     "title": "Possible C2 beacon to 142.251.106.102:80"
+    },
+    {
+     "device_id": 99,
+     "first_seen": 1790950580.449868,
+     "signal_type": "beacon",
+     "title": "Possible C2 beacon to 142.251.106.102:80"
+    },
+    {
+     "device_id": 99,
+     "first_seen": 1790950580.449868,
+     "signal_type": "beacon",
+     "title": "Possible C2 beacon to 142.251.106.102:80"
+    },
+    {
+     "device_id": 99,
+     "first_seen": 1790950580.449868,
+     "signal_type": "beacon",
+     "title": "Possible C2 beacon to 142.251.106.102:80"
+    },
+    {
+     "device_id": 99,
+     "first_seen": 1790950580.449868,
+     "signal_type": "beacon",
+     "title": "Possible C2 beacon to 142.251.106.102:80"
+    },
+    {
+     "device_id": 99,
+     "first_seen": 1790950580.449868,
+     "signal_type": "beacon",
+     "title": "Possible C2 beacon to 142.251.106.102:80"
+    },
+    {
+     "device_id": 99,
+     "first_seen": 1790950580.449868,
+     "signal_type": "beacon",
+     "title": "Possible C2 beacon to 142.251.106.102:80"
+    },
+    {
+     "device_id": 99,
+     "first_seen": 1790950580.449868,
+     "signal_type": "beacon",
+     "title": "Possible C2 beacon to 142.251.106.102:80"
+    },
+    {
+     "device_id": 99,
+     "first_seen": 1790950580.449868,
+     "signal_type": "beacon",
+     "title": "Possible C2 beacon to 142.251.106.102:80"
+    },
+    {
+     "device_id": 99,
+     "first_seen": 1790950580.449868,
+     "signal_type": "beacon",
+     "title": "Possible C2 beacon to 142.251.106.102:80"
+    },
+    {
+     "device_id": 99,
+     "first_seen": 1790950580.449868,
+     "signal_type": "beacon",
+     "title": "Possible C2 beacon to 142.251.106.102:80"
+    },
+    {
+     "device_id": 99,
+     "first_seen": 1790950580.449868,
+     "signal_type": "beacon",
+     "title": "Possible C2 beacon to 142.251.106.102:80"
+    },
+    {
+     "device_id": 99,
+     "first_seen": 1790950580.449868,
+     "signal_type": "beacon",
+     "title": "Possible C2 beacon to 142.251.106.102:80"
+    },
+    {
+     "device_id": 99,
+     "first_seen": 1790950580.449868,
+     "signal_type": "beacon",
+     "title": "Possible C2 beacon to 142.251.106.102:80"
+    },
+    {
+     "device_id": 99,
+     "first_seen": 1790950580.449868,
+     "signal_type": "beacon",
+     "title": "Possible C2 beacon to 142.251.106.102:80"
+    },
+    {
+     "device_id": 99,
+     "first_seen": 1790950580.449868,
+     "signal_type": "beacon",
+     "title": "Possible C2 beacon to 142.251.106.102:80"
+    },
+    {
+     "device_id": 99,
+     "first_seen": 1790950580.449868,
+     "signal_type": "beacon",
+     "title": "Possible C2 beacon to 142.251.106.102:80"
+    },
+    {
+     "device_id": 99,
+     "first_seen": 1790950580.449868,
+     "signal_type": "beacon",
+     "title": "Possible C2 beacon to 142.251.106.102:80"
+    },
+    {
+     "device_id": 99,
+     "first_seen": 1790950580.449868,
+     "signal_type": "beacon",
+     "title": "Possible C2 beacon to 142.251.106.102:80"
+    },
+    {
+     "device_id": 99,
+     "first_seen": 1790950580.449868,
+     "signal_type": "beacon",
+     "title": "Possible C2 beacon to 142.251.106.102:80"
+    },
+    {
+     "device_id": 99,
+     "first_seen": 1790950580.449868,
+     "signal_type": "beacon",
+     "title": "Possible C2 beacon to 142.251.106.102:80"
+    },
+    {
+     "device_id": 99,
+     "first_seen": 1790950580.449868,
+     "signal_type": "beacon",
+     "title": "Possible C2 beacon to 142.251.106.102:80"
+    },
+    {
+     "device_id": 99,
+     "first_seen": 1790950580.449868,
+     "signal_type": "beacon",
+     "title": "Possible C2 beacon to 142.251.106.102:80"
+    },
+    {
+     "device_id": 99,
+     "first_seen": 1790950580.449868,
+     "signal_type": "beacon",
+     "title": "Possible C2 beacon to 142.251.106.102:80"
+    },
+    {
+     "device_id": 99,
+     "first_seen": 1790950580.449868,
+     "signal_type": "beacon",
+     "title": "Possible C2 beacon to 142.251.106.102:80"
+    },
+    {
+     "device_id": 99,
+     "first_seen": 1790950580.449868,
+     "signal_type": "beacon",
+     "title": "Possible C2 beacon to 142.251.106.102:80"
+    },
+    {
+     "device_id": 99,
+     "first_seen": 1790950580.449868,
+     "signal_type": "beacon",
+     "title": "Possible C2 beacon to 142.251.106.102:80"
+    },
+    {
+     "device_id": 99,
+     "first_seen": 1790950580.449868,
+     "signal_type": "beacon",
+     "title": "Possible C2 beacon to 142.251.106.102:80"
+    },
+    {
+     "device_id": 99,
+     "first_seen": 1790950580.449868,
+     "signal_type": "beacon",
+     "title": "Possible C2 beacon to 142.251.106.102:80"
+    },
+    {
+     "device_id": 99,
+     "first_seen": 1790950580.449868,
+     "signal_type": "beacon",
+     "title": "Possible C2 beacon to 142.251.106.102:80"
+    },
+    {
+     "device_id": 99,
+     "first_seen": 1790950580.449868,
+     "signal_type": "beacon",
+     "title": "Possible C2 beacon to 142.251.106.102:80"
+    },
+    {
+     "device_id": 99,
+     "first_seen": 1790950580.449868,
+     "signal_type": "beacon",
+     "title": "Possible C2 beacon to 142.251.106.102:80"
+    },
+    {
+     "device_id": 99,
+     "first_seen": 1790950580.449868,
+     "signal_type": "beacon",
+     "title": "Possible C2 beacon to 142.251.106.102:80"
+    },
+    {
+     "device_id": 99,
+     "first_seen": 1790950580.449868,
+     "signal_type": "beacon",
+     "title": "Possible C2 beacon to 142.251.106.102:80"
+    },
+    {
+     "device_id": 99,
+     "first_seen": 1790950580.449868,
+     "signal_type": "beacon",
+     "title": "Possible C2 beacon to 142.251.106.102:80"
+    },
+    {
+     "device_id": 99,
+     "first_seen": 1790950580.449868,
+     "signal_type": "beacon",
+     "title": "Possible C2 beacon to 142.251.106.102:80"
+    },
+    {
+     "device_id": 99,
+     "first_seen": 1790950580.449868,
+     "signal_type": "beacon",
+     "title": "Possible C2 beacon to 142.251.106.102:80"
+    },
+    {
+     "device_id": 99,
+     "first_seen": 1790950580.449868,
+     "signal_type": "beacon",
+     "title": "Possible C2 beacon to 142.251.106.102:80"
+    },
+    {
+     "device_id": 99,
+     "first_seen": 1790950580.932989,
+     "signal_type": "malicious_domain",
+     "title": "Blocked lookups against 70 distinct domains (600s window)"
+    },
+    {
+     "device_id": 99,
+     "first_seen": 1790951383.057323,
+     "signal_type": "ids_other",
+     "title": "Misc activity (4 alerts)"
+    },
+    {
+     "device_id": 99,
+     "first_seen": 1790951577.076186,
+     "signal_type": "network_sweep",
+     "title": "Network sweep detected on port 443"
+    },
+    {
+     "device_id": 99,
+     "first_seen": 1790952075.581612,
+     "signal_type": "beacon",
+     "title": "Possible C2 beacon to 183.60.15.123:3478"
+    },
+    {
+     "device_id": 99,
+     "first_seen": 1790952075.581612,
+     "signal_type": "beacon",
+     "title": "Possible C2 beacon to 183.60.15.123:3478"
+    },
+    {
+     "device_id": 99,
+     "first_seen": 1790952075.581612,
+     "signal_type": "beacon",
+     "title": "Possible C2 beacon to 183.60.15.123:3478"
+    },
+    {
+     "device_id": 99,
+     "first_seen": 1790952075.581612,
+     "signal_type": "beacon",
+     "title": "Possible C2 beacon to 183.60.15.123:3478"
+    },
+    {
+     "device_id": 99,
+     "first_seen": 1790952075.581612,
+     "signal_type": "beacon",
+     "title": "Possible C2 beacon to 183.60.15.123:3478"
+    },
+    {
+     "device_id": 99,
+     "first_seen": 1790952075.581612,
+     "signal_type": "beacon",
+     "title": "Possible C2 beacon to 183.60.15.123:3478"
+    },
+    {
+     "device_id": 99,
+     "first_seen": 1790952075.581612,
+     "signal_type": "beacon",
+     "title": "Possible C2 beacon to 183.60.15.123:3478"
+    },
+    {
+     "device_id": 99,
+     "first_seen": 1790952075.581612,
+     "signal_type": "beacon",
+     "title": "Possible C2 beacon to 183.60.15.123:3478"
+    },
+    {
+     "device_id": 99,
+     "first_seen": 1790952075.581612,
+     "signal_type": "beacon",
+     "title": "Possible C2 beacon to 183.60.15.123:3478"
+    },
+    {
+     "device_id": 99,
+     "first_seen": 1790952075.581612,
+     "signal_type": "beacon",
+     "title": "Possible C2 beacon to 183.60.15.123:3478"
+    },
+    {
+     "device_id": 99,
+     "first_seen": 1790952075.581612,
+     "signal_type": "beacon",
+     "title": "Possible C2 beacon to 183.60.15.123:3478"
+    },
+    {
+     "device_id": 99,
+     "first_seen": 1790952075.581612,
+     "signal_type": "beacon",
+     "title": "Possible C2 beacon to 183.60.15.123:3478"
+    },
+    {
+     "device_id": 99,
+     "first_seen": 1790952075.581612,
+     "signal_type": "beacon",
+     "title": "Possible C2 beacon to 183.60.15.123:3478"
+    },
+    {
+     "device_id": 99,
+     "first_seen": 1790952075.581612,
+     "signal_type": "beacon",
+     "title": "Possible C2 beacon to 183.60.15.123:3478"
+    },
+    {
+     "device_id": 99,
+     "first_seen": 1790952075.581612,
+     "signal_type": "beacon",
+     "title": "Possible C2 beacon to 183.60.15.123:3478"
+    },
+    {
+     "device_id": 99,
+     "first_seen": 1790952075.581612,
+     "signal_type": "beacon",
+     "title": "Possible C2 beacon to 183.60.15.123:3478"
+    },
+    {
+     "device_id": 99,
+     "first_seen": 1790952075.581612,
+     "signal_type": "beacon",
+     "title": "Possible C2 beacon to 183.60.15.123:3478"
+    },
+    {
+     "device_id": 99,
+     "first_seen": 1790952075.581612,
+     "signal_type": "beacon",
+     "title": "Possible C2 beacon to 183.60.15.123:3478"
+    },
+    {
+     "device_id": 99,
+     "first_seen": 1790952075.581612,
+     "signal_type": "beacon",
+     "title": "Possible C2 beacon to 183.60.15.123:3478"
+    },
+    {
+     "device_id": 99,
+     "first_seen": 1790952075.581612,
+     "signal_type": "beacon",
+     "title": "Possible C2 beacon to 183.60.15.123:3478"
+    },
+    {
+     "device_id": 99,
+     "first_seen": 1790952075.581612,
+     "signal_type": "beacon",
+     "title": "Possible C2 beacon to 183.60.15.123:3478"
+    },
+    {
+     "device_id": 99,
+     "first_seen": 1790952075.581612,
+     "signal_type": "beacon",
+     "title": "Possible C2 beacon to 183.60.15.123:3478"
+    },
+    {
+     "device_id": 99,
+     "first_seen": 1790952075.581612,
+     "signal_type": "beacon",
+     "title": "Possible C2 beacon to 183.60.15.123:3478"
+    },
+    {
+     "device_id": 99,
+     "first_seen": 1790952075.581612,
+     "signal_type": "beacon",
+     "title": "Possible C2 beacon to 183.60.15.123:3478"
+    },
+    {
+     "device_id": 99,
+     "first_seen": 1790952075.581612,
+     "signal_type": "beacon",
+     "title": "Possible C2 beacon to 183.60.15.123:3478"
+    },
+    {
+     "device_id": 99,
+     "first_seen": 1790952075.581612,
+     "signal_type": "beacon",
+     "title": "Possible C2 beacon to 183.60.15.123:3478"
+    },
+    {
+     "device_id": 99,
+     "first_seen": 1790952075.581612,
+     "signal_type": "beacon",
+     "title": "Possible C2 beacon to 183.60.15.123:3478"
+    },
+    {
+     "device_id": 99,
+     "first_seen": 1790952075.581612,
+     "signal_type": "beacon",
+     "title": "Possible C2 beacon to 183.60.15.123:3478"
+    },
+    {
+     "device_id": 99,
+     "first_seen": 1790952075.581612,
+     "signal_type": "beacon",
+     "title": "Possible C2 beacon to 183.60.15.123:3478"
+    },
+    {
+     "device_id": 99,
+     "first_seen": 1790952075.581612,
+     "signal_type": "beacon",
+     "title": "Possible C2 beacon to 183.60.15.123:3478"
+    },
+    {
+     "device_id": 99,
+     "first_seen": 1790952075.581612,
+     "signal_type": "beacon",
+     "title": "Possible C2 beacon to 183.60.15.123:3478"
+    },
+    {
+     "device_id": 99,
+     "first_seen": 1790952819.870646,
+     "signal_type": "network_sweep",
+     "title": "Network sweep detected on port 443"
+    },
+    {
+     "device_id": 99,
+     "first_seen": 1790953019.789686,
+     "signal_type": "dga",
+     "title": "Possible domain-generation-algorithm activity under in-addr.arpa"
+    },
+    {
+     "device_id": 99,
+     "first_seen": 1790953984.557231,
+     "signal_type": "dga",
+     "title": "Possible domain-generation-algorithm activity under in-addr.arpa"
+    },
+    {
+     "device_id": 99,
+     "first_seen": 1790954124.543153,
+     "signal_type": "ids_other",
+     "title": "Misc activity (17 alerts)"
+    },
+    {
+     "device_id": 99,
+     "first_seen": 1790954944.4472,
+     "signal_type": "dns_bypass",
+     "title": "Device tried to bypass DNS filtering 36 times"
+    },
+    {
+     "device_id": 99,
+     "first_seen": 1790954975.627764,
+     "signal_type": "network_sweep",
+     "title": "Network sweep detected on port 443"
+    },
+    {
+     "device_id": 99,
+     "first_seen": 1790955092.639781,
+     "signal_type": "ids_other",
+     "title": "Misc activity (4 alerts)"
+    },
+    {
+     "device_id": 99,
+     "first_seen": 1790955197.303757,
+     "signal_type": "beacon",
+     "title": "Possible C2 beacon to 74.125.24.188:5228"
+    },
+    {
+     "device_id": 99,
+     "first_seen": 1790955197.303757,
+     "signal_type": "beacon",
+     "title": "Possible C2 beacon to 74.125.24.188:5228"
+    },
+    {
+     "device_id": 99,
+     "first_seen": 1790955197.303757,
+     "signal_type": "beacon",
+     "title": "Possible C2 beacon to 74.125.24.188:5228"
+    },
+    {
+     "device_id": 99,
+     "first_seen": 1790955197.303757,
+     "signal_type": "beacon",
+     "title": "Possible C2 beacon to 74.125.24.188:5228"
+    },
+    {
+     "device_id": 99,
+     "first_seen": 1790955197.303757,
+     "signal_type": "beacon",
+     "title": "Possible C2 beacon to 74.125.24.188:5228"
+    },
+    {
+     "device_id": 99,
+     "first_seen": 1790955197.303757,
+     "signal_type": "beacon",
+     "title": "Possible C2 beacon to 74.125.24.188:5228"
+    },
+    {
+     "device_id": 99,
+     "first_seen": 1790955197.303757,
+     "signal_type": "beacon",
+     "title": "Possible C2 beacon to 74.125.24.188:5228"
+    },
+    {
+     "device_id": 99,
+     "first_seen": 1790955651.994807,
+     "signal_type": "malicious_domain",
+     "title": "Blocked lookups against 33 distinct domains (600s window)"
+    }
+   ],
+   "overrides": {},
+   "per_10k_events": {
+    "ci95": [
+     3.4257,
+     4.8963
+    ],
+    "count": 126,
+    "exposure": 306390,
+    "rate": 4.1124
+   },
+   "per_device_hour": {
+    "ci95": [
+     34.4136,
+     49.1866
+    ],
+    "count": 126,
+    "exposure": 3.05,
+    "rate": 41.3115
+   },
+   "per_household_day": {
+    "ci95": [
+     2.7406,
+     3.9171
+    ],
+    "count": 126,
+    "exposure": 306390,
+    "rate": 3.2899
+   },
+   "steps": 184
+  }
+ }
+}

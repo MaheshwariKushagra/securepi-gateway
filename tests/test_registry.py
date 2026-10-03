@@ -144,6 +144,80 @@ class AttributionPassCostTests(unittest.TestCase):
         self.assertFalse(any("device_id IS NOT NULL" in s for s in statements), statements)
 
 
+class PresenceFollowsAssociationTests(unittest.TestCase):
+    """3 October 2026, found by the Stage 7 identity check: the DHCP lease
+    lasts 24 hours and the registry counted every unexpired lease as
+    present, so a device that left (the Mac, gone at 21:29) still showed
+    as seen 12 hours later. When the access point's station list can be
+    read, a lease or neighbour entry only counts if that MAC is actually
+    associated; if it can't be read, nothing changes."""
+
+    MAC = "a2:b7:71:3b:2b:a3"
+
+    def _run(self, associated, leases=None, arp=None):
+        import unittest.mock as mock
+        conn = fixtures.temp_db()
+        leases = [(self.MAC, "10.10.0.54", "mac-laptop")] if leases is None else leases
+        with mock.patch.object(registry, "read_leases", lambda: leases), \
+                mock.patch.object(registry, "read_arp", lambda: (arp or {})), \
+                mock.patch.object(registry, "read_associated", lambda: associated):
+            registry.update_devices(conn)
+        return conn
+
+    def test_a_lease_without_association_is_not_presence(self):
+        conn = self._run(associated=set())
+        self.assertEqual(conn.execute("SELECT count(*) FROM devices").fetchone()[0], 0)
+        self.assertEqual(conn.execute("SELECT count(*) FROM device_ips").fetchone()[0], 0)
+
+    def test_an_associated_device_with_a_lease_is_present(self):
+        conn = self._run(associated={self.MAC})
+        self.assertEqual(conn.execute("SELECT count(*) FROM devices").fetchone()[0], 1)
+        self.assertEqual(conn.execute("SELECT ip FROM device_ips").fetchone()[0], "10.10.0.54")
+
+    def test_a_stale_neighbour_entry_without_association_is_not_presence(self):
+        conn = self._run(associated=set(), leases=[], arp={"10.10.0.54": self.MAC})
+        self.assertEqual(conn.execute("SELECT count(*) FROM devices").fetchone()[0], 0)
+
+    def test_unreadable_station_list_keeps_the_old_behaviour(self):
+        conn = self._run(associated=None)
+        self.assertEqual(conn.execute("SELECT count(*) FROM devices").fetchone()[0], 1)
+
+    def test_a_known_device_that_left_keeps_its_last_seen(self):
+        import unittest.mock as mock
+        conn = fixtures.temp_db()
+        leases = [(self.MAC, "10.10.0.54", "mac-laptop")]
+        with mock.patch.object(registry, "read_leases", lambda: leases), \
+                mock.patch.object(registry, "read_arp", lambda: {}), \
+                mock.patch.object(registry, "read_associated", lambda: {self.MAC}):
+            registry.update_devices(conn)
+        before = conn.execute("SELECT last_seen FROM devices").fetchone()[0]
+        with mock.patch.object(registry, "read_leases", lambda: leases), \
+                mock.patch.object(registry, "read_arp", lambda: {}), \
+                mock.patch.object(registry, "read_associated", lambda: set()), \
+                mock.patch.object(registry.time, "time", lambda: before + 3600):
+            registry.update_devices(conn)
+        self.assertEqual(conn.execute("SELECT last_seen FROM devices").fetchone()[0], before)
+
+
+class ReadAssociatedTests(unittest.TestCase):
+    def test_parses_the_station_dump(self):
+        import subprocess
+        import unittest.mock as mock
+        dump = ("Station 84:b8:b8:51:46:b4 (on ap0)\n\tinactive time:\t20 ms\n"
+                "Station CA:25:F0:57:6D:87 (on ap0)\n\tsignal:  \t-50 dBm\n")
+        done = subprocess.CompletedProcess([], 0, stdout=dump, stderr="")
+        with mock.patch.object(registry.subprocess, "run", lambda *a, **k: done):
+            self.assertEqual(registry.read_associated(), {"84:b8:b8:51:46:b4", "ca:25:f0:57:6d:87"})
+
+    def test_a_failing_command_means_unknown_not_empty(self):
+        import unittest.mock as mock
+
+        def boom(*a, **k):
+            raise OSError("no iw")
+        with mock.patch.object(registry.subprocess, "run", boom):
+            self.assertIsNone(registry.read_associated())
+
+
 if __name__ == "__main__":
     unittest.main()
 

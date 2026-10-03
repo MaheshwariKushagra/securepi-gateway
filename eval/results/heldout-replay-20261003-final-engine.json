@@ -1,0 +1,765 @@
+{
+ "device_hours": 3.05,
+ "devices": [
+  99
+ ],
+ "end": "2026-10-02T21:35:00",
+ "engine_commit_note": "the engine is whatever app/ this was run from",
+ "exposure": {
+  "99": {
+   "active_clock_hours": 4,
+   "events": 306390,
+   "span_hours": 3.05
+  }
+ },
+ "live_db": "securepi-start.db",
+ "live_incidents": [
+  {
+   "device_id": 99,
+   "first_seen": 1790945750.5712821,
+   "signal_type": "new_device",
+   "title": "New device joined the network: 10-10-0-54"
+  },
+  {
+   "device_id": 99,
+   "first_seen": 1790945920.621555,
+   "signal_type": "dga",
+   "title": "Possible domain-generation-algorithm activity under omnitagjs.com"
+  },
+  {
+   "device_id": 99,
+   "first_seen": 1790945920.666803,
+   "signal_type": "ids_other",
+   "title": "Potentially Bad Traffic (4 alerts)"
+  },
+  {
+   "device_id": 99,
+   "first_seen": 1790945938.989881,
+   "signal_type": "network_sweep",
+   "title": "Network sweep detected on port 443"
+  },
+  {
+   "device_id": 99,
+   "first_seen": 1790946789.425962,
+   "signal_type": "ids_other",
+   "title": "Potentially Bad Traffic (4 alerts)"
+  },
+  {
+   "device_id": 99,
+   "first_seen": 1790948159.729058,
+   "signal_type": "malicious_domain",
+   "title": "Blocked lookups against 56 distinct domains (600s window)"
+  },
+  {
+   "device_id": 99,
+   "first_seen": 1790948354.329934,
+   "signal_type": "beacon",
+   "title": "Possible C2 beacon to 172.217.24.206:80"
+  },
+  {
+   "device_id": 99,
+   "first_seen": 1790948832.184673,
+   "signal_type": "ids_other",
+   "title": "Potentially Bad Traffic (4 alerts)"
+  },
+  {
+   "device_id": 99,
+   "first_seen": 1790948833.530832,
+   "signal_type": "dga",
+   "title": "Possible domain-generation-algorithm activity under omnitagjs.com"
+  },
+  {
+   "device_id": 99,
+   "first_seen": 1790948893.730888,
+   "signal_type": "network_sweep",
+   "title": "Network sweep detected on port 443"
+  },
+  {
+   "device_id": 99,
+   "first_seen": 1790949409.620984,
+   "signal_type": "malicious_domain",
+   "title": "Blocked lookups against 55 distinct domains (600s window)"
+  },
+  {
+   "device_id": 99,
+   "first_seen": 1790949457.276935,
+   "signal_type": "beacon",
+   "title": "Possible C2 beacon to 142.251.221.110:80"
+  },
+  {
+   "device_id": 99,
+   "first_seen": 1790950089.664134,
+   "signal_type": "ids_other",
+   "title": "Potentially Bad Traffic (4 alerts)"
+  },
+  {
+   "device_id": 99,
+   "first_seen": 1790950093.570712,
+   "signal_type": "dga",
+   "title": "Possible domain-generation-algorithm activity under omnitagjs.com"
+  },
+  {
+   "device_id": 99,
+   "first_seen": 1790950150.4654,
+   "signal_type": "network_sweep",
+   "title": "Network sweep detected on port 443"
+  },
+  {
+   "device_id": 99,
+   "first_seen": 1790950580.449868,
+   "signal_type": "beacon",
+   "title": "Possible C2 beacon to 142.251.106.102:80"
+  },
+  {
+   "device_id": 99,
+   "first_seen": 1790950580.932989,
+   "signal_type": "malicious_domain",
+   "title": "Blocked lookups against 29 distinct domains (600s window)"
+  },
+  {
+   "device_id": 99,
+   "first_seen": 1790952075.581612,
+   "signal_type": "beacon",
+   "title": "Possible C2 beacon to 183.60.15.123:3478"
+  },
+  {
+   "device_id": 99,
+   "first_seen": 1790953019.789686,
+   "signal_type": "dga",
+   "title": "Possible domain-generation-algorithm activity under in-addr.arpa"
+  },
+  {
+   "device_id": 99,
+   "first_seen": 1790953984.557231,
+   "signal_type": "dga",
+   "title": "Possible domain-generation-algorithm activity under in-addr.arpa"
+  },
+  {
+   "device_id": 99,
+   "first_seen": 1790955197.303757,
+   "signal_type": "beacon",
+   "title": "Possible C2 beacon to 74.125.24.188:5228"
+  },
+  {
+   "device_id": 99,
+   "first_seen": 1790955651.994807,
+   "signal_type": "malicious_domain",
+   "title": "Blocked lookups against 17 distinct domains (600s window)"
+  },
+  {
+   "device_id": 99,
+   "first_seen": 1790956016.117657,
+   "signal_type": "dns_bypass",
+   "title": "Device tried to bypass DNS filtering 7 times"
+  }
+ ],
+ "reference_events_per_day": 8000.0,
+ "start": "2026-10-02T18:20:00",
+ "step_s": 60,
+ "total_events": 306390,
+ "variants": {
+  "defaults": {
+   "by_signal": {
+    "beacon": 5,
+    "dga": 5,
+    "dns_bypass": 1,
+    "network_sweep": 3
+   },
+   "failures": {},
+   "false_positives": [
+    {
+     "device_id": 99,
+     "first_seen": 1790945920.621555,
+     "signal_type": "dga",
+     "title": "Possible domain-generation-algorithm activity under omnitagjs.com"
+    },
+    {
+     "device_id": 99,
+     "first_seen": 1790945938.989881,
+     "signal_type": "network_sweep",
+     "title": "Network sweep detected on port 443"
+    },
+    {
+     "device_id": 99,
+     "first_seen": 1790948354.329934,
+     "signal_type": "beacon",
+     "title": "Possible C2 beacon to 172.217.24.206:80"
+    },
+    {
+     "device_id": 99,
+     "first_seen": 1790948833.530832,
+     "signal_type": "dga",
+     "title": "Possible domain-generation-algorithm activity under omnitagjs.com"
+    },
+    {
+     "device_id": 99,
+     "first_seen": 1790948893.730888,
+     "signal_type": "network_sweep",
+     "title": "Network sweep detected on port 443"
+    },
+    {
+     "device_id": 99,
+     "first_seen": 1790949457.276935,
+     "signal_type": "beacon",
+     "title": "Possible C2 beacon to 142.251.221.110:80"
+    },
+    {
+     "device_id": 99,
+     "first_seen": 1790950093.570712,
+     "signal_type": "dga",
+     "title": "Possible domain-generation-algorithm activity under omnitagjs.com"
+    },
+    {
+     "device_id": 99,
+     "first_seen": 1790950150.4654,
+     "signal_type": "network_sweep",
+     "title": "Network sweep detected on port 443"
+    },
+    {
+     "device_id": 99,
+     "first_seen": 1790950580.449868,
+     "signal_type": "beacon",
+     "title": "Possible C2 beacon to 142.251.106.102:80"
+    },
+    {
+     "device_id": 99,
+     "first_seen": 1790952075.581612,
+     "signal_type": "beacon",
+     "title": "Possible C2 beacon to 183.60.15.123:3478"
+    },
+    {
+     "device_id": 99,
+     "first_seen": 1790953019.789686,
+     "signal_type": "dga",
+     "title": "Possible domain-generation-algorithm activity under in-addr.arpa"
+    },
+    {
+     "device_id": 99,
+     "first_seen": 1790953984.557231,
+     "signal_type": "dga",
+     "title": "Possible domain-generation-algorithm activity under in-addr.arpa"
+    },
+    {
+     "device_id": 99,
+     "first_seen": 1790955197.303757,
+     "signal_type": "beacon",
+     "title": "Possible C2 beacon to 74.125.24.188:5228"
+    },
+    {
+     "device_id": 99,
+     "first_seen": 1790956016.117657,
+     "signal_type": "dns_bypass",
+     "title": "Device tried to bypass DNS filtering 3 times"
+    }
+   ],
+   "overrides": {},
+   "per_10k_events": {
+    "ci95": [
+     0.2498,
+     0.7667
+    ],
+    "count": 14,
+    "exposure": 306390,
+    "rate": 0.4569
+   },
+   "per_device_hour": {
+    "ci95": [
+     2.5095,
+     7.7015
+    ],
+    "count": 14,
+    "exposure": 3.05,
+    "rate": 4.5902
+   },
+   "per_household_day": {
+    "ci95": [
+     0.1998,
+     0.6133
+    ],
+    "count": 14,
+    "exposure": 306390,
+    "rate": 0.3655
+   },
+   "steps": 184
+  },
+  "final_7.3_engine_as_on_2_oct": {
+   "by_signal": {
+    "beacon": 5,
+    "dga": 5,
+    "dns_bypass": 1,
+    "ids_other": 4,
+    "malicious_domain": 4,
+    "network_sweep": 3
+   },
+   "failures": {},
+   "false_positives": [
+    {
+     "device_id": 99,
+     "first_seen": 1790945920.621555,
+     "signal_type": "dga",
+     "title": "Possible domain-generation-algorithm activity under omnitagjs.com"
+    },
+    {
+     "device_id": 99,
+     "first_seen": 1790945920.666803,
+     "signal_type": "ids_other",
+     "title": "Potentially Bad Traffic (4 alerts)"
+    },
+    {
+     "device_id": 99,
+     "first_seen": 1790945938.989881,
+     "signal_type": "network_sweep",
+     "title": "Network sweep detected on port 443"
+    },
+    {
+     "device_id": 99,
+     "first_seen": 1790946789.425962,
+     "signal_type": "ids_other",
+     "title": "Potentially Bad Traffic (6 alerts)"
+    },
+    {
+     "device_id": 99,
+     "first_seen": 1790948159.729058,
+     "signal_type": "malicious_domain",
+     "title": "Blocked lookups against 73 distinct domains (600s window)"
+    },
+    {
+     "device_id": 99,
+     "first_seen": 1790948354.329934,
+     "signal_type": "beacon",
+     "title": "Possible C2 beacon to 172.217.24.206:80"
+    },
+    {
+     "device_id": 99,
+     "first_seen": 1790948832.184673,
+     "signal_type": "ids_other",
+     "title": "Potentially Bad Traffic (4 alerts)"
+    },
+    {
+     "device_id": 99,
+     "first_seen": 1790948833.530832,
+     "signal_type": "dga",
+     "title": "Possible domain-generation-algorithm activity under omnitagjs.com"
+    },
+    {
+     "device_id": 99,
+     "first_seen": 1790948893.730888,
+     "signal_type": "network_sweep",
+     "title": "Network sweep detected on port 443"
+    },
+    {
+     "device_id": 99,
+     "first_seen": 1790949409.620984,
+     "signal_type": "malicious_domain",
+     "title": "Blocked lookups against 56 distinct domains (600s window)"
+    },
+    {
+     "device_id": 99,
+     "first_seen": 1790949457.276935,
+     "signal_type": "beacon",
+     "title": "Possible C2 beacon to 142.251.221.110:80"
+    },
+    {
+     "device_id": 99,
+     "first_seen": 1790950089.664134,
+     "signal_type": "ids_other",
+     "title": "Potentially Bad Traffic (8 alerts)"
+    },
+    {
+     "device_id": 99,
+     "first_seen": 1790950093.570712,
+     "signal_type": "dga",
+     "title": "Possible domain-generation-algorithm activity under omnitagjs.com"
+    },
+    {
+     "device_id": 99,
+     "first_seen": 1790950150.4654,
+     "signal_type": "network_sweep",
+     "title": "Network sweep detected on port 443"
+    },
+    {
+     "device_id": 99,
+     "first_seen": 1790950580.449868,
+     "signal_type": "beacon",
+     "title": "Possible C2 beacon to 142.251.106.102:80"
+    },
+    {
+     "device_id": 99,
+     "first_seen": 1790950580.932989,
+     "signal_type": "malicious_domain",
+     "title": "Blocked lookups against 70 distinct domains (600s window)"
+    },
+    {
+     "device_id": 99,
+     "first_seen": 1790952075.581612,
+     "signal_type": "beacon",
+     "title": "Possible C2 beacon to 183.60.15.123:3478"
+    },
+    {
+     "device_id": 99,
+     "first_seen": 1790953019.789686,
+     "signal_type": "dga",
+     "title": "Possible domain-generation-algorithm activity under in-addr.arpa"
+    },
+    {
+     "device_id": 99,
+     "first_seen": 1790953984.557231,
+     "signal_type": "dga",
+     "title": "Possible domain-generation-algorithm activity under in-addr.arpa"
+    },
+    {
+     "device_id": 99,
+     "first_seen": 1790955197.303757,
+     "signal_type": "beacon",
+     "title": "Possible C2 beacon to 74.125.24.188:5228"
+    },
+    {
+     "device_id": 99,
+     "first_seen": 1790955651.994807,
+     "signal_type": "malicious_domain",
+     "title": "Blocked lookups against 33 distinct domains (600s window)"
+    },
+    {
+     "device_id": 99,
+     "first_seen": 1790956016.117657,
+     "signal_type": "dns_bypass",
+     "title": "Device tried to bypass DNS filtering 3 times"
+    }
+   ],
+   "overrides": {
+    "ids_raise_tld_lookup_rules": true,
+    "malicious_domain_enabled": true
+   },
+   "per_10k_events": {
+    "ci95": [
+     0.45,
+     1.0871
+    ],
+    "count": 22,
+    "exposure": 306390,
+    "rate": 0.718
+   },
+   "per_device_hour": {
+    "ci95": [
+     4.5204,
+     10.9207
+    ],
+    "count": 22,
+    "exposure": 3.05,
+    "rate": 7.2131
+   },
+   "per_household_day": {
+    "ci95": [
+     0.36,
+     0.8697
+    ],
+    "count": 22,
+    "exposure": 306390,
+    "rate": 0.5744
+   },
+   "steps": 184
+  },
+  "malicious_domain_on_only": {
+   "by_signal": {
+    "beacon": 5,
+    "dga": 5,
+    "dns_bypass": 1,
+    "malicious_domain": 4,
+    "network_sweep": 3
+   },
+   "failures": {},
+   "false_positives": [
+    {
+     "device_id": 99,
+     "first_seen": 1790945920.621555,
+     "signal_type": "dga",
+     "title": "Possible domain-generation-algorithm activity under omnitagjs.com"
+    },
+    {
+     "device_id": 99,
+     "first_seen": 1790945938.989881,
+     "signal_type": "network_sweep",
+     "title": "Network sweep detected on port 443"
+    },
+    {
+     "device_id": 99,
+     "first_seen": 1790948159.729058,
+     "signal_type": "malicious_domain",
+     "title": "Blocked lookups against 73 distinct domains (600s window)"
+    },
+    {
+     "device_id": 99,
+     "first_seen": 1790948354.329934,
+     "signal_type": "beacon",
+     "title": "Possible C2 beacon to 172.217.24.206:80"
+    },
+    {
+     "device_id": 99,
+     "first_seen": 1790948833.530832,
+     "signal_type": "dga",
+     "title": "Possible domain-generation-algorithm activity under omnitagjs.com"
+    },
+    {
+     "device_id": 99,
+     "first_seen": 1790948893.730888,
+     "signal_type": "network_sweep",
+     "title": "Network sweep detected on port 443"
+    },
+    {
+     "device_id": 99,
+     "first_seen": 1790949409.620984,
+     "signal_type": "malicious_domain",
+     "title": "Blocked lookups against 56 distinct domains (600s window)"
+    },
+    {
+     "device_id": 99,
+     "first_seen": 1790949457.276935,
+     "signal_type": "beacon",
+     "title": "Possible C2 beacon to 142.251.221.110:80"
+    },
+    {
+     "device_id": 99,
+     "first_seen": 1790950093.570712,
+     "signal_type": "dga",
+     "title": "Possible domain-generation-algorithm activity under omnitagjs.com"
+    },
+    {
+     "device_id": 99,
+     "first_seen": 1790950150.4654,
+     "signal_type": "network_sweep",
+     "title": "Network sweep detected on port 443"
+    },
+    {
+     "device_id": 99,
+     "first_seen": 1790950580.449868,
+     "signal_type": "beacon",
+     "title": "Possible C2 beacon to 142.251.106.102:80"
+    },
+    {
+     "device_id": 99,
+     "first_seen": 1790950580.932989,
+     "signal_type": "malicious_domain",
+     "title": "Blocked lookups against 70 distinct domains (600s window)"
+    },
+    {
+     "device_id": 99,
+     "first_seen": 1790952075.581612,
+     "signal_type": "beacon",
+     "title": "Possible C2 beacon to 183.60.15.123:3478"
+    },
+    {
+     "device_id": 99,
+     "first_seen": 1790953019.789686,
+     "signal_type": "dga",
+     "title": "Possible domain-generation-algorithm activity under in-addr.arpa"
+    },
+    {
+     "device_id": 99,
+     "first_seen": 1790953984.557231,
+     "signal_type": "dga",
+     "title": "Possible domain-generation-algorithm activity under in-addr.arpa"
+    },
+    {
+     "device_id": 99,
+     "first_seen": 1790955197.303757,
+     "signal_type": "beacon",
+     "title": "Possible C2 beacon to 74.125.24.188:5228"
+    },
+    {
+     "device_id": 99,
+     "first_seen": 1790955651.994807,
+     "signal_type": "malicious_domain",
+     "title": "Blocked lookups against 33 distinct domains (600s window)"
+    },
+    {
+     "device_id": 99,
+     "first_seen": 1790956016.117657,
+     "signal_type": "dns_bypass",
+     "title": "Device tried to bypass DNS filtering 3 times"
+    }
+   ],
+   "overrides": {
+    "malicious_domain_enabled": true
+   },
+   "per_10k_events": {
+    "ci95": [
+     0.3482,
+     0.9285
+    ],
+    "count": 18,
+    "exposure": 306390,
+    "rate": 0.5875
+   },
+   "per_device_hour": {
+    "ci95": [
+     3.4977,
+     9.3271
+    ],
+    "count": 18,
+    "exposure": 3.05,
+    "rate": 5.9016
+   },
+   "per_household_day": {
+    "ci95": [
+     0.2785,
+     0.7428
+    ],
+    "count": 18,
+    "exposure": 306390,
+    "rate": 0.47
+   },
+   "steps": 184
+  },
+  "tld_rules_on_only": {
+   "by_signal": {
+    "beacon": 5,
+    "dga": 5,
+    "dns_bypass": 1,
+    "ids_other": 4,
+    "network_sweep": 3
+   },
+   "failures": {},
+   "false_positives": [
+    {
+     "device_id": 99,
+     "first_seen": 1790945920.621555,
+     "signal_type": "dga",
+     "title": "Possible domain-generation-algorithm activity under omnitagjs.com"
+    },
+    {
+     "device_id": 99,
+     "first_seen": 1790945920.666803,
+     "signal_type": "ids_other",
+     "title": "Potentially Bad Traffic (4 alerts)"
+    },
+    {
+     "device_id": 99,
+     "first_seen": 1790945938.989881,
+     "signal_type": "network_sweep",
+     "title": "Network sweep detected on port 443"
+    },
+    {
+     "device_id": 99,
+     "first_seen": 1790946789.425962,
+     "signal_type": "ids_other",
+     "title": "Potentially Bad Traffic (6 alerts)"
+    },
+    {
+     "device_id": 99,
+     "first_seen": 1790948354.329934,
+     "signal_type": "beacon",
+     "title": "Possible C2 beacon to 172.217.24.206:80"
+    },
+    {
+     "device_id": 99,
+     "first_seen": 1790948832.184673,
+     "signal_type": "ids_other",
+     "title": "Potentially Bad Traffic (4 alerts)"
+    },
+    {
+     "device_id": 99,
+     "first_seen": 1790948833.530832,
+     "signal_type": "dga",
+     "title": "Possible domain-generation-algorithm activity under omnitagjs.com"
+    },
+    {
+     "device_id": 99,
+     "first_seen": 1790948893.730888,
+     "signal_type": "network_sweep",
+     "title": "Network sweep detected on port 443"
+    },
+    {
+     "device_id": 99,
+     "first_seen": 1790949457.276935,
+     "signal_type": "beacon",
+     "title": "Possible C2 beacon to 142.251.221.110:80"
+    },
+    {
+     "device_id": 99,
+     "first_seen": 1790950089.664134,
+     "signal_type": "ids_other",
+     "title": "Potentially Bad Traffic (8 alerts)"
+    },
+    {
+     "device_id": 99,
+     "first_seen": 1790950093.570712,
+     "signal_type": "dga",
+     "title": "Possible domain-generation-algorithm activity under omnitagjs.com"
+    },
+    {
+     "device_id": 99,
+     "first_seen": 1790950150.4654,
+     "signal_type": "network_sweep",
+     "title": "Network sweep detected on port 443"
+    },
+    {
+     "device_id": 99,
+     "first_seen": 1790950580.449868,
+     "signal_type": "beacon",
+     "title": "Possible C2 beacon to 142.251.106.102:80"
+    },
+    {
+     "device_id": 99,
+     "first_seen": 1790952075.581612,
+     "signal_type": "beacon",
+     "title": "Possible C2 beacon to 183.60.15.123:3478"
+    },
+    {
+     "device_id": 99,
+     "first_seen": 1790953019.789686,
+     "signal_type": "dga",
+     "title": "Possible domain-generation-algorithm activity under in-addr.arpa"
+    },
+    {
+     "device_id": 99,
+     "first_seen": 1790953984.557231,
+     "signal_type": "dga",
+     "title": "Possible domain-generation-algorithm activity under in-addr.arpa"
+    },
+    {
+     "device_id": 99,
+     "first_seen": 1790955197.303757,
+     "signal_type": "beacon",
+     "title": "Possible C2 beacon to 74.125.24.188:5228"
+    },
+    {
+     "device_id": 99,
+     "first_seen": 1790956016.117657,
+     "signal_type": "dns_bypass",
+     "title": "Device tried to bypass DNS filtering 3 times"
+    }
+   ],
+   "overrides": {
+    "ids_raise_tld_lookup_rules": true
+   },
+   "per_10k_events": {
+    "ci95": [
+     0.3482,
+     0.9285
+    ],
+    "count": 18,
+    "exposure": 306390,
+    "rate": 0.5875
+   },
+   "per_device_hour": {
+    "ci95": [
+     3.4977,
+     9.3271
+    ],
+    "count": 18,
+    "exposure": 3.05,
+    "rate": 5.9016
+   },
+   "per_household_day": {
+    "ci95": [
+     0.2785,
+     0.7428
+    ],
+    "count": 18,
+    "exposure": 306390,
+    "rate": 0.47
+   },
+   "steps": 184
+  }
+ }
+}

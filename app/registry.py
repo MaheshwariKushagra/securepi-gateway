@@ -255,8 +255,16 @@ def attribute_events(conn, limit=50000):
     subquery reference the outer table in its WHERE clause but NOT in its
     ORDER BY, so ranking candidate intervals by closeness to the event's
     timestamp is not expressible inline.
+
+    Returns how many events this call attributed. (Until 3 October 2026 it
+    returned the total of attributed events in the whole table, found with
+    a count over ~640,000 rows on every 2-second pass, inside this write
+    transaction - 13 s on a cold cache after a boot, long enough for the
+    engine to time out waiting for the lock. Found by the Stage 7 reboot
+    test.)
     """
     lan = LAN_PREFIX + "%"
+    attributed = 0
 
     # Pass 1 - the address interval actually contains the event's timestamp.
     # This is the only pass that is unambiguous when an address has been
@@ -273,7 +281,7 @@ def attribute_events(conn, limit=50000):
     # to return first with no ORDER BY, on the reasoning that a newer
     # interval is more likely to reflect the address's current owner than a
     # stale one that happens to still be open.
-    conn.execute(
+    attributed += conn.execute(
         """
         UPDATE events
            SET device_id = (
@@ -291,13 +299,13 @@ def attribute_events(conn, limit=50000):
                   AND events.ts <= di.last_seen + 300)
         """,
         (lan,),
-    )
+    ).rowcount
 
     # Pass 2 - the address has only ever belonged to one device, so the
     # timestamp does not matter. This catches events that predate our first
     # sighting of the lease, which is most of them after a fresh start:
     # an interval begins when we first OBSERVE a lease, not when it was granted.
-    conn.execute(
+    attributed += conn.execute(
         """
         UPDATE events
            SET device_id = (
@@ -308,7 +316,7 @@ def attribute_events(conn, limit=50000):
                  WHERE di.ip = events.src_ip) = 1
         """,
         (lan,),
-    )
+    ).rowcount
 
     # Pass 3 - IPv6 link-local traffic, identified by the MAC embedded in the
     # address itself.
@@ -324,13 +332,10 @@ def attribute_events(conn, limit=50000):
             "SELECT device_id FROM device_macs WHERE mac = ?", (mac,)
         ).fetchone()
         if owner:
-            conn.execute(
+            attributed += conn.execute(
                 "UPDATE events SET device_id = ? WHERE device_id IS NULL AND src_ip = ?",
                 (owner["device_id"], row["src_ip"]),
-            )
+            ).rowcount
 
-    done = conn.execute(
-        "SELECT count(*) FROM events WHERE device_id IS NOT NULL"
-    ).fetchone()[0]
     conn.commit()
-    return done
+    return attributed

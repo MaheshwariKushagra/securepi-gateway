@@ -109,6 +109,41 @@ class AttributeEventsOverlapTieBreakTests(unittest.TestCase):
         self.assertEqual(row["device_id"], 2, "the event's timestamp only falls inside device 2's real interval")
 
 
+class AttributionPassCostTests(unittest.TestCase):
+    """3 October 2026, found by the reboot test: every 2-second attribution
+    pass ended with SELECT count(*) FROM events WHERE device_id IS NOT NULL
+    - about 640,000 rows - inside its write transaction, only to print a
+    running total. On a cold cache after a boot that count alone took 13 s
+    and the engine's signals timed out waiting for the lock. The pass now
+    returns how many events IT attributed, counted from its own updates."""
+
+    def _event(self, conn, ip, ts):
+        conn.execute("INSERT INTO events (ts, ts_iso, source, event_type, src_ip, blocked)"
+                     " VALUES (?, 'test', 'suricata', 'flow', ?, 0)", (ts, ip))
+
+    def test_returns_the_number_attributed_by_this_pass(self):
+        conn = fixtures.temp_db()
+        fixtures.insert_device(conn, 1, hostname="phone")
+        now = time.time()
+        conn.execute("INSERT INTO device_ips (device_id, ip, first_seen, last_seen) VALUES (1, '10.10.0.60', ?, ?)",
+                     (now - 100, now + 100))
+        for _ in range(3):
+            self._event(conn, "10.10.0.60", now)
+        conn.commit()
+        self.assertEqual(registry.attribute_events(conn), 3)
+        # Nothing left to do: the next pass attributes nothing, even though
+        # three attributed events exist.
+        self.assertEqual(registry.attribute_events(conn), 0)
+
+    def test_does_not_count_every_attributed_event(self):
+        conn = fixtures.temp_db()
+        statements = []
+        conn.set_trace_callback(statements.append)
+        registry.attribute_events(conn)
+        conn.set_trace_callback(None)
+        self.assertFalse(any("device_id IS NOT NULL" in s for s in statements), statements)
+
+
 if __name__ == "__main__":
     unittest.main()
 

@@ -1,0 +1,7 @@
+ended enrol policy 44
+table ip nat {
+	set enrolled {
+		type ipv4_addr
+		flags timeout
+	}
+}

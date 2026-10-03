@@ -1169,7 +1169,7 @@ def main():
         attributed = run_step(conn, "event attribution", registry.attribute_events, 0)
 
         if saved:
-            print("stored %d events (total %d), attributed %d%s" % (
+            print("stored %d events (total %d), %d attributed to devices this pass%s" % (
                 saved, total, attributed,
                 ", %d parse errors" % errors if errors else ""
             ), flush=True)

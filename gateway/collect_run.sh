@@ -100,8 +100,11 @@ unit_lines() {  # unit_lines SINCE UNTIL DEST - systemd's own lifecycle lines fo
 
 boot_ends() {  # boot_ends DEST - for each finished boot: did it end with a clean shutdown?
     journalctl --list-boots --no-pager | awk 'NR>1 && $1 != "0" {print $1, $2}' | while read -r idx id; do
-        if journalctl -b "$id" -n 200 -o cat --no-pager 2>/dev/null \
-                | grep -qE "Reached target (poweroff|reboot|halt|kexec)|System is (powering down|rebooting)|Shutting down\.|Power key pressed"; then
+        # systemd's own lines (PID 1, which systemd-shutdown also runs as)
+        # for the whole boot: the shutdown markers can be hundreds of lines
+        # before the end of the boot's journal, so a short tail misses them.
+        if journalctl -b "$id" -o cat --no-pager _PID=1 2>/dev/null \
+                | grep -qE "Reached target (poweroff|reboot|halt|kexec)\.target|System is (powering down|rebooting)|^Shutting down\.$"; then
             echo "$idx $id clean"
         else
             echo "$idx $id abrupt"

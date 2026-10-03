@@ -284,6 +284,24 @@ def dns_config():
     return _request("GET", "/control/dns_info") or {}
 
 
+# Step 5.5's recommended resolver configuration: optimistic caching,
+# DNSSEC, and two independent encrypted (DNS-over-TLS) upstreams -
+# Cloudflare and Quad9 - queried in parallel, each provider's secondary
+# address as the fallback. This is exactly the configuration step 7.5's
+# A/B measured (gateway/dns_ab.py imports it): cold-lookup p50 68 -> 47 ms
+# and p95 411 -> 281 ms against the untuned gateway. The console's apply
+# endpoint applies this same constant, so what is applied is what was
+# measured (until 3 October 2026 the endpoint carried its own, slightly
+# different list, whose fallbacks repeated two of its upstreams).
+RECOMMENDED_RESOLVER_TUNING = {
+    "upstream_dns": ["tls://1.1.1.1", "tls://9.9.9.9"],
+    "fallback_dns": ["tls://1.0.0.1", "tls://149.112.112.112"],
+    "cache_optimistic": True,
+    "dnssec_enabled": True,
+    "upstream_mode": "parallel",
+}
+
+
 def set_dns_tuning(upstream_dns=None, fallback_dns=None, cache_optimistic=None,
                     dnssec_enabled=None, upstream_mode=None):
     """Update resolver settings, changing only the fields actually passed

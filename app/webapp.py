@@ -69,7 +69,6 @@ import collections
 import datetime
 import json
 import os
-import sqlite3
 import subprocess
 import tempfile
 import time
@@ -87,6 +86,7 @@ from starlette.requests import Request
 import adfilter_rules
 import adguard
 import audit
+import dbconn
 import dpi_enroll
 import fingerprint
 import firewall_sets
@@ -530,9 +530,8 @@ class RuleRemove(BaseModel):
 
 
 def db():
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row
-    return conn
+    # Same open path as every other service - see app/dbconn.py.
+    return dbconn.connect(DB_PATH)
 
 
 def device_label(row):
@@ -1831,12 +1830,9 @@ def api_filtering_resolver(range: str = Query("24h")):
     except adguard.AdGuardError as e:
         raise HTTPException(502, str(e))
     latency = _dns_latency_percentiles(c, now - spec["seconds"], now)
-    recommended = {
-        "cache_optimistic": True,
-        "dnssec_enabled": True,
-        "upstream_mode": "parallel",
-        "upstream_dns_note": "at least two independent DoT/DoH upstreams (e.g. Cloudflare + Quad9)",
-    }
+    recommended = dict(adguard.RECOMMENDED_RESOLVER_TUNING)
+    recommended["upstream_dns_note"] = ("two independent DoT upstreams (Cloudflare + Quad9), "
+                                        "each provider's secondary as fallback")
     return {
         "current": {
             "upstream_dns": cfg.get("upstream_dns", []),
@@ -1867,13 +1863,8 @@ def api_apply_resolver_tuning(body: ResolverTuningRequest):
     if not body.confirm:
         raise HTTPException(400, "resolver tuning requires confirm=true")
     try:
-        new_cfg = adguard.set_dns_tuning(
-            upstream_dns=["tls://1.1.1.1", "tls://1.0.0.1", "tls://9.9.9.9"],
-            fallback_dns=["tls://9.9.9.9", "tls://1.1.1.1"],
-            cache_optimistic=True,
-            dnssec_enabled=True,
-            upstream_mode="parallel",
-        )
+        # The exact configuration step 7.5 measured - see adguard.py.
+        new_cfg = adguard.set_dns_tuning(**adguard.RECOMMENDED_RESOLVER_TUNING)
     except adguard.AdGuardError as e:
         raise HTTPException(502, str(e))
     print("filtering: applied recommended resolver tuning (optimistic cache, "

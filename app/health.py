@@ -58,7 +58,13 @@ SERVICES_LIST_PATH = "/opt/securepi/services.list"
 DB_PATH = "/var/lib/securepi/securepi.db"
 DB_DIR = os.path.dirname(DB_PATH)
 WAN_PROBE_HOST = "1.1.1.1"
-DNS_PROBE_DOMAIN = "example.com"
+# The name the DNS fail-open probe asks for. The DNS filter answers it
+# itself (NXDOMAIN, from the `use-application-dns.net` rule adguard.py's
+# add_nxdomain_rule installs - Firefox's DoH canary), without asking any
+# upstream resolver. So the probe tests "is the filter answering", not "is
+# the internet up" - see _dns_resolves. It was example.com until 3 October
+# 2026, which also put a lookup every 5 s into the filter's query log.
+DNS_PROBE_DOMAIN = "use-application-dns.net"
 DNS_PROBE_TIMEOUT_S = 2
 
 
@@ -337,15 +343,25 @@ def _dns_resolves(host):
     check_staleness already draws. Uses `dig`, already installed on the
     gateway (bind9-dnsutils) - the same 'shell out to a standard system
     tool rather than add a Python package' approach check_wan's own
-    ping call already takes."""
+    ping call already takes.
+
+    Alive means "the filter replied at all", whatever the reply: dig exits
+    0 for an answer, NXDOMAIN and SERVFAIL alike, and 9 when no reply came
+    back. Before 3 October 2026 this asked for example.com and required a
+    non-empty answer, so an uplink outage - the filter alive, but its
+    upstream unreachable, so SERVFAIL - looked like a dead filter and
+    switched fail-open on, i.e. sent every device's DNS to 1.1.1.1
+    unfiltered (seen live in 7.7's drop-wan run; CODEBASE_AUDIT.md M2).
+    The probe name is answered by the filter itself (DNS_PROBE_DOMAIN), so
+    an outage upstream can no longer be mistaken for one in the filter."""
     try:
         result = subprocess.run(
-            ["dig", "+time=%d" % DNS_PROBE_TIMEOUT_S, "+tries=1", "+short",
+            ["dig", "+time=%d" % DNS_PROBE_TIMEOUT_S, "+tries=1",
              "@%s" % host, DNS_PROBE_DOMAIN],
             capture_output=True, text=True, timeout=DNS_PROBE_TIMEOUT_S + 2)
     except (OSError, subprocess.TimeoutExpired):
         return False
-    return result.returncode == 0 and result.stdout.strip() != ""
+    return result.returncode == 0
 
 
 def check_dns_failopen(conn, now):

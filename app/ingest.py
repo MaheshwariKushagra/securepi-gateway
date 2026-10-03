@@ -31,6 +31,7 @@ import time
 import urllib.parse
 
 import adguard
+import dbconn
 import health
 import registry
 
@@ -265,6 +266,15 @@ SCHEMA_MIGRATIONS = [
 # console feeling live without spinning the CPU on an idle network.
 POLL_SECONDS = 2
 
+# The most lines one pass reads from any one log file (3 October 2026).
+# Everything a pass reads is written in a single transaction, and on
+# 2 October one pass swallowed ~245,000 harness alerts at once - that one
+# write grew the database's write-ahead log to 137 MB, which the next boot
+# then had to recover (see app/dbconn.py). 5,000 lines every 2-second poll
+# is still 2,500 lines a second, far above anything this network produces;
+# a backlog simply drains over a few passes instead of all at once.
+MAX_LINES_PER_PASS = 5000
+
 # Event types that are not network events and so do not belong in the
 # events table. 'stats' USED to be skipped entirely here - as of step 3.5
 # it gets its own handling (save_sensor_stats) instead, since the health
@@ -276,19 +286,27 @@ SKIP_TYPES = set()
 
 
 def open_db():
-    """Open the database, creating it from schema.sql if it does not exist."""
+    """Open the database, creating it from schema.sql if it does not exist.
+
+    The schema check and migrations are the first things to touch the
+    database after a boot, so they run under dbconn.retry_while_locked:
+    on 3 October 2026 this exact step crashed ingest with "database is
+    locked" while the disk was busy at boot (see app/dbconn.py)."""
     first_time = not os.path.exists(DB_PATH)
     os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row
-    if first_time or conn.execute(
-        "SELECT count(*) FROM sqlite_master WHERE type='table' AND name='events'"
-    ).fetchone()[0] == 0:
-        with open(SCHEMA_PATH) as fh:
-            conn.executescript(fh.read())
-        conn.commit()
-        print("created database at %s" % DB_PATH, flush=True)
-    apply_migrations(conn)
+    conn = dbconn.connect(DB_PATH)
+
+    def prepare():
+        if first_time or conn.execute(
+            "SELECT count(*) FROM sqlite_master WHERE type='table' AND name='events'"
+        ).fetchone()[0] == 0:
+            with open(SCHEMA_PATH) as fh:
+                conn.executescript(fh.read())
+            conn.commit()
+            print("created database at %s" % DB_PATH, flush=True)
+        apply_migrations(conn)
+
+    dbconn.retry_while_locked(prepare, what="ingest start-up")
     return conn
 
 
@@ -509,55 +527,94 @@ def save_state(conn, source, path, inode, offset):
     )
 
 
-def read_eve(conn):
-    """Read whatever is new in eve.json and store it. Returns (read, saved, errors)."""
-    if not os.path.exists(EVE_PATH):
-        return 0, 0, 0
+def read_complete_lines(path, offset, max_lines):
+    """Read up to `max_lines` complete lines from `path`, starting at byte
+    `offset`. Returns (lines, new_offset), where new_offset is just after
+    the last complete line read - the place to resume next time.
 
-    stat = os.stat(EVE_PATH)
-    saved_inode, offset = get_state(conn, "suricata", EVE_PATH)
-
-    # A different inode means the file was rotated: start from the beginning.
-    # A smaller file at the same inode means it was truncated: same response.
-    if saved_inode is not None and saved_inode != stat.st_ino:
-        print("eve.json rotated - restarting from the beginning", flush=True)
-        offset = 0
-    elif offset > stat.st_size:
-        print("eve.json truncated - restarting from the beginning", flush=True)
-        offset = 0
-
-    read = errors = 0
-    rows = []
-    # Binary mode + readline(), not `for line in fh` in text mode: after
-    # leaving a text-mode `for` loop early, fh.tell() raises "telling
-    # position disabled by next() call" - so a half-written last line
-    # crashed the whole ingest pass (Audit.md H4). Counting the bytes of
-    # each complete line gives the exact offset to resume from instead.
-    with open(EVE_PATH, "rb") as fh:
+    Binary mode + readline(), not `for line in fh` in text mode: after
+    leaving a text-mode `for` loop early, fh.tell() raises "telling
+    position disabled by next() call" - so a half-written last line
+    crashed the whole ingest pass (Audit.md H4). Counting the bytes of
+    each complete line gives the exact offset to resume from instead."""
+    lines = []
+    with open(path, "rb") as fh:
         fh.seek(offset)
-        while True:
+        while len(lines) < max_lines:
             line = fh.readline()
-            # Empty = end of file. No trailing newline = the IDS is still
+            # Empty = end of file. No trailing newline = the writer is still
             # writing this line. Either way stop, with `offset` still at
             # the start of the unfinished line, and read it whole next pass.
             if not line.endswith(b"\n"):
                 break
             offset += len(line)
-            read += 1
-            try:
-                event = json.loads(line)
-            except Exception:
-                errors += 1
-                continue
-            if event.get("event_type") == "stats":
-                save_sensor_stats(conn, event)
-                continue
-            if event.get("event_type") in SKIP_TYPES:
-                continue
-            rows.append(flatten_suricata(event))
+            lines.append(line)
+    return lines, offset
+
+
+def read_eve(conn):
+    """Read whatever is new in eve.json and store it. Returns (read, saved, errors).
+
+    Rotation. The IDS log is rotated by renaming it to eve.json.1 and
+    starting a fresh eve.json; the IDS is then told (HUP) to reopen, and
+    until it does it keeps writing to the renamed file. So when the inode
+    changes and eve.json.1 is the file we were reading, we first finish
+    that file from where we stopped, and only move to the new eve.json once
+    the IDS has visibly switched (the new file has something in it).
+    Before 3 October 2026 ingest jumped straight to the new file and the
+    old file's last lines were lost. A copy-and-truncate rotation (same
+    inode, smaller file) still simply restarts at the beginning."""
+    if not os.path.exists(EVE_PATH):
+        return 0, 0, 0
+
+    stat = os.stat(EVE_PATH)
+    saved_inode, offset = get_state(conn, "suricata", EVE_PATH)
+    rotated_path = EVE_PATH + ".1"
+    draining_rotated_file = False
+
+    if saved_inode is not None and saved_inode != stat.st_ino:
+        rotated_stat = os.stat(rotated_path) if os.path.exists(rotated_path) else None
+        if rotated_stat is not None and rotated_stat.st_ino == saved_inode:
+            draining_rotated_file = True
+        else:
+            print("eve.json rotated - restarting from the beginning", flush=True)
+            offset = 0
+    elif offset > stat.st_size:
+        print("eve.json truncated - restarting from the beginning", flush=True)
+        offset = 0
+
+    read_path = rotated_path if draining_rotated_file else EVE_PATH
+    lines, offset = read_complete_lines(read_path, offset, MAX_LINES_PER_PASS)
+
+    read = errors = 0
+    rows = []
+    for line in lines:
+        read += 1
+        try:
+            event = json.loads(line)
+        except Exception:
+            errors += 1
+            continue
+        if event.get("event_type") == "stats":
+            save_sensor_stats(conn, event)
+            continue
+        if event.get("event_type") in SKIP_TYPES:
+            continue
+        rows.append(flatten_suricata(event))
 
     saved = insert_events(conn, rows)
-    save_state(conn, "suricata", EVE_PATH, stat.st_ino, offset)
+    if not draining_rotated_file:
+        save_state(conn, "suricata", EVE_PATH, stat.st_ino, offset)
+    elif len(lines) < MAX_LINES_PER_PASS and stat.st_size > 0:
+        # The old file is read to its end, and the IDS is already writing
+        # the new one (checked before reading, so nothing can still be on
+        # its way into the old file): switch to the new file, from the top.
+        print("eve.json rotated - finished the rotated file, moving to the new one", flush=True)
+        save_state(conn, "suricata", EVE_PATH, stat.st_ino, 0)
+    else:
+        # More of the old file to read, or the IDS hasn't switched yet:
+        # keep our place in the old file for the next pass.
+        save_state(conn, "suricata", EVE_PATH, saved_inode, offset)
     conn.execute(
         "UPDATE ingest_stats SET events_read = events_read + ?,"
         " events_saved = events_saved + ?, parse_errors = parse_errors + ?,"
@@ -643,23 +700,17 @@ def read_agh_querylog(conn):
 
     read = errors = 0
     rows = []
-    # Binary mode + readline(): see read_eve() for why (Audit.md H4).
-    with open(AGH_QUERYLOG_PATH, "rb") as fh:
-        fh.seek(offset)
-        while True:
-            line = fh.readline()
-            if not line.endswith(b"\n"):
-                break  # end of file, or a line still being written
-            offset += len(line)
-            read += 1
-            try:
-                entry = json.loads(line)
-            except Exception:
-                errors += 1
-                continue
-            row = flatten_agh(entry)
-            if row["ts"] > already_imported_up_to:
-                rows.append(row)
+    lines, offset = read_complete_lines(AGH_QUERYLOG_PATH, offset, MAX_LINES_PER_PASS)
+    for line in lines:
+        read += 1
+        try:
+            entry = json.loads(line)
+        except Exception:
+            errors += 1
+            continue
+        row = flatten_agh(entry)
+        if row["ts"] > already_imported_up_to:
+            rows.append(row)
 
     saved = insert_events(conn, rows)
     save_state(conn, "adguard", AGH_QUERYLOG_PATH, stat.st_ino, offset)
@@ -885,21 +936,15 @@ def read_dpi_events(conn):
 
     read = errors = 0
     rows = []
-    # Binary mode + readline(): see read_eve() for why (Audit.md H4).
-    with open(DPI_EVENTS_PATH, "rb") as fh:
-        fh.seek(offset)
-        while True:
-            line = fh.readline()
-            if not line.endswith(b"\n"):
-                break  # end of file, or a line still being written
-            offset += len(line)
-            read += 1
-            try:
-                entry = json.loads(line)
-            except Exception:
-                errors += 1
-                continue
-            rows.append(flatten_dpi(entry))
+    lines, offset = read_complete_lines(DPI_EVENTS_PATH, offset, MAX_LINES_PER_PASS)
+    for line in lines:
+        read += 1
+        try:
+            entry = json.loads(line)
+        except Exception:
+            errors += 1
+            continue
+        rows.append(flatten_dpi(entry))
 
     saved = insert_events(conn, rows)
     save_state(conn, "dpi", DPI_EVENTS_PATH, stat.st_ino, offset)

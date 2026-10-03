@@ -33,8 +33,10 @@ import adguard  # noqa: E402
 
 GATEWAY = "10.10.0.1"
 ISP = "192.168.29.1"
-TUNED = {"upstream_dns": ["tls://1.1.1.1", "tls://9.9.9.9"], "fallback_dns": ["tls://1.0.0.1", "tls://149.112.112.112"],
-         "cache_optimistic": True, "dnssec_enabled": True, "upstream_mode": "parallel"}
+# The configuration this A/B measured is now the console's own
+# recommendation (adguard.RECOMMENDED_RESOLVER_TUNING, unchanged values), so
+# the apply button applies exactly what was measured.
+TUNED = adguard.RECOMMENDED_RESOLVER_TUNING
 
 
 def dig_ms(server, name):

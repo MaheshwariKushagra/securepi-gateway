@@ -383,6 +383,144 @@ class PartialLineTests(unittest.TestCase):
         self.assertEqual(ingest.get_state(conn, "suricata", self.path)[1], len(line.encode("utf-8")))
 
 
+class StartupRetryTests(unittest.TestCase):
+    """3 October 2026: ingest crashed at boot with "database is locked" in
+    open_db's first query (see app/dbconn.py). open_db must now wait out a
+    lock at start-up instead of dying."""
+
+    def test_open_db_survives_two_locked_errors(self):
+        import sqlite3
+        import tempfile
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        db_path = os.path.join(tmp.name, "securepi.db")
+        failures = {"left": 2}
+        real_apply = ingest.apply_migrations
+
+        def flaky_apply(conn):
+            if failures["left"]:
+                failures["left"] -= 1
+                raise sqlite3.OperationalError("database is locked")
+            return real_apply(conn)
+
+        with mock.patch.object(ingest, "DB_PATH", db_path), \
+                mock.patch.object(ingest, "SCHEMA_PATH", fixtures.SCHEMA_PATH), \
+                mock.patch.object(ingest, "apply_migrations", flaky_apply), \
+                mock.patch("dbconn.time.sleep"):
+            conn = ingest.open_db()
+        self.assertEqual(failures["left"], 0)
+        tables = [r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")]
+        self.assertIn("events", tables)
+
+
+class EveCapAndRotationTests(unittest.TestCase):
+    """Two fixes from 3 October 2026 (EVALUATION-RESULTS-2.md, "Boot faults"):
+
+    - Each pass reads at most MAX_LINES_PER_PASS lines. On 2 October one
+      pass swallowed ~245,000 harness alerts in a single transaction, and
+      that one write is what left a 137 MB write-ahead log behind.
+    - When the IDS log is rotated by renaming it (eve.json -> eve.json.1),
+      the lines the IDS wrote to the old file after ingest's last look are
+      read before moving to the new file. They used to be lost."""
+
+    def setUp(self):
+        import json
+        import tempfile
+        self.json = json
+        self._dir = tempfile.TemporaryDirectory()
+        self.addCleanup(self._dir.cleanup)
+        self.path = os.path.join(self._dir.name, "eve.json")
+        patcher = mock.patch.object(ingest, "EVE_PATH", self.path)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        self.conn = fixtures.temp_db()
+
+    def _lines(self, ports):
+        return "".join(self.json.dumps(fixtures.make_eve_flow(dest_port=p)) + "\n" for p in ports)
+
+    def _write(self, path, ports, mode="a"):
+        with open(path, mode) as fh:
+            fh.write(self._lines(ports))
+
+    def _stored_ports(self):
+        return sorted(r["dest_port"] for r in self.conn.execute("SELECT dest_port FROM events"))
+
+    def test_a_pass_reads_at_most_the_cap(self):
+        self._write(self.path, range(1000, 1025), mode="w")
+        with mock.patch.object(ingest, "MAX_LINES_PER_PASS", 10):
+            self.assertEqual(ingest.read_eve(self.conn)[0], 10)
+            self.assertEqual(ingest.get_state(self.conn, "suricata", self.path)[1],
+                             len(self._lines(range(1000, 1010)).encode()))
+            self.assertEqual(ingest.read_eve(self.conn)[0], 10)
+            self.assertEqual(ingest.read_eve(self.conn)[0], 5)
+            self.assertEqual(ingest.read_eve(self.conn)[0], 0)
+        self.assertEqual(self._stored_ports(), list(range(1000, 1025)))
+
+    def test_lines_written_to_the_old_file_after_rotation_are_kept(self):
+        self._write(self.path, [1, 2, 3], mode="w")
+        ingest.read_eve(self.conn)
+        # The IDS writes two more lines, then logrotate renames the file
+        # and the IDS (after its HUP) starts the new one.
+        self._write(self.path, [4, 5])
+        os.rename(self.path, self.path + ".1")
+        self._write(self.path, [6], mode="w")
+        ingest.read_eve(self.conn)
+        ingest.read_eve(self.conn)
+        self.assertEqual(self._stored_ports(), [1, 2, 3, 4, 5, 6])
+
+    def test_waits_for_the_ids_to_switch_before_leaving_the_old_file(self):
+        self._write(self.path, [1], mode="w")
+        ingest.read_eve(self.conn)
+        # Renamed, new file created, but the IDS hasn't reopened yet: it is
+        # still writing to the old (renamed) file.
+        self._write(self.path, [2])
+        os.rename(self.path, self.path + ".1")
+        open(self.path, "w").close()
+        ingest.read_eve(self.conn)
+        self._write(self.path + ".1", [3])       # still the old file
+        self._write(self.path, [4])              # now the IDS has switched
+        ingest.read_eve(self.conn)
+        ingest.read_eve(self.conn)
+        self.assertEqual(self._stored_ports(), [1, 2, 3, 4])
+
+    def test_draining_a_big_rotated_file_respects_the_cap(self):
+        self._write(self.path, [1], mode="w")
+        ingest.read_eve(self.conn)
+        self._write(self.path, range(100, 125))
+        os.rename(self.path, self.path + ".1")
+        self._write(self.path, [999], mode="w")
+        with mock.patch.object(ingest, "MAX_LINES_PER_PASS", 10):
+            for _ in range(5):
+                ingest.read_eve(self.conn)
+        self.assertEqual(self._stored_ports(), [1] + list(range(100, 125)) + [999])
+
+    def test_without_the_rotated_file_it_restarts_on_the_new_file(self):
+        self._write(self.path, [1, 2], mode="w")
+        ingest.read_eve(self.conn)
+        os.remove(self.path)
+        self._write(self.path, [3], mode="w")   # new inode, no eve.json.1
+        ingest.read_eve(self.conn)
+        self.assertEqual(self._stored_ports(), [1, 2, 3])
+
+    def test_copytruncate_rotation_still_restarts_at_zero(self):
+        self._write(self.path, [1, 2, 3], mode="w")
+        ingest.read_eve(self.conn)
+        self._write(self.path, [4], mode="w")   # same inode, truncated
+        ingest.read_eve(self.conn)
+        self.assertEqual(self._stored_ports(), [1, 2, 3, 4])
+
+    def test_querylog_and_dpi_readers_respect_the_cap_too(self):
+        dpi_path = os.path.join(self._dir.name, "dpi-events.jsonl")
+        with open(dpi_path, "w") as fh:
+            for i in range(25):
+                fh.write(self.json.dumps({"ts": 1790000000 + i, "ts_iso": "2026-09-21T12:13:20Z",
+                                          "src_ip": "10.10.0.50",
+                                          "decision": "passthrough", "sni": "a%d.example" % i}) + "\n")
+        with mock.patch.object(ingest, "DPI_EVENTS_PATH", dpi_path), \
+                mock.patch.object(ingest, "MAX_LINES_PER_PASS", 10):
+            self.assertEqual(ingest.read_dpi_events(self.conn)[0], 10)
+
+
 class AghFileFallbackTests(unittest.TestCase):
     """Audit.md H5: the file fallback must not re-import what the API
     reader already stored, and must move the shared watermark forward."""

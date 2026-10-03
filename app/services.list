@@ -23,3 +23,4 @@ securepi-web
 securepi-doh-refresh.timer
 securepi-static
 securepi-intel-refresh.timer
+securepi-ids-logrotate.timer

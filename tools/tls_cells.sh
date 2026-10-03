@@ -1,20 +1,42 @@
 #!/bin/bash
-# Step 7.5 TLS latency, three cells on the tablet (device 98).
-cd /Users/maheshwari/blah/eval/results/tls-latency-tablet
-PY=/Users/maheshwari/blah/.venv-bench/bin/python
+# Step 7.5 TLS setup latency on the Lenovo tablet (device 98), four cells of
+# N loads each (default 25), with time-to-first-byte recorded in every cell
+# (tools/tls_latency_tablet.py writes ttfb_ms):
+#
+#   decrypted_enrolled      m.youtube.com, tablet enrolled -> decrypted by the proxy
+#   passthrough_enrolled    wikipedia.org, tablet enrolled -> proxy passes it through
+#   (the tablet's active enrolment policy is ended here)
+#   same_host_unenrolled    m.youtube.com, direct
+#   passthrough_unenrolled  wikipedia.org, direct - the control the 2 October
+#                           run lacked for the passthrough host
+#
+#   tools/tls_cells.sh OUTDIR [N]
+#
+# The tablet must be enrolled (an active "enroll" policy for device 98)
+# before this starts. The policy is looked up, not hard-coded. adb reaches
+# whichever server ANDROID_ADB_SERVER_PORT points at (the tablet is cabled
+# to the gateway since 3 October; see NEXT-SESSION.md), and DevTools must
+# be forwarded to 127.0.0.1:9223.
+OUT=${1:?usage: tls_cells.sh OUTDIR [N]}
+N=${2:-25}
+REPO=$(cd "$(dirname "$0")/.." && pwd)
+PY=$REPO/.venv-bench/bin/python
+TOOL=$REPO/tools/tls_latency_tablet.py
+mkdir -p "$OUT" && cd "$OUT" || exit 1
+
 date +%s > cells-start.txt
-$PY /tmp/tls_latency_tablet.py decrypted_enrolled https://m.youtube.com/favicon.ico 25 decrypted_enrolled.jsonl
-$PY /tmp/tls_latency_tablet.py passthrough_enrolled https://www.wikipedia.org/static/favicon/wikipedia.ico 25 passthrough_enrolled.jsonl
+$PY "$TOOL" decrypted_enrolled https://m.youtube.com/favicon.ico "$N" decrypted_enrolled.jsonl
+$PY "$TOOL" passthrough_enrolled https://www.wikipedia.org/static/favicon/wikipedia.ico "$N" passthrough_enrolled.jsonl
+
 ssh maheshwari@192.168.2.5 'cd /opt/securepi && sudo -u securepi-web python3 -c "
 import correlation, orchestrator
 c = correlation.connect()
-orchestrator.end_policy(c, 41, actor=\"bench\", reason=\"TLS latency: unenrolled cell\")
-print(\"policy 41 ended\")"; sudo nft list set ip nat enrolled' < /dev/null
-$PY /tmp/tls_latency_tablet.py same_host_unenrolled https://m.youtube.com/favicon.ico 25 same_host_unenrolled.jsonl
-ssh maheshwari@192.168.2.5 'cd /opt/securepi && sudo -u securepi-web python3 -c "
-import time, correlation, orchestrator
-c = correlation.connect()
-p = orchestrator.create_policy(c, \"enroll\", 98, None, time.time() + 2*3600, \"step 7.7 kill-proxy client (Lenovo tablet)\", actor=\"bench\")
-print(\"re-enrolled, policy\", p[\"id\"])"; sudo nft list set ip nat enrolled | grep elements' < /dev/null
+for p in orchestrator.active_policies(c, kind=\"enroll\", device_id=98):
+    orchestrator.end_policy(c, p[\"id\"], actor=\"bench\", reason=\"TLS latency: unenrolled cells\")
+    print(\"ended enrol policy\", p[\"id\"])"; sudo nft list set ip nat enrolled' < /dev/null | tee unenroll.txt
+date +%s > unenrolled-at.txt
+
+$PY "$TOOL" same_host_unenrolled https://m.youtube.com/favicon.ico "$N" same_host_unenrolled.jsonl
+$PY "$TOOL" passthrough_unenrolled https://www.wikipedia.org/static/favicon/wikipedia.ico "$N" passthrough_unenrolled.jsonl
 date +%s > cells-end.txt
 echo CELLS DONE

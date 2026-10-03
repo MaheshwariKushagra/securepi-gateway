@@ -37,12 +37,12 @@ threat_intel_signal to match against events.dest_ip.
 
 import os
 import re
-import sqlite3
 import time
 import urllib.error
 import urllib.request
 
 import adguard
+import dbconn
 
 DB_PATH = "/var/lib/securepi/securepi.db"
 DOMAIN_BLOCKLIST_DIR = "/opt/securepi/static"
@@ -239,8 +239,7 @@ def ensure_adguard_blocklist_registered():
 
 
 def main():
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row
+    conn = dbconn.connect(DB_PATH)  # see app/dbconn.py
     results = refresh_all(conn)
     for source, result in results.items():
         ok, detail = result

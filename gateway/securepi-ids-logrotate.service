@@ -1,0 +1,14 @@
+# SecurePi Gateway - rotate the IDS logs (see gateway/logrotate-suricata.conf).
+# Started by securepi-ids-logrotate.timer. Deliberately has no
+# ConditionACPower: Ubuntu's own logrotate.timer does, and on a gateway that
+# often runs on battery that meant the IDS log was never rotated.
+[Unit]
+Description=SecurePi Gateway - rotate the IDS (Suricata) logs
+
+[Service]
+Type=oneshot
+ExecStart=/usr/sbin/logrotate --state /var/lib/logrotate/securepi-ids.status /etc/securepi/logrotate-suricata.conf
+# Compressing a large log is heavy disk work: keep it out of the way of
+# the gateway's own services.
+Nice=19
+IOSchedulingClass=idle

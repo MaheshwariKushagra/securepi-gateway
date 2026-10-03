@@ -35,11 +35,11 @@ that is the point of having a correlation layer at all.
 
 import ipaddress
 import math
-import sqlite3
 import statistics
 import time
 from collections import Counter, defaultdict
 
+import dbconn
 import playbooks
 import settings
 import signature_taxonomy
@@ -61,9 +61,9 @@ AUTH_PORTS = {22: "SSH", 21: "FTP", 23: "Telnet", 3389: "RDP", 25: "SMTP"}
 
 
 def connect():
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row
-    return conn
+    # dbconn sets the long busy timeout and the WAL size cap every service
+    # needs (see app/dbconn.py for the 3 October boot crash behind it).
+    return dbconn.connect(DB_PATH)
 
 
 def set_window_start(conn, signal_type, ts):
@@ -686,6 +686,15 @@ def ids_alert_signal(conn):
     # Step 7.3: priority-3 alerts (the IDS's informational tier) no longer
     # become incidents on their own - see the setting's help text.
     max_priority = settings.get(conn, "ids_alert_max_priority")
+    # 3 October 2026: rules that flag a lookup only for its top-level domain
+    # don't raise incidents unless the operator turns them back on - see
+    # the setting's help text and signature_taxonomy.TLD_LOOKUP_SIGNATURE_PATTERNS.
+    # They are left out of all three queries below, so they neither raise an
+    # incident nor count toward another rule's threshold in the same category.
+    if settings.get(conn, "ids_raise_tld_lookup_rules"):
+        tld_sql, tld_args = "", []
+    else:
+        tld_sql, tld_args = signature_taxonomy.tld_lookup_exclusion_sql()
 
     rows = conn.execute(
         """
@@ -696,11 +705,11 @@ def ids_alert_signal(conn):
          WHERE event_type = 'alert'
            AND device_id IS NOT NULL
            AND ts > ?
-           AND COALESCE(alert_severity, 1) <= ?
+           AND COALESCE(alert_severity, 1) <= ?""" + tld_sql + """
          GROUP BY device_id, alert_category
         HAVING n >= ?
         """,
-        (since, max_priority, threshold),
+        [since, max_priority] + tld_args + [threshold],
     ).fetchall()
 
     fired = 0
@@ -715,16 +724,16 @@ def ids_alert_signal(conn):
         top = conn.execute(
             """SELECT alert_signature, count(*) n FROM events
                 WHERE event_type='alert' AND device_id=? AND alert_category=? AND ts > ?
-                  AND COALESCE(alert_severity, 1) <= ?
+                  AND COALESCE(alert_severity, 1) <= ?""" + tld_sql + """
                 GROUP BY alert_signature ORDER BY n DESC LIMIT 5""",
-            (r["device_id"], r["alert_category"], since, max_priority),
+            [r["device_id"], r["alert_category"], since, max_priority] + tld_args,
         ).fetchall()
         event_ids = [
             e["id"] for e in conn.execute(
                 """SELECT id FROM events WHERE event_type='alert' AND device_id=?
-                     AND alert_category=? AND ts > ? AND COALESCE(alert_severity, 1) <= ?
-                   ORDER BY ts""",
-                (r["device_id"], r["alert_category"], since, max_priority),
+                     AND alert_category=? AND ts > ? AND COALESCE(alert_severity, 1) <= ?"""
+                + tld_sql + " ORDER BY ts",
+                [r["device_id"], r["alert_category"], since, max_priority] + tld_args,
             )
         ]
         attack_note = ""
@@ -1354,6 +1363,12 @@ def brute_force_signal(conn):
 def malicious_domain_signal(conn):
     # Trailing window every cycle - same reasoning as port_scan_signal.
     now = time.time()
+    # Retired by default (3 October 2026) - see the malicious_domain_enabled
+    # setting's help text. The window still moves while it's off, so turning
+    # it back on starts from "now", not from everything blocked meanwhile.
+    if not settings.get(conn, "malicious_domain_enabled"):
+        set_window_start(conn, "malicious_domain", now)
+        return 0
     window = settings.get(conn, "malicious_domain_window_seconds")
     since = now - window
     threshold = settings.get(conn, "malicious_domain_threshold")

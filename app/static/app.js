@@ -1870,12 +1870,14 @@ function initSettings() {
                         <div class="row-title">${esc(s.label)}</div>
                         <div class="row-sub" title="${esc(s.help)}">${esc(s.help || key)}</div>
                     </div>
-                    <input class="input" type="number" step="any" value="${s.value}"
-                           min="${s.min ?? ''}" max="${s.max ?? ''}" data-setting-input aria-label="${esc(s.label)}">
-                    <span class="setting-status">${s.overridden ? `<span class="chip low" title="default: ${s.default}">custom</span>` : `<span class="dim">default</span>`}</span>
+                    ${s.type === "bool"
+                        ? `<button class="btn ${s.value ? "on" : ""}" data-setting-bool="${s.value ? 0 : 1}" aria-label="${esc(s.label)}">${s.value ? "On" : "Off"}</button>`
+                        : `<input class="input" type="number" step="any" value="${s.value}"
+                           min="${s.min ?? ''}" max="${s.max ?? ''}" data-setting-input aria-label="${esc(s.label)}">`}
+                    <span class="setting-status">${s.overridden ? `<span class="chip low" title="default: ${s.type === "bool" ? (s.default ? "on" : "off") : s.default}">custom</span>` : `<span class="dim">default</span>`}</span>
                     <span class="setting-actions">
                         ${s.overridden ? `<button class="btn ghost" data-setting-reset>Reset</button>` : ""}
-                        <button class="btn" data-setting-save>Save</button>
+                        ${s.type === "bool" ? "" : `<button class="btn" data-setting-save>Save</button>`}
                     </span>
                 </div>`).join("");
         } catch (err) {
@@ -1887,11 +1889,18 @@ function initSettings() {
         const row = e.target.closest(".filter-row");
         if (!row) return;
         const key = row.dataset.key;
-        if (e.target.matches("[data-setting-save]")) {
-            const input = row.querySelector("[data-setting-input]");
-            const raw = input.value.trim();
-            const value = raw.includes(".") ? parseFloat(raw) : parseInt(raw, 10);
-            if (Number.isNaN(value)) { toast("Invalid value", "Enter a number.", "high"); return; }
+        // On/off settings (e.g. the retired malicious-domain signal) toggle
+        // with one button; numeric ones are typed in and saved.
+        const boolButton = e.target.closest("[data-setting-bool]");
+        if (boolButton || e.target.matches("[data-setting-save]")) {
+            let value;
+            if (boolButton) {
+                value = boolButton.dataset.settingBool === "1";
+            } else {
+                const raw = row.querySelector("[data-setting-input]").value.trim();
+                value = raw.includes(".") ? parseFloat(raw) : parseInt(raw, 10);
+                if (Number.isNaN(value)) { toast("Invalid value", "Enter a number.", "high"); return; }
+            }
             const reason = prompt(`Reason for changing ${key}?`);
             if (!reason || !reason.trim()) { toast("Reason required", "", "high"); return; }
             try {

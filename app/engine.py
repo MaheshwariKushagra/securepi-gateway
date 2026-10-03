@@ -2,6 +2,7 @@
 """SecurePi Gateway - runs the correlation engine on a fixed interval."""
 import time
 import correlation
+import dbconn
 import health
 import notify
 import orchestrator
@@ -15,8 +16,11 @@ if __name__ == "__main__":
     print("correlation engine started, running every %ds" % INTERVAL_SECONDS, flush=True)
     # The engine's heartbeat (health.check_staleness reads it): stamped
     # once now, so an engine that hangs in its very first cycle is still
-    # noticed, and again after every completed cycle below.
-    health.record_engine_heartbeat(conn)
+    # noticed, and again after every completed cycle below. This first
+    # write is retried while the database is locked: on 3 October 2026 it
+    # crashed the engine at boot (see app/dbconn.py).
+    dbconn.retry_while_locked(lambda: health.record_engine_heartbeat(conn),
+                              what="engine start-up")
     while True:
         # step 6.1's device_hourly rollup rides this same loop rather than
         # getting its own systemd service - it is a no-op cheap enough to

@@ -478,6 +478,62 @@ class IdsAlertSignalTests(unittest.TestCase):
             fixtures.insert_alert(conn, 1, "Misc activity", now - 10, alert_severity=3)
         self.assertEqual(correlation.ids_alert_signal(conn), 0)
 
+    def _three_alerts(self, conn, signature, category="Potentially Bad Traffic", priority=2):
+        now = time.time()
+        for _ in range(3):
+            fixtures.insert_alert(conn, 1, category, now - 10,
+                                  alert_signature=signature, alert_severity=priority)
+
+    def test_tld_lookup_rules_do_not_fire_by_default(self):
+        """3 October 2026: rules that flag a DNS lookup only for the
+        domain's top-level domain (".biz", ".cc", ".to" ...) are priority 2
+        like real attack rules, and opened incidents on ordinary browsing
+        in 7.5's benchmark. They stay in Hunt but no longer raise."""
+        conn = fixtures.temp_db()
+        fixtures.insert_device(conn, 1)
+        self._three_alerts(conn, "ET INFO Observed DNS Query to .biz TLD")
+        self._three_alerts(conn, "ET DNS Query for .cc TLD")
+        self._three_alerts(conn, "ET HUNTING Observed Query to .fyi TLD")
+        self._three_alerts(conn, "ET INFO Observed DNS Query for Suspicious TLD (.management)")
+        self.assertEqual(correlation.ids_alert_signal(conn), 0)
+        self.assertEqual(conn.execute("SELECT count(*) FROM incidents").fetchone()[0], 0)
+
+    def test_tld_lookup_rules_fire_when_turned_back_on(self):
+        conn = fixtures.temp_db()
+        fixtures.insert_device(conn, 1)
+        settings.set_value(conn, "ids_raise_tld_lookup_rules", True)
+        self._three_alerts(conn, "ET INFO Observed DNS Query to .biz TLD")
+        self.assertEqual(correlation.ids_alert_signal(conn), 1)
+
+    def test_the_batterys_attack_rule_still_fires(self):
+        conn = fixtures.temp_db()
+        fixtures.insert_device(conn, 1)
+        self._three_alerts(conn, "GPL ATTACK_RESPONSE id check returned root")
+        self.assertEqual(correlation.ids_alert_signal(conn), 1)
+
+    def test_behavioural_rules_naming_a_tld_still_fire(self):
+        """A download, credential post or alternative-DNS-root lookup is
+        more than a TLD - those rules keep raising."""
+        for signature in ("ET HUNTING Possible EXE Download From Suspicious TLD (.top) - set",
+                          "ET PHISHING Possible Credentials Sent to Suspicious TLD via HTTP GET",
+                          "ET HUNTING Observed DNS Query for EmerDNS TLD (.bazar)"):
+            conn = fixtures.temp_db()
+            fixtures.insert_device(conn, 1)
+            self._three_alerts(conn, signature)
+            self.assertEqual(correlation.ids_alert_signal(conn), 1, signature)
+
+    def test_tld_lookup_alerts_dont_count_toward_another_rules_threshold(self):
+        """Grouping is by category: two real alerts plus TLD-lookup alerts in
+        the same category must not add up to the threshold of three."""
+        conn = fixtures.temp_db()
+        fixtures.insert_device(conn, 1)
+        now = time.time()
+        for _ in range(2):
+            fixtures.insert_alert(conn, 1, "Potentially Bad Traffic", now - 10,
+                                  alert_signature="GPL ATTACK_RESPONSE id check returned root")
+        self._three_alerts(conn, "ET DNS Query for .to TLD")
+        self.assertEqual(correlation.ids_alert_signal(conn), 0)
+
     def test_fires_on_an_uncurated_category_using_the_generic_fallback(self):
         conn = fixtures.temp_db()
         fixtures.insert_device(conn, 1)
@@ -976,8 +1032,26 @@ class MaliciousDomainSignalTests(unittest.TestCase):
     EVALUATION-RESULTS.md documents it firing on normal Android ad-SDK
     traffic that retries the same domain rapidly."""
 
+    def test_retired_by_default(self):
+        """3 October 2026: the signal counts every blocked lookup, ad and
+        tracker lists included, so it measured how ad-heavy browsing was
+        (precision 0.42 in step 7.3); real malicious-domain lookups are
+        threat_intel's job. It is off unless the operator turns it on."""
+        conn = fixtures.temp_db()
+        fixtures.insert_device(conn, 1)
+        now = time.time()
+        for i in range(30):
+            fixtures.insert_dns_query(conn, 1, "ads%d.example.com" % i, now - 5, blocked=True)
+        self.assertEqual(correlation.malicious_domain_signal(conn), 0)
+        self.assertEqual(conn.execute("SELECT count(*) FROM incidents").fetchone()[0], 0)
+        # The window still moves, so turning it on later doesn't look back
+        # over everything that happened while it was off.
+        self.assertIsNotNone(conn.execute(
+            "SELECT last_run_ts FROM signal_state WHERE signal_type='malicious_domain'").fetchone())
+
     def test_fires_on_enough_distinct_blocked_domains(self):
         conn = fixtures.temp_db()
+        settings.set_value(conn, "malicious_domain_enabled", True)
         fixtures.insert_device(conn, 1)
         now = time.time()
         for i in range(15):  # 15 distinct domains, meets the default threshold
@@ -986,6 +1060,7 @@ class MaliciousDomainSignalTests(unittest.TestCase):
 
     def test_does_not_fire_below_threshold(self):
         conn = fixtures.temp_db()
+        settings.set_value(conn, "malicious_domain_enabled", True)
         fixtures.insert_device(conn, 1)
         now = time.time()
         for i in range(5):
@@ -999,6 +1074,7 @@ class MaliciousDomainSignalTests(unittest.TestCase):
         a device probing many different disallowed destinations. Must
         NOT fire, even though the OLD (buggy) raw-count logic would have."""
         conn = fixtures.temp_db()
+        settings.set_value(conn, "malicious_domain_enabled", True)
         fixtures.insert_device(conn, 1)
         now = time.time()
         for i in range(40):  # 40 blocked lookups, but only 2 distinct domains
@@ -1009,6 +1085,7 @@ class MaliciousDomainSignalTests(unittest.TestCase):
 
     def test_allowed_queries_do_not_count(self):
         conn = fixtures.temp_db()
+        settings.set_value(conn, "malicious_domain_enabled", True)
         fixtures.insert_device(conn, 1)
         now = time.time()
         for i in range(15):

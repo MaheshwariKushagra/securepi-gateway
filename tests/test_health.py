@@ -214,6 +214,54 @@ class CheckWanTests(unittest.TestCase):
         self.assertEqual(len(rows), 0)
 
 
+class DnsResolvesProbeTests(unittest.TestCase):
+    """The probe behind DNS fail-open (3 October 2026, CODEBASE_AUDIT.md M2).
+
+    It used to ask the filter for example.com and count an empty answer as
+    "the filter is down". With the uplink cut, the filter is alive but can't
+    reach its upstream, answers SERVFAIL (empty), and fail-open redirected
+    every device's DNS to 1.1.1.1 - filtering off - as seen live in 7.7's
+    drop-wan run. The probe now asks for a name the filter answers itself
+    (use-application-dns.net, NXDOMAIN from a local rule) and treats ANY
+    reply - NXDOMAIN, SERVFAIL, an answer - as alive. Only no reply at all
+    (dig exit code 9, or the command hanging) means the filter is down."""
+
+    def _run_with(self, returncode=0, stdout="", raises=None):
+        import subprocess
+        import unittest.mock as mock
+        calls = []
+
+        def fake_run(argv, **kwargs):
+            calls.append(argv)
+            if raises is not None:
+                raise raises
+            return subprocess.CompletedProcess(argv, returncode, stdout=stdout, stderr="")
+
+        with mock.patch.object(health.subprocess, "run", fake_run):
+            alive = health._dns_resolves("10.10.0.1")
+        return alive, calls
+
+    def test_nxdomain_with_empty_output_counts_as_alive(self):
+        alive, _ = self._run_with(returncode=0, stdout="")
+        self.assertTrue(alive)
+
+    def test_no_reply_counts_as_down(self):
+        alive, _ = self._run_with(returncode=9)
+        self.assertFalse(alive)
+
+    def test_a_hung_dig_counts_as_down(self):
+        import subprocess
+        alive, _ = self._run_with(raises=subprocess.TimeoutExpired("dig", 4))
+        self.assertFalse(alive)
+
+    def test_probes_a_locally_answered_name_not_an_upstream_one(self):
+        _, calls = self._run_with()
+        argv = calls[0]
+        self.assertIn("use-application-dns.net", argv)
+        self.assertIn("@10.10.0.1", argv)
+        self.assertNotIn("+short", argv)
+
+
 class CheckDnsFailopenTests(unittest.TestCase):
     def setUp(self):
         self._orig_resolves = health._dns_resolves

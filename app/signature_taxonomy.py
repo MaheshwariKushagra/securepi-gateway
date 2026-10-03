@@ -123,6 +123,32 @@ TAXONOMY = {
 # ATTACK_MAPPING entry for (checked by tests/test_playbooks_ids.py-style
 # coverage, if that's ever added - see tests/test_correlation.py for now).
 FALLBACK_SIGNAL_TYPE = "ids_other"
+# IDS rules whose only evidence is the top-level domain of a DNS lookup
+# (3 October 2026). As SQL LIKE patterns, because ids_alert_signal filters in
+# its query and SQLite has no regular expressions. Checked against this
+# gateway's whole rule set (/var/lib/suricata/rules/suricata.rules): these
+# four patterns match exactly 26 rules, all of the "ET INFO Observed DNS
+# Query to .biz TLD" kind, and nothing else - not the rules where a TLD is
+# only part of the evidence (an .exe download from one, credentials posted
+# to one, a certificate for one) and not the OpenNIC/EmerDNS lookups (an
+# alternative DNS root such as BazarLoader's .bazar, which ordinary
+# browsing never touches). Whether these raise incidents is the setting
+# ids_raise_tld_lookup_rules (default off) - see its help text for why.
+TLD_LOOKUP_SIGNATURE_PATTERNS = (
+    "ET INFO Observed DNS Query to .% TLD%",
+    "ET DNS Query for .% TLD%",
+    "ET HUNTING Observed Query to .% TLD%",
+    "ET INFO Observed DNS Query for Suspicious TLD%",
+)
+
+
+def tld_lookup_exclusion_sql():
+    """SQL to AND onto an alert query to leave TLD-lookup rules out, and its
+    parameters: (" AND NOT (alert_signature LIKE ? OR ...)", [patterns])."""
+    likes = " OR ".join(["COALESCE(alert_signature, '') LIKE ?"] * len(TLD_LOOKUP_SIGNATURE_PATTERNS))
+    return " AND NOT (%s)" % likes, list(TLD_LOOKUP_SIGNATURE_PATTERNS)
+
+
 ALL_SIGNAL_TYPES = sorted({e["signal_type"] for e in TAXONOMY.values()} | {FALLBACK_SIGNAL_TYPE})
 
 

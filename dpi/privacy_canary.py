@@ -64,12 +64,12 @@ since flush() below calls `nft` directly):
 """
 
 import importlib.util
-import sqlite3
 import sys
 import time
 
 sys.path.insert(0, "/opt/securepi")
 import correlation  # noqa: E402  (path must be set up first)
+import dbconn       # noqa: E402
 import dpi_enroll    # noqa: E402
 
 DB_PATH = "/var/lib/securepi/securepi.db"
@@ -138,9 +138,10 @@ def will_decrypt(sni):
 
 
 def db():
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row
-    return conn
+    # The same open path as the gateway's own services (long busy timeout,
+    # WAL size cap) - see app/dbconn.py. DB_PATH stays defined here because
+    # tests/test_privilege_separation.py checks every service's path.
+    return dbconn.connect(DB_PATH)
 
 
 def _raise_or_touch_incident(conn, description):

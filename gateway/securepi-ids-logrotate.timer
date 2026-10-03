@@ -1,0 +1,16 @@
+# SecurePi Gateway - check the IDS logs for rotation every 15 minutes
+# (daily rotation, or sooner once a file passes 100 MB).
+#
+# OnBootSec=15min: never in the first minutes after a boot. On 3 October
+# 2026 a catch-up rotation compressing a 306 MB log ran during boot and was
+# part of why the engine and ingest crashed with "database is locked".
+# No ConditionACPower - see the service file.
+[Unit]
+Description=SecurePi Gateway - IDS log rotation check every 15 minutes
+
+[Timer]
+OnBootSec=15min
+OnUnitActiveSec=15min
+
+[Install]
+WantedBy=timers.target

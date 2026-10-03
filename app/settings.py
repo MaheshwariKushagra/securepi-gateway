@@ -51,6 +51,15 @@ SETTINGS_SCHEMA = {
         "label": "Brute-force threshold",
         "help": "Failed auth-port connection attempts, in the signal's window, before it's flagged.",
     },
+    "malicious_domain_enabled": {
+        "default": False, "type": bool,
+        "label": "Raise incidents for many blocked lookups (malicious-domain signal)",
+        "help": "Retired by default on 3 October 2026. This signal counts every lookup the DNS "
+                "filter blocks, and almost every list on the gateway is an ad or tracker list - "
+                "so it measured how ad-heavy someone's browsing was (precision 0.42 in step 7.3). "
+                "Lookups of genuinely malicious domains are caught by the threat-intel signal "
+                "instead. Blocked lookups stay visible on the Filtering pages either way.",
+    },
     "malicious_domain_threshold": {
         "default": 15, "type": int, "min": 2, "max": 1000,
         "label": "Malicious-domain threshold",
@@ -140,6 +149,16 @@ SETTINGS_SCHEMA = {
                 "informational tier (ET INFO rules, protocol-decoding oddities): in step 7.3 "
                 "every IDS false positive on the real devices was priority 3, and every attack "
                 "the battery ran was priority 2 or 1.",
+    },
+    "ids_raise_tld_lookup_rules": {
+        "default": False, "type": bool,
+        "label": "Raise incidents for IDS 'DNS query to .xyz TLD' rules",
+        "help": "26 IDS rules flag a DNS lookup only because of the domain's ending (.biz, .cc, "
+                ".to, .zip ...). They are priority 2, like real attack rules, but say nothing "
+                "about what the device did - in step 7.5 ordinary browsing set them off. Off: "
+                "they stay searchable in Hunt but don't become incidents. Rules where a TLD is "
+                "only part of the story (an .exe download, a credential post, a lookup in an "
+                "alternative DNS root) are not affected either way.",
     },
     "threat_intel_threshold": {
         "default": 1, "type": int, "min": 1, "max": 100,

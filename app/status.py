@@ -1,10 +1,9 @@
 #!/usr/bin/env python3
 """Inspect what the platform currently knows. Run on the gateway: securepi-db"""
-import sqlite3
+import dbconn
 
 DB = "/var/lib/securepi/securepi.db"
-c = sqlite3.connect(DB)
-c.row_factory = sqlite3.Row
+c = dbconn.connect(DB)  # see app/dbconn.py
 
 print("=== DEVICE REGISTRY ===")
 for d in c.execute("SELECT * FROM devices ORDER BY id"):

@@ -1,0 +1,94 @@
+{
+ "site": "instagram",
+ "t": 1791573439.822182,
+ "note": "Structure only (ADBLOCK-ENHANCEMENT-PLAN.md B0): hosts, redacted paths, JSON paths of ad markers, WebSocket hosts. No bodies or content. Raw per-request lists not committed.",
+ "feed_landed_on": "www.instagram.com/",
+ "feed_summary": {
+  "hosts": {
+   "instagram.fblr20-3.fna.fbcdn.net": 88,
+   "instagram.fblr20-4.fna.fbcdn.net": 86,
+   "instagram.fblr20-1.fna.fbcdn.net": 85,
+   "instagram.fblr20-2.fna.fbcdn.net": 53,
+   "www.instagram.com": 41,
+   "static.cdninstagram.com": 39,
+   "static.xx.fbcdn.net": 13,
+   "www.facebook.com": 4,
+   "graph.instagram.com": 2,
+   "scontent.fblr20-3.fna.fbcdn.net": 1
+  },
+  "ad_markers": {
+   "www.instagram.com /graphql/query $.data.xdt_api__v1__feed__timeline__connection.edges[].node.explore_story.media.sponsor_tags": 13,
+   "www.instagram.com /graphql/query $.data.xdt_api__v1__feed__timeline__connection.edges[].node.media.sponsor_tags": 7,
+   "www.instagram.com /graphql/query $.data.xdt_api__v1__feed__timeline__connection.edges[].node.ad.ad_id": 4,
+   "www.instagram.com /graphql/query $.data.xdt_api__v1__feed__timeline__connection.edges[].node.ad.items[].product_type=ad": 4,
+   "www.instagram.com /graphql/query $.data.xdt_api__v1__feed__timeline__connection.edges[].node.ad.items[].sponsor_tags": 4,
+   "www.instagram.com /graphql/query $.data.xdt_api__v1__feed__timeline__connection.edges[].node.ad.items[].ad_id": 4,
+   "www.instagram.com /graphql/query $.data.xdt_api__v1__feed__timeline__connection.edges[].node.ad.label=ad": 4,
+   "www.instagram.com /ads/igwww_ads_graphql/ $.data.xdt_injected_story_units.ad_media_items[].ad_id": 1,
+   "www.instagram.com /ads/igwww_ads_graphql/ $.data.xdt_injected_story_units.ad_media_items[].items[].product_type=ad": 1,
+   "www.instagram.com /ads/igwww_ads_graphql/ $.data.xdt_injected_story_units.ad_media_items[].label=ad": 1
+  },
+  "websocket_hosts": [
+   "edge-chat.instagram.com/chat",
+   "gateway.instagram.com/ws/lightspeed",
+   "gateway.instagram.com/ws/realtime",
+   "gateway.instagram.com/ws/rpsignaling"
+  ],
+  "max_visible_ad_labels": 2
+ },
+ "messages_landed_on": "www.instagram.com/direct/inbox/",
+ "messages_summary": {
+  "hosts": {
+   "static.cdninstagram.com": 28,
+   "www.instagram.com": 26,
+   "static.xx.fbcdn.net": 12,
+   "instagram.fblr20-1.fna.fbcdn.net": 9,
+   "instagram.fblr20-2.fna.fbcdn.net": 3,
+   "instagram.fblr20-4.fna.fbcdn.net": 3,
+   "instagram.fblr20-5.fna.fbcdn.net": 3,
+   "instagram.fblr20-3.fna.fbcdn.net": 3,
+   "www.facebook.com": 3
+  },
+  "ad_markers": {
+   "www.instagram.com /graphql/query $.data.xdt_api__v1__feed__timeline__connection.edges[].node.media.sponsor_tags": 2,
+   "www.instagram.com /graphql/query $.data.xdt_api__v1__feed__timeline__connection.edges[].node.explore_story.media.sponsor_tags": 1
+  },
+  "websocket_hosts": [
+   "edge-chat.instagram.com/chat",
+   "gateway.instagram.com/ws/lightspeed",
+   "gateway.instagram.com/ws/realtime",
+   "gateway.instagram.com/ws/rpsignaling",
+   "gateway.instagram.com/ws/streamcontroller"
+  ],
+  "max_visible_ad_labels": 0
+ },
+ "messages_paths_on_feed_host": [
+  "/ajax/bootloader-endpoint/",
+  "/ajax/bulk-route-definitions/",
+  "/ajax/qm/",
+  "/api/graphql",
+  "/api/v1/web/fxcal/ig_sso_users",
+  "/data/manifest.json",
+  "/direct/inbox/",
+  "/graphql/query",
+  "/instagram/login_sync/",
+  "/instagram/sync/",
+  "/sync/instagram/"
+ ],
+ "feed_paths_on_feed_host": [
+  "/",
+  "/ads/igwww_ads_graphql/",
+  "/ajax/bootloader-endpoint/",
+  "/ajax/bulk-route-definitions/",
+  "/ajax/bz",
+  "/ajax/qm/",
+  "/api/graphql",
+  "/api/v1/web/fxcal/ig_sso_users",
+  "/data/manifest.json",
+  "/graphql/query",
+  "/instagram/login_sync/",
+  "/instagram/sync/",
+  "/sync/instagram/",
+  "/video/unified_cvc/"
+ ]
+}

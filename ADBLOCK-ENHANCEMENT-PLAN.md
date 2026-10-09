@@ -126,7 +126,8 @@ For each site:
 | 4 | YouTube regression | Tablet: 30/30 played, but its Chrome 77 gets no pre-rolls even unenrolled (control 0/10), so pre-roll removal still needs the A33 |
 | 5 | B4, B5 | **Done and deployed** (9 Oct): canary covers every module and look-alike names; telemetry, console panel and watchdog per site; HTML ad removal now logged (it never was) |
 | 7 | A6 | **Done and deployed** (9 Oct): `vpn_tunnel`, low, informational, never adds to risk |
-| 2 | B0 | **Blocked** (9 Oct): the user chose a browser on the Dell for the logged-in feeds. Installed under ~/securepi-browser (Playwright 1.48 Chromium plus 13 runtime libraries), but the first launch crashed, and the Claude Code permission check then blocked further work on a long-running browser on the gateway. Waiting for the user's decision |
+| 2 | B0 | **Done** (10 Oct), `docs/adblock-feasibility.md`: Instagram **go**, Facebook **conditional go**, Spotify **no-go** (web player needs Widevine; audio ads), X **not verified** (login failed). Browser: Ubuntu's Chromium snap on the Dell, sandbox on, 900 MB cap (the Playwright build needed an AppArmor change, refused) |
+| 3 | B3 | Drafted in the same file; **waiting for the user's sign-off** for Instagram and Facebook |
 | 3, 5, 6 | B1 (second half), B2, B3, C | Wait on B0 |
 | 8 | D | After C |
 

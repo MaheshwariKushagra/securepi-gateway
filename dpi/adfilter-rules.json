@@ -52,6 +52,88 @@
         "ytd-statement-banner-renderer",
         "ytd-primetime-promo-renderer"
       ]
+    },
+    "instagram": {
+      "label": "Instagram",
+      "privacy_note": "Decrypts www.instagram.com only, for this device. That includes the inbox list and logins, held in the proxy's memory and never parsed or stored. Only feed responses are changed; live messages (edge-chat, gateway) are never decrypted. See docs/adblock-feasibility.md.",
+      "decrypt_suffixes": [
+        "www.instagram.com"
+      ],
+      "passthrough_suffixes": [
+        "edge-chat.instagram.com",
+        "gateway.instagram.com"
+      ],
+      "json_endpoints": [
+        "/graphql/query"
+      ],
+      "query_names": [
+        "PolarisFeed"
+      ],
+      "never_touch_paths": [
+        "/api/graphql",
+        "/direct/",
+        "/accounts/",
+        "/api/v1/"
+      ],
+      "blocked_paths": [
+        "/ads/igwww_ads_graphql/"
+      ],
+      "prune": [
+        {
+          "op": "drop_items",
+          "list_key": "edges",
+          "where": "node.ad"
+        }
+      ],
+      "ad_fields": [],
+      "ad_renderers": [],
+      "cosmetic_injection_enabled": false,
+      "cosmetic_selectors": [],
+      "html_json_pages": [
+        "/"
+      ]
+    },
+    "facebook": {
+      "label": "Facebook",
+      "privacy_note": "Decrypts www.facebook.com only, for this device: the feed, but also Marketplace, groups, notifications, the inbox list and logins, held in the proxy's memory. Only responses to the news-feed query are parsed and changed; everything else passes unparsed, and live chat (gateway, edge-chat) is never decrypted. See docs/adblock-feasibility.md.",
+      "decrypt_suffixes": [
+        "www.facebook.com"
+      ],
+      "passthrough_suffixes": [
+        "gateway.facebook.com",
+        "edge-chat.facebook.com"
+      ],
+      "json_endpoints": [
+        "/api/graphql/"
+      ],
+      "query_names": [
+        "CometNewsFeedPaginationQuery"
+      ],
+      "never_touch_paths": [
+        "/messages/",
+        "/login",
+        "/checkpoint/",
+        "/ajax/"
+      ],
+      "prune": [
+        {
+          "op": "drop_documents",
+          "contains_key": "th_dat_spo"
+        },
+        {
+          "op": "drop_items",
+          "list_key": "edges",
+          "contains_key": "th_dat_spo"
+        }
+      ],
+      "ad_fields": [],
+      "ad_renderers": [],
+      "blocked_paths": [],
+      "cosmetic_injection_enabled": false,
+      "cosmetic_selectors": [],
+      "html_json_pages": [
+        "/"
+      ]
     }
   }
 }

@@ -80,8 +80,8 @@ compact summary. Results from Stage 1 onward are in `EVALUATION-RESULTS-2.md`.
 | **5** | Ad blocking & privacy filtering (5.11 scoped to Path 1; Path 2 deferred with reasoning recorded) | **Complete** |
 | **6** | Intelligence & console — behavioural baselines, device fingerprinting, settings, incident workbench, hunt/explorer, weekly report, responsive layout | **Complete** |
 | **7** | Evaluation 2.0 — expanded benchmark battery | **Complete** (3 Oct 2026). 7.0 and 7.9 were replaced by one-session equivalents (user decision); see below |
-| **7A** | Ad-blocking enhancement - measured gaps, then Tier 2 for X/Instagram/Facebook/Spotify after a feasibility check (`ADBLOCK-ENHANCEMENT-PLAN.md`) | **Next** (approved 9 Oct 2026) |
-| **8** | Documentation & demo | After 7A |
+| **7A** | Ad-blocking enhancement - measured gaps, then Tier 2 for X/Instagram/Facebook/Spotify after a feasibility check (`ADBLOCK-ENHANCEMENT-PLAN.md`) | **Complete** (10 Oct 2026); A33 checks still open |
+| **8** | Documentation & demo | **Next** |
 
 Stages 5 and 6 were built before Stages 1–2 deliberately, then Stages 1 and 2
 were completed in later sessions — each such out-of-order decision is recorded
@@ -377,10 +377,47 @@ script, canary and log-rotation units).
 - **A multi-hour soak was dropped by the user.** There is no multi-day run of
   the frozen code; that is stated as a limit.
 
-**Next: Stage 7A, the ad-blocking enhancement plan** (`ADBLOCK-ENHANCEMENT-PLAN.md`,
-approved 9 October 2026), starting with Phase A. Its prerequisites from the
-user: dedicated test accounts for X, Instagram, Facebook and Spotify; the A33
-on SecurePi-Test; a yes/no on trimming OISD Big and AdAway.
+**Stage 7A (ad-blocking enhancement, `ADBLOCK-ENHANCEMENT-PLAN.md`) is done** (9-10 October 2026); details in `EVALUATION-RESULTS-2.md` Stage 7A and `REPORT-adblocking.md` §13.
+
+**Deployed:**
+- **Rules:** schema 2 with per-site modules, version 7 on the gateway: youtube, instagram, facebook.
+- **Per device:** each site is switched on per device (device page). Enrolment alone means YouTube only.
+- **Canary:** checks both passes.
+- **Bypass trigger:** pin bypass after 2 failures.
+- **Signals:** VPN note; HTML ad removal now logged.
+- **Lists:** OISD Big and AdAway off (DNS filter 271 → 187 MB).
+
+**Results:**
+- **Instagram web:** 10/10 → 0/10 runs with ads.
+- **Facebook web:** 7/10 → 0/10; breakage not excluded.
+- **Spotify:** no-go.
+- **X:** not verified (login failed).
+
+**Still open from 7A:**
+- **Needs the A33:**
+  - the YouTube pre-roll check on the new add-on (the tablet's Chrome 77 gets no pre-rolls even unenrolled);
+  - the YouTube app recovering under the trigger of 2;
+  - the A5 scope check with Instagram/Facebook switched on through the real redirect.
+- **Dell test setup** (`~/securepi-browser`: logged-in test-account profile, test proxy script, test CA): stopped, not deleted.
+  - To restart it (on the Dell):
+    ```
+    H=/home/maheshwari/securepi-browser
+    sudo systemd-run --unit securepi-testproxy --uid=maheshwari --gid=maheshwari -p MemoryMax=400M \
+      /opt/securepi-dpi/bin/mitmdump --mode regular --listen-host 127.0.0.1 --listen-port 8091 \
+      --set confdir=$H/test-ca -s $H/testproxy.py
+    SPKI=$(openssl x509 -in $H/test-ca/mitmproxy-ca-cert.pem -pubkey -noout | openssl pkey -pubin -outform der \
+      | openssl dgst -sha256 -binary | base64)
+    sudo systemd-run --unit securepi-testbrowser --uid=maheshwari --gid=maheshwari -E HOME=/home/maheshwari \
+      -E XDG_RUNTIME_DIR=/run/user/1000 /snap/bin/chromium --headless=new --remote-debugging-port=9230 \
+      --remote-debugging-address=127.0.0.1 --user-data-dir=$H/profile155 --no-first-run --window-size=1366,900 \
+      --user-agent="Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/155.0.0.0 Safari/537.36" \
+      --proxy-server=http://127.0.0.1:8091 --ignore-certificate-errors-spki-list=$SPKI about:blank
+    ```
+  - Then cap the browser's own snap scope (`snap.chromium.chromium-*.scope`, not the unit) through its `memory.max`, e.g. 1300M.
+  - From the Mac: `ssh -f -N -L 9231:127.0.0.1:9230 maheshwari@192.168.2.5`, then `tools/site_ads_measure.py SITE OUT --runs N`.
+  - The Chromium snap and 13 runtime libraries are installed on the Dell.
+  - The tablet's leftover tabs were closed.
+- **Incidents to close:** #760 and #764 (tablet `adblock_ineffective`) are false positives explained by the HTML-logging bug.
 
 **Then Stage 8 (documentation and demo).** Queued inputs from Stage 7:
 1. **The 7.9 recommendations** (`heuristic-evaluation.md`, end), worst first:

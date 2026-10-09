@@ -1,0 +1,22 @@
+{"ads_received": 1, "items_received": 13, "labels": 0, "posts": 4, "page_errors": 0, "feed_responses": 1, "site": "facebook", "condition": "off", "run": 0, "t": 1791576652.5190332}
+{"ads_received": 0, "items_received": 407, "labels": 0, "posts": 17, "page_errors": 0, "feed_responses": 16, "site": "facebook", "condition": "on", "run": 0, "t": 1791576705.226783}
+{"ads_received": 5, "items_received": 177, "labels": 0, "posts": 24, "page_errors": 0, "feed_responses": 12, "site": "facebook", "condition": "off", "run": 1, "t": 1791576753.349874}
+{"ads_received": 0, "items_received": 79, "labels": 0, "posts": 20, "page_errors": 0, "feed_responses": 8, "site": "facebook", "condition": "on", "run": 1, "t": 1791576802.291559}
+{"ads_received": 2, "items_received": 43, "labels": 0, "posts": 16, "page_errors": 0, "feed_responses": 4, "site": "facebook", "condition": "off", "run": 2, "t": 1791576850.430568}
+{"ads_received": 0, "items_received": 33, "labels": 0, "posts": 14, "page_errors": 0, "feed_responses": 4, "site": "facebook", "condition": "on", "run": 2, "t": 1791576899.838351}
+{"ads_received": 0, "items_received": 113, "labels": 0, "posts": 22, "page_errors": 0, "feed_responses": 10, "site": "facebook", "condition": "off", "run": 3, "t": 1791576947.941668}
+{"ads_received": 0, "items_received": 2, "labels": 0, "posts": 4, "page_errors": 0, "feed_responses": 1, "site": "facebook", "condition": "on", "run": 3, "t": 1791576996.631497}
+{"ads_received": 1, "items_received": 37, "labels": 0, "posts": 9, "page_errors": 0, "feed_responses": 5, "site": "facebook", "condition": "off", "run": 4, "t": 1791577044.6620522}
+{"ads_received": 0, "items_received": 21, "labels": 0, "posts": 7, "page_errors": 0, "feed_responses": 3, "site": "facebook", "condition": "on", "run": 4, "t": 1791577094.252728}
+{"ads_received": 4, "items_received": 151, "labels": 0, "posts": 21, "page_errors": 0, "feed_responses": 10, "site": "facebook", "condition": "off", "run": 5, "t": 1791577142.481548}
+{"ads_received": 0, "items_received": 96, "labels": 0, "posts": 15, "page_errors": 0, "feed_responses": 8, "site": "facebook", "condition": "on", "run": 5, "t": 1791577191.5055091}
+{"ads_received": 0, "items_received": 2, "labels": 0, "posts": 4, "page_errors": 0, "feed_responses": 1, "site": "facebook", "condition": "off", "run": 6, "t": 1791577239.5534132}
+{"ads_received": 0, "items_received": 46, "labels": 0, "posts": 13, "page_errors": 0, "feed_responses": 7, "site": "facebook", "condition": "on", "run": 6, "t": 1791577288.6083488}
+{"ads_received": 0, "items_received": 2, "labels": 0, "posts": 4, "page_errors": 0, "feed_responses": 1, "site": "facebook", "condition": "off", "run": 7, "t": 1791577336.607031}
+{"ads_received": 0, "items_received": 26, "labels": 0, "posts": 5, "page_errors": 0, "feed_responses": 3, "site": "facebook", "condition": "on", "run": 7, "t": 1791577386.265074}
+{"ads_received": 1, "items_received": 53, "labels": 0, "posts": 9, "page_errors": 0, "feed_responses": 3, "site": "facebook", "condition": "off", "run": 8, "t": 1791577434.443105}
+{"ads_received": 0, "items_received": 60, "labels": 0, "posts": 10, "page_errors": 0, "feed_responses": 5, "site": "facebook", "condition": "on", "run": 8, "t": 1791577483.7829409}
+{"ads_received": 1, "items_received": 45, "labels": 0, "posts": 9, "page_errors": 0, "feed_responses": 5, "site": "facebook", "condition": "off", "run": 9, "t": 1791577531.718482}
+{"ads_received": 0, "items_received": 0, "labels": 0, "posts": 0, "page_errors": 0, "feed_responses": 0, "site": "facebook", "condition": "on", "run": 9, "t": 1791577579.355818}
+{"inbox_rows": 3, "inbox_url_ok": true, "site": "facebook", "condition": "off", "phase": "inbox", "t": 1791577595.498224}
+{"inbox_rows": 3, "inbox_url_ok": true, "site": "facebook", "condition": "on", "phase": "inbox", "t": 1791577612.31487}

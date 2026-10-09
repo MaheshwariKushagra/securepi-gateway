@@ -200,6 +200,10 @@ determines whether such failures are caught.
 | Feed advertisement renderers | Enrolled devices | ✅ removed |
 | Non-allowlisted traffic privacy | Enrolled devices | ✅ 0 hosts decrypted |
 | YouTube **app** advertisements | — | ❌ certificate pinning; out of reach by design |
+| Instagram and Facebook **web** feed ads | Devices with that site switched on | ✅ removed (§13: 0/10 runs each) |
+| Instagram, Facebook, X, Spotify **apps** | — | ❌ pinning; pass through with ads |
+| Spotify web player ads | — | ❌ no-go (needs Widevine DRM; ads from the main API host) |
+| X web ads | — | not verified (test login failed) |
 
 ---
 
@@ -213,6 +217,7 @@ determines whether such failures are caught.
 | Fragile against upstream change | Depends on response structures YouTube may alter without notice |
 | QUIC blocked network-wide | Forces TCP fallback so traffic stays observable; a standard enterprise practice, but a deliberate degradation |
 | Server-side ad insertion (SSAI) would end first-party removal entirely | Not a bug to fix - a structural boundary of the whole approach. See below |
+| Instagram/Facebook removal decrypts that site's whole host for the device - inbox list and login included, in memory | The inbox list is served from the same host as the feed. Live messages are on separate, never-decrypted hosts; inbox responses are never parsed or stored (§13) |
 
 ### Server-side ad insertion (SSAI): the expected end state, not just another upstream change
 
@@ -254,9 +259,11 @@ look*, not a dashboard that keeps reporting success on data it hasn't actually c
 | Metric | Method | Result obtained |
 |---|---|---|
 | Blocklist size | Query the resolver API | 655,974 rules, 5 lists |
-| Third-party block rate | Fixed set of ad-heavy sites, filtering on vs. off | to be measured |
+| Third-party block rate | Fixed set of ad-heavy sites, filtering on vs. off | **−83% requests, −99% tracker companies** (7.5, 240 loads) |
 | First-party block rate, DNS only | YouTube with Tier 1 alone | **0%** — the measured boundary |
-| First-party block rate, Tier 2 | YouTube with inspection enabled | **Effective** — pre-rolls removed |
+| First-party block rate, Tier 2 | YouTube with inspection enabled | **Effective** — pre-rolls removed (7.5: 30/30 → 0/29) |
+| First-party block rate, Tier 2, Instagram web | Feed ads reaching the browser, site off vs on (§13) | **10/10 runs → 0/10** (44 ads → 0) |
+| First-party block rate, Tier 2, Facebook web | Sponsored stories reaching the browser, site off vs on (§13) | **7/10 runs → 0/10** (15 → 0); breakage not excluded |
 | Privacy scope | Hosts decrypted vs. passed through | 0 non-allowlisted of 56 connections |
 | DNS bypass attempts | Firewall counters | 0 hardcoded, 0 DoH, 0 DoT |
 | QUIC downgrade | Firewall counter | 112 packets in 30 min |
@@ -280,6 +287,9 @@ the boundary was measured and understood rather than merely encountered.
    no certificate was presented
 7. **The pinning boundary** — YouTube in the *app* still shows ads. Demonstrating a
    documented limitation deliberately is more convincing than avoiding it
+8. **A second site, switched on for one device** (§13) — on the device page, tick
+   Instagram (its privacy note shows on hover): the feed's "Sponsored" posts are gone,
+   the inbox still loads, and the canary still passes. Untick it and they come back
 
 Step 6 is the one that distinguishes this from a naive interception proxy.
 
@@ -290,6 +300,11 @@ Step 6 is the one that distinguishes this from a naive interception proxy.
 - Interception is **opt-in per device** and **restricted per destination**; the enrolled
   set is empty by default
 - Financial, messaging and authentication traffic was verified never to be decrypted
+  **for YouTube-only enrolment** (the default). A device that has Instagram or Facebook
+  switched on (§13) also has that site's own host decrypted, including its inbox list
+  and login - held in the proxy's memory only, never parsed or stored; live message
+  delivery stays on separate, never-decrypted hosts. Each site needed its own written
+  privacy review and the user's sign-off (`docs/adblock-feasibility.md`)
 - No request or response bodies are written to disk
 - The CA private key is root-only, mode `600`, and never leaves the gateway
 - **The CA must be uninstalled from every enrolled device after the demonstration.** A
@@ -314,5 +329,47 @@ zero non-allowlisted hosts decrypted.
 certificate not matching its embedded expectation, so it cannot be intercepted at all.
 This is a deliberate boundary, not an unfinished feature.
 
+**"Doesn't removing Instagram or Facebook ads mean reading people's messages?"** Not
+reading, but they do pass through decrypted. Live messages use separate hosts
+(`edge-chat.*`, `gateway.*`) that are never decrypted. The inbox *list* comes from the
+same host as the feed, so on a device with the site switched on it crosses the proxy in
+plaintext, in memory. The addon only parses responses to the feed's named queries, so an
+inbox response passes through unparsed and unlogged. That residual exposure is why each
+site is a separate, per-device, time-limited switch with its own signed-off review.
+
 **"How do you know the privacy scope actually works?"** Because it did not, initially, and
 we caught it. See section 6 — measured before and after: 95 hosts decrypted, then 0.
+
+---
+
+## 13. Beyond YouTube: Instagram and Facebook (October 2026)
+
+**Approach.** ENHANCEMENT-PLAN Stage 7A (`ADBLOCK-ENHANCEMENT-PLAN.md`) turned the YouTube-only rules into **per-site modules**. A module states:
+- which host(s) it may decrypt, and which hosts it must never decrypt (live-message hosts, by name);
+- which endpoints and GraphQL query names it may rewrite;
+- which paths it must never touch;
+- how ads are marked: declarative "drop items / drop streamed documents" rules, no site-specific code.
+
+Each site is switched on **per device**. Enrolment alone still means YouTube only. The canary checks both "every site on" and "nothing extra on" every 15 minutes.
+
+**Feasibility** (`docs/adblock-feasibility.md`). A logged-in browser recorded only the structure of each site's traffic.
+
+| Site | Where its feed ads are | Messages | Verdict |
+|---|---|---|---|
+| Instagram | feed items whose `node.ad` is set, in `PolarisFeed…` GraphQL queries and in the home page's embedded JSON; story ads on their own endpoint | separate hosts; inbox list on the feed's host | built |
+| Facebook | streamed GraphQL chunks marked by `th_dat_spo`, only in `CometNewsFeedPaginationQuery` | separate hosts; inbox list on the same path, different query names | built |
+| Spotify | audio breaks during playback | n/a | **no-go**: needs Widevine DRM to play; ads come from the main API host; the app pins |
+| X | not observed | not observed | **not verified**: the test login failed |
+
+**Results** (the Dell test browser through a localhost test proxy running the production addon; the gateway itself untouched):
+- **Instagram:** feed ads reached the browser in 10 of 10 runs with the site off and **0 of 10** with it on (44 ads → 0, visible "Sponsored" labels 3 → 0). Posts and the inbox rendered normally.
+- **Facebook:** 7 of 10 → **0 of 10** (15 sponsored stories → 0), with no page errors and the inbox rendering. Breakage can't be excluded at this sample size (one "on" run loaded no feed; not reproduced).
+
+**What measuring taught**, in the spirit of section 6:
+- **The first screen of a feed isn't fetched; it's embedded in the page.** A rule that only rewrote the GraphQL API left one sponsored post per load. The module now also prunes the page's embedded JSON, updating the length attribute the page checks.
+- **Ad-shaped keys appear on organic content, set to null.** Matching "has key `sponsored_data`" would have dropped organic stories. The marker that held was a *non-null* `th_dat_spo`: 6 of 6 sponsored chunks, 0 of 135 organic ones.
+
+**Boundaries:**
+- **Reach:** web only. Every app pins its certificate, and Android apps don't trust a user CA at all; they pass through after two failed handshakes, with ads.
+- **Privacy:** a device with a site switched on has that site's own host decrypted, inbox list and login included, in memory.
+- **Measurement:** one browser and one account per site, and not through a phone's real redirect path, so mobile web may differ.

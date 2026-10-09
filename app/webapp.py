@@ -389,6 +389,9 @@ class DpiEnrollRequest(BaseModel):
     # bad value gets a clean 422 instead of a 502 from the helper
     # rejecting it two layers down.
     hours: int = Field(default=dpi_enroll.DEFAULT_TIMEOUT_HOURS, ge=1, le=720)
+    # Site modules to switch on for this device (ADBLOCK-ENHANCEMENT-PLAN.md
+    # B2). None means YouTube only, as enrolment always meant.
+    sites: Optional[list[str]] = None
 
 
 class DpiRulesUpdate(BaseModel):
@@ -2224,7 +2227,18 @@ def api_device_dpi_status(device_id: int):
         "enrolled": row is not None, "ip": ip,
         "expires_in_s": int(pol[0]["expires_at"] - time.time()) if pol else (row["expires_in_s"] if row else None),
         "policy_id": pol[0]["id"] if pol else None,
+        "sites": orchestrator.policy_sites(pol[0]["target"]) if pol else list(orchestrator.DEFAULT_SITES),
+        "available_sites": _dpi_sites(),
     }
+
+
+def _dpi_sites():
+    """The site modules in the Tier 2 rules, for the device page's per-site
+    switches (B2), each with the privacy note it must show."""
+    rules = _read_dpi_rules()
+    return [{"name": name, "label": m.get("label") or name.capitalize(),
+             "privacy_note": m.get("privacy_note") or ""}
+            for name, m in sorted(rules["modules"].items(), key=lambda kv: (kv[0] != "youtube", kv[0]))]
 
 
 @app.post("/api/devices/{device_id}/dpi")
@@ -2237,10 +2251,17 @@ def api_device_dpi_set(device_id: int, body: DpiEnrollRequest):
     if c.execute("SELECT 1 FROM devices WHERE id=?", (device_id,)).fetchone() is None:
         raise HTTPException(404, "device not found")
     if body.enrolled:
-        p = _create_policy(c, "enroll", device_id, None, time.time() + body.hours * 3600,
-                           "HTTPS ad removal enabled from the console for %dh" % body.hours)
+        known = {m["name"] for m in _dpi_sites()}
+        unknown = [x for x in (body.sites or []) if x not in known]
+        if unknown:
+            raise HTTPException(400, "unknown site(s): %s" % ", ".join(unknown))
+        sites = body.sites or list(orchestrator.DEFAULT_SITES)
+        p = _create_policy(c, "enroll", device_id, sites, time.time() + body.hours * 3600,
+                           "HTTPS ad removal enabled from the console for %dh (%s)"
+                           % (body.hours, ", ".join(sorted(set(sites)))))
         return {"id": device_id, "enrolled": True, "ip": orchestrator.device_ip(c, device_id),
-                "expires_in_s": body.hours * 3600, "policy_id": p["id"]}
+                "expires_in_s": body.hours * 3600, "policy_id": p["id"],
+                "sites": orchestrator.policy_sites(p["target"])}
     for r in orchestrator.active_policies(c, "enroll", device_id):
         _end_policy(c, r["id"], "unenrolled from the console")
     # Also clear an enrollment the orchestrator doesn't know about yet

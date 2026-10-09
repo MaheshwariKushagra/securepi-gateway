@@ -30,6 +30,7 @@ import ipaddress
 import json
 import logging
 import os
+import re
 import time
 
 from mitmproxy import http
@@ -73,6 +74,15 @@ RULES_PATH = "/var/lib/securepi-dpi/adfilter-rules.json"
 # DPI_EVENTS_PATH's telemetry, this is a nice-to-have the console reads,
 # not part of the enforcement path.
 RULE_STATS_PATH = "/var/log/securepi/dpi-rule-stats.json"
+
+# Which site modules each enrolled device has switched on
+# (ADBLOCK-ENHANCEMENT-PLAN.md B2): {"10.10.0.53": ["youtube", "instagram"]},
+# written by the orchestrator from the active enroll policies. A device
+# missing from it gets DEFAULT_SITES - YouTube only, which is what
+# enrolment meant before there were other sites - so another site is only
+# ever decrypted for a device it was deliberately switched on for.
+SITE_MAP_PATH = "/var/lib/securepi-dpi/device-sites.json"
+DEFAULT_SITES = ("youtube",)
 
 
 def strip_ads(node, ad_fields, ad_renderers, hits=None):
@@ -132,6 +142,134 @@ def strip_ads(node, ad_fields, ad_renderers, hits=None):
             removed += strip_ads(item, ad_fields, ad_renderers, hits)
 
     return removed
+
+
+def _resolve(node, dotted):
+    for key in dotted.split("."):
+        if not isinstance(node, dict) or key not in node:
+            return None
+        node = node[key]
+    return node
+
+
+def _contains_key(node, key):
+    """True if `key` appears at any depth with a non-null value. A key
+    present but null doesn't count: Facebook's organic stories carry some
+    ad-shaped keys set to null (measured 10 October 2026)."""
+    if isinstance(node, dict):
+        return node.get(key) is not None or any(_contains_key(v, key) for v in node.values())
+    if isinstance(node, list):
+        return any(_contains_key(v, key) for v in node)
+    return False
+
+
+def _drop_item(item, op):
+    if not isinstance(item, dict):
+        return False
+    if op.get("where"):
+        return _resolve(item, op["where"]) is not None
+    return _contains_key(item, op["contains_key"])
+
+
+def prune(node, ops, hits=None):
+    """Apply a module's drop_items operations (adfilter_rules.PRUNE_OPS)
+    to one JSON document in place: in every list stored under an op's
+    list_key, at any depth, drop the objects the op matches. Returns the
+    number of objects dropped. `hits`, if given, counts per op."""
+    removed = 0
+    if isinstance(node, dict):
+        for key, value in node.items():
+            if isinstance(value, list):
+                for i, op in enumerate(ops):
+                    if op["op"] != "drop_items" or op["list_key"] != key:
+                        continue
+                    keep = [x for x in value if not _drop_item(x, op)]
+                    if len(keep) != len(value):
+                        n = len(value) - len(keep)
+                        removed += n
+                        value[:] = keep
+                        if hits is not None:
+                            label = "%s %s" % (key, op.get("where") or op.get("contains_key"))
+                            hits[label] = hits.get(label, 0) + n
+            removed += prune(value, ops, hits)
+    elif isinstance(node, list):
+        for item in node:
+            removed += prune(item, ops, hits)
+    return removed
+
+
+_JSON_PREFIXES = ("for (;;);", ")]}'")
+
+
+def parse_json_documents(text):
+    """(prefix, documents, separator) for a response body that is one JSON
+    value, or several on separate lines (streamed GraphQL - Facebook sends
+    a feed this way), optionally after an anti-hijacking prefix. Returns
+    None if the body isn't JSON at all."""
+    stripped = text.lstrip()
+    prefix = ""
+    for p in _JSON_PREFIXES:
+        if stripped.startswith(p):
+            prefix, stripped = p, stripped[len(p):]
+            break
+    try:
+        return prefix, [json.loads(stripped)], None
+    except Exception:
+        pass
+    separator = "\r\n" if "\r\n" in stripped else "\n"
+    docs = []
+    for line in stripped.split(separator):
+        if not line.strip():
+            continue
+        try:
+            docs.append(json.loads(line))
+        except Exception:
+            return None
+    return (prefix, docs, separator) if docs else None
+
+
+def serialise_json_documents(prefix, docs, separator):
+    if separator is None:
+        return prefix + json.dumps(docs[0])
+    return prefix + separator.join(json.dumps(d) for d in docs)
+
+
+_JSON_SCRIPT_RE = re.compile(r'(<script type="application/json"[^>]*>)(.*?)(</script>)', re.S)
+
+
+def prune_html_json(html_text, ops, hits=None):
+    """Apply drop_items operations to the JSON a page embeds in
+    <script type="application/json"> blocks (B1: Instagram and Facebook put
+    the first screen of the feed, ads included, in the page itself). Only
+    blocks that mention one of the ops' keys are parsed; a block is
+    rewritten only if something was dropped, with every "<" escaped so the
+    JSON can't end the script element, and its data-content-len attribute
+    (the content's length, which the page checks) updated. Returns
+    (new_text, removed)."""
+    needles = ['"%s"' % (op.get("list_key") or op.get("contains_key")) for op in ops
+               if op["op"] == "drop_items"]
+    if not needles:
+        return html_text, 0
+    removed = 0
+
+    def repl(m):
+        nonlocal removed
+        open_tag, content, close = m.groups()
+        if not any(n in content for n in needles):
+            return m.group(0)
+        try:
+            doc = json.loads(content)
+        except Exception:
+            return m.group(0)
+        n = prune(doc, ops, hits)
+        if not n:
+            return m.group(0)
+        removed += n
+        new = json.dumps(doc, separators=(",", ":")).replace("<", "\\u003c")
+        open_tag = re.sub(r'data-content-len="\d+"', 'data-content-len="%d"' % len(new), open_tag)
+        return open_tag + new + close
+
+    return _JSON_SCRIPT_RE.sub(repl, html_text), removed
 
 
 def inject_cosmetic_css(html_text, selectors):
@@ -270,7 +408,9 @@ class SecurePiAdFilter:
         # load the real file immediately.
         self._rules = default_rules()
         self._rules_mtime = None
-        self._rule_hits = {"ad_fields": {}, "ad_renderers": {}, "blocked_paths": {}}
+        self._rule_hits = {"ad_fields": {}, "ad_renderers": {}, "blocked_paths": {}, "prune": {}}
+        self._site_map = {}
+        self._site_map_mtime = None
         self._ensure_rules_fresh(force=True)
 
     def _ensure_rules_fresh(self, force=False):
@@ -300,6 +440,22 @@ class SecurePiAdFilter:
         except Exception as exc:
             logger.warning("securepi: could not load %s (%s) - keeping the rules already in use",
                             RULES_PATH, exc)
+
+    def _sites_for(self, ip):
+        """The site modules switched on for this device - see SITE_MAP_PATH.
+        Re-read when the file changes. A missing or unreadable map means
+        DEFAULT_SITES for everyone: never more decryption, only less."""
+        try:
+            mtime = os.stat(SITE_MAP_PATH).st_mtime
+            if mtime != self._site_map_mtime:
+                with open(SITE_MAP_PATH) as f:
+                    raw = json.load(f)
+                self._site_map = {str(k): [str(x) for x in v] for k, v in raw.items()
+                                  if isinstance(v, list)}
+                self._site_map_mtime = mtime
+        except (OSError, ValueError, AttributeError):
+            self._site_map, self._site_map_mtime = {}, None
+        return self._site_map.get(ip) or list(DEFAULT_SITES)
 
     def _write_rule_stats(self):
         """Snapshot current per-rule hit counts to RULE_STATS_PATH for the
@@ -341,6 +497,46 @@ class SecurePiAdFilter:
             sni = getattr(getattr(flow, "client_conn", None), "sni", None)
             name, module = module_for_host(self._rules, sni)
         return name, module
+
+    @staticmethod
+    def _never_touch(module, path):
+        return any(path.startswith(p) for p in module.get("never_touch_paths", []))
+
+    @staticmethod
+    def _may_rewrite(module, flow, path):
+        """json_endpoints and query_names (B1): which responses of a module
+        may be read and rewritten at all. Anything else passes unparsed."""
+        endpoints = module.get("json_endpoints") or []
+        if endpoints and not any(path.startswith(p) for p in endpoints):
+            return False
+        names = module.get("query_names") or []
+        if names:
+            try:
+                query = flow.request.headers.get("x-fb-friendly-name", "")
+            except Exception:
+                query = ""
+            if not query or not any(query.startswith(n) for n in names):
+                return False
+        return True
+
+    def _prune_page(self, flow, name, module):
+        """A page listed in html_json_pages: prune the JSON it embeds."""
+        try:
+            text = flow.response.get_text()
+        except Exception:
+            return
+        if not text:
+            return
+        new_text, removed = prune_html_json(text, module["prune"], self._rule_hits["prune"])
+        if removed:
+            flow.response.set_text(new_text)
+            self.cleaned += removed
+            try:
+                src_ip = flow.client_conn.address[0]
+            except Exception:
+                src_ip = None
+            self._log_event(src_ip, "ads_stripped", sni=flow.request.host, ads_removed=removed, module=name)
+            self._write_rule_stats()
 
     def _log_event(self, src_ip, decision, sni=None, ads_removed=None, blocked_path=None, module=None):
         """Append one telemetry line. Failures here (disk full, permissions)
@@ -390,7 +586,7 @@ class SecurePiAdFilter:
         self._ensure_rules_fresh()
         sni = data.client_hello.sni or ""
 
-        # Decrypt only a host some site module claims (schema 2 rules).
+        # Decrypt only a host some site module claims (schema 2 rules)...
         module_name = module_for_host(self._rules, sni)[0]
         wanted = module_name is not None
 
@@ -399,6 +595,11 @@ class SecurePiAdFilter:
             src_ip = data.context.client.peername[0]
         except Exception:
             pass  # telemetry is best-effort; never let this break the decision below
+
+        # ...and only for a device that has that site switched on (B2).
+        site_off = wanted and module_name not in self._sites_for(src_ip)
+        if site_off:
+            wanted = False
 
         # Pinning-aware auto-passthrough (step 5.8): even though this host
         # is one we'd normally decrypt, back off if this exact (device,
@@ -419,7 +620,7 @@ class SecurePiAdFilter:
             # gets decrypted. Verify against mitmproxy behaviour, not our log.
             data.ignore_connection = True
             self.passed_through += 1
-            self._log_event(src_ip, "passthrough", sni=sni)
+            self._log_event(src_ip, "passthrough", sni=sni, module=module_name if site_off else None)
         else:
             self.decrypted += 1
             self._log_event(src_ip, "decrypt", sni=sni, module=module_name)
@@ -529,6 +730,8 @@ class SecurePiAdFilter:
         if module is None:
             return
         request_path = flow.request.path.split("?")[0]
+        if self._never_touch(module, request_path):
+            return
         for path in module["blocked_paths"]:
             if path in request_path:
                 flow.response = http.Response.make(204)  # empty, no content
@@ -559,6 +762,16 @@ class SecurePiAdFilter:
             return
         content_type = flow.response.headers.get("content-type", "")
         path = flow.request.path.split("?")[0]
+        # Never-touch paths and responses outside the module's endpoints or
+        # queries are not even read (B1): an inbox response passes through
+        # without being parsed.
+        if self._never_touch(module, path):
+            return
+        if path in (module.get("html_json_pages") or []) and "html" in content_type and module.get("prune"):
+            self._prune_page(flow, name, module)
+            return
+        if not self._may_rewrite(module, flow, path):
+            return
 
         try:
             text = flow.response.get_text()
@@ -567,16 +780,31 @@ class SecurePiAdFilter:
         if not text:
             return
 
-        # JSON responses: parse, strip recursively, re-serialise.
-        if "json" in content_type or text.lstrip().startswith("{"):
-            try:
-                body = json.loads(text)
-            except Exception:
+        # JSON responses (one document, or several streamed): parse, strip
+        # recursively, re-serialise.
+        stripped = text.lstrip()
+        if "json" in content_type or stripped.startswith("{") or stripped.startswith(_JSON_PREFIXES):
+            parsed = parse_json_documents(text)
+            if parsed is None:
                 return
-            removed = strip_ads(body, module["ad_fields"], module["ad_renderers"],
-                                 self._rule_hits)
-            if removed:
-                flow.response.set_text(json.dumps(body))
+            prefix, docs, separator = parsed
+            removed = 0
+            ops = module.get("prune") or []
+            for op in ops:
+                if op["op"] == "drop_documents" and separator is not None:
+                    keep = [d for d in docs if not _contains_key(d, op["contains_key"])]
+                    if len(keep) != len(docs):
+                        n = len(docs) - len(keep)
+                        removed += n
+                        label = "documents %s" % op["contains_key"]
+                        self._rule_hits["prune"][label] = self._rule_hits["prune"].get(label, 0) + n
+                        docs = keep
+            for body in docs:
+                removed += strip_ads(body, module["ad_fields"], module["ad_renderers"], self._rule_hits)
+                if ops:
+                    removed += prune(body, ops, self._rule_hits["prune"])
+            if removed and docs:
+                flow.response.set_text(serialise_json_documents(prefix, docs, separator))
                 self.cleaned += removed
                 logger.info(
                     "securepi: stripped %d ad object(s) from %s", removed, path

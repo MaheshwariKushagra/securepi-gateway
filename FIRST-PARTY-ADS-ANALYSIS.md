@@ -320,3 +320,10 @@ it, never from the intent expressed by the component that requests it.** The cor
 evidence was the absence of decrypted URLs for non-allowlisted hosts, which was available
 throughout and went unexamined. After the fix: 95 non-allowlisted hosts decrypted became
 0, and TLS handshake failures fell from 97 to 1.
+
+## 9. Update, October 2026: Instagram and Facebook web too
+
+The YouTube result generalises to sites that schedule ads with a distinguishable marker in a response the gateway can decrypt. Instagram and Facebook's **web** feeds were measured with their ads removed: 0 of 10 runs each with any ad reaching the browser (REPORT-adblocking.md §13).
+
+Every point in sections 1-6 still holds for their **apps**: pinning, and Android's refusal of user CAs, keep app traffic out of reach. Spotify is the opposite case: its ads are audio breaks served from the same API host as everything else, behind DRM, which is the same structural boundary as YouTube's SSAI.
+

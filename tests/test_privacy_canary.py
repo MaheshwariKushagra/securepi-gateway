@@ -45,8 +45,30 @@ class CanaryTests(unittest.TestCase):
         self.assertIn(("example.com", False), checks)
         self.assertIn(("notyoutube.com", False), checks)
         self.assertIn(("canary.youtube.com", True), checks)
-        for host, must in checks:
-            self.assertEqual(privacy_canary.will_decrypt(host, addon), must, host)
+        self.assertEqual(privacy_canary.wrong_decisions(addon), [])
+
+    def test_both_passes_hold_for_the_seed_rules_with_three_sites(self):
+        import json
+        with open(os.path.join(REPO, "dpi", "adfilter-rules.json")) as f:
+            rules = adfilter_rules.apply_defaults(adfilter_rules.validate_rules(json.load(f)))
+        addon = self._addon(rules)
+        self.assertEqual(privacy_canary.wrong_decisions(addon), [])
+        off = dict(privacy_canary.expected_decisions(rules, ("youtube",)))
+        self.assertFalse(off["www.instagram.com"])
+        self.assertFalse(off["edge-chat.instagram.com"])
+
+    def test_a_site_decrypted_without_being_switched_on_is_caught(self):
+        addon = self._addon()
+        rules = copy.deepcopy(addon._rules)
+        other = copy.deepcopy(rules["modules"]["youtube"])
+        other["decrypt_suffixes"] = ["example.org"]
+        rules["modules"]["other"] = other
+        addon._rules = rules
+        # A broken switch: every site on for every device.
+        addon._sites_for = lambda ip: sorted(rules["modules"])
+        wrong = [h for h, must in privacy_canary.expected_decisions(rules, ("youtube",))
+                 if privacy_canary.will_decrypt(h, addon) != must]
+        self.assertIn("example.org", wrong)
 
     def test_every_module_is_covered(self):
         rules = adfilter_rules.default_rules()
@@ -72,8 +94,7 @@ class CanaryTests(unittest.TestCase):
         try:
             privacy_canary.ADDON_PATH = f.name
             addon = self._addon()
-            wrong = [h for h, must in privacy_canary.expected_decisions(addon._rules)
-                     if privacy_canary.will_decrypt(h, addon) != must]
+            wrong = [h for h, must in privacy_canary.wrong_decisions(addon)]
             self.assertIn("example.com", wrong)
             self.assertIn("notyoutube.com", wrong)
         finally:

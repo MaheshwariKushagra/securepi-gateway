@@ -45,7 +45,9 @@ No bodies, messages or names were kept. Summaries are in `eval/results/feasibili
 - Remove a streamed document whose story carries `sponsored_data`.
 - Needs NDJSON-aware rewriting in the addon (planned in B1, second half).
 
-## Privacy reviews (B3): need the user's sign-off before either module ships
+## Privacy reviews (B3)
+
+**Signed off by the user on 10 October 2026:** Instagram approved; Facebook approved, to be built after Instagram. X stays "not verified". Measurement on the tablet.
 
 ### Instagram
 
@@ -87,3 +89,18 @@ The same as Instagram, with two differences:
 - **X:** the login didn't complete. It can be retried (a username and password works better than Google sign-in from a remotely controlled browser), or X can stay "not verified".
 - **Measurement device:** the user chose the tablet. Its Chrome 77 loads all three sites' login pages, so measuring needs the test accounts logged in **on the tablet**. Mobile web may also mark ads differently from desktop, so the structure needs one more capture there before rules are written.
 - **App behaviour (B0 part d):** needs each app on an enrolled phone. Expected: 2 failed handshakes per host, then passthrough.
+
+## Built and measured (10 October 2026)
+
+Both go sites were built as modules (rules version 7 on the gateway), switched on for no device by default. They were measured with this same browser through a localhost test proxy running the production addon (`EVALUATION-RESULTS-2.md`, Stage 7A, phase C):
+
+| Site | Runs with ads reaching the browser, off → on | Notes |
+|---|---|---|
+| Instagram | 10/10 → **0/10** (44 ads → 0) | Needed a second rule: the first screen of the feed is embedded in the home page |
+| Facebook | 7/10 → **0/10** (15 → 0) | Marker is a non-null `th_dat_spo`; breakage not excluded at this sample size |
+
+**Changes to the rules above, made before the counted runs:**
+- Both modules gained `html_json_pages: ["/"]`.
+- Both have `query_names` set: Instagram `PolarisFeed`, Facebook `CometNewsFeedPaginationQuery`.
+- Facebook's prune keys on `th_dat_spo`, not `sponsored_data`.
+

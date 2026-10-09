@@ -1,0 +1,10 @@
+{"ads_received": 0, "items_received": 12, "labels": 0, "posts": 4, "page_errors": 0, "feed_responses": 2, "site": "facebook", "condition": "off", "run": 0, "t": 1791577699.371397}
+{"ads_received": 0, "items_received": 2, "labels": 0, "posts": 3, "page_errors": 0, "feed_responses": 1, "site": "facebook", "condition": "on", "run": 0, "t": 1791577748.08307}
+{"ads_received": 0, "items_received": 77, "labels": 0, "posts": 11, "page_errors": 0, "feed_responses": 8, "site": "facebook", "condition": "off", "run": 1, "t": 1791577795.843394}
+{"ads_received": 0, "items_received": 4, "labels": 0, "posts": 4, "page_errors": 0, "feed_responses": 2, "site": "facebook", "condition": "on", "run": 1, "t": 1791577846.247804}
+{"ads_received": 0, "items_received": 25, "labels": 0, "posts": 8, "page_errors": 0, "feed_responses": 4, "site": "facebook", "condition": "off", "run": 2, "t": 1791577893.964947}
+{"ads_received": 0, "items_received": 12, "labels": 0, "posts": 4, "page_errors": 0, "feed_responses": 2, "site": "facebook", "condition": "on", "run": 2, "t": 1791577942.532487}
+{"ads_received": 0, "items_received": 10, "labels": 0, "posts": 9, "page_errors": 0, "feed_responses": 2, "site": "facebook", "condition": "off", "run": 3, "t": 1791578062.767004}
+{"ads_received": 0, "items_received": 15, "labels": 0, "posts": 8, "page_errors": 0, "feed_responses": 1, "site": "facebook", "condition": "on", "run": 3, "t": 1791578307.202476}
+{"inbox_error": "Page.goto: Timeout 60000ms exceeded.\nCall log:\n  - navigating to \"https://www.facebook.com/messages/\", waiting until \"do", "site": "facebook", "condition": "off", "phase": "inbox", "t": 1791578402.795337}
+{"inbox_rows": 3, "inbox_url_ok": true, "site": "facebook", "condition": "on", "phase": "inbox", "t": 1791578421.266345}

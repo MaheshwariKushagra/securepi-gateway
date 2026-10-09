@@ -106,16 +106,33 @@ def capture(page, url, scrolls):
             ctype = (resp.headers.get("content-type") or "").split(";")[0]
             rec = {"host": host, "path": path, "type": ctype, "status": resp.status,
                    "method": resp.request.method}
+            # GraphQL query names (Facebook/Instagram send them as request
+            # headers) - what a rewrite rule can be limited by.
+            hdrs = resp.request.headers
+            for h in ("x-fb-friendly-name", "x-root-field-name"):
+                if hdrs.get(h):
+                    rec[h] = hdrs[h][:80]
             if "json" in ctype or "javascript" in ctype or ctype.startswith("text/plain") or "graphql" in path:
                 body = resp.text()
                 rec["size"] = len(body)
                 docs = json_docs(body)
                 rec["json_docs"] = len(docs)
                 markers = {}
+                ad_docs = []
                 for d in docs:
-                    walk(d, "$", markers)
+                    m = {}
+                    walk(d, "$", m)
+                    for k, v in m.items():
+                        markers[k] = markers.get(k, 0) + v
+                    if any("sponsored_data" in k or ".ad." in k or k.endswith(".ad") for k in m):
+                        # Outline of a document carrying an ad: its top-level
+                        # keys and, for a streamed chunk, its label (no values).
+                        ad_docs.append({"keys": sorted(d)[:10] if isinstance(d, dict) else "list",
+                                        "label": d.get("label") if isinstance(d, dict) else None})
                 if markers:
                     rec["ad_markers"] = markers
+                if ad_docs:
+                    rec["ad_docs"] = ad_docs
             responses.append(rec)
         except Exception:
             pass
@@ -142,15 +159,25 @@ def capture(page, url, scrolls):
 
 
 def summarise(cap):
-    hosts, marked = {}, {}
+    hosts, marked, names = {}, {}, {}
     for r in cap["responses"]:
         hosts[r["host"]] = hosts.get(r["host"], 0) + 1
+        name = r.get("x-fb-friendly-name") or r.get("x-root-field-name")
+        if name:
+            entry = names.setdefault(name, {"requests": 0, "with_ads": 0, "ad_doc_outlines": []})
+            entry["requests"] += 1
+            if r.get("ad_docs"):
+                entry["with_ads"] += 1
+                for o in r["ad_docs"]:
+                    if o not in entry["ad_doc_outlines"]:
+                        entry["ad_doc_outlines"].append(o)
         for p, n in (r.get("ad_markers") or {}).items():
             key = "%s %s %s" % (r["host"], r["path"], p)
             marked[key] = marked.get(key, 0) + n
     return {"hosts": dict(sorted(hosts.items(), key=lambda x: -x[1])),
             "ad_markers": dict(sorted(marked.items(), key=lambda x: -x[1])),
             "websocket_hosts": sorted({w["host"] + w["path"] for w in cap["websockets"]}),
+            "query_names": names,
             "max_visible_ad_labels": max([s["visible_labels"] for s in cap["label_samples"]] or [0])}
 
 

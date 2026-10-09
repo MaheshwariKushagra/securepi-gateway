@@ -67,6 +67,7 @@ import ipaddress
 import json
 import os
 import re
+import tempfile
 import threading
 import time
 
@@ -365,8 +366,59 @@ def _validate(conn, kind, device_id, target, expires_at, now):
             raise PolicyError("an enrollment must have an end time")
         if device_ip(conn, device_id) is None:
             raise PolicyError("this device has no known IP address to enroll")
-        return None
+        return normalize_sites(target)
     return target
+
+
+# ---------------------------------------------------------- Tier 2 sites --
+# An enrollment's target lists the site modules switched on for that device
+# (ADBLOCK-ENHANCEMENT-PLAN.md B2), e.g. "instagram,youtube". None means
+# YouTube only - what enrolment meant before other sites existed. The DPI
+# addon reads them per device from SITE_MAP_PATH, which every reconcile
+# rewrites from the active enrollments.
+SITE_MAP_PATH = "/var/lib/securepi-dpi/device-sites.json"
+DEFAULT_SITES = ("youtube",)
+_SITE_NAME = re.compile(r"^[a-z0-9_]{1,32}$")
+
+
+def normalize_sites(target):
+    """A list or comma-separated string of site names -> the stored form:
+    sorted, without repeats, None for YouTube only."""
+    if target in (None, "", []):
+        return None
+    names = target.split(",") if isinstance(target, str) else list(target)
+    names = sorted({str(n).strip() for n in names if str(n).strip()})
+    if not names or len(names) > 8 or not all(_SITE_NAME.match(n) for n in names):
+        raise PolicyError("sites must be 1-8 names of lowercase letters, digits or _")
+    return None if tuple(names) == DEFAULT_SITES else ",".join(names)
+
+
+def policy_sites(target):
+    return target.split(",") if target else list(DEFAULT_SITES)
+
+
+def write_site_map(enrolled, path=None):
+    """Write {ip: [sites]} for the addon, only when it changed. A failure
+    is reported, never raised: without the file the addon falls back to
+    YouTube only for every device - less decryption, never more."""
+    path = path or SITE_MAP_PATH
+    want = {ip: info.get("sites") or list(DEFAULT_SITES) for ip, info in sorted(enrolled.items())}
+    try:
+        with open(path) as f:
+            if json.load(f) == want:
+                return False
+    except (OSError, ValueError):
+        pass
+    try:
+        fd, tmp = tempfile.mkstemp(prefix=".device-sites.", dir=os.path.dirname(path))
+        with os.fdopen(fd, "w") as f:
+            json.dump(want, f)
+        os.chmod(tmp, 0o664)
+        os.replace(tmp, path)
+        return True
+    except OSError as e:
+        print("orchestrator: could not write %s: %s" % (path, e), flush=True)
+        return False
 
 
 # --------------------------------------------------------------- policies --
@@ -643,7 +695,8 @@ def desired_state(conn, b, now):
         elif kind == "enroll":
             ip = device_ip(conn, dev)
             if ip:
-                enrolled[ip] = {"expires_at": p["expires_at"], "policy_id": p["id"]}
+                enrolled[ip] = {"expires_at": p["expires_at"], "policy_id": p["id"],
+                                "sites": policy_sites(p["target"])}
                 owners["enrolled"].setdefault(ip, []).append(p["id"])
 
     # Per-device client settings: a profile and/or a pause.
@@ -895,6 +948,9 @@ def _converge_enrolled(conn, b, want, have, applied_enrolled, now):
     come back: _reconcile_enrolled must run first (both reconcile() and
     _apply_and_verify do this), and it removes from `want` any enrollment
     that was flushed or cleared by a reboot."""
+    # Sites first, so a newly enrolled device's first connection already
+    # finds its sites; an unenrolled one simply drops out of the map.
+    write_site_map(want)
     for ip in list(have):
         if ip not in want and ip in applied_enrolled:
             b.unenroll(ip)
@@ -1289,6 +1345,9 @@ def reconcile(conn, backends=None, now=None):
                                                     now, restored_after_boot)
                         summary["drift"].extend(notes)
                         drifted = False
+                        # Every cycle: a device's IP can change under the
+                        # same enrollment, and the map is keyed by IP.
+                        write_site_map(desired["enrolled"])
                     if not _domain_matches(d, desired[d], have, applied, now):
                         if drifted and not restored_after_boot:
                             summary["drift"].append(_describe_drift(d, desired, have, applied, now))

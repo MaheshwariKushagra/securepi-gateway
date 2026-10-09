@@ -127,9 +127,11 @@ For each site:
 | 5 | B4, B5 | **Done and deployed** (9 Oct): canary covers every module and look-alike names; telemetry, console panel and watchdog per site; HTML ad removal now logged (it never was) |
 | 7 | A6 | **Done and deployed** (9 Oct): `vpn_tunnel`, low, informational, never adds to risk |
 | 2 | B0 | **Done** (10 Oct), `docs/adblock-feasibility.md`: Instagram **go**, Facebook **conditional go**, Spotify **no-go** (web player needs Widevine; audio ads), X **not verified** (login failed). Browser: Ubuntu's Chromium snap on the Dell, sandbox on, 900 MB cap (the Playwright build needed an AppArmor change, refused) |
-| 3 | B3 | Drafted in the same file; **waiting for the user's sign-off** for Instagram and Facebook |
-| 3, 5, 6 | B1 (second half), B2, B3, C | Wait on B0 |
-| 8 | D | After C |
+| 3 | B3 | **Signed off** (10 Oct): Instagram approved; Facebook approved after Instagram; X left not verified |
+| 5 | B1 (second half) | **Done and deployed** (10 Oct): carve-out hosts, endpoint, query-name and never-touch gates, prune operations, streamed JSON, embedded page JSON (`html_json_pages`) |
+| 5 | B2 | **Done and deployed** (10 Oct): an enrolment names its sites; the orchestrator writes `device-sites.json`; the addon decrypts a site only for devices that have it on; device-page switches; canary checks both passes |
+| 6 | C | **Done for Instagram and Facebook** (10 Oct), measured with the Dell test browser through a localhost test proxy running the production addon (the user skipped tablet logins and declined the Mac on SecurePi-Test); see `EVALUATION-RESULTS-2.md` Stage 7A |
+| 8 | D | Report, analysis note and Stage 8 inputs updated (10 Oct) |
 
 **What step 1 changed (9 October 2026):**
 - **Rules file schema 2** (`dpi/adfilter_rules.py`): rules sit under `modules`, one per site; today's rules are the `youtube` module, unchanged.

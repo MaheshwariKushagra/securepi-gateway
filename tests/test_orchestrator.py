@@ -13,6 +13,7 @@ Run via `make test`, or directly: python3 -m unittest tests.test_orchestrator -v
 """
 
 import copy
+import json
 import os
 import sys
 import tempfile
@@ -24,6 +25,10 @@ import fixtures  # noqa: E402
 
 import adguard  # noqa: E402
 import orchestrator  # noqa: E402
+
+# Tier 2 site map (ADBLOCK-ENHANCEMENT-PLAN.md B2): written by every
+# reconcile; keep it out of /var/lib in tests.
+orchestrator.SITE_MAP_PATH = os.path.join(tempfile.mkdtemp(), "device-sites.json")
 import settings  # noqa: E402
 
 CATALOG = {"steam": "gaming", "roblox": "gaming", "tiktok": "social_network", "instagram": "social_network",
@@ -428,6 +433,51 @@ class ManagedRulesTests(OrchestratorTestCase):
         managed = orchestrator.managed_rules(self.conn)
         self.assertIn(adguard.domain_rule("tracker.example", "block"), managed)
         self.assertNotIn("||hand-added.example^", managed)
+
+
+class EnrollSitesTests(OrchestratorTestCase):
+    """ADBLOCK-ENHANCEMENT-PLAN.md B2: an enrollment names the sites the
+    device has switched on; every reconcile writes them per IP."""
+
+    def site_map(self):
+        with open(orchestrator.SITE_MAP_PATH) as f:
+            return json.load(f)
+
+    def test_default_enrollment_is_youtube_only(self):
+        p = self.create("enroll", 1, minutes=120)
+        self.assertIsNone(p["target"])
+        self.assertEqual(self.site_map(), {"10.10.0.31": ["youtube"]})
+
+    def test_sites_are_stored_sorted_and_written(self):
+        p = self.create("enroll", 1, target=["youtube", "instagram", "youtube"], minutes=120)
+        self.assertEqual(p["target"], "instagram,youtube")
+        self.assertEqual(self.site_map(), {"10.10.0.31": ["instagram", "youtube"]})
+
+    def test_changing_sites_replaces_the_enrollment(self):
+        self.create("enroll", 1, target="instagram,youtube", minutes=120)
+        self.create("enroll", 1, target="facebook", minutes=120)
+        self.assertEqual(self.site_map(), {"10.10.0.31": ["facebook"]})
+        active = orchestrator.active_policies(self.conn, "enroll", 1)
+        self.assertEqual(len(active), 1)
+
+    def test_the_map_follows_a_new_ip(self):
+        self.create("enroll", 1, target="instagram", minutes=120)
+        self.conn.execute("INSERT INTO device_ips (device_id, ip, first_seen, last_seen) VALUES (1, '10.10.0.77', ?, ?)",
+                          (self.clock() + 1, self.clock() + 1))
+        self.conn.commit()
+        self.reconcile()
+        self.assertEqual(self.site_map(), {"10.10.0.77": ["instagram"]})
+
+    def test_unenrolling_removes_the_device_from_the_map(self):
+        p = self.create("enroll", 1, target="instagram", minutes=120)
+        orchestrator.end_policy(self.conn, p["id"], reason="test", backends=self.b, now=self.clock())
+        self.reconcile()
+        self.assertEqual(self.site_map(), {})
+
+    def test_bad_site_names_rejected(self):
+        for bad in (["Instagram"], ["a b"], ["s%d" % i for i in range(9)]):
+            with self.assertRaises(orchestrator.PolicyError, msg=bad):
+                self.create("enroll", 1, target=bad, minutes=120)
 
 
 class EnrollTests(OrchestratorTestCase):

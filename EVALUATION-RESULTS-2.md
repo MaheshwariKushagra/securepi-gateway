@@ -742,6 +742,58 @@ During the run the add-on blocked 138 ad paths and neutralised 37 ad fields in w
 
 Fixed: the HTML branch now logs `ads_stripped` with the number of fields neutralised (tests in `tests/test_adfilter.py`).
 
+### Phase C: Instagram and Facebook modules, measured (10 October 2026)
+
+**Method.** No phone measurement was possible: the user skipped logging the test accounts in on the tablet, and chose not to put the Mac on SecurePi-Test.
+
+- **Setup:**
+  - The logged-in test browser on the Dell (Chromium 155 snap, headless, sandbox on, memory-capped) browsed through a **test proxy**: a second mitmdump on `127.0.0.1:8091`.
+  - It loads the **production addon file** with a copy of the live rules (version 7), its own throwaway CA (trusted only by that browser, by SPKI pin), and test telemetry files.
+  - The live gateway and household traffic were untouched.
+- **What it does and doesn't exercise:** it runs the real decisions and rewriting, but not the nftables redirect, which the A5 check covers on a device.
+- **Conditions:** the site switched off for the test device (passed through undecrypted) and on, alternating run by run. The test proxy restarts at each switch so no connection carries over (the same effect 7.5 found on phones: Chrome reuses connections).
+- **Per run** (`tools/site_ads_measure.py`): load the feed, scroll, then count what the browser **received**: ad items in the feed responses, visible "Sponsored" labels (Instagram only; Facebook scrambles that text), posts rendered and page errors. Then check once that the inbox page still renders.
+- **Results:** `eval/results/sites/`; summaries with `tools/site_ads_summary.py`.
+
+**Two fixes found by measuring, made before the counted runs:**
+- **Instagram embeds the first screen of the feed, ads included, in the home page's HTML.** A trial with only the GraphQL rule still showed one "Sponsored" post. The modules now also prune `<script type="application/json">` blocks on listed pages (`html_json_pages: ["/"]`), updating the `data-content-len` attribute the page checks.
+- **Facebook's organic stories carry ad-shaped keys set to null.** 5 of 126 streamed chunks had `sponsored_data`, but only 1 had a value. All 6 real sponsored chunks in a second sample carried a non-null `th_dat_spo` (with `ad_id` and type `SponsoredData`), and none of 135 organic ones did. So the rule keys on `th_dat_spo`, and `contains_key` now requires a non-null value.
+
+**Instagram** (10 runs per condition, 8 scrolls each):
+
+| | Off | On |
+|---|---|---|
+| Runs in which any ad reached the browser | 10/10 (95% Wilson 72-100%) | **0/10 (0-28%)** |
+| Ad items received, total | 44 | 0 |
+| Most "Sponsored" labels visible at once | 3 | 0 |
+| Fewest posts rendered | 8 | 8 |
+| Page errors | 1 | 0 |
+| Inbox renders | yes | yes |
+
+The test proxy's rule counters for these runs: ad edges dropped by `edges node.ad`, and story-ads requests blocked by `/ads/igwww_ads_graphql/`.
+
+**Facebook:** 10 runs per condition, 12 scrolls each, plus 4 extra pairs (`facebook-20261010-extra.jsonl`).
+
+| | Off | On |
+|---|---|---|
+| Runs in which a sponsored story reached the browser | 7/10 (95% Wilson 40-89%) | **0/10 (0-28%)** |
+| Sponsored stories received, total | 15 | 0 |
+| Page errors | 0 | 0 |
+| Inbox renders (chat grid and tabs) | yes | yes |
+| Posts rendered per run | 4-24 | 0-20 |
+
+- **Ad removal:** clear. Facebook didn't serve ads in every session (3 of the 10 "off" runs, and all 4 extra pairs, had none).
+- **Breakage is not settled.** Post counts vary widely in both conditions: the feed often stops after 4 posts with one feed request, in either condition, on this memory-capped browser.
+  - One "on" run loaded no feed at all (no feed request, 0 posts, no page error).
+  - It did not recur in the 4 extra pairs, where both conditions loaded thinly (3-11 posts) and one "off" inbox load timed out.
+  - At this sample size, "removes ads without breaking the feed" is **not established** for Facebook: no sign of systematic breakage, but it can't be excluded.
+- **Decision:** Facebook stays a per-device opt-in with that caveat on its privacy note, as for every site.
+
+**Limits:**
+- **Device and path:** one browser (desktop Chromium on Linux), one test account each, and the test proxy rather than a phone through the real redirect.
+- **Not covered:** apps, and mobile web, which may mark ads differently.
+- **Breakage:** checked as "the feed renders, no page errors, the inbox renders". Not a person using the site.
+
 ### A4: blocklist trim
 
 The user approved disabling OISD Big and AdAway. Done through the same function and audit entry as the console's toggle.

@@ -137,21 +137,39 @@ def will_decrypt(sni, addon=None):
     return not getattr(data, "ignore_connection", False)
 
 
-def expected_decisions(rules):
+DEFAULT_SITES = ("youtube",)
+
+
+def expected_decisions(rules, enabled=None):
     """(host, must_decrypt) pairs covering every site module in the live
     rules (ADBLOCK-ENHANCEMENT-PLAN.md B4): each decrypt suffix and a
-    subdomain of it must be decrypted; look-alike names built from it,
-    and each module's passthrough carve-outs, must not be. Plus one
-    ordinary host that no module may ever claim."""
+    subdomain of it must be decrypted - but only if that site is switched
+    on for the device (B2; `enabled`, every module if None); look-alike
+    names built from it, and each module's passthrough carve-outs, must
+    never be. Plus one ordinary host that no module may ever claim."""
     checks = [(NON_ALLOWLISTED_HOST, False)]
-    for module in rules["modules"].values():
+    for name, module in rules["modules"].items():
+        on = enabled is None or name in enabled
         for suffix in module["decrypt_suffixes"]:
             suffix = suffix.strip().lower().rstrip(".")
-            checks += [(suffix, True), ("canary." + suffix, True),
+            checks += [(suffix, on), ("canary." + suffix, on),
                        ("not" + suffix, False), (suffix + ".canary.example", False)]
         for carve_out in module.get("passthrough_suffixes", []):
             checks.append((carve_out, False))
     return checks
+
+
+def wrong_decisions(addon):
+    """Every (host, must_decrypt) the addon gets wrong, in two passes for
+    the canary's synthetic device: with every site switched on, and with
+    none (the default a device gets - YouTube only)."""
+    wrong = []
+    for enabled in (None, DEFAULT_SITES):
+        sites = sorted(addon._rules["modules"]) if enabled is None else list(enabled)
+        addon._sites_for = lambda ip, sites=sites: sites
+        wrong += [(h, must) for h, must in expected_decisions(addon._rules, enabled)
+                  if will_decrypt(h, addon) != must]
+    return wrong
 
 
 def db():
@@ -186,8 +204,7 @@ def run_check():
     """One pass. Returns True if privacy scope is intact."""
     try:
         addon = _load_addon_fresh().SecurePiAdFilter()
-        wrong = [(host, must) for host, must in expected_decisions(addon._rules)
-                 if will_decrypt(host, addon) != must]
+        wrong = wrong_decisions(addon)
         failure_detail = None
         leaked = [h for h, must in wrong if not must]
         missed = [h for h, must in wrong if must]

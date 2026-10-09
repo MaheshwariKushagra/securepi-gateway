@@ -1237,6 +1237,30 @@ function initDeviceDpi() {
     const deviceId = wrap.dataset.deviceId;
     const btn = $("#deviceDpiToggle");
     const expiryEl = $("#deviceDpiExpiry");
+    const sitesEl = $("#deviceDpiSites");
+
+    // One switch per site module (ADBLOCK-ENHANCEMENT-PLAN.md B2). YouTube
+    // is the default; every other site shows its privacy note, since
+    // switching it on decrypts that site for this device.
+    function renderSites(data) {
+        if (!sitesEl) return;
+        const on = new Set(data.sites || ["youtube"]);
+        sitesEl.innerHTML = (data.available_sites || []).map(site => `
+            <label class="dpi-site" title="${esc(site.privacy_note)}">
+                <input type="checkbox" value="${esc(site.name)}" ${on.has(site.name) ? "checked" : ""}>
+                ${esc(site.label)}${site.privacy_note ? ' <span class="dim">(decrypts private data, hover for details)</span>' : ""}
+            </label>`).join("");
+        sitesEl.querySelectorAll("input").forEach(box => box.addEventListener("change", async () => {
+            if (btn.dataset.enrolled !== "1") return;   // applied on Enroll
+            const sites = checkedSites();
+            if (!sites.length) { toast("Pick at least one site", "Or unenroll the device.", "medium"); box.checked = true; return; }
+            await enroll(true, sites);
+        }));
+    }
+
+    function checkedSites() {
+        return sitesEl ? [...sitesEl.querySelectorAll("input:checked")].map(b => b.value) : ["youtube"];
+    }
 
     async function load() {
         try {
@@ -1248,17 +1272,20 @@ function initDeviceDpi() {
             btn.dataset.enrolled = data.enrolled ? "1" : "0";
             expiryEl.textContent = (data.enrolled && data.expires_in_s != null)
                 ? `· auto-unenrolls in ${humanizeSeconds(data.expires_in_s)}` : "";
+            renderSites(data);
         } catch (err) {
             btn.textContent = "Unavailable";
         }
     }
 
-    btn.addEventListener("click", async () => {
-        const enrolled = btn.dataset.enrolled !== "1";
+    btn.addEventListener("click", () => enroll(btn.dataset.enrolled !== "1", checkedSites()));
+
+    async function enroll(enrolled, sites) {
+        if (enrolled && !sites.length) { toast("Pick at least one site", "", "medium"); return; }
         try {
             const res = await fetch(`/api/devices/${deviceId}/dpi`, {
                 method: "POST", headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ enrolled, hours: 24 }),
+                body: JSON.stringify({ enrolled, hours: 24, sites: enrolled ? sites : null }),
             });
             if (!res.ok) throw new Error("request failed");
             toast(enrolled ? "Device enrolled" : "Device unenrolled",
@@ -1272,7 +1299,7 @@ function initDeviceDpi() {
         } catch (err) {
             toast("Update failed", "Could not reach the firewall.", "high");
         }
-    });
+    }
 
     load();
 }
@@ -3128,7 +3155,7 @@ function policyChipCls(kind) {
 function policyTargetHtml(p) {
     if (p.kind === "quarantine") return `<span class="dim">all traffic</span>`;
     if (p.kind === "pause") return `<span class="dim">DNS filtering</span>`;
-    if (p.kind === "enroll") return `<span class="dim">HTTPS ad removal</span>`;
+    if (p.kind === "enroll") return `<span class="dim">HTTPS ad removal · ${esc((p.target || "youtube").split(",").join(", "))}</span>`;
     if (p.kind === "profile" || p.kind === "native_profile") return esc(p.target_label);
     return `<span class="mono">${esc(p.target)}</span>`;
 }

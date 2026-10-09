@@ -62,8 +62,41 @@ import re
 # flat keys into the `youtube` module, unchanged.
 SCHEMA = 2
 
-# Keys every module must have, each a non-empty list of strings.
+# Keys every module must have. The YouTube module has always had all
+# four, non-empty; other sites' modules (ADBLOCK-ENHANCEMENT-PLAN.md B1)
+# remove ads with `prune` instead, so of these only decrypt_suffixes must
+# be non-empty for them - see validate_module().
 REQUIRED_RULE_KEYS = ("decrypt_suffixes", "ad_fields", "ad_renderers", "blocked_paths")
+
+# Optional per-module lists of strings (ADBLOCK-ENHANCEMENT-PLAN.md B1):
+#   passthrough_suffixes  hosts never decrypted even if a decrypt suffix
+#                         covers them (live-message hosts, say); checked
+#                         across ALL modules before any decrypt suffix
+#   json_endpoints        path prefixes whose responses may be rewritten;
+#                         empty means every path (YouTube's behaviour)
+#   query_names           GraphQL query-name prefixes (the request's
+#                         x-fb-friendly-name header); if non-empty, only
+#                         responses to those queries are rewritten
+#   never_touch_paths     path prefixes never blocked, rewritten or logged
+#   html_json_pages       exact page paths whose embedded
+#                         <script type="application/json"> data gets the
+#                         drop_items operations (the first screen of a feed)
+OPTIONAL_LIST_KEYS = ("passthrough_suffixes", "json_endpoints", "query_names", "never_touch_paths",
+                      "html_json_pages")
+
+# Declarative ways to remove ads from JSON (`prune`, a list of these):
+#   {"op": "drop_items", "list_key": K, "where": "a.b"}
+#       in every list stored under key K, drop the objects in which the
+#       dotted path a.b leads to a value (Instagram: edges whose node has
+#       an `ad`)
+#   {"op": "drop_items", "list_key": K, "contains_key": X}
+#       ... drop the objects that contain key X, with a non-null value, at
+#       any depth
+#   {"op": "drop_documents", "contains_key": X}
+#       in a streamed response (several JSON documents), drop each document
+#       containing key X, non-null, at any depth (Facebook: a sponsored feed
+#       story arrives as its own streamed chunk, marked by th_dat_spo)
+PRUNE_OPS = ("drop_items", "drop_documents")
 
 MODULE_NAME_RE = re.compile(r"^[a-z0-9_]{1,32}$")
 
@@ -115,18 +148,22 @@ OPTIONAL_RULE_DEFAULTS = {
 
 def apply_defaults(rules):
     """Fill in missing optional keys in place: the pin settings at the
-    top level, and OPTIONAL_RULE_DEFAULTS in each module. A key that's
-    already present (even if empty) is never touched - an operator who
-    has deliberately set cosmetic_selectors to [] gets that choice
-    respected, not silently overwritten back to the defaults. Expects a
-    schema 2 rule set (see normalize()). Returns `rules` for inline use."""
+    top level, and OPTIONAL_RULE_DEFAULTS, the B1 lists and `prune` in
+    each module. A key that's already present (even if empty) is never
+    touched - an operator who has deliberately set cosmetic_selectors to
+    [] gets that choice respected, not silently overwritten back to the
+    defaults. The default cosmetic selectors are YouTube's, so only the
+    youtube module gets them; any other module defaults to none. Expects
+    a schema 2 rule set (see normalize()). Returns `rules` for inline use."""
     for key, default in TOP_LEVEL_DEFAULTS.items():
         if key not in rules:
             rules[key] = default
-    for module in rules.get("modules", {}).values():
+    for name, module in rules.get("modules", {}).items():
         for key, default in OPTIONAL_RULE_DEFAULTS.items():
             if key not in module:
-                module[key] = copy.deepcopy(default)
+                module[key] = copy.deepcopy(default) if name == "youtube" or key != "cosmetic_selectors" else []
+        for key in REQUIRED_RULE_KEYS + OPTIONAL_LIST_KEYS + ("prune",):
+            module.setdefault(key, [])
     return rules
 
 # Exactly what was hardcoded in dpi/securepi_adfilter.py before step 5.9,
@@ -211,24 +248,64 @@ def normalize(rules):
     return out
 
 
+def _check_strings(key, value, allow_empty):
+    if not isinstance(value, list) or (not value and not allow_empty):
+        raise ValueError("%s must be a %slist" % (key, "" if allow_empty else "non-empty "))
+    if not all(isinstance(v, str) and v.strip() for v in value):
+        raise ValueError("%s must contain only non-empty strings" % key)
+
+
+def _validate_prune(ops):
+    if not isinstance(ops, list):
+        raise ValueError("prune must be a list")
+    for op in ops:
+        if not isinstance(op, dict) or op.get("op") not in PRUNE_OPS:
+            raise ValueError("each prune entry needs op = %s" % " or ".join(PRUNE_OPS))
+        for key, value in op.items():
+            if key != "op" and not (isinstance(value, str) and value.strip()):
+                raise ValueError("prune %s: %s must be a non-empty string" % (op["op"], key))
+        if op["op"] == "drop_items":
+            if not op.get("list_key") or bool(op.get("where")) == bool(op.get("contains_key")):
+                raise ValueError("drop_items needs list_key and exactly one of where / contains_key")
+            allowed = {"op", "list_key", "where", "contains_key"}
+        else:
+            if not op.get("contains_key"):
+                raise ValueError("drop_documents needs contains_key")
+            allowed = {"op", "contains_key"}
+        if set(op) - allowed:
+            raise ValueError("prune %s: unknown key(s) %s" % (op["op"], ", ".join(sorted(set(op) - allowed))))
+
+
 def validate_module(name, module):
     """Raise ValueError with a clear, specific reason if one module isn't
-    usable: every required key present, each a non-empty list of
-    non-empty strings. The step 5.11 optional keys
-    (cosmetic_injection_enabled, cosmetic_selectors) are checked for
-    type when present but not required - apply_defaults() fills them in."""
+    usable. decrypt_suffixes must be a non-empty list of names. The
+    youtube module must have all four REQUIRED_RULE_KEYS non-empty, as it
+    always has (the console edits it, and an empty list there is a
+    mistake); another site's module may leave ad_fields, ad_renderers and
+    blocked_paths empty or out, but must remove ads SOMEHOW - with one of
+    those or with `prune`. The step 5.11 optional keys
+    (cosmetic_injection_enabled, cosmetic_selectors) and the B1 keys are
+    checked for type when present - apply_defaults() fills them in."""
     if not isinstance(name, str) or not MODULE_NAME_RE.match(name):
         raise ValueError("module name %r must be 1-32 lowercase letters, digits or _" % (name,))
     if not isinstance(module, dict):
         raise ValueError("module %s must be a JSON object" % name)
     for key in REQUIRED_RULE_KEYS:
-        if key not in module:
+        if key not in module and (name == "youtube" or key == "decrypt_suffixes"):
             raise ValueError("missing required key: %s" % key)
-        value = module[key]
-        if not isinstance(value, list) or not value:
-            raise ValueError("%s must be a non-empty list" % key)
-        if not all(isinstance(v, str) and v.strip() for v in value):
-            raise ValueError("%s must contain only non-empty strings" % key)
+        if key in module:
+            _check_strings(key, module[key], allow_empty=name != "youtube" and key != "decrypt_suffixes")
+    for key in OPTIONAL_LIST_KEYS:
+        if key in module:
+            _check_strings(key, module[key], allow_empty=True)
+    if "prune" in module:
+        _validate_prune(module["prune"])
+    if not any(module.get(k) for k in ("ad_fields", "ad_renderers", "blocked_paths", "prune")):
+        raise ValueError("module %s removes nothing: give it ad_fields, ad_renderers, blocked_paths or prune"
+                         % name)
+    for key in ("label", "privacy_note"):
+        if key in module and not isinstance(module[key], str):
+            raise ValueError("%s must be text" % key)
 
     if "cosmetic_injection_enabled" in module and not isinstance(module["cosmetic_injection_enabled"], bool):
         raise ValueError("cosmetic_injection_enabled must be true or false")
@@ -295,10 +372,17 @@ def all_decrypt_suffixes(rules):
     return sorted({s for m in rules["modules"].values() for s in m["decrypt_suffixes"]})
 
 
+def _covers(host, suffix):
+    suffix = suffix.strip().lower().rstrip(".")
+    return host == suffix or host.endswith("." + suffix)
+
+
 def module_for_host(rules, host):
     """(name, module) for the module whose decrypt_suffixes cover `host`
     (an exact match or a subdomain), or (None, None). An IP address never
-    matches: only a name can say which site a connection is for."""
+    matches: only a name can say which site a connection is for. A host
+    any module lists in passthrough_suffixes never matches, whichever
+    module's decrypt suffix would otherwise cover it."""
     host = (host or "").strip().lower().rstrip(".")
     if not host:
         return None, None
@@ -307,6 +391,9 @@ def module_for_host(rules, host):
         return None, None
     except ValueError:
         pass
+    for module in rules["modules"].values():
+        if any(_covers(host, s) for s in module.get("passthrough_suffixes", [])):
+            return None, None
     for name, module in rules["modules"].items():
         for suffix in module["decrypt_suffixes"]:
             suffix = suffix.strip().lower().rstrip(".")

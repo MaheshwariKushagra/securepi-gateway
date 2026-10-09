@@ -12,11 +12,12 @@ hard-coded... no Settings page yet", wired up in step 6.3) plus, as of
 step 1.2, five of its window durations (how far back each signal looks,
 and how long a dedup window merges repeated firings into one incident).
 
-Deliberately NOT included: every DPI-addon-side constant
-(PIN_FAILURE_THRESHOLD, PIN_BYPASS_HOURS, EFFECTIVENESS_*) - those would
-need the SAME kind of cross-process, hot-reloadable mechanism step 5.9
-built for adfilter-rules.json, a real, separate piece of work, not
-something to silently half-do here. Also not included:
+Deliberately NOT included: the DPI addon's own settings. Its pin
+bypass threshold and duration live in adfilter-rules.json, hot-reloaded
+by the addon (step 5.9's mechanism; ADBLOCK-ENHANCEMENT-PLAN.md A1), and
+the EFFECTIVENESS_* constants would need the same cross-process
+mechanism - a real, separate piece of work, not something to silently
+half-do here. Also not included:
 BASELINE_MIN_SAMPLES and BASELINE_MIN_BYTES_FLOOR (behavioral_baseline_signal's
 learning-period and noise-floor constants) and the two product-effectiveness
 constants in adblock_effectiveness_signal - these shape WHEN a signal is

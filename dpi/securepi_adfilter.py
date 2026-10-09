@@ -26,6 +26,7 @@ redirected here at all, via nftables) and by destination (only the hostnames
 listed below are decrypted).
 """
 
+import ipaddress
 import json
 import logging
 import os
@@ -33,7 +34,7 @@ import time
 
 from mitmproxy import http
 
-from adfilter_rules import DEFAULT_RULES, load_rules
+from adfilter_rules import default_rules, load_rules, module_for_host
 
 logger = logging.getLogger(__name__)
 
@@ -51,17 +52,16 @@ DPI_EVENTS_PATH = "/var/log/securepi/dpi-events.jsonl"
 # names. Without this, that app would be permanently broken on an
 # enrolled device: every attempt decrypts, every handshake fails.
 #
-# After PIN_FAILURE_THRESHOLD consecutive TLS failures for the exact same
-# (device, host) pair, that pair is passed through undecrypted (no ad
-# removal, but the app works) for PIN_BYPASS_HOURS. Both are plain
-# constants, not read from any config - see finding C5 in
-# ENHANCEMENT-PLAN.md; a Settings page to tune these belongs to Stage 1.
-PIN_FAILURE_THRESHOLD = 3
-PIN_BYPASS_HOURS = 24
+# After `pin_failure_threshold` consecutive TLS failures for the exact
+# same (device, host) pair, that pair is passed through undecrypted (no ad
+# removal, but the app works) for `pin_bypass_hours`. Both come from the
+# rules file and are hot-reloaded with it (ADBLOCK-ENHANCEMENT-PLAN.md A1);
+# see adfilter_rules.TOP_LEVEL_DEFAULTS for why the threshold is 2.
 
 # ENHANCEMENT-PLAN.md step 5.9: DECRYPT_SUFFIXES, AD_FIELDS, AD_RENDERERS
 # and BLOCKED_PATHS used to be hardcoded tuples right here. They now live
-# in adfilter-rules.json (loaded by _ensure_rules_fresh below), editable
+# in adfilter-rules.json, one set per site under `modules` since schema 2
+# (loaded by _ensure_rules_fresh below), editable
 # from the console and hot-reloaded without a restart - see
 # adfilter_rules.py for the shared default/validation logic, why that
 # lives in its own mitmproxy-free module, and why a fifth constant that
@@ -235,6 +235,14 @@ def loosen_csp_for_inline_style(csp_header):
     return "; ".join(new_directives)
 
 
+def _looks_like_ip(host):
+    try:
+        ipaddress.ip_address(host.strip("[]"))
+        return True
+    except ValueError:
+        return False
+
+
 class SecurePiAdFilter:
     def __init__(self):
         self.decrypted = 0       # connections we chose to inspect
@@ -260,7 +268,7 @@ class SecurePiAdFilter:
         # addon works even before adfilter-rules.json has ever been read
         # successfully; _ensure_rules_fresh(force=True) below then tries to
         # load the real file immediately.
-        self._rules = dict(DEFAULT_RULES)
+        self._rules = default_rules()
         self._rules_mtime = None
         self._rule_hits = {"ad_fields": {}, "ad_renderers": {}, "blocked_paths": {}}
         self._ensure_rules_fresh(force=True)
@@ -314,6 +322,25 @@ class SecurePiAdFilter:
         except Exception as exc:
             logger.warning("securepi: could not write rule stats: %s", exc)
 
+    def _flow_module(self, flow):
+        """The rules module for one decrypted request, or None.
+
+        Decided by the request's own host name (the Host header, or :authority
+        in HTTP/2), not only the connection's SNI. A browser can reuse one
+        connection for several host names the certificate covers, so the
+        SNI alone could apply YouTube's rules to another site's request on
+        that connection. Before modules, every request on a decrypted
+        connection got the rules; now a request whose host no module covers
+        is left untouched. The SNI is used only when the request carries no
+        host name (in transparent mode request.host can be the IP)."""
+        req = flow.request
+        host = getattr(req, "pretty_host", None) or getattr(req, "host", None) or ""
+        name, module = module_for_host(self._rules, host)
+        if name is None and (not host or _looks_like_ip(host)):
+            sni = getattr(getattr(flow, "client_conn", None), "sni", None)
+            name, module = module_for_host(self._rules, sni)
+        return module
+
     def _log_event(self, src_ip, decision, sni=None, ads_removed=None, blocked_path=None):
         """Append one telemetry line. Failures here (disk full, permissions)
         must never take down ad-blocking itself, so they are swallowed after
@@ -358,11 +385,8 @@ class SecurePiAdFilter:
         self._ensure_rules_fresh()
         sni = data.client_hello.sni or ""
 
-        wanted = False
-        for suffix in self._rules["decrypt_suffixes"]:
-            if sni == suffix or sni.endswith("." + suffix):
-                wanted = True
-                break
+        # Decrypt only a host some site module claims (schema 2 rules).
+        wanted = module_for_host(self._rules, sni)[0] is not None
 
         src_ip = None
         try:
@@ -417,7 +441,7 @@ class SecurePiAdFilter:
     def tls_established_client(self, data):
         """
         Runs when the TLS handshake with the CLIENT succeeds. Clears that
-        (device, host) pair's failure count, so PIN_FAILURE_THRESHOLD
+        (device, host) pair's failure count, so the pin threshold
         really means that many failures IN A ROW, as documented - not that
         many failures in total, however many successes came in between.
         """
@@ -443,7 +467,7 @@ class SecurePiAdFilter:
 
         Certificate pinning is the other real cause besides a missing CA,
         and the two look identical from here: repeated failures for the
-        exact same (device, host) pair. After PIN_FAILURE_THRESHOLD of
+        exact same (device, host) pair. After `pin_failure_threshold` of
         them, that pair backs off into auto-passthrough - see
         tls_clienthello above - rather than trying, and failing, forever.
         """
@@ -461,12 +485,15 @@ class SecurePiAdFilter:
         if len(self._pin_fail_count) > 5000:
             self._pin_fail_count.clear()
         self._pin_fail_count[key] = self._pin_fail_count.get(key, 0) + 1
-        if self._pin_fail_count[key] >= PIN_FAILURE_THRESHOLD:
-            self._pin_bypass_until[key] = time.time() + PIN_BYPASS_HOURS * 3600
+        self._ensure_rules_fresh()
+        threshold = self._rules["pin_failure_threshold"]
+        hours = self._rules["pin_bypass_hours"]
+        if self._pin_fail_count[key] >= threshold:
+            self._pin_bypass_until[key] = time.time() + hours * 3600
             self._pin_fail_count[key] = 0
             logger.info("securepi: %s failed the handshake for %s %d times in a row - "
                         "bypassing (undecrypted) for %dh, likely certificate pinning",
-                        src_ip, sni, PIN_FAILURE_THRESHOLD, PIN_BYPASS_HOURS)
+                        src_ip, sni, threshold, hours)
 
     def request(self, flow):
         """
@@ -491,8 +518,11 @@ class SecurePiAdFilter:
         # Match against the path only, never the query string after "?":
         # a harmless request like "/search?q=/pagead/" used to be blocked
         # just because the query happened to contain a rule's text.
+        module = self._flow_module(flow)
+        if module is None:
+            return
         request_path = flow.request.path.split("?")[0]
-        for path in self._rules["blocked_paths"]:
+        for path in module["blocked_paths"]:
             if path in request_path:
                 flow.response = http.Response.make(204)  # empty, no content
                 self.blocked_urls += 1
@@ -517,6 +547,9 @@ class SecurePiAdFilter:
         and harder to evade than a list of special cases.
         """
         self._ensure_rules_fresh()
+        module = self._flow_module(flow)
+        if module is None:
+            return
         content_type = flow.response.headers.get("content-type", "")
         path = flow.request.path.split("?")[0]
 
@@ -533,7 +566,7 @@ class SecurePiAdFilter:
                 body = json.loads(text)
             except Exception:
                 return
-            removed = strip_ads(body, self._rules["ad_fields"], self._rules["ad_renderers"],
+            removed = strip_ads(body, module["ad_fields"], module["ad_renderers"],
                                  self._rule_hits)
             if removed:
                 flow.response.set_text(json.dumps(body))
@@ -554,7 +587,7 @@ class SecurePiAdFilter:
         # safely, so we neutralise the field names the way uBlock Origin does.
         if "html" in content_type:
             changed = False
-            for field in self._rules["ad_fields"]:
+            for field in module["ad_fields"]:
                 marker = '"%s"' % field
                 if marker in text:
                     text = text.replace(marker, '"no_ads"')
@@ -565,8 +598,8 @@ class SecurePiAdFilter:
             # see adfilter_rules.py's OPTIONAL_RULE_DEFAULTS). Independent
             # of the field-neutralisation above: hides leftover empty ad
             # containers even on a page where no ad_fields marker matched.
-            if self._rules.get("cosmetic_injection_enabled") and self._rules.get("cosmetic_selectors"):
-                text, injected = inject_cosmetic_css(text, self._rules["cosmetic_selectors"])
+            if module.get("cosmetic_injection_enabled") and module.get("cosmetic_selectors"):
+                text, injected = inject_cosmetic_css(text, module["cosmetic_selectors"])
                 if injected:
                     changed = True
                     csp = flow.response.headers.get("content-security-policy")
@@ -579,7 +612,7 @@ class SecurePiAdFilter:
                     except Exception:
                         src_ip = None
                     self._log_event(src_ip, "cosmetic_injected", sni=flow.request.host,
-                                     ads_removed=len(self._rules["cosmetic_selectors"]))
+                                     ads_removed=len(module["cosmetic_selectors"]))
 
             if changed:
                 flow.response.set_text(text)

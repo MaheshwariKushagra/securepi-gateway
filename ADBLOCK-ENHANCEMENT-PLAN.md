@@ -112,3 +112,32 @@ For each site:
 - Per-site numbers and the breakage checklist, as in Phase C, recorded in `EVALUATION-RESULTS-2.md`.
 
 **Estimate:** A ~2 d, B ~3 d, C ~1–1.5 d per go site, D ~0.5 d. About 9–12 days if all four sites pass feasibility; fewer if any are no-go.
+
+---
+
+## Progress
+
+| Order | Steps | Status |
+|---|---|---|
+| 1 | A1, A2, B1 (first half) | **Done in code, 9 Oct 2026, not yet deployed.** 562 tests pass |
+| 1 | A4 | Waiting for the user's yes/no |
+| 2–8 | B0 onward | Not started |
+
+**What step 1 changed (9 October 2026):**
+- **Rules file schema 2** (`dpi/adfilter_rules.py`): rules sit under `modules`, one per site; today's rules are the `youtube` module, unchanged.
+  - A schema 1 file (the live gateway's) still loads as that module.
+  - The console's first save writes schema 2.
+  - Validation refuses a decrypt suffix claimed by two modules.
+  - `version` stays the edit counter; `schema` is the format.
+- **Pin bypass (A1):** `pin_failure_threshold` (now 2, was 3) and `pin_bypass_hours` (24) are read from the rules file and hot-reloaded. Both are range-checked, and a value set by hand survives a console save.
+- **Add-on:** decrypts only hosts a module claims. Path blocking and body rewriting use the module for the **request's own host name**, falling back to the SNI only when the request carries an IP.
+  - A request for a host no module covers is now left untouched, even on a YouTube connection.
+  - Before, every request on a decrypted connection got YouTube's rules.
+- **Console:** the rule editor's API is unchanged in shape and edits the `youtube` module. GET also reports the two pin settings.
+  - Checked with the demo venv against a schema 1 file: read, save to schema 2, pin setting kept, scope change still needs confirmation.
+- **Reconnect hint (A2):** in the enroll/unenroll toast and in `securepi enroll` output. Unenrolling has the same lag: open connections stay inspected until they close.
+
+**To check in the device session (step 4):**
+- **Regression:** the 30-video YouTube check, to confirm the host-name matching changed nothing in practice.
+- **Pin bypass:** the YouTube app on the A33 recovers after 2 failures.
+- **Finding from step 1, for A5:** mitmproxy runs with its default `upstream_cert`, so the certificate it presents for a YouTube host copies the real certificate's names. The real certificate covers many Google names, so a browser could reuse a decrypted YouTube connection for another Google host on the same address. The add-on no longer rewrites such requests, but they would still pass through the proxy decrypted. A5's scope check should look for this, for example a google.com load right after a YouTube one, checking the connection and issuer. If it happens, `--set upstream_cert=false` (a certificate naming only the SNI) is the candidate fix, to be measured before adopting.

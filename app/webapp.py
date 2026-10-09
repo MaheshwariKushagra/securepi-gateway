@@ -66,6 +66,7 @@ Routes:
 """
 
 import collections
+import copy
 import datetime
 import json
 import os
@@ -2041,7 +2042,13 @@ def _read_dpi_rules():
     try:
         return adfilter_rules.load_rules(DPI_RULES_PATH)
     except (OSError, ValueError, json.JSONDecodeError):
-        return dict(adfilter_rules.DEFAULT_RULES)
+        return adfilter_rules.default_rules()
+
+
+# The console edits the `youtube` module of the schema 2 rule set
+# (ADBLOCK-ENHANCEMENT-PLAN.md B1). Its API keeps the flat shape it has
+# always had; other sites' modules get their own editor when they exist.
+DPI_EDITED_MODULE = "youtube"
 
 
 def _read_dpi_rule_stats():
@@ -2060,26 +2067,29 @@ def api_dpi_rules_get():
     process memory, not the database (see its _write_rule_stats
     docstring), the same trade-off step 5.8's pinning state makes."""
     rules = _read_dpi_rules()
+    module = rules["modules"].get(DPI_EDITED_MODULE, {})
     stats = _read_dpi_rule_stats()
     hits = stats.get("hits") or {"ad_fields": {}, "ad_renderers": {}, "blocked_paths": {}}
 
     def annotate(category):
         return [
             {"rule": r, "hits": hits.get(category, {}).get(r, 0)}
-            for r in rules.get(category, [])
+            for r in module.get(category, [])
         ]
 
     return {
         "version": rules.get("version"),
         "updated_at": rules.get("updated_at"),
-        "decrypt_suffixes": rules.get("decrypt_suffixes", []),
+        "decrypt_suffixes": module.get("decrypt_suffixes", []),
         "ad_fields": annotate("ad_fields"),
         "ad_renderers": annotate("ad_renderers"),
         "blocked_paths": annotate("blocked_paths"),
         "stats_age": _age(time.time() - stats["written_at"]) if stats.get("written_at") else None,
         # Step 5.11, Path 1 - see adfilter_rules.py's OPTIONAL_RULE_DEFAULTS.
-        "cosmetic_injection_enabled": rules.get("cosmetic_injection_enabled", False),
-        "cosmetic_selectors": rules.get("cosmetic_selectors", []),
+        "cosmetic_injection_enabled": module.get("cosmetic_injection_enabled", False),
+        "cosmetic_selectors": module.get("cosmetic_selectors", []),
+        "pin_failure_threshold": rules.get("pin_failure_threshold"),
+        "pin_bypass_hours": rules.get("pin_bypass_hours"),
     }
 
 
@@ -2099,7 +2109,8 @@ def api_dpi_rules_set(body: DpiRulesUpdate):
     if not body.reason.strip():
         raise HTTPException(400, "a reason is required")
     current = _read_dpi_rules()
-    new_rules = {
+    current_module = current["modules"].get(DPI_EDITED_MODULE, {})
+    new_module = {
         "decrypt_suffixes": body.decrypt_suffixes,
         "ad_fields": body.ad_fields,
         "ad_renderers": body.ad_renderers,
@@ -2110,17 +2121,21 @@ def api_dpi_rules_set(body: DpiRulesUpdate):
         # silently reset these. See DpiRulesUpdate's own docstring.
         "cosmetic_injection_enabled": (
             body.cosmetic_injection_enabled if body.cosmetic_injection_enabled is not None
-            else current.get("cosmetic_injection_enabled", False)),
+            else current_module.get("cosmetic_injection_enabled", False)),
         "cosmetic_selectors": (
             body.cosmetic_selectors if body.cosmetic_selectors is not None
-            else current.get("cosmetic_selectors", [])),
+            else current_module.get("cosmetic_selectors", [])),
     }
+    # Everything else in the file (other modules, the pin settings) is
+    # kept as it is on disk.
+    new_rules = copy.deepcopy(current)
+    new_rules["modules"][DPI_EDITED_MODULE] = new_module
     try:
-        adfilter_rules.validate_rules(new_rules)
+        new_rules = adfilter_rules.validate_rules(new_rules)
     except ValueError as e:
         raise HTTPException(400, str(e))
 
-    if set(new_rules["decrypt_suffixes"]) != set(current.get("decrypt_suffixes", [])):
+    if set(new_module["decrypt_suffixes"]) != set(current_module.get("decrypt_suffixes", [])):
         if not body.confirm_privacy_scope_change:
             raise HTTPException(400,
                 "changing decrypt_suffixes changes what this gateway is able to decrypt - "

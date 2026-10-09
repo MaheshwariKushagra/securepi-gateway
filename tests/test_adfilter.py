@@ -43,8 +43,17 @@ import securepi_adfilter as addon  # noqa: E402  (path/stub must be set up first
 import adfilter_rules  # noqa: E402
 
 
-AD_FIELDS = list(adfilter_rules.DEFAULT_RULES["ad_fields"])
-AD_RENDERERS = list(adfilter_rules.DEFAULT_RULES["ad_renderers"])
+AD_FIELDS = list(adfilter_rules.DEFAULT_YOUTUBE_MODULE["ad_fields"])
+AD_RENDERERS = list(adfilter_rules.DEFAULT_YOUTUBE_MODULE["ad_renderers"])
+
+
+def _flat():
+    """The default rules in schema 1's flat shape (what the live
+    gateway's file still is), as an independent copy. validate_rules
+    accepts it and checks it as the `youtube` module."""
+    flat = copy.deepcopy(adfilter_rules.DEFAULT_YOUTUBE_MODULE)
+    flat["version"] = 1
+    return flat
 
 
 def strip(node, hits=None):
@@ -212,34 +221,34 @@ class ValidateRulesTests(unittest.TestCase):
     before it's ever written to disk - it has to be strict."""
 
     def test_default_rules_are_valid(self):
-        adfilter_rules.validate_rules(dict(adfilter_rules.DEFAULT_RULES))
+        adfilter_rules.validate_rules(_flat())
 
     def test_missing_required_key_rejected(self):
-        bad = dict(adfilter_rules.DEFAULT_RULES)
+        bad = _flat()
         del bad["ad_fields"]
         with self.assertRaises(ValueError):
             adfilter_rules.validate_rules(bad)
 
     def test_non_list_value_rejected(self):
-        bad = dict(adfilter_rules.DEFAULT_RULES)
+        bad = _flat()
         bad["blocked_paths"] = "/pagead/"  # a string, not a list
         with self.assertRaises(ValueError):
             adfilter_rules.validate_rules(bad)
 
     def test_empty_list_rejected(self):
-        bad = dict(adfilter_rules.DEFAULT_RULES)
+        bad = _flat()
         bad["decrypt_suffixes"] = []
         with self.assertRaises(ValueError):
             adfilter_rules.validate_rules(bad)
 
     def test_list_with_non_string_rejected(self):
-        bad = dict(adfilter_rules.DEFAULT_RULES)
+        bad = _flat()
         bad["ad_renderers"] = ["realRenderer", 123]
         with self.assertRaises(ValueError):
             adfilter_rules.validate_rules(bad)
 
     def test_list_with_empty_string_rejected(self):
-        bad = dict(adfilter_rules.DEFAULT_RULES)
+        bad = _flat()
         bad["ad_fields"] = ["realField", ""]
         with self.assertRaises(ValueError):
             adfilter_rules.validate_rules(bad)
@@ -251,13 +260,13 @@ class ValidateRulesTests(unittest.TestCase):
     def test_optional_keys_absent_still_valid(self):
         # A rules file written before step 5.11 has neither optional key
         # at all - must still pass validation, not be treated as broken.
-        rules = dict(adfilter_rules.DEFAULT_RULES)
+        rules = _flat()
         del rules["cosmetic_injection_enabled"]
         del rules["cosmetic_selectors"]
         adfilter_rules.validate_rules(rules)  # must not raise
 
     def test_cosmetic_injection_enabled_must_be_bool(self):
-        bad = dict(adfilter_rules.DEFAULT_RULES)
+        bad = _flat()
         bad["cosmetic_injection_enabled"] = "yes"
         with self.assertRaises(ValueError):
             adfilter_rules.validate_rules(bad)
@@ -266,12 +275,12 @@ class ValidateRulesTests(unittest.TestCase):
         # Unlike the four required categories, an empty cosmetic_selectors
         # list is a deliberate, valid choice (injection with nothing to
         # hide), not an error.
-        ok = dict(adfilter_rules.DEFAULT_RULES)
+        ok = _flat()
         ok["cosmetic_selectors"] = []
         adfilter_rules.validate_rules(ok)  # must not raise
 
     def test_cosmetic_selectors_must_be_strings(self):
-        bad = dict(adfilter_rules.DEFAULT_RULES)
+        bad = _flat()
         bad["cosmetic_selectors"] = ["ytd-display-ad-renderer", 42]
         with self.assertRaises(ValueError):
             adfilter_rules.validate_rules(bad)
@@ -279,20 +288,20 @@ class ValidateRulesTests(unittest.TestCase):
     def test_a_selector_that_ends_the_style_element_is_rejected(self):
         # Audit.md: selectors are pasted into a <style> element on other
         # sites' pages - "</style><script>" would inject a script.
-        bad = dict(adfilter_rules.DEFAULT_RULES)
+        bad = _flat()
         bad["cosmetic_selectors"] = ["x</style><script>alert(1)</script>"]
         with self.assertRaises(ValueError):
             adfilter_rules.validate_rules(bad)
 
     def test_a_selector_that_adds_its_own_css_rules_is_rejected(self):
         for sel in ("a{background:url(//evil)}", "a;b", "@import url(x)", "a/*x*/", "a\\3c"):
-            bad = dict(adfilter_rules.DEFAULT_RULES)
+            bad = _flat()
             bad["cosmetic_selectors"] = [sel]
             with self.assertRaises(ValueError, msg=sel):
                 adfilter_rules.validate_rules(bad)
 
     def test_ordinary_selectors_including_child_combinators_are_valid(self):
-        ok = dict(adfilter_rules.DEFAULT_RULES)
+        ok = _flat()
         ok["cosmetic_selectors"] = ["ytd-ad-slot-renderer", "div.ad > span", "[id^='ad-']", "#banner"]
         adfilter_rules.validate_rules(ok)  # must not raise
 
@@ -305,19 +314,115 @@ class ApplyDefaultsTests(unittest.TestCase):
     itself on."""
 
     def test_missing_keys_filled_in_with_safe_defaults(self):
-        rules = {k: v for k, v in adfilter_rules.DEFAULT_RULES.items()
-                 if k not in ("cosmetic_injection_enabled", "cosmetic_selectors")}
-        adfilter_rules.apply_defaults(rules)
-        self.assertIs(rules["cosmetic_injection_enabled"], False)
-        self.assertTrue(len(rules["cosmetic_selectors"]) > 0)
+        flat = _flat()
+        del flat["cosmetic_injection_enabled"]
+        del flat["cosmetic_selectors"]
+        rules = adfilter_rules.apply_defaults(adfilter_rules.validate_rules(flat))
+        yt = rules["modules"]["youtube"]
+        self.assertIs(yt["cosmetic_injection_enabled"], False)
+        self.assertTrue(len(yt["cosmetic_selectors"]) > 0)
 
     def test_existing_choice_is_not_overwritten(self):
-        rules = dict(adfilter_rules.DEFAULT_RULES)
-        rules["cosmetic_injection_enabled"] = True
-        rules["cosmetic_selectors"] = []  # operator deliberately emptied this
+        rules = adfilter_rules.default_rules()
+        yt = rules["modules"]["youtube"]
+        yt["cosmetic_injection_enabled"] = True
+        yt["cosmetic_selectors"] = []  # operator deliberately emptied this
         adfilter_rules.apply_defaults(rules)
-        self.assertIs(rules["cosmetic_injection_enabled"], True)
-        self.assertEqual(rules["cosmetic_selectors"], [])
+        self.assertIs(yt["cosmetic_injection_enabled"], True)
+        self.assertEqual(yt["cosmetic_selectors"], [])
+
+    def test_pin_settings_filled_in_when_absent(self):
+        rules = adfilter_rules.apply_defaults(adfilter_rules.validate_rules(_flat()))
+        self.assertEqual(rules["pin_failure_threshold"], 2)
+        self.assertEqual(rules["pin_bypass_hours"], 24)
+
+    def test_pin_settings_chosen_by_the_operator_are_kept(self):
+        flat = _flat()
+        flat["pin_failure_threshold"] = 4
+        rules = adfilter_rules.apply_defaults(adfilter_rules.validate_rules(flat))
+        self.assertEqual(rules["pin_failure_threshold"], 4)
+
+
+class SchemaTwoTests(unittest.TestCase):
+    """ADBLOCK-ENHANCEMENT-PLAN.md B1: rules grouped per site under
+    `modules`, with schema 1 files still loading unchanged."""
+
+    def test_schema_1_becomes_one_youtube_module_unchanged(self):
+        flat = _flat()
+        rules = adfilter_rules.validate_rules(flat)
+        self.assertEqual(rules["schema"], 2)
+        self.assertEqual(rules["version"], 1)
+        self.assertEqual(list(rules["modules"]), ["youtube"])
+        yt = rules["modules"]["youtube"]
+        for key in adfilter_rules.REQUIRED_RULE_KEYS:
+            self.assertEqual(yt[key], flat[key])
+        self.assertNotIn("version", yt)
+
+    def test_the_repository_seed_file_is_valid_schema_2(self):
+        path = os.path.join(DPI_DIR, "adfilter-rules.json")
+        with open(path) as f:
+            raw = json.load(f)
+        self.assertEqual(raw["schema"], 2)
+        adfilter_rules.load_rules(path)  # must not raise
+
+    def test_default_rules_are_valid(self):
+        adfilter_rules.validate_rules(adfilter_rules.default_rules())
+
+    def test_default_rules_copy_is_independent(self):
+        rules = adfilter_rules.default_rules()
+        rules["modules"]["youtube"]["ad_fields"].append("changed")
+        self.assertNotIn("changed", adfilter_rules.DEFAULT_RULES["modules"]["youtube"]["ad_fields"])
+
+    def test_no_modules_rejected(self):
+        rules = adfilter_rules.default_rules()
+        rules["modules"] = {}
+        with self.assertRaises(ValueError):
+            adfilter_rules.validate_rules(rules)
+
+    def test_bad_module_name_rejected(self):
+        rules = adfilter_rules.default_rules()
+        rules["modules"]["You Tube"] = rules["modules"].pop("youtube")
+        with self.assertRaises(ValueError):
+            adfilter_rules.validate_rules(rules)
+
+    def test_a_suffix_in_two_modules_rejected(self):
+        rules = adfilter_rules.default_rules()
+        other = copy.deepcopy(rules["modules"]["youtube"])
+        other["decrypt_suffixes"] = ["example.org", "YouTube.com."]
+        rules["modules"]["other"] = other
+        with self.assertRaises(ValueError):
+            adfilter_rules.validate_rules(rules)
+
+    def test_pin_settings_out_of_range_rejected(self):
+        for key, value in (("pin_failure_threshold", 0), ("pin_failure_threshold", 11),
+                           ("pin_failure_threshold", True), ("pin_failure_threshold", "2"),
+                           ("pin_bypass_hours", 0), ("pin_bypass_hours", 169)):
+            rules = adfilter_rules.default_rules()
+            rules[key] = value
+            with self.assertRaises(ValueError, msg="%s=%r" % (key, value)):
+                adfilter_rules.validate_rules(rules)
+
+    def test_module_for_host_matches_exact_names_and_subdomains_only(self):
+        rules = adfilter_rules.default_rules()
+        match = lambda h: adfilter_rules.module_for_host(rules, h)[0]
+        self.assertEqual(match("youtube.com"), "youtube")
+        self.assertEqual(match("m.youtube.com"), "youtube")
+        self.assertEqual(match("WWW.YouTube.com."), "youtube")
+        self.assertIsNone(match("notyoutube.com"))
+        self.assertIsNone(match("youtube.com.evil.example"))
+        self.assertIsNone(match("142.250.183.14"))
+        self.assertIsNone(match(""))
+        self.assertIsNone(match(None))
+
+    def test_each_host_gets_its_own_module(self):
+        rules = adfilter_rules.default_rules()
+        other = copy.deepcopy(rules["modules"]["youtube"])
+        other["decrypt_suffixes"] = ["example.org"]
+        rules["modules"]["other"] = other
+        adfilter_rules.validate_rules(rules)
+        self.assertEqual(adfilter_rules.module_for_host(rules, "a.example.org")[0], "other")
+        self.assertEqual(adfilter_rules.all_decrypt_suffixes(rules),
+                         sorted(adfilter_rules.DEFAULT_YOUTUBE_MODULE["decrypt_suffixes"] + ["example.org"]))
 
 
 class CosmeticCssInjectionTests(unittest.TestCase):
@@ -455,13 +560,32 @@ class TlsFailureBypassTests(unittest.TestCase):
 
     def test_repeated_failures_start_a_bypass_for_that_device_and_host(self):
         a = _quiet_addon()
-        for _ in range(addon.PIN_FAILURE_THRESHOLD):
+        for _ in range(a._rules["pin_failure_threshold"]):
             a.tls_failed_client(_tls_data())
         self.assertIn(("10.10.0.5", "www.youtube.com"), a._pin_bypass_until)
 
+    def test_the_default_threshold_is_two_failures(self):
+        # 7.5: a YouTube app version retries each host only twice.
+        a = _quiet_addon()
+        a.tls_failed_client(_tls_data())
+        self.assertNotIn(("10.10.0.5", "www.youtube.com"), a._pin_bypass_until)
+        a.tls_failed_client(_tls_data())
+        self.assertIn(("10.10.0.5", "www.youtube.com"), a._pin_bypass_until)
+
+    def test_threshold_and_duration_come_from_the_rules(self):
+        a = _quiet_addon()
+        a._rules["pin_failure_threshold"] = 4
+        a._rules["pin_bypass_hours"] = 1
+        for _ in range(3):
+            a.tls_failed_client(_tls_data())
+        self.assertEqual(a._pin_bypass_until, {})
+        a.tls_failed_client(_tls_data())
+        left = a._pin_bypass_until[("10.10.0.5", "www.youtube.com")] - addon.time.time()
+        self.assertTrue(3500 < left <= 3600, left)
+
     def test_a_successful_handshake_resets_the_count(self):
         a = _quiet_addon()
-        for _ in range(addon.PIN_FAILURE_THRESHOLD - 1):
+        for _ in range(a._rules["pin_failure_threshold"] - 1):
             a.tls_failed_client(_tls_data())
         a.tls_established_client(_tls_data())
         a.tls_failed_client(_tls_data())
@@ -469,7 +593,7 @@ class TlsFailureBypassTests(unittest.TestCase):
 
     def test_failures_for_another_device_do_not_count(self):
         a = _quiet_addon()
-        for i in range(addon.PIN_FAILURE_THRESHOLD):
+        for i in range(a._rules["pin_failure_threshold"]):
             a.tls_failed_client(_tls_data(ip="10.10.0.%d" % (10 + i)))
         self.assertEqual(a._pin_bypass_until, {})
 
@@ -503,6 +627,93 @@ class BlockedPathMatchingTests(unittest.TestCase):
         flow = self._flow("/results?search_query=/pagead/")
         _quiet_addon().request(flow)
         self.assertIsNone(flow.response)
+
+    def test_a_host_no_module_covers_is_left_alone(self):
+        # A browser can reuse a YouTube connection for another host the
+        # certificate covers; YouTube's rules must not apply to it.
+        flow = self._flow("/pagead/conversion")
+        flow.request.host = "www.google.com"
+        flow.client_conn.sni = "www.youtube.com"
+        _quiet_addon().request(flow)
+        self.assertIsNone(flow.response)
+
+    def test_the_host_header_wins_over_an_ip_request_host(self):
+        flow = self._flow("/pagead/conversion")
+        flow.request.host = "142.250.183.14"
+        flow.request.pretty_host = "m.youtube.com"
+        _quiet_addon().request(flow)
+        self.assertEqual(flow.response, ("response", 204))
+
+    def test_an_ip_only_request_falls_back_to_the_sni(self):
+        flow = self._flow("/pagead/conversion")
+        flow.request.host = "142.250.183.14"
+        flow.client_conn.sni = "www.youtube.com"
+        _quiet_addon().request(flow)
+        self.assertEqual(flow.response, ("response", 204))
+
+
+class _FakeResponse:
+    def __init__(self, text, content_type="application/json"):
+        self.text = text
+        self.headers = {"content-type": content_type}
+
+    def get_text(self):
+        return self.text
+
+    def set_text(self, text):
+        self.text = text
+
+
+class ResponseModuleScopeTests(unittest.TestCase):
+    """response() rewrites only bodies for a host some module covers,
+    with that module's rules."""
+
+    def _flow(self, host, body):
+        return types.SimpleNamespace(
+            request=types.SimpleNamespace(path="/youtubei/v1/player", host=host),
+            response=_FakeResponse(json.dumps(body)),
+            client_conn=types.SimpleNamespace(address=("10.10.0.5", 51000), sni=host),
+        )
+
+    def test_youtube_response_is_stripped(self):
+        flow = self._flow("www.youtube.com", {"adPlacements": [1], "videoDetails": {}})
+        _quiet_addon().response(flow)
+        self.assertEqual(json.loads(flow.response.text), {"videoDetails": {}})
+
+    def test_uncovered_host_response_is_untouched(self):
+        body = json.dumps({"adPlacements": [1], "videoDetails": {}})
+        flow = self._flow("www.google.com", json.loads(body))
+        flow.client_conn.sni = "www.youtube.com"
+        _quiet_addon().response(flow)
+        self.assertEqual(flow.response.text, body)
+
+    def test_each_module_uses_its_own_rules(self):
+        a = _quiet_addon()
+        other = copy.deepcopy(a._rules["modules"]["youtube"])
+        other["decrypt_suffixes"] = ["example.org"]
+        other["ad_fields"] = ["sponsored"]
+        a._rules["modules"]["other"] = other
+        flow = self._flow("www.example.org", {"sponsored": 1, "adPlacements": [1]})
+        a.response(flow)
+        self.assertEqual(json.loads(flow.response.text), {"adPlacements": [1]})
+
+
+class DecryptDecisionTests(unittest.TestCase):
+    """tls_clienthello() decrypts exactly the hosts a module claims."""
+
+    def _hello(self, sni):
+        return types.SimpleNamespace(
+            client_hello=types.SimpleNamespace(sni=sni),
+            context=types.SimpleNamespace(client=types.SimpleNamespace(peername=("10.10.0.5", 51000))),
+        )
+
+    def test_module_hosts_are_decrypted_and_others_passed_through(self):
+        a = _quiet_addon()
+        for sni, decrypt in (("www.youtube.com", True), ("rr3.googlevideo.com", True),
+                             ("example.com", False), ("notyoutube.com", False), ("", False)):
+            data = self._hello(sni)
+            a.tls_clienthello(data)
+            self.assertEqual(not getattr(data, "ignore_connection", False), decrypt, sni)
 
 
 if __name__ == "__main__":

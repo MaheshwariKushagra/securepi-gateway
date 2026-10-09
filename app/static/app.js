@@ -1262,8 +1262,11 @@ function initDeviceDpi() {
             });
             if (!res.ok) throw new Error("request failed");
             toast(enrolled ? "Device enrolled" : "Device unenrolled",
-                  enrolled ? "HTTPS ad removal is active for this device for the next 24h. It needs the SecurePi CA installed - see the Filtering page."
-                           : "This device's HTTPS traffic is no longer inspected.",
+                  // Both directions apply to NEW connections only: the redirect is
+                  // decided when a connection opens (7.5 found pre-rolls kept
+                  // playing until Chrome reconnected).
+                  enrolled ? "HTTPS ad removal is on for this device for the next 24h. It needs the SecurePi CA installed - see the Filtering page. It applies to new connections: restart the browser, or wait a few minutes."
+                           : "HTTPS inspection is off for this device's new connections. Restart the browser to close the ones already open.",
                   "ok");
             load();
         } catch (err) {

@@ -38,9 +38,48 @@ environments, the one source file in git (here) gets installed to BOTH
 if it's ever edited, or this stops working for one side or the other.
 """
 
+import copy
+import ipaddress
 import json
+import re
 
+# Schema 2: per-site modules (ADBLOCK-ENHANCEMENT-PLAN.md B1).
+# Schema 1 was one flat rule set, which only ever described YouTube.
+# Schema 2 groups the same keys under `modules`, one per site, so a later
+# site (X, Instagram...) gets its own hosts and rules and can never have
+# YouTube's rules applied to it, or the other way round:
+#
+#     {"schema": 2, "version": N, "updated_at": ...,
+#      "pin_failure_threshold": 2, "pin_bypass_hours": 24,
+#      "modules": {"youtube": {"decrypt_suffixes": [...], "ad_fields": [...],
+#                              "ad_renderers": [...], "blocked_paths": [...],
+#                              "cosmetic_injection_enabled": false,
+#                              "cosmetic_selectors": [...]}}}
+#
+# `version` is still the edit counter the console bumps on every save;
+# `schema` is the file format. A schema 1 file (the live gateway's, until
+# its first save from the console) still loads: normalize() turns its
+# flat keys into the `youtube` module, unchanged.
+SCHEMA = 2
+
+# Keys every module must have, each a non-empty list of strings.
 REQUIRED_RULE_KEYS = ("decrypt_suffixes", "ad_fields", "ad_renderers", "blocked_paths")
+
+MODULE_NAME_RE = re.compile(r"^[a-z0-9_]{1,32}$")
+
+# Pinning-aware auto-passthrough (step 5.8), now in the rules file so it
+# can be tuned without a redeploy (plan A1). The threshold was 3: the
+# 7.5 tablet test found a YouTube app version that retries each host only
+# twice, so it never reached 3 and stayed broken. 2 covers both app
+# versions seen; the cost is that a browser with two genuinely failed
+# handshakes to one host also loses ad removal there for the bypass
+# period.
+TOP_LEVEL_DEFAULTS = {
+    "pin_failure_threshold": 2,
+    "pin_bypass_hours": 24,
+}
+PIN_FAILURE_THRESHOLD_RANGE = (1, 10)
+PIN_BYPASS_HOURS_RANGE = (1, 168)
 
 # ENHANCEMENT-PLAN.md step 5.11 (optional; Path 1 only - see the plan's
 # own record of Path 2, cosmetic AND scriptlet injection, and why
@@ -75,24 +114,29 @@ OPTIONAL_RULE_DEFAULTS = {
 
 
 def apply_defaults(rules):
-    """Fill in any missing OPTIONAL_RULE_DEFAULTS keys in place, without
-    touching a key that's already present (even if empty) - an operator
-    who has deliberately set cosmetic_selectors to [] gets that choice
-    respected, not silently overwritten back to the defaults. Returns
-    `rules` for inline use, matching validate_rules's own convention."""
-    for key, default in OPTIONAL_RULE_DEFAULTS.items():
+    """Fill in missing optional keys in place: the pin settings at the
+    top level, and OPTIONAL_RULE_DEFAULTS in each module. A key that's
+    already present (even if empty) is never touched - an operator who
+    has deliberately set cosmetic_selectors to [] gets that choice
+    respected, not silently overwritten back to the defaults. Expects a
+    schema 2 rule set (see normalize()). Returns `rules` for inline use."""
+    for key, default in TOP_LEVEL_DEFAULTS.items():
         if key not in rules:
             rules[key] = default
+    for module in rules.get("modules", {}).values():
+        for key, default in OPTIONAL_RULE_DEFAULTS.items():
+            if key not in module:
+                module[key] = copy.deepcopy(default)
     return rules
 
-# Exactly what was hardcoded in dpi/securepi_adfilter.py before this step -
-# used as the addon's fallback if adfilter-rules.json is missing or
-# invalid, so a bad or absent rules file degrades to "keep blocking ads
-# with the last known-good set" rather than doing nothing at all. Also
-# what a fresh deploy seeds dpi/adfilter-rules.json with.
-DEFAULT_RULES = {
-    "version": 1,
-    "updated_at": None,
+# Exactly what was hardcoded in dpi/securepi_adfilter.py before step 5.9,
+# now as the `youtube` module - used as the addon's fallback if
+# adfilter-rules.json is missing or invalid, so a bad or absent rules file
+# degrades to "keep blocking ads with the last known-good set" rather than
+# doing nothing at all. Also what a fresh deploy seeds
+# dpi/adfilter-rules.json with. It is nested: use default_rules() for a
+# copy that is safe to change.
+DEFAULT_YOUTUBE_MODULE = {
     "decrypt_suffixes": [
         "youtube.com",
         "youtubei.googleapis.com",
@@ -132,33 +176,64 @@ DEFAULT_RULES = {
     "cosmetic_selectors": list(OPTIONAL_RULE_DEFAULTS["cosmetic_selectors"]),
 }
 
+DEFAULT_RULES = {
+    "schema": SCHEMA,
+    "version": 1,
+    "updated_at": None,
+    "pin_failure_threshold": TOP_LEVEL_DEFAULTS["pin_failure_threshold"],
+    "pin_bypass_hours": TOP_LEVEL_DEFAULTS["pin_bypass_hours"],
+    "modules": {"youtube": DEFAULT_YOUTUBE_MODULE},
+}
 
-def validate_rules(rules):
-    """Raise ValueError with a clear, specific reason if `rules` isn't a
-    usable rule set: every required key present, each one a list of
-    non-empty strings. Returns `rules` unchanged so this can be used
-    inline (`rules = validate_rules(json.load(f))`).
 
-    The step 5.11 optional keys (cosmetic_injection_enabled,
-    cosmetic_selectors) are validated for TYPE when present, but are not
-    required - a rules file written before this step, with neither key
-    at all, is still valid; load_rules() below fills in the defaults
-    afterward rather than this function inventing them."""
+def default_rules():
+    """A fresh, independent copy of DEFAULT_RULES, safe to change."""
+    return copy.deepcopy(DEFAULT_RULES)
+
+
+def normalize(rules):
+    """Return `rules` as schema 2. A schema 1 file (flat keys, no
+    `modules`) becomes one `youtube` module holding exactly those keys;
+    `version`, `updated_at` and the pin settings stay at the top level.
+    A schema 2 rule set comes back as a deep copy. Anything that isn't
+    a JSON object is returned as is, for validate_rules() to refuse."""
     if not isinstance(rules, dict):
-        raise ValueError("rules must be a JSON object")
+        return rules
+    if "modules" in rules:
+        out = copy.deepcopy(rules)
+        out["schema"] = SCHEMA
+        return out
+    top = ("version", "updated_at") + tuple(TOP_LEVEL_DEFAULTS)
+    out = {"schema": SCHEMA}
+    out.update({k: copy.deepcopy(rules[k]) for k in top if k in rules})
+    out["modules"] = {"youtube": {k: copy.deepcopy(v) for k, v in rules.items()
+                                  if k not in top and k != "schema"}}
+    return out
+
+
+def validate_module(name, module):
+    """Raise ValueError with a clear, specific reason if one module isn't
+    usable: every required key present, each a non-empty list of
+    non-empty strings. The step 5.11 optional keys
+    (cosmetic_injection_enabled, cosmetic_selectors) are checked for
+    type when present but not required - apply_defaults() fills them in."""
+    if not isinstance(name, str) or not MODULE_NAME_RE.match(name):
+        raise ValueError("module name %r must be 1-32 lowercase letters, digits or _" % (name,))
+    if not isinstance(module, dict):
+        raise ValueError("module %s must be a JSON object" % name)
     for key in REQUIRED_RULE_KEYS:
-        if key not in rules:
+        if key not in module:
             raise ValueError("missing required key: %s" % key)
-        value = rules[key]
+        value = module[key]
         if not isinstance(value, list) or not value:
             raise ValueError("%s must be a non-empty list" % key)
         if not all(isinstance(v, str) and v.strip() for v in value):
             raise ValueError("%s must contain only non-empty strings" % key)
 
-    if "cosmetic_injection_enabled" in rules and not isinstance(rules["cosmetic_injection_enabled"], bool):
+    if "cosmetic_injection_enabled" in module and not isinstance(module["cosmetic_injection_enabled"], bool):
         raise ValueError("cosmetic_injection_enabled must be true or false")
-    if "cosmetic_selectors" in rules:
-        selectors = rules["cosmetic_selectors"]
+    if "cosmetic_selectors" in module:
+        selectors = module["cosmetic_selectors"]
         if not isinstance(selectors, list):
             raise ValueError("cosmetic_selectors must be a list")
         if not all(isinstance(v, str) and v.strip() for v in selectors):
@@ -175,7 +250,69 @@ def validate_rules(rules):
                 if bad in v:
                     raise ValueError("cosmetic selector %r contains %r, which is not allowed" % (v, bad))
 
+
+def _check_int(rules, key, bounds):
+    if key not in rules:
+        return
+    value = rules[key]
+    # bool is a subclass of int in Python; `true` is not a threshold.
+    if isinstance(value, bool) or not isinstance(value, int) or not bounds[0] <= value <= bounds[1]:
+        raise ValueError("%s must be a whole number from %d to %d" % (key, bounds[0], bounds[1]))
+
+
+def validate_rules(rules):
+    """Raise ValueError with a clear, specific reason if `rules` isn't a
+    usable rule set. Accepts schema 1 or 2 and returns the schema 2 form
+    (see normalize()), so it can be used inline
+    (`rules = validate_rules(json.load(f))`).
+
+    Beyond each module's own checks: at least one module, and no decrypt
+    suffix claimed by two modules - a host must belong to exactly one
+    site's rules, or which rules apply to it would depend on dict order."""
+    if not isinstance(rules, dict):
+        raise ValueError("rules must be a JSON object")
+    rules = normalize(rules)
+    modules = rules["modules"]
+    if not isinstance(modules, dict) or not modules:
+        raise ValueError("modules must be a non-empty JSON object")
+    _check_int(rules, "pin_failure_threshold", PIN_FAILURE_THRESHOLD_RANGE)
+    _check_int(rules, "pin_bypass_hours", PIN_BYPASS_HOURS_RANGE)
+
+    owner = {}
+    for name, module in modules.items():
+        validate_module(name, module)
+        for suffix in module["decrypt_suffixes"]:
+            suffix = suffix.strip().lower().rstrip(".")
+            if suffix in owner and owner[suffix] != name:
+                raise ValueError("decrypt suffix %s is in both %s and %s" % (suffix, owner[suffix], name))
+            owner[suffix] = name
     return rules
+
+
+def all_decrypt_suffixes(rules):
+    """Every decrypt suffix across all modules - the gateway's whole
+    decryption scope."""
+    return sorted({s for m in rules["modules"].values() for s in m["decrypt_suffixes"]})
+
+
+def module_for_host(rules, host):
+    """(name, module) for the module whose decrypt_suffixes cover `host`
+    (an exact match or a subdomain), or (None, None). An IP address never
+    matches: only a name can say which site a connection is for."""
+    host = (host or "").strip().lower().rstrip(".")
+    if not host:
+        return None, None
+    try:
+        ipaddress.ip_address(host.strip("[]"))
+        return None, None
+    except ValueError:
+        pass
+    for name, module in rules["modules"].items():
+        for suffix in module["decrypt_suffixes"]:
+            suffix = suffix.strip().lower().rstrip(".")
+            if host == suffix or host.endswith("." + suffix):
+                return name, module
+    return None, None
 
 
 # Characters and sequences a cosmetic selector may never contain - see
@@ -184,9 +321,10 @@ SELECTOR_FORBIDDEN = ("<", "{", "}", ";", "@", "\\", "/*", "*/")
 
 
 def load_rules(path):
-    """Read, validate and apply-defaults-to the rules file at `path`.
-    Raises OSError, json.JSONDecodeError or ValueError - callers decide
-    what to fall back to; this function never guesses on their behalf."""
+    """Read, validate and apply-defaults-to the rules file at `path`,
+    returning schema 2 whatever schema the file is in. Raises OSError,
+    json.JSONDecodeError or ValueError - callers decide what to fall back
+    to; this function never guesses on their behalf."""
     with open(path) as f:
         rules = json.load(f)
     return apply_defaults(validate_rules(rules))

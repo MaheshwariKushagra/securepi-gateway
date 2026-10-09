@@ -139,6 +139,10 @@ for l in leases:
                 || echo "   (not enrolled)  $ip"
         fi
     done
+    # The redirect is decided when a connection opens, so a browser keeps
+    # its existing connections (inspected or not) until they close - in
+    # 7.5, pre-rolls kept playing until Chrome reconnected.
+    echo "   applies to new connections: restart the browser on the device, or wait a few minutes"
     ;;
 
   *)

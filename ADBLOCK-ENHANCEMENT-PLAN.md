@@ -123,14 +123,14 @@ For each site:
 | 1 | A4 | **Done** (9 Oct): OISD Big and AdAway disabled, DNS filter 271 → 187 MB |
 | 4 | A5 | **Done** (9 Oct): 0 unexpected decryptions on the tablet; `tools/scope_check_device.py` |
 | 4 | A3 | **Done for mobile** (9 Oct): no visible empty ad boxes on mobile YouTube, so injection stays off; desktop selectors unverifiable without a desktop browser behind the gateway |
-| 4 | YouTube regression | Tablet: 30/30 played, but its Chrome 77 gets no pre-rolls even unenrolled (control 0/10), so pre-roll removal still needs the A33 |
+| 4 | YouTube regression | **Done on the A33** (10 Oct): pre-rolls 0/30 with YouTube on, 10/10 with it off; YouTube app plays under the trigger of 2 |
 | 5 | B4, B5 | **Done and deployed** (9 Oct): canary covers every module and look-alike names; telemetry, console panel and watchdog per site; HTML ad removal now logged (it never was) |
 | 7 | A6 | **Done and deployed** (9 Oct): `vpn_tunnel`, low, informational, never adds to risk |
 | 2 | B0 | **Done** (10 Oct), `docs/adblock-feasibility.md`: Instagram **go**, Facebook **conditional go**, Spotify **no-go** (web player needs Widevine; audio ads), X **not verified** (login failed). Browser: Ubuntu's Chromium snap on the Dell, sandbox on, 900 MB cap (the Playwright build needed an AppArmor change, refused) |
 | 3 | B3 | **Signed off** (10 Oct): Instagram approved; Facebook approved after Instagram; X left not verified |
 | 5 | B1 (second half) | **Done and deployed** (10 Oct): carve-out hosts, endpoint, query-name and never-touch gates, prune operations, streamed JSON, embedded page JSON (`html_json_pages`) |
 | 5 | B2 | **Done and deployed** (10 Oct): an enrolment names its sites; the orchestrator writes `device-sites.json`; the addon decrypts a site only for devices that have it on; device-page switches; canary checks both passes |
-| 6 | C | **Done for Instagram and Facebook** (10 Oct), measured with the Dell test browser through a localhost test proxy running the production addon (the user skipped tablet logins and declined the Mac on SecurePi-Test); see `EVALUATION-RESULTS-2.md` Stage 7A |
+| 6 | C | **Done for Instagram and Facebook** (10 Oct; Instagram also on the A33's Chrome through the real redirect: 4/6 → 0/6), measured with the Dell test browser through a localhost test proxy running the production addon (the user skipped tablet logins and declined the Mac on SecurePi-Test); see `EVALUATION-RESULTS-2.md` Stage 7A |
 | 8 | D | Report, analysis note and Stage 8 inputs updated (10 Oct) |
 
 **What step 1 changed (9 October 2026):**

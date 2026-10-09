@@ -801,6 +801,31 @@ The test proxy's rule counters for these runs: ad edges dropped by `edges node.a
 
 This is one session by one person, not a counted run. It is the first evidence that the module works on mobile web through the gateway's real path.
 
+**The A33 checks (10 October 2026, phone on USB to the Mac, real redirect).**
+
+- **Privacy scope with Instagram on** (`tools/scope_check_device.py`, now site-aware; `eval/results/scope-check/scope-20261010-a33-instagram.jsonl`): **0 unexpected decryptions.**
+  - Decrypted, as expected: the 4 YouTube hosts and `www.instagram.com`.
+  - Kept their own certificates: Instagram's live-message hosts, its CDN, all three Facebook hosts (Facebook not on for the A33) and every Google host, including fetches from a page that had just loaded YouTube.
+  - 4 fetches timed out without a certificate to read; none was decrypted.
+- **YouTube pre-rolls in Chrome, new add-on** (`eval/results/youtube-7A/`):
+
+  | Condition | Videos | Pre-roll shown |
+  |---|---|---|
+  | YouTube on | 30 | **0** (all 30 played) |
+  | YouTube switched off for the A33 (Instagram only), Chrome restarted | 10 | **10** |
+
+  The 7.5 result holds on the schema 2 add-on.
+- **Instagram web in Chrome** (`tools/site_ads_measure_phone.py`, 6 pairs; the enrolment switches between YouTube-only and Instagram + YouTube, with Chrome force-stopped before each run; `eval/results/sites/instagram-a33-20261010.jsonl`):
+
+  | | Off | On |
+  |---|---|---|
+  | Runs with an ad reaching the phone | 4/6 (11 ads) | **0/6** (Wilson 0-39%) |
+  | Most "Sponsored" labels on screen | 3 | **0** |
+  | Posts rendered | 8-9 | 8-9 |
+
+- **YouTube app with the pin trigger at 2:** every YouTube host the app used failed the handshake exactly twice, then passed through (`pin_bypass`), including `youtubei.googleapis.com` and `www.youtube.com`, where the tablet's app got stuck in 7.5. **The video played** (screen checked). App ads are not removed, as designed.
+- **Instagram app with Instagram on:** it never contacted `www.instagram.com`. All its traffic (`i.instagram.com`, CDN, `graph.instagram.com`) passed through untouched. The feed loaded with no error. No ad removal in the app, and no breakage.
+
 **Limits:**
 - **Device and path:** one browser (desktop Chromium on Linux), one test account each, and the test proxy rather than a phone through the real redirect.
 - **Not covered:** apps, and mobile web, which may mark ads differently.

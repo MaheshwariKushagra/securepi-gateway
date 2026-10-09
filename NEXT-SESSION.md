@@ -394,11 +394,13 @@ script, canary and log-rotation units).
 - **X:** not verified (login failed).
 
 **Still open from 7A:**
-- **Needs the A33:**
-  - the YouTube pre-roll check on the new add-on (the tablet's Chrome 77 gets no pre-rolls even unenrolled);
-  - the YouTube app recovering under the trigger of 2;
-  - the A5 scope check with Instagram/Facebook switched on through the real redirect.
-  - (Done 10 Oct: Instagram on the A33's Chrome, no sponsored posts, 20 ad items dropped through the real redirect. The A33 is enrolled with Instagram and YouTube until about 01:55 on 11 Oct. The user will also try Safari on the Mac on SecurePi-Test; remove the CA from the Mac afterwards.)
+- **The A33 checks are done** (10 Oct; EVALUATION-RESULTS-2.md Stage 7A):
+  - YouTube pre-rolls: 0/30 on, 10/10 off.
+  - YouTube app plays under the trigger of 2.
+  - Scope check with Instagram on: 0 unexpected decryptions.
+  - Instagram web: 0/6 on vs 4/6 off; the Instagram app is unaffected.
+- **The A33 is still enrolled** with Instagram and YouTube for 24 h from about 03:15 on 10 Oct. Unenroll it from its device page when done.
+- **Mac Safari check:** the user will try it later (join SecurePi-Test, install the CA, enroll the Mac with Instagram; remove the CA afterwards).
 - **Dell test setup** (`~/securepi-browser`: logged-in test-account profile, test proxy script, test CA): stopped, not deleted.
   - To restart it (on the Dell):
     ```

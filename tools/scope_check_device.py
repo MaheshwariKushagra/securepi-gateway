@@ -44,7 +44,7 @@ sys.path.insert(0, os.path.join(REPO, "dpi"))
 import adfilter_rules  # noqa: E402
 
 GATEWAY = "maheshwari@192.168.2.5"
-DEV = "http://127.0.0.1:9223"
+DEV = "http://127.0.0.1:9223"   # --devtools-port changes it
 NEUTRAL = "https://example.com/"
 SECUREPI_ISSUER = "SecurePi"
 
@@ -55,6 +55,11 @@ DEFAULT_HOSTS = [
     "m.youtube.com", "www.youtube.com", "i.ytimg.com", "youtubei.googleapis.com",
     "example.com", "www.wikipedia.org", "www.google.com", "accounts.google.com",
     "www.gstatic.com", "fonts.googleapis.com", "www.youtubekids.com",
+    # Site modules beyond YouTube (ADBLOCK-ENHANCEMENT-PLAN.md B2): their
+    # own host is decrypted only if the device has the site switched on;
+    # the live-message hosts, API hosts and CDNs never are.
+    "www.instagram.com", "edge-chat.instagram.com", "gateway.instagram.com", "i.instagram.com",
+    "static.cdninstagram.com", "www.facebook.com", "gateway.facebook.com", "edge-chat.facebook.com",
 ]
 REUSE_PAGE = "https://m.youtube.com/"
 REUSE_HOSTS = ["www.google.com", "accounts.google.com", "www.gstatic.com",
@@ -174,8 +179,18 @@ class Tab:
         return {"error": "no response within %ds" % wait_s}
 
 
-def verdict(rules, host, res):
-    expected = "decrypt" if adfilter_rules.module_for_host(rules, host)[0] else "passthrough"
+def device_sites(ip):
+    """The device's switched-on sites from the live site map (B2)."""
+    r = ssh("sudo cat /var/lib/securepi-dpi/device-sites.json")
+    try:
+        return json.loads(r.stdout).get(ip) or ["youtube"]
+    except ValueError:
+        return ["youtube"]
+
+
+def verdict(rules, host, res, sites=("youtube",)):
+    module = adfilter_rules.module_for_host(rules, host)[0]
+    expected = "decrypt" if module in sites else "passthrough"
     if res.get("issuer") is None:
         actual = "unknown"
     else:
@@ -193,14 +208,18 @@ def main():
     ap.add_argument("--serial", default="HA13T683")
     ap.add_argument("--enroll-minutes", type=int, default=0)
     ap.add_argument("--host", action="append", help="check these hosts instead of the default list")
+    ap.add_argument("--devtools-port", type=int, default=9223)
     args = ap.parse_args()
+    global DEV
+    DEV = "http://127.0.0.1:%d" % args.devtools_port
 
     rules = live_rules()
     if args.enroll_minutes:
         print("enrolled, policy", enroll(args.device_id, args.enroll_minutes), flush=True)
         time.sleep(3)
     ip, enrolled = device_ip_enrolled(args.device_id)
-    print("device %d at %s, enrolled: %s" % (args.device_id, ip, enrolled), flush=True)
+    sites = device_sites(ip)
+    print("device %d at %s, enrolled: %s, sites: %s" % (args.device_id, ip, enrolled, ",".join(sites)), flush=True)
     if not enrolled:
         print("not enrolled - nothing would be decrypted, so the check means nothing")
         return 2
@@ -222,7 +241,7 @@ def main():
             for host in args.host or DEFAULT_HOSTS:
                 url = "https://%s/favicon.ico?scope=%d" % (host, stamp)
                 res = tab.fetch(url)
-                exp, act, ok = verdict(rules, host, res)
+                exp, act, ok = verdict(rules, host, res, sites)
                 failures += not ok
                 rec = dict(phase="hosts", host=host, expected=exp, actual=act, privacy_ok=ok, **res)
                 f.write(json.dumps(rec) + "\n")
@@ -249,7 +268,7 @@ def main():
             for host in REUSE_HOSTS:
                 url = "https://%s/favicon.ico?reuse=%d" % (host, stamp)
                 res = tab.fetch(url)
-                exp, act, ok = verdict(rules, host, res)
+                exp, act, ok = verdict(rules, host, res, sites)
                 failures += not ok
                 on_yt = res.get("connection_id") in yt_conns
                 rec = dict(phase="reuse", host=host, expected=exp, actual=act, privacy_ok=ok,

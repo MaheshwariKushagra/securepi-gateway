@@ -365,7 +365,11 @@ Each site is switched on **per device**. Enrolment alone still means YouTube onl
 - **Instagram:** feed ads reached the browser in 10 of 10 runs with the site off and **0 of 10** with it on (44 ads → 0, visible "Sponsored" labels 3 → 0). Posts and the inbox rendered normally.
 - **Facebook:** 7 of 10 → **0 of 10** (15 sponsored stories → 0), with no page errors and the inbox rendering. Breakage can't be excluded at this sample size (one "on" run loaded no feed; not reproduced).
 
-**On a real phone:** the A33 was enrolled with Instagram on. In Chrome, its home feed showed no sponsored posts; the gateway dropped 20 ad items from 11 feed responses through the real redirect path.
+**On a real phone** (the A33's Chrome, through the real redirect):
+- **Instagram:** ads reached the phone in 4 of 6 runs with the site off, **0 of 6** with it on.
+- **YouTube:** pre-rolls on 10 of 10 videos with YouTube switched off, **0 of 30** with it on.
+- **Privacy:** the scope check found 0 unexpected decryptions with Instagram on.
+- **Apps:** the YouTube app plays, passed through after two failed handshakes per host. The Instagram app is untouched; it never contacts the decrypted host.
 
 **What measuring taught**, in the spirit of section 6:
 - **The first screen of a feed isn't fetched; it's embedded in the page.** A rule that only rewrote the GraphQL API left one sponsored post per load. The module now also prunes the page's embedded JSON, updating the length attribute the page checks.

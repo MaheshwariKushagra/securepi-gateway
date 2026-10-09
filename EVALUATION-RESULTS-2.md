@@ -789,6 +789,18 @@ The test proxy's rule counters for these runs: ad edges dropped by `edges node.a
   - At this sample size, "removes ads without breaking the feed" is **not established** for Facebook: no sign of systematic breakage, but it can't be excluded.
 - **Decision:** Facebook stays a per-device opt-in with that caveat on its privacy note, as for every site.
 
+**On a real phone, through the real redirect (10 October 2026).** At the user's request the A33 (device 2, Chrome) was enrolled with Instagram and YouTube switched on (policy 50, 24 h). The user then scrolled the instagram.com home feed in Chrome.
+
+- **What the user saw:** **no "Sponsored" posts.**
+- **Decryption:** `www.instagram.com` was decrypted (4 connections; the CA installed on 2 October still works).
+- **Removal:** 11 feed responses were rewritten, dropping **20 ad items** (`edges node.ad`).
+- **Passed through undecrypted, as designed:**
+  - live-message host `gateway.instagram.com`;
+  - CDN hosts;
+  - the API hosts `i.instagram.com` and `graph.instagram.com`. Mobile web contacts them, but no ad reached the feed through them in this session.
+
+This is one session by one person, not a counted run. It is the first evidence that the module works on mobile web through the gateway's real path.
+
 **Limits:**
 - **Device and path:** one browser (desktop Chromium on Linux), one test account each, and the test proxy rather than a phone through the real redirect.
 - **Not covered:** apps, and mobile web, which may mark ads differently.

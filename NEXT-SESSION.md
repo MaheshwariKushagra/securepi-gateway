@@ -398,6 +398,7 @@ script, canary and log-rotation units).
   - the YouTube pre-roll check on the new add-on (the tablet's Chrome 77 gets no pre-rolls even unenrolled);
   - the YouTube app recovering under the trigger of 2;
   - the A5 scope check with Instagram/Facebook switched on through the real redirect.
+  - (Done 10 Oct: Instagram on the A33's Chrome, no sponsored posts, 20 ad items dropped through the real redirect. The A33 is enrolled with Instagram and YouTube until about 01:55 on 11 Oct. The user will also try Safari on the Mac on SecurePi-Test; remove the CA from the Mac afterwards.)
 - **Dell test setup** (`~/securepi-browser`: logged-in test-account profile, test proxy script, test CA): stopped, not deleted.
   - To restart it (on the Dell):
     ```

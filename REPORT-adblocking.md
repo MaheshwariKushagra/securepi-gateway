@@ -365,6 +365,8 @@ Each site is switched on **per device**. Enrolment alone still means YouTube onl
 - **Instagram:** feed ads reached the browser in 10 of 10 runs with the site off and **0 of 10** with it on (44 ads → 0, visible "Sponsored" labels 3 → 0). Posts and the inbox rendered normally.
 - **Facebook:** 7 of 10 → **0 of 10** (15 sponsored stories → 0), with no page errors and the inbox rendering. Breakage can't be excluded at this sample size (one "on" run loaded no feed; not reproduced).
 
+**On a real phone:** the A33 was enrolled with Instagram on. In Chrome, its home feed showed no sponsored posts; the gateway dropped 20 ad items from 11 feed responses through the real redirect path.
+
 **What measuring taught**, in the spirit of section 6:
 - **The first screen of a feed isn't fetched; it's embedded in the page.** A rule that only rewrote the GraphQL API left one sponsored post per load. The module now also prunes the page's embedded JSON, updating the length attribute the page checks.
 - **Ad-shaped keys appear on organic content, set to null.** Matching "has key `sponsored_data`" would have dropped organic stories. The marker that held was a *non-null* `th_dat_spo`: 6 of 6 sponsored chunks, 0 of 135 organic ones.

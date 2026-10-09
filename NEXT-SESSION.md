@@ -399,6 +399,10 @@ script, canary and log-rotation units).
   - YouTube app plays under the trigger of 2.
   - Scope check with Instagram on: 0 unexpected decryptions.
   - Instagram web: 0/6 on vs 4/6 off; the Instagram app is unaffected.
+- **Follow-ups 1 and 3 (10 Oct):**
+  - Enrolment and site switches now apply at once: 6/6 within about 1 s, against 1/4 without the reset (`conntrack` installed on the Dell).
+  - Tier 1 blocks AdMob in-app banners: 6/6 off → 0/5 on, on the tablet.
+  - **Open, F4:** a pinned app's two failed handshakes bypass that host for the whole device for 24 h, browser included. Key the bypass on a ClientHello fingerprint as well.
 - **The A33 is still enrolled** with Instagram and YouTube for 24 h from about 03:15 on 10 Oct. Unenroll it from its device page when done.
 - **Mac Safari check:** the user will try it later (join SecurePi-Test, install the CA, enroll the Mac with Instagram; remove the CA afterwards).
 - **Dell test setup** (`~/securepi-browser`: logged-in test-account profile, test proxy script, test CA): stopped, not deleted.

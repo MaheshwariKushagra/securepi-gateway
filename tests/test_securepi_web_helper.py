@@ -199,5 +199,31 @@ class Stage4VerbTests(unittest.TestCase):
             helper.build_nft_argv("blocked-ip-add", ["1.2.3.4", "60", "extra"])
 
 
+class HttpsResetTests(unittest.TestCase):
+    """ADBLOCK-ENHANCEMENT-PLAN.md: https-reset makes an enrolment or site
+    change apply at once. Only conntrack and ss, fixed paths, a validated
+    address, TCP 443 and the proxy's :8080 - nothing else."""
+
+    def test_reset_one_device(self):
+        self.assertEqual(helper.build_reset_commands("https-reset", ["10.10.0.50"]), [
+            ["/usr/sbin/conntrack", "-D", "-p", "tcp", "--orig-src", "10.10.0.50", "--orig-port-dst", "443"],
+            ["/usr/bin/ss", "-K", "dst", "10.10.0.50", "sport", "=", ":8080"],
+        ])
+
+    def test_reset_all_only_closes_proxy_connections(self):
+        self.assertEqual(helper.build_reset_commands("https-reset-all", []),
+                         [["/usr/bin/ss", "-K", "sport", "=", ":8080"]])
+
+    def test_bad_input_rejected(self):
+        for verb, args in (("https-reset", []), ("https-reset", ["10.10.0.50", "x"]),
+                           ("https-reset", ["10.10.0.50; reboot"]), ("https-reset", ["::1"]),
+                           ("https-reset-all", ["10.10.0.50"])):
+            with self.assertRaises(helper.RejectedInput, msg=(verb, args)):
+                helper.build_reset_commands(verb, args)
+
+    def test_other_verbs_are_not_resets(self):
+        self.assertIsNone(helper.build_reset_commands("enrolled-flush", []))
+
+
 if __name__ == "__main__":
     unittest.main()

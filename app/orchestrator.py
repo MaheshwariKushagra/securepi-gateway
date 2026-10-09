@@ -224,6 +224,9 @@ class Backends:
     def unenroll(self, ip):
         dpi_enroll.unenroll(ip)
 
+    def reset_https(self, ip):
+        dpi_enroll.reset_https(ip)
+
     def user_rules(self):
         return adguard.user_rules()
 
@@ -398,27 +401,44 @@ def policy_sites(target):
 
 
 def write_site_map(enrolled, path=None):
-    """Write {ip: [sites]} for the addon, only when it changed. A failure
+    """Write {ip: [sites]} for the addon, only when it changed. Returns the
+    IPs whose entry changed (added, removed or different sites). A failure
     is reported, never raised: without the file the addon falls back to
     YouTube only for every device - less decryption, never more."""
     path = path or SITE_MAP_PATH
     want = {ip: info.get("sites") or list(DEFAULT_SITES) for ip, info in sorted(enrolled.items())}
     try:
         with open(path) as f:
-            if json.load(f) == want:
-                return False
+            before = json.load(f)
     except (OSError, ValueError):
-        pass
+        before = {}
+    if not isinstance(before, dict):
+        before = {}
+    changed = sorted(ip for ip in set(before) | set(want) if before.get(ip) != want.get(ip))
+    if not changed and os.path.exists(path):
+        return []
     try:
         fd, tmp = tempfile.mkstemp(prefix=".device-sites.", dir=os.path.dirname(path))
         with os.fdopen(fd, "w") as f:
             json.dump(want, f)
         os.chmod(tmp, 0o664)
         os.replace(tmp, path)
-        return True
+        return changed
     except OSError as e:
         print("orchestrator: could not write %s: %s" % (path, e), flush=True)
-        return False
+        return []
+
+
+def sync_sites(b, enrolled):
+    """Write the site map, then reset the open HTTPS connections of every
+    device whose enrolment or sites just changed, so the change applies
+    now and not only to connections its browser opens later. A failed
+    reset is reported, not raised: the change itself has been made."""
+    for ip in write_site_map(enrolled):
+        try:
+            b.reset_https(ip)
+        except BACKEND_ERRORS as e:
+            print("orchestrator: %s" % e, flush=True)
 
 
 # --------------------------------------------------------------- policies --
@@ -948,9 +968,6 @@ def _converge_enrolled(conn, b, want, have, applied_enrolled, now):
     come back: _reconcile_enrolled must run first (both reconcile() and
     _apply_and_verify do this), and it removes from `want` any enrollment
     that was flushed or cleared by a reboot."""
-    # Sites first, so a newly enrolled device's first connection already
-    # finds its sites; an unenrolled one simply drops out of the map.
-    write_site_map(want)
     for ip in list(have):
         if ip not in want and ip in applied_enrolled:
             b.unenroll(ip)
@@ -963,6 +980,9 @@ def _converge_enrolled(conn, b, want, have, applied_enrolled, now):
         conn.execute("UPDATE policies SET applied_state=? WHERE id=?",
                      (json.dumps({"ip": ip}), info["policy_id"]))
     conn.commit()
+    # After the firewall change: write the sites, and reset the open
+    # connections of every device whose enrolment or sites changed.
+    sync_sites(b, want)
     return record
 
 
@@ -1347,7 +1367,7 @@ def reconcile(conn, backends=None, now=None):
                         drifted = False
                         # Every cycle: a device's IP can change under the
                         # same enrollment, and the map is keyed by IP.
-                        write_site_map(desired["enrolled"])
+                        sync_sites(b, desired["enrolled"])
                     if not _domain_matches(d, desired[d], have, applied, now):
                         if drifted and not restored_after_boot:
                             summary["drift"].append(_describe_drift(d, desired, have, applied, now))

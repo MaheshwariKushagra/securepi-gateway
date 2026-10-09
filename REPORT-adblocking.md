@@ -202,6 +202,7 @@ determines whether such failures are caught.
 | YouTube **app** advertisements | — | ❌ certificate pinning; out of reach by design |
 | Instagram and Facebook **web** feed ads | Devices with that site switched on | ✅ removed (§13: 0/10 runs each) |
 | Instagram, Facebook, X, Spotify **apps** | — | ❌ pinning; pass through with ads |
+| **Ad-network ads inside apps** (AdMob and the like) | All devices, Tier 1 | ✅ blocked by DNS: banner shown 6/6 runs off → 0/5 on (one app, File Manager+) |
 | Spotify web player ads | — | ❌ no-go (needs Widevine DRM; ads from the main API host) |
 | X web ads | — | not verified (test login failed) |
 

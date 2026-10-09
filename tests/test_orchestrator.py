@@ -88,6 +88,9 @@ class FakeBackends:
         self.calls.append(("unenroll", ip))
         self.enroll_set.pop(ip, None)
 
+    def reset_https(self, ip):
+        self.calls.append(("reset_https", ip))
+
     def user_rules(self):
         return list(self.rules)
 
@@ -148,6 +151,9 @@ def setup_db():
 class OrchestratorTestCase(unittest.TestCase):
     def setUp(self):
         self._lockdir = tempfile.mkdtemp()
+        # Each test starts with no Tier 2 site map (see SITE_MAP_PATH above).
+        if os.path.exists(orchestrator.SITE_MAP_PATH):
+            os.remove(orchestrator.SITE_MAP_PATH)
         self._old_lock = orchestrator.LOCK_PATH
         orchestrator.LOCK_PATH = os.path.join(self._lockdir, "orchestrator.lock")
         self._old_boot = orchestrator.current_boot_id
@@ -473,6 +479,39 @@ class EnrollSitesTests(OrchestratorTestCase):
         orchestrator.end_policy(self.conn, p["id"], reason="test", backends=self.b, now=self.clock())
         self.reconcile()
         self.assertEqual(self.site_map(), {})
+
+    def resets(self):
+        return [c[1] for c in self.b.calls if c[0] == "reset_https"]
+
+    def test_enrolling_resets_the_devices_connections_once(self):
+        self.create("enroll", 1, target="instagram", minutes=120)
+        self.assertEqual(self.resets(), ["10.10.0.31"])
+        self.reconcile()
+        self.reconcile()
+        self.assertEqual(self.resets(), ["10.10.0.31"], "an unchanged cycle must not reset again")
+
+    def test_switching_sites_resets_the_devices_connections(self):
+        self.create("enroll", 1, target="youtube", minutes=120)
+        self.create("enroll", 1, target="instagram,youtube", minutes=120)
+        self.assertEqual(self.resets(), ["10.10.0.31", "10.10.0.31"])
+
+    def test_the_same_sites_again_does_not_reset(self):
+        self.create("enroll", 1, target="instagram", minutes=120)
+        self.create("enroll", 1, target="instagram", minutes=180)
+        self.assertEqual(self.resets(), ["10.10.0.31"])
+
+    def test_unenrolling_resets_the_devices_connections(self):
+        p = self.create("enroll", 1, target="instagram", minutes=120)
+        orchestrator.end_policy(self.conn, p["id"], reason="test", backends=self.b, now=self.clock())
+        self.assertEqual(self.resets(), ["10.10.0.31", "10.10.0.31"])
+
+    def test_a_failed_reset_does_not_undo_the_enrollment(self):
+        def boom(ip):
+            raise orchestrator.dpi_enroll.DpiEnrollError("conntrack missing")
+        self.b.reset_https = boom
+        p = self.create("enroll", 1, target="instagram", minutes=120)
+        self.assertIn("10.10.0.31", self.b.enroll_set)
+        self.assertEqual(self.site_map(), {"10.10.0.31": ["instagram"]})
 
     def test_bad_site_names_rejected(self):
         for bad in (["Instagram"], ["a b"], ["s%d" % i for i in range(9)]):

@@ -44,6 +44,17 @@ Added in ENHANCEMENT-PLAN.md step 4.2 (MAC-keyed, timed quarantine and
   blocked-ip-delete <ip>              remove <ip> from inet filter blocked_ip
   blocked-ip-list                     list inet filter blocked_ip (JSON)
 
+Added by ADBLOCK-ENHANCEMENT-PLAN.md (making an enrolment or site change
+apply at once, not only to connections opened afterwards). These run
+conntrack and ss, never nft, with fixed paths and a validated address:
+  https-reset <ip>             delete the connection-tracking entries of
+                               <ip>'s HTTPS (TCP 443) connections and close
+                               its connections to the inspection proxy
+                               (:8080), so its browser reconnects under the
+                               new decision
+  https-reset-all              close every connection to the inspection
+                               proxy (the privacy fail-safe, after a flush)
+
 Every call that changes something, and every rejected call, is logged
 to the system journal via syslog (auth facility) - read-only *-list
 calls are not (see main()),
@@ -59,6 +70,8 @@ import sys
 import syslog
 
 NFT = "/usr/sbin/nft"
+CONNTRACK = "/usr/sbin/conntrack"
+SS = "/usr/bin/ss"
 
 # Each entry: verb -> (expected arg count, nft argv builder).
 # The builder receives the helper's OWN argv (already validated) and
@@ -216,6 +229,39 @@ def build_nft_argv(verb, args):
     raise RejectedInput("unknown verb: %r" % verb)
 
 
+def build_reset_commands(verb, args):
+    """Pure function, like build_nft_argv: the exact commands for an
+    https-reset verb, or None if `verb` isn't one."""
+    if verb == "https-reset":
+        if len(args) != 1:
+            raise RejectedInput("https-reset takes exactly one argument (an IP)")
+        ip = _require_ipv4(args[0])
+        return [[CONNTRACK, "-D", "-p", "tcp", "--orig-src", ip, "--orig-port-dst", "443"],
+                [SS, "-K", "dst", ip, "sport", "=", ":8080"]]
+    if verb == "https-reset-all":
+        if len(args) != 0:
+            raise RejectedInput("https-reset-all takes no arguments")
+        return [[SS, "-K", "sport", "=", ":8080"]]
+    return None
+
+
+def run_reset(verb, commands):
+    """Run each command; conntrack exits 1 when there was nothing to
+    delete, which is not an error here."""
+    syslog.syslog(syslog.LOG_INFO, "%s %s" % (verb, commands[0][5] if verb == "https-reset" else ""))
+    for argv in commands:
+        try:
+            result = subprocess.run(argv, capture_output=True, text=True, timeout=5)
+        except (OSError, subprocess.TimeoutExpired) as e:
+            print("could not run %s: %s" % (argv[0], e), file=sys.stderr)
+            return 1
+        nothing = argv[0] == CONNTRACK and "0 flow entries" in result.stderr
+        if result.returncode != 0 and not nothing:
+            sys.stderr.write(result.stderr)
+            return result.returncode
+    return 0
+
+
 def main(argv):
     syslog.openlog("securepi-web-helper", syslog.LOG_PID, syslog.LOG_AUTH)
     if not argv:
@@ -223,6 +269,9 @@ def main(argv):
         return 2
     verb, args = argv[0], argv[1:]
     try:
+        reset = build_reset_commands(verb, args)
+        if reset is not None:
+            return run_reset(verb, reset)
         nft_argv = build_nft_argv(verb, args)
     except RejectedInput as e:
         syslog.syslog(syslog.LOG_WARNING, "REJECTED %s %s - %s" % (verb, args, e))

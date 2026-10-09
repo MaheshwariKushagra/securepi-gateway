@@ -831,6 +831,50 @@ This is one session by one person, not a counted run. It is the first evidence t
 - **Not covered:** apps, and mobile web, which may mark ads differently.
 - **Breakage:** checked as "the feed renders, no page errors, the inbox renders". Not a person using the site.
 
+### Follow-up 1: enrolment and site switches apply at once (10 October 2026)
+
+**Change.**
+- **Helper:** two new verbs. `https-reset <ip>` deletes the connection-tracking entries of the device's TCP 443 connections (`conntrack`, newly installed) and closes its connections to the proxy (`ss -K`). `https-reset-all` closes every proxied connection.
+- **Orchestrator:** writing the site map now reports which devices' entries changed (enrolled, unenrolled, or sites changed), and only those devices are reset, after the firewall change. A failed reset is reported, not rolled back.
+- **Privacy fail-safe:** its flush also closes every proxied connection, so inspection stops at once rather than when the browsers happen to close their connections.
+
+**Measured** (`tools/switch_latency.py`). The tablet's Chrome was left running on www.instagram.com. Each switch of Instagram off or on through the orchestrator was followed by a page reload, then the gateway's decisions for that host since the switch were read (`eval/results/sites/switch-latency-tablet-20261010.jsonl`):
+
+| | Switches that took effect on the reload | First decision after the switch |
+|---|---|---|
+| With the reset | **6/6** (3 off → passthrough, 3 on → decrypt) | 0.8-1.2 s |
+| Control: same switch, reset disabled | 1/4 | 7.6 s (the other three: no new connection; Chrome reused the old one) |
+
+The A33 was meant to run this test but was unplugged. The tablet doesn't need to be logged in, because Instagram's login page comes from the same host.
+
+**Found on the way: a pinned app switches ad removal off for the browser on the same phone.** Pin bypass is keyed on (device IP, host). When an app that rejects the gateway's certificate fails twice on a host, that host passes through undecrypted for **every** client on the device for 24 hours, Chrome included.
+- The YouTube-app test on the A33 bypassed every YouTube host it used, so the A33's Chrome had no YouTube ad removal for the next 24 h (cleared here by restarting the proxy).
+- `www.instagram.com` was also bypassed on the A33 after two failed handshakes, from a client that couldn't be identified (mitmproxy's log was buffered).
+- **Not fixed here.** The planned remedy is to key the bypass on the client too, using a ClientHello fingerprint, as A1 suggested. It is recorded as the next item in ADBLOCK-ENHANCEMENT-PLAN.md.
+
+### Follow-up 3: in-app ads from ad networks, blocked by Tier 1 (10 October 2026)
+
+Apps pin their certificates, so Tier 2 can't reach them. But ads that apps load from ad networks (AdMob and the like) come from the networks' own domains, so DNS filtering can block them.
+
+**Setup** (`tools/app_ads_measure.py`):
+- **App:** File Manager+ (`com.alphainventor.filemanager`) on the tablet, which shows an AdMob banner on its home screen. It is the only ad-supported app on the tablet; the A33 was unplugged.
+- **Conditions:** the tablet's filtering profile **Unrestricted** (DNS filtering off) vs **Standard**, through the orchestrator, alternating.
+- **Each run:** the tablet's Wi-Fi was switched off and on first, emptying Android's DNS cache. The app was launched fresh and left for 40 s.
+- **Recorded:** the gateway's DNS log for the window, and a screenshot.
+- **Results:** `eval/results/app-ads/filemanager-tablet-20261010.jsonl`, plus a trial pair. Screenshots are not committed.
+
+| | DNS filtering off | DNS filtering on |
+|---|---|---|
+| Runs with a banner ad on screen (judged by eye) | **6/6** | **0/5** |
+| Ad-network lookups / blocked | 17 / 0 | 5 / 5 |
+| Ad-network domains looked up | googleads.g.doubleclick.net, pagead2.googlesyndication.com, pagead2.googleadservices.com, tpc.googlesyndication.com | googleads.g.doubleclick.net (blocked; the app then stopped asking) |
+
+- **The existing lists already block this:** no new list was needed for AdMob.
+- **The app worked normally** with its ad blocked.
+- **The tool's UI ad-view count is unreliable:** it also counts an empty ad container, which exists whether or not an ad loads. The screenshots decided.
+- **One app and one ad network, so this doesn't generalise.** Rewarded-ad features in games (watch an ad for a reward) would stop working when blocked. Ads an app serves from its own servers (first-party, like Instagram's) are out of DNS's reach.
+- One run was skipped: the tablet took more than 40 s to rejoin SecurePi-Test after its Wi-Fi toggle.
+
 ### A4: blocklist trim
 
 The user approved disabling OISD Big and AdAway. Done through the same function and audit entry as the console's toggle.

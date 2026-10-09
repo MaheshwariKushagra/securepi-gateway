@@ -151,3 +151,13 @@ For each site:
 - **Regression:** the 30-video YouTube check, to confirm the host-name matching changed nothing in practice.
 - **Pin bypass:** the YouTube app on the A33 recovers after 2 failures.
 - **Finding from step 1, for A5:** mitmproxy runs with its default `upstream_cert`, so the certificate it presents for a YouTube host copies the real certificate's names. The real certificate covers many Google names, so a browser could reuse a decrypted YouTube connection for another Google host on the same address. The add-on no longer rewrites such requests, but they would still pass through the proxy decrypted. A5's scope check should look for this, for example a google.com load right after a YouTube one, checking the connection and issuer. If it happens, `--set upstream_cert=false` (a certificate naming only the SNI) is the candidate fix, to be measured before adopting.
+
+## Follow-ups (10 October 2026)
+
+| # | Item | Status |
+|---|---|---|
+| F1 | Enrolment and site switches apply at once (reset the device's HTTPS connections) | **Done and deployed**: 6/6 switches applied within about 1 s, against 1/4 without the reset |
+| F2 | Short-lived CA (the current one is valid until 2036) | Skipped by the user's decision |
+| F3 | Measure in-app ads blocked by Tier 1 | **Done** (tablet, File Manager+): AdMob banner 6/6 off → 0/5 on; existing lists suffice. More apps would need the A33 |
+| F4 | **New:** key pin bypass on the client (ClientHello fingerprint) as well as device and host, so a pinned app no longer switches ad removal off for the browser on the same phone for 24 h | Open: found during F1 |
+

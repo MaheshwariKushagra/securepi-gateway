@@ -141,10 +141,26 @@ def flush():
     5.7's privacy-scope canary: if there's any doubt the addon is making
     the right decrypt/passthrough decision, the right response is to stop
     inspecting everyone immediately, not leave any device exposed while
-    someone investigates."""
+    someone investigates. That includes connections already open through
+    the proxy: they are closed too (ADBLOCK-ENHANCEMENT-PLAN.md), instead
+    of carrying on until the browser happens to close them."""
     result = _run("enrolled-flush")
     if result.returncode != 0:
         raise DpiEnrollError("could not flush the enrolled set: %s" % result.stderr.strip())
+    reset_https()
+
+
+def reset_https(ip=None):
+    """Make a change to one device's enrolment or sites apply at once:
+    drop its open HTTPS connections, so its browser reconnects under the
+    new decision (the redirect is decided when a connection opens - 7.5
+    found pre-rolls kept playing until Chrome reconnected). With no IP,
+    close every connection to the proxy. Raises DpiEnrollError on failure;
+    callers treat that as a lesser problem than the change itself."""
+    result = _run("https-reset", ip) if ip else _run("https-reset-all")
+    if result.returncode != 0:
+        raise DpiEnrollError("could not reset HTTPS connections%s: %s"
+                             % (" of " + ip if ip else "", result.stderr.strip()))
 
 
 def unenroll(ip):

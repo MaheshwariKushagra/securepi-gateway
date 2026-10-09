@@ -698,6 +698,51 @@ class ResponseModuleScopeTests(unittest.TestCase):
         self.assertEqual(json.loads(flow.response.text), {"adPlacements": [1]})
 
 
+class TelemetryModuleTests(unittest.TestCase):
+    """Each telemetry line names its site module (plan B5)."""
+
+    def test_decrypt_and_passthrough_lines(self):
+        a = addon.SecurePiAdFilter()
+        a._ensure_rules_fresh = lambda: None
+        lines = []
+        a._log_event = lambda ip, decision, **kw: lines.append((decision, kw.get("module")))
+        for sni in ("www.youtube.com", "example.com"):
+            a.tls_clienthello(types.SimpleNamespace(
+                client_hello=types.SimpleNamespace(sni=sni),
+                context=types.SimpleNamespace(client=types.SimpleNamespace(peername=("10.10.0.5", 1)))))
+        self.assertEqual(lines, [("decrypt", "youtube"), ("passthrough", None)])
+
+
+class HtmlNeutralisationTelemetryTests(unittest.TestCase):
+    """Ad fields neutralised in an HTML page are logged (plan B5)."""
+
+    def test_html_neutralisation_writes_an_ads_stripped_line(self):
+        a = _quiet_addon()
+        lines = []
+        a._log_event = lambda ip, decision, **kw: lines.append((decision, kw.get("ads_removed"), kw.get("module")))
+        flow = types.SimpleNamespace(
+            request=types.SimpleNamespace(path="/watch", host="m.youtube.com"),
+            response=_FakeResponse('<script>var p={"adPlacements":[1],"x":{"adPlacements":[2]},'
+                                   '"playerAds":[]}</script>', content_type="text/html"),
+            client_conn=types.SimpleNamespace(address=("10.10.0.5", 51000), sni="m.youtube.com"),
+        )
+        a.response(flow)
+        self.assertNotIn('"adPlacements"', flow.response.text)
+        self.assertEqual(lines, [("ads_stripped", 3, "youtube")])
+
+    def test_html_without_ad_fields_writes_nothing(self):
+        a = _quiet_addon()
+        lines = []
+        a._log_event = lambda ip, decision, **kw: lines.append(decision)
+        flow = types.SimpleNamespace(
+            request=types.SimpleNamespace(path="/watch", host="m.youtube.com"),
+            response=_FakeResponse("<html>plain</html>", content_type="text/html"),
+            client_conn=types.SimpleNamespace(address=("10.10.0.5", 51000), sni="m.youtube.com"),
+        )
+        a.response(flow)
+        self.assertEqual(lines, [])
+
+
 class DecryptDecisionTests(unittest.TestCase):
     """tls_clienthello() decrypts exactly the hosts a module claims."""
 

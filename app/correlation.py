@@ -1501,18 +1501,28 @@ EFFECTIVENESS_WINDOW_SECONDS = 3600   # "a configured period", per the plan
 EFFECTIVENESS_MIN_YOUTUBE_EVENTS = 5  # enough real activity to judge by, not one stray handshake
 
 
+# Display names for the site modules in dpi/adfilter-rules.json.
+SITE_LABELS = {"youtube": "YouTube", "x": "X", "instagram": "Instagram",
+               "facebook": "Facebook", "spotify": "Spotify"}
+
+
 def adblock_effectiveness_signal(conn):
+    """Judged per (device, site) since the rules hold more than one site
+    (ADBLOCK-ENHANCEMENT-PLAN.md B5): a site whose ad removal stopped
+    working must not be masked by another site still stripping ads on the
+    same device. Rows from before dpi_module existed are YouTube's."""
     now = time.time()
     since = now - EFFECTIVENESS_WINDOW_SECONDS
 
     rows = conn.execute(
         """
-        SELECT device_id, count(*) n_youtube, sum(dpi_action='ads_stripped') n_stripped,
+        SELECT device_id, COALESCE(dpi_module, 'youtube') site,
+               count(*) n_youtube, sum(dpi_action='ads_stripped') n_stripped,
                min(ts) first_seen, max(ts) last_seen
           FROM events
          WHERE source='dpi' AND device_id IS NOT NULL AND ts > ?
            AND dpi_action IN ('decrypt', 'ads_stripped')
-         GROUP BY device_id
+         GROUP BY device_id, site
         HAVING n_youtube >= ? AND n_stripped = 0
         """,
         (since, EFFECTIVENESS_MIN_YOUTUBE_EVENTS),
@@ -1523,18 +1533,22 @@ def adblock_effectiveness_signal(conn):
         event_ids = [
             e["id"] for e in conn.execute(
                 """SELECT id FROM events WHERE source='dpi' AND device_id=? AND ts > ?
+                     AND COALESCE(dpi_module, 'youtube')=?
                      AND dpi_action IN ('decrypt', 'ads_stripped') ORDER BY ts""",
-                (r["device_id"], since),
+                (r["device_id"], since, r["site"]),
             )
         ]
+        label = SITE_LABELS.get(r["site"], r["site"])
+        cause = ("likely a YouTube format change, or server-side ad insertion (SSAI), which this "
+                 "feature cannot remove by design." if r["site"] == "youtube" else
+                 "likely a change in how %s marks its ads." % label)
         raise_incident(
             conn, r["device_id"], "adblock_ineffective", "medium",
-            title="YouTube ad removal may no longer be effective",
+            title="%s ad removal may no longer be effective" % label,
             description=(
-                "%d YouTube connection(s) decrypted in the last %d minutes with zero ads "
-                "stripped from any of them - likely a YouTube format change, or server-side "
-                "ad insertion (SSAI), which this feature cannot remove by design."
-                % (r["n_youtube"], EFFECTIVENESS_WINDOW_SECONDS // 60)
+                "%d %s connection(s) decrypted in the last %d minutes with zero ads "
+                "stripped from any of them - %s"
+                % (r["n_youtube"], label, EFFECTIVENESS_WINDOW_SECONDS // 60, cause)
             ),
             first_seen=r["first_seen"], last_seen=r["last_seen"],
             event_ids=event_ids,
@@ -1542,6 +1556,75 @@ def adblock_effectiveness_signal(conn):
         fired += 1
 
     set_window_start(conn, "adblock_ineffective", now)
+    return fired
+
+
+# --------------------------------------------------------------------------
+# VPN tunnel in use (ADBLOCK-ENHANCEMENT-PLAN.md A6) - informational
+#
+# A VPN carries a device's DNS and traffic past every filter here, so the
+# 7.5 bypass matrix's one "leaked, not detected" row. Using a VPN is a
+# person's choice, not an attack: this is a LOW incident that never adds
+# to the device's risk score (risk.NOT_RISK_EVIDENCE) and has no ATT&CK
+# tactic, so it can't join a campaign. It only says "this device's
+# traffic is probably not being filtered right now".
+#
+# Recognised by port: WireGuard's default (51820), Cloudflare WARP (2408)
+# and OpenVPN (1194). IPsec's 500/4500 are left out on purpose - phones use
+# them for Wi-Fi calling to their carrier. A VPN on another port (443,
+# say) is not seen.
+# --------------------------------------------------------------------------
+VPN_WINDOW_SECONDS = 900
+VPN_UDP_PORTS = (51820, 2408, 1194)
+VPN_TCP_PORTS = (1194,)
+VPN_MIN_PACKETS = 3
+
+
+def _vpn_flow_clause():
+    return ("source='suricata' AND event_type='flow' AND ("
+            "(proto='UDP' AND dest_port IN (%s)) OR (proto='TCP' AND dest_port IN (%s)))"
+            % (",".join(str(p) for p in VPN_UDP_PORTS), ",".join(str(p) for p in VPN_TCP_PORTS)))
+
+
+def vpn_tunnel_signal(conn):
+    now = time.time()
+    since = now - VPN_WINDOW_SECONDS
+    rows = conn.execute(
+        """
+        SELECT device_id, dest_ip, dest_port, proto, sum(COALESCE(pkts_toserver, 0)) pkts,
+               min(ts) first_seen, max(ts) last_seen
+          FROM events
+         WHERE device_id IS NOT NULL AND ts > ? AND %s
+         GROUP BY device_id, dest_ip, dest_port, proto
+        HAVING pkts >= ?
+        """ % _vpn_flow_clause(),
+        (since, VPN_MIN_PACKETS),
+    ).fetchall()
+
+    fired = 0
+    for r in rows:
+        event_ids = [
+            e["id"] for e in conn.execute(
+                "SELECT id FROM events WHERE device_id=? AND ts > ? AND dest_ip=? AND dest_port=? AND "
+                + _vpn_flow_clause() + " ORDER BY ts",
+                (r["device_id"], since, r["dest_ip"], r["dest_port"]),
+            )
+        ]
+        raise_incident(
+            conn, r["device_id"], "vpn_tunnel", "low",
+            title="VPN tunnel in use (informational)",
+            description=(
+                "%s traffic to %s port %d (%d packets out) looks like a VPN tunnel. While it is up, "
+                "this device's DNS and web traffic bypass the gateway's filtering and ad blocking. "
+                "Using a VPN is not a threat in itself; this is a note, and it does not count "
+                "towards the device's risk score." % (r["proto"], r["dest_ip"], r["dest_port"], r["pkts"])
+            ),
+            first_seen=r["first_seen"], last_seen=r["last_seen"],
+            event_ids=event_ids,
+        )
+        fired += 1
+
+    set_window_start(conn, "vpn_tunnel", now)
     return fired
 
 
@@ -1679,7 +1762,7 @@ def behavioral_baseline_signal(conn):
 SIGNALS = [port_scan_signal, network_sweep_signal, slow_scan_signal, dns_bypass_signal,
            ids_alert_signal, threat_intel_signal, dns_tunneling_signal, beacon_signal,
            brute_force_signal, malicious_domain_signal, new_device_signal,
-           adblock_effectiveness_signal, behavioral_baseline_signal, campaign_signal]
+           adblock_effectiveness_signal, vpn_tunnel_signal, behavioral_baseline_signal, campaign_signal]
 
 
 def run_all(conn):

@@ -9,8 +9,9 @@ caught by a careful code review. See ENHANCEMENT-PLAN.md step 5.7.
 
 Every CHECK_INTERVAL_S, this asks the addon file actually on disk at
 ADDON_PATH - the same file mitmproxy loads - what it would decide for two
-hostnames: one that must stay passed-through (not on DECRYPT_SUFFIXES) and
-one that must be decrypted (on it). If either comes back wrong, Tier 2
+hostnames: ones that must stay passed-through and ones that must be
+decrypted - for every site module in the live rules, with look-alike
+names (ADBLOCK-ENHANCEMENT-PLAN.md B4). If any comes back wrong, Tier 2
 fails safe: every enrolled device is unenrolled at once, and a high-
 severity incident is raised.
 
@@ -80,7 +81,6 @@ SIGNAL_TYPE = "privacy_scope"                    # signal_state row the console 
 INCIDENT_SIGNAL_TYPE = "privacy_scope_failure"    # incidents row the console reads for pass/fail
 
 NON_ALLOWLISTED_HOST = "example.com"   # must stay passed-through, undecrypted
-ALLOWLISTED_HOST = "youtube.com"       # must be decrypted (see DECRYPT_SUFFIXES)
 
 
 class _FakeClientHello:
@@ -127,14 +127,31 @@ def _load_addon_fresh():
     return module
 
 
-def will_decrypt(sni):
+def will_decrypt(sni, addon=None):
     """True if the addon's real tls_clienthello() would decrypt this SNI;
     False if it would pass it through untouched."""
-    module = _load_addon_fresh()
-    addon = module.SecurePiAdFilter()
+    if addon is None:
+        addon = _load_addon_fresh().SecurePiAdFilter()
     data = _FakeTlsData(sni)
     addon.tls_clienthello(data)
     return not getattr(data, "ignore_connection", False)
+
+
+def expected_decisions(rules):
+    """(host, must_decrypt) pairs covering every site module in the live
+    rules (ADBLOCK-ENHANCEMENT-PLAN.md B4): each decrypt suffix and a
+    subdomain of it must be decrypted; look-alike names built from it,
+    and each module's passthrough carve-outs, must not be. Plus one
+    ordinary host that no module may ever claim."""
+    checks = [(NON_ALLOWLISTED_HOST, False)]
+    for module in rules["modules"].values():
+        for suffix in module["decrypt_suffixes"]:
+            suffix = suffix.strip().lower().rstrip(".")
+            checks += [(suffix, True), ("canary." + suffix, True),
+                       ("not" + suffix, False), (suffix + ".canary.example", False)]
+        for carve_out in module.get("passthrough_suffixes", []):
+            checks.append((carve_out, False))
+    return checks
 
 
 def db():
@@ -168,17 +185,21 @@ def _raise_or_touch_incident(conn, description):
 def run_check():
     """One pass. Returns True if privacy scope is intact."""
     try:
-        stays_encrypted = not will_decrypt(NON_ALLOWLISTED_HOST)
-        gets_decrypted = will_decrypt(ALLOWLISTED_HOST)
+        addon = _load_addon_fresh().SecurePiAdFilter()
+        wrong = [(host, must) for host, must in expected_decisions(addon._rules)
+                 if will_decrypt(host, addon) != must]
         failure_detail = None
-        if not stays_encrypted:
-            failure_detail = ("%s was NOT left passed-through - the addon would decrypt a "
-                               "non-allowlisted host, which is exactly the class of bug this "
-                               "check exists to catch (see report §6)" % NON_ALLOWLISTED_HOST)
-        elif not gets_decrypted:
-            failure_detail = ("%s was NOT decrypted - the addon would pass through an "
-                               "allowlisted host untouched, so ad removal is not working"
-                               % ALLOWLISTED_HOST)
+        leaked = [h for h, must in wrong if not must]
+        missed = [h for h, must in wrong if must]
+        if leaked:
+            failure_detail = ("%s would be decrypted although no site module should cover it - "
+                               "the addon would decrypt a non-allowlisted host, which is exactly "
+                               "the class of bug this check exists to catch (see report §6)"
+                               % ", ".join(leaked))
+        elif missed:
+            failure_detail = ("%s would NOT be decrypted although a site module covers it - "
+                               "the addon would pass an allowlisted host through untouched, so "
+                               "ad removal is not working" % ", ".join(missed))
     except Exception as exc:
         # The check itself breaking is ALSO grounds to fail safe - an
         # addon file that can't even be imported is not one to trust.
@@ -197,7 +218,8 @@ def run_check():
         _raise_or_touch_incident(conn, "%s. %s" % (failure_detail, flushed_note))
         print("securepi-privacy-canary: FAIL - %s" % failure_detail, flush=True)
     else:
-        print("securepi-privacy-canary: ok - passthrough and decrypt decisions both correct", flush=True)
+        print("securepi-privacy-canary: ok - passthrough and decrypt decisions correct for every site module",
+              flush=True)
 
     conn.commit()
     conn.close()

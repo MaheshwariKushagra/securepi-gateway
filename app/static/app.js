@@ -2194,7 +2194,19 @@ function initFilteringAnalytics() {
                 <span class="metric"><span class="dim">Ad objects removed</span> <b>${t2.ads_removed}</b></span>
                 <span class="metric"><span class="dim">TLS handshake failures</span> <b>${t2.tls_failed}</b></span>
                 <span class="metric"><span class="dim">Pinning bypasses</span> <b>${t2.pin_bypass}</b></span>
-            </div>`;
+            </div>${tier2SitesHtml(t2.by_site)}`;
+    }
+
+    // One row per site module (ADBLOCK-ENHANCEMENT-PLAN.md B5).
+    function tier2SitesHtml(bySite) {
+        const sites = Object.keys(bySite || {}).sort();
+        if (!sites.length) return "";
+        return `<div class="section-label" style="margin-top:12px">By site</div>` + sites.map(name => {
+            const x = bySite[name];
+            return `<div class="list-row"><span class="grow">${esc(name)}</span>
+                <span class="dim">${x.decrypt} decrypted · ${x.ads_stripped} stripped · ${x.ads_removed} ads removed ·
+                ${x.path_blocked} paths blocked · ${x.pin_bypass} bypassed</span></div>`;
+        }).join("");
     }
 
     async function load() {

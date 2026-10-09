@@ -260,6 +260,9 @@ SCHEMA_MIGRATIONS = [
     # manager wakes - so the gaps between ts values aren't the gaps between
     # connections. beacon_signal() needs the real ones.
     "ALTER TABLE events ADD COLUMN flow_start REAL",
+    # ADBLOCK-ENHANCEMENT-PLAN.md B5: which site module a Tier 2 decision
+    # belongs to, now that the rules hold more than one site.
+    "ALTER TABLE events ADD COLUMN dpi_module TEXT",
 ]
 
 # How long to wait between passes over the log files. Two seconds keeps the
@@ -494,7 +497,7 @@ def insert_events(conn, rows):
         "alert_signature", "alert_category", "alert_severity", "alert_signature_id",
         "blocked", "block_reason",
         "dns_filter_list_id", "dns_cached", "dns_upstream", "dns_elapsed_ms",
-        "dpi_action", "dpi_ads_removed",
+        "dpi_action", "dpi_ads_removed", "dpi_module",
         "dhcp_params",
     ]
     placeholders = ",".join("?" for _ in columns)
@@ -913,7 +916,16 @@ def flatten_dpi(entry):
         "dpi_action": entry.get("decision"),
         "dpi_ads_removed": entry.get("ads_removed"),
         "block_reason": entry.get("blocked_path"),
+        "dpi_module": entry.get("module") or (
+            "youtube" if entry.get("decision") in _PRE_MODULE_SITE_DECISIONS else None),
     }
+
+
+# Lines written before the addon recorded a module (schema 2 rules,
+# ADBLOCK-ENHANCEMENT-PLAN.md B5) can only be YouTube's: it was the one
+# site the addon decrypted. Passthrough lines have no site.
+_PRE_MODULE_SITE_DECISIONS = ("decrypt", "ads_stripped", "path_blocked", "cosmetic_injected",
+                              "pin_bypass", "tls_failed")
 
 
 def read_dpi_events(conn):

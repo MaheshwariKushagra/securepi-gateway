@@ -289,7 +289,7 @@ RANGES = {
 # is a real problem, not noise.
 SIGNALS = ["port_scan", "network_sweep", "slow_scan", "dns_bypass", "ids_alert", "threat_intel",
            "dns_tunneling", "beacon", "brute_force", "malicious_domain", "new_device",
-           "adblock_ineffective", "volume_anomaly", "campaign"]
+           "adblock_ineffective", "vpn_tunnel", "volume_anomaly", "campaign"]
 
 # Step 6.1's own exit criterion calls this "the learning badge until 7
 # days of data exist" - matches BASELINE_MIN_SAMPLES in correlation.py.
@@ -708,6 +708,21 @@ def _tier2_breakdown(c, start, end, device_id=None):
         "   AND ts >= ? AND ts < ?" + dev_clause, (start, end) + dev_arg).fetchone()[0]
     counts["ads_removed"] = ads_removed
     counts["active"] = any(v for k, v in counts.items() if k != "ads_removed")
+    # Per site (ADBLOCK-ENHANCEMENT-PLAN.md B5). Rows ingested before the
+    # dpi_module column existed are NULL; only YouTube was decrypted then.
+    by_site = {}
+    for r in c.execute(
+        "SELECT COALESCE(dpi_module, 'youtube') site, dpi_action, count(*) n,"
+        "       COALESCE(sum(dpi_ads_removed), 0) removed FROM events"
+        " WHERE source='dpi' AND dpi_action IN ('decrypt','ads_stripped','path_blocked','pin_bypass')"
+        "   AND ts >= ? AND ts < ?" + dev_clause +
+        " GROUP BY site, dpi_action", (start, end) + dev_arg):
+        site = by_site.setdefault(r["site"], {"decrypt": 0, "ads_stripped": 0, "path_blocked": 0,
+                                              "pin_bypass": 0, "ads_removed": 0})
+        site[r["dpi_action"]] = r["n"]
+        if r["dpi_action"] == "ads_stripped":
+            site["ads_removed"] = r["removed"]
+    counts["by_site"] = by_site
     return counts
 
 

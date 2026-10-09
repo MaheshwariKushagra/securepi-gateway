@@ -685,5 +685,27 @@ class ReadNftLogTests(unittest.TestCase):
         self.assertEqual(saved, 0, "but it doesn't match any of our prefixes, so nothing is saved")
 
 
+class FlattenDpiModuleTests(unittest.TestCase):
+    """ADBLOCK-ENHANCEMENT-PLAN.md B5: each Tier 2 row records its site."""
+
+    def test_module_from_the_line_is_kept(self):
+        row = ingest.flatten_dpi({"ts": 1, "decision": "ads_stripped", "module": "x"})
+        self.assertEqual(row["dpi_module"], "x")
+
+    def test_older_site_lines_are_youtube(self):
+        for decision in ("decrypt", "ads_stripped", "path_blocked", "pin_bypass", "tls_failed"):
+            row = ingest.flatten_dpi({"ts": 1, "decision": decision})
+            self.assertEqual(row["dpi_module"], "youtube", decision)
+
+    def test_passthrough_has_no_site(self):
+        row = ingest.flatten_dpi({"ts": 1, "decision": "passthrough", "sni": "example.com"})
+        self.assertIsNone(row["dpi_module"])
+
+    def test_the_column_is_inserted(self):
+        conn = fixtures.temp_db()
+        ingest.insert_events(conn, [ingest.flatten_dpi({"ts": 5, "ts_iso": "t", "decision": "decrypt", "module": "x"})])
+        self.assertEqual(conn.execute("SELECT dpi_module FROM events").fetchone()[0], "x")
+
+
 if __name__ == "__main__":
     unittest.main()

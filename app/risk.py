@@ -46,7 +46,9 @@ CAMPAIGN_BONUS = 25
 # Incidents that record something the gateway DID, not something the
 # device did (step 4.2's automatic quarantine). Counting one would score
 # the same campaign twice - once as evidence and again as the response to it.
-NOT_RISK_EVIDENCE = ("auto_quarantine",)
+# vpn_tunnel (ADBLOCK-ENHANCEMENT-PLAN.md A6) is a note that filtering is
+# being bypassed, not evidence of anything malicious.
+NOT_RISK_EVIDENCE = ("auto_quarantine", "vpn_tunnel")
 
 
 def _decay(age_seconds):

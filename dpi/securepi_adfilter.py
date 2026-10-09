@@ -323,7 +323,8 @@ class SecurePiAdFilter:
             logger.warning("securepi: could not write rule stats: %s", exc)
 
     def _flow_module(self, flow):
-        """The rules module for one decrypted request, or None.
+        """(name, module) of the rules module for one decrypted request,
+        or (None, None).
 
         Decided by the request's own host name (the Host header, or :authority
         in HTTP/2), not only the connection's SNI. A browser can reuse one
@@ -339,9 +340,9 @@ class SecurePiAdFilter:
         if name is None and (not host or _looks_like_ip(host)):
             sni = getattr(getattr(flow, "client_conn", None), "sni", None)
             name, module = module_for_host(self._rules, sni)
-        return module
+        return name, module
 
-    def _log_event(self, src_ip, decision, sni=None, ads_removed=None, blocked_path=None):
+    def _log_event(self, src_ip, decision, sni=None, ads_removed=None, blocked_path=None, module=None):
         """Append one telemetry line. Failures here (disk full, permissions)
         must never take down ad-blocking itself, so they are swallowed after
         one journal warning - this is a nice-to-have analytics feed, not the
@@ -351,7 +352,10 @@ class SecurePiAdFilter:
         5.8): it carries the epoch timestamp the bypass ends, not a count
         of anything removed. Same reasoning as schema.sql reusing tls_sni/
         block_reason for DPI purposes - one shape, read differently
-        depending on `decision`, rather than a field per decision type."""
+        depending on `decision`, rather than a field per decision type.
+
+        `module` is the site module the decision belongs to
+        (ADBLOCK-ENHANCEMENT-PLAN.md B5); None for a passthrough."""
         try:
             if self._events_fh is None:
                 os.makedirs(os.path.dirname(DPI_EVENTS_PATH), exist_ok=True)
@@ -365,6 +369,7 @@ class SecurePiAdFilter:
                 "sni": sni,
                 "ads_removed": ads_removed,
                 "blocked_path": blocked_path,
+                "module": module,
             })
             self._events_fh.write(line + "\n")
             self._events_fh.flush()
@@ -386,7 +391,8 @@ class SecurePiAdFilter:
         sni = data.client_hello.sni or ""
 
         # Decrypt only a host some site module claims (schema 2 rules).
-        wanted = module_for_host(self._rules, sni)[0] is not None
+        module_name = module_for_host(self._rules, sni)[0]
+        wanted = module_name is not None
 
         src_ip = None
         try:
@@ -402,7 +408,8 @@ class SecurePiAdFilter:
         if wanted and bypass_until and bypass_until > time.time():
             data.ignore_connection = True
             self.passed_through += 1
-            self._log_event(src_ip, "pin_bypass", sni=sni, ads_removed=int(bypass_until))
+            self._log_event(src_ip, "pin_bypass", sni=sni, ads_removed=int(bypass_until),
+                            module=module_name)
             return
 
         if not wanted:
@@ -415,7 +422,7 @@ class SecurePiAdFilter:
             self._log_event(src_ip, "passthrough", sni=sni)
         else:
             self.decrypted += 1
-            self._log_event(src_ip, "decrypt", sni=sni)
+            self._log_event(src_ip, "decrypt", sni=sni, module=module_name)
 
     @staticmethod
     def _tls_pair(data):
@@ -472,7 +479,7 @@ class SecurePiAdFilter:
         tls_clienthello above - rather than trying, and failing, forever.
         """
         src_ip, sni = self._tls_pair(data)
-        self._log_event(src_ip, "tls_failed", sni=sni)
+        self._log_event(src_ip, "tls_failed", sni=sni, module=module_for_host(self._rules, sni)[0])
 
         if src_ip is None or not sni:
             return  # nothing to key a (device, host) pair on
@@ -518,7 +525,7 @@ class SecurePiAdFilter:
         # Match against the path only, never the query string after "?":
         # a harmless request like "/search?q=/pagead/" used to be blocked
         # just because the query happened to contain a rule's text.
-        module = self._flow_module(flow)
+        name, module = self._flow_module(flow)
         if module is None:
             return
         request_path = flow.request.path.split("?")[0]
@@ -532,7 +539,7 @@ class SecurePiAdFilter:
                     src_ip = flow.client_conn.address[0]
                 except Exception:
                     src_ip = None
-                self._log_event(src_ip, "path_blocked", blocked_path=blocked_path)
+                self._log_event(src_ip, "path_blocked", blocked_path=blocked_path, module=name)
                 self._rule_hits["blocked_paths"][path] = self._rule_hits["blocked_paths"].get(path, 0) + 1
                 self._write_rule_stats()
                 return
@@ -547,7 +554,7 @@ class SecurePiAdFilter:
         and harder to evade than a list of special cases.
         """
         self._ensure_rules_fresh()
-        module = self._flow_module(flow)
+        name, module = self._flow_module(flow)
         if module is None:
             return
         content_type = flow.response.headers.get("content-type", "")
@@ -579,7 +586,7 @@ class SecurePiAdFilter:
                 except Exception:
                     src_ip = None
                 self._log_event(src_ip, "ads_stripped",
-                                 sni=flow.request.host, ads_removed=removed)
+                                 sni=flow.request.host, ads_removed=removed, module=name)
                 self._write_rule_stats()
             return
 
@@ -587,12 +594,26 @@ class SecurePiAdFilter:
         # safely, so we neutralise the field names the way uBlock Origin does.
         if "html" in content_type:
             changed = False
+            neutralised = 0
             for field in module["ad_fields"]:
                 marker = '"%s"' % field
                 if marker in text:
+                    neutralised += text.count(marker)
                     text = text.replace(marker, '"no_ads"')
                     changed = True
                     self._rule_hits["ad_fields"][field] = self._rule_hits["ad_fields"].get(field, 0) + 1
+            # Logged like a JSON strip (plan B5). Mobile YouTube embeds the
+            # ad schedule in the watch page's HTML, and this branch used to
+            # write no telemetry line, so the console under-counted and the
+            # effectiveness watchdog saw "decrypting, never stripping" on a
+            # device whose ads were being removed here.
+            if neutralised:
+                try:
+                    src_ip = flow.client_conn.address[0]
+                except Exception:
+                    src_ip = None
+                self._log_event(src_ip, "ads_stripped", sni=flow.request.host,
+                                 ads_removed=neutralised, module=name)
 
             # Cosmetic CSS injection (step 5.11, Path 1 - off by default,
             # see adfilter_rules.py's OPTIONAL_RULE_DEFAULTS). Independent
@@ -612,7 +633,7 @@ class SecurePiAdFilter:
                     except Exception:
                         src_ip = None
                     self._log_event(src_ip, "cosmetic_injected", sni=flow.request.host,
-                                     ads_removed=len(module["cosmetic_selectors"]))
+                                     ads_removed=len(module["cosmetic_selectors"]), module=name)
 
             if changed:
                 flow.response.set_text(text)

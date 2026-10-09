@@ -701,6 +701,60 @@ the description moves on ("port 443").
   so they come from ordinary phone traffic - most likely a false-positive
   pattern, to look at in 7.3.
 
+## Stage 7A - ad-blocking enhancement (ADBLOCK-ENHANCEMENT-PLAN.md), 9 October 2026
+
+### A5: privacy scope through the real redirect, on the tablet
+
+`tools/scope_check_device.py` (new), tablet (device 98, Chrome 77) enrolled for the run
+through the orchestrator and unenrolled after it. Record:
+`eval/results/scope-check/scope-20261009-a5.jsonl`.
+
+- **Hosts (11):**
+  - All 4 YouTube hosts were shown the SecurePi certificate.
+  - All 7 others kept their own certificate: example.com, wikipedia.org, 4 Google hosts, and the look-alike youtubekids.com.
+- **Connection reuse (6):** after a fresh Chrome opened m.youtube.com, Google hosts fetched from that page each opened their own connection, with their own certificate. None used a decrypted YouTube connection.
+- **Result: 0 unexpected decryptions.** The concern recorded in step 1 (mitmproxy copies the real certificate's names, so a browser might reuse a YouTube connection) did not show up on this browser. The check stays a gate for every Tier 2 deploy.
+
+### A3: cosmetic selectors against real mobile YouTube
+
+`tools/cosmetic_probe.py` (new). Home page plus 5 watch pages on the tablet, each with inspection off and on. Record:
+`eval/results/cosmetic/probe-20261009.jsonl`.
+
+- **Selector matches:** none of the 8 `ytd-*` selectors matched anything. They are desktop names; mobile YouTube uses `ytm-*`.
+- **Ad-shaped elements, inspection off:** one `ytm-companion-slot` per watch page, taking no space on screen.
+- **Ad-shaped elements, inspection on:** gone on 3 of 5 pages, still empty on the other 2.
+- **Decision:** mobile web leaves no visible empty ad boxes, so cosmetic injection **stays off**. Turning it on would only add a style tag and a loosened style policy to every page. The desktop selectors can only be checked with a desktop browser behind the gateway, which the user chose not to set up (no Mac on SecurePi-Test).
+
+### YouTube regression on the new add-on (tablet)
+
+- **Enrolled:** 30 of 30 videos played, 0 pre-rolls (`eval/results/youtube-7A/tier2_7A_tablet/`).
+- **Not enrolled (control):** 10 of 10 played, also 0 pre-rolls (`.../control_unenrolled_tablet/`).
+
+**The tablet's Chrome 77 isn't served pre-rolls at all**, so this shows the new add-on breaks nothing, not that it still removes pre-rolls. That check needs the A33, as in 7.5.
+
+### Finding: HTML ad removal was never logged
+
+During the run the add-on blocked 138 ad paths and neutralised 37 ad fields in watch-page HTML (its rule counters), but wrote **no** `ads_stripped` line. Its HTML branch, which is where mobile YouTube's ad schedule arrives, logged nothing.
+
+- The console under-counted ad removal.
+- The effectiveness watchdog saw "decrypting, never stripping" on a device whose ads were being removed. This explains the tablet's `adblock_ineffective` incidents #760 and #764, which can be closed as false positives.
+- Even the A33's 2 October run logged only 3 `ads_stripped` lines against 131 blocked paths.
+
+Fixed: the HTML branch now logs `ads_stripped` with the number of fields neutralised (tests in `tests/test_adfilter.py`).
+
+### A4: blocklist trim
+
+The user approved disabling OISD Big and AdAway. Done through the same function and audit entry as the console's toggle.
+
+| | Before | After |
+|---|---|---|
+| Enabled rules | 639,105 | 392,229 |
+| DNS filter RSS | 271 MB | 187 MB (−31%) |
+| DNS filter cgroup memory | 299 MB | 212 MB |
+
+- doubleclick.net, googlesyndication.com, adservice.google.com and ads.yahoo.com are still blocked.
+- Not restarted for the measurement: two household devices were online. "After" is the same process about 3 minutes after the change.
+
 ## Stage 7
 
 **Status: Stage 7 complete (3 October 2026), with two recorded deviations.**

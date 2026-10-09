@@ -413,15 +413,28 @@ PLAYBOOKS = {
             "innocent explanations once the connection count and regularity are both this high.",
     },
     "adblock_ineffective": {
-        "what_it_means": "SecurePi's own YouTube ad-removal (the Tier 2 mitmproxy-based DPI "
-            "rewriter) appears to be missing more ads than usual for this device. This is a "
-            "platform-effectiveness signal about OUR OWN filtering, not a network threat - "
-            "it usually means YouTube changed its ad markup and the DPI ruleset needs updating.",
+        "what_it_means": "SecurePi's own ad removal for the site named in the title (the Tier 2 "
+            "mitmproxy-based DPI rewriter) appears to be missing more ads than usual for this "
+            "device. This is a platform-effectiveness signal about OUR OWN filtering, not a "
+            "network threat - it usually means the site changed its ad markup and that site's "
+            "DPI rules need updating.",
         "how_to_check": "Open Filtering -> DPI rules and check the addon's own hit-rate stats "
             "for the fields/renderers currently configured.",
         "recommended_action": "Update the ad-field or ad-renderer rules to match what YouTube "
             "is currently sending. Resolve once effectiveness recovers; if the drop turns out "
             "to be temporary and self-corrects, false-positive is also reasonable.",
+    },
+    "vpn_tunnel": {
+        "what_it_means": "This device is sending traffic that looks like a VPN tunnel (by port: "
+            "WireGuard, Cloudflare WARP or OpenVPN). While the tunnel is up, its DNS and web "
+            "traffic bypass the gateway's filtering, ad blocking and most detection. A VPN is a "
+            "legitimate choice; this is informational and does not raise the device's risk score.",
+        "how_to_check": "Open the evidence chain for the destination and port. Ask whether the "
+            "device's owner runs a VPN app (work VPNs and privacy apps are common).",
+        "recommended_action": "If the VPN is expected, resolve or mark false positive (a "
+            "suppression rule for this device stops further notes). If it is not, find out "
+            "which app opened it. For a device that should never use one (an IoT device), the "
+            "IoT filtering profile blocks VPN services by name.",
     },
     "volume_anomaly": {
         "what_it_means": "This device moved noticeably more data than its own learned "

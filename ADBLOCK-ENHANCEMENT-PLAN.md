@@ -119,9 +119,16 @@ For each site:
 
 | Order | Steps | Status |
 |---|---|---|
-| 1 | A1, A2, B1 (first half) | **Done in code, 9 Oct 2026, not yet deployed.** 562 tests pass |
-| 1 | A4 | Waiting for the user's yes/no |
-| 2–8 | B0 onward | Not started |
+| 1 | A1, A2, B1 (first half) | **Done and deployed** (9 Oct). The app-side A1 check needs the A33 |
+| 1 | A4 | **Done** (9 Oct): OISD Big and AdAway disabled, DNS filter 271 → 187 MB |
+| 4 | A5 | **Done** (9 Oct): 0 unexpected decryptions on the tablet; `tools/scope_check_device.py` |
+| 4 | A3 | **Done for mobile** (9 Oct): no visible empty ad boxes on mobile YouTube, so injection stays off; desktop selectors unverifiable without a desktop browser behind the gateway |
+| 4 | YouTube regression | Tablet: 30/30 played, but its Chrome 77 gets no pre-rolls even unenrolled (control 0/10), so pre-roll removal still needs the A33 |
+| 5 | B4, B5 | **Done and deployed** (9 Oct): canary covers every module and look-alike names; telemetry, console panel and watchdog per site; HTML ad removal now logged (it never was) |
+| 7 | A6 | **Done and deployed** (9 Oct): `vpn_tunnel`, low, informational, never adds to risk |
+| 2 | B0 | **Blocked** (9 Oct): the user chose a browser on the Dell for the logged-in feeds. Installed under ~/securepi-browser (Playwright 1.48 Chromium plus 13 runtime libraries), but the first launch crashed, and the Claude Code permission check then blocked further work on a long-running browser on the gateway. Waiting for the user's decision |
+| 3, 5, 6 | B1 (second half), B2, B3, C | Wait on B0 |
+| 8 | D | After C |
 
 **What step 1 changed (9 October 2026):**
 - **Rules file schema 2** (`dpi/adfilter_rules.py`): rules sit under `modules`, one per site; today's rules are the `youtube` module, unchanged.

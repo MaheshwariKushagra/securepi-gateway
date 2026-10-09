@@ -1160,6 +1160,83 @@ class AdblockEffectivenessSignalTests(unittest.TestCase):
             fixtures.insert_dpi_event(conn, 1, "decrypt", now - 10)
         self.assertEqual(correlation.adblock_effectiveness_signal(conn), 0)
 
+    def test_one_site_stripping_does_not_mask_another_that_stopped(self):
+        # ADBLOCK-ENHANCEMENT-PLAN.md B5: judged per (device, site).
+        conn = fixtures.temp_db()
+        fixtures.insert_device(conn, 1)
+        now = time.time()
+        for i in range(5):
+            fixtures.insert_dpi_event(conn, 1, "decrypt", now - 10, dpi_module="x")
+        fixtures.insert_dpi_event(conn, 1, "ads_stripped", now - 5, dpi_ads_removed=3, dpi_module="youtube")
+        self.assertEqual(correlation.adblock_effectiveness_signal(conn), 1)
+        row = conn.execute("SELECT title FROM incidents WHERE signal_type='adblock_ineffective'").fetchone()
+        self.assertEqual(row["title"], "X ad removal may no longer be effective")
+
+    def test_rows_without_a_site_count_as_youtube(self):
+        conn = fixtures.temp_db()
+        fixtures.insert_device(conn, 1)
+        now = time.time()
+        for i in range(4):
+            fixtures.insert_dpi_event(conn, 1, "decrypt", now - 10)
+        fixtures.insert_dpi_event(conn, 1, "ads_stripped", now - 5, dpi_ads_removed=1, dpi_module="youtube")
+        self.assertEqual(correlation.adblock_effectiveness_signal(conn), 0)
+
+
+class VpnTunnelSignalTests(unittest.TestCase):
+    """ADBLOCK-ENHANCEMENT-PLAN.md A6: an informational note, by port."""
+
+    def _db(self):
+        conn = fixtures.temp_db()
+        fixtures.insert_device(conn, 1)
+        return conn
+
+    def test_the_7_5_warp_probe_is_noted(self):
+        # tools/bypass_vpn.py: 5 WireGuard-shaped packets to WARP, UDP 2408.
+        conn = self._db()
+        fixtures.insert_flow(conn, 1, "162.159.192.1", 2408, time.time() - 30, proto="UDP",
+                             bytes_toserver=950, pkts_toserver=5, pkts_toclient=0)
+        self.assertEqual(correlation.vpn_tunnel_signal(conn), 1)
+        row = conn.execute("SELECT severity, title FROM incidents WHERE signal_type='vpn_tunnel'").fetchone()
+        self.assertEqual(row["severity"], "low")
+        self.assertIn("informational", row["title"])
+
+    def test_wireguard_and_openvpn_ports(self):
+        conn = self._db()
+        fixtures.insert_flow(conn, 1, "198.51.100.7", 51820, time.time() - 30, proto="UDP", pkts_toserver=40)
+        fixtures.insert_flow(conn, 1, "198.51.100.8", 1194, time.time() - 30, proto="TCP", pkts_toserver=40)
+        self.assertEqual(correlation.vpn_tunnel_signal(conn), 2)
+
+    def test_ordinary_and_wifi_calling_traffic_is_not_noted(self):
+        conn = self._db()
+        now = time.time()
+        fixtures.insert_flow(conn, 1, "142.250.1.1", 443, now - 30, proto="UDP", pkts_toserver=500)
+        fixtures.insert_flow(conn, 1, "203.0.113.9", 4500, now - 30, proto="UDP", pkts_toserver=500)
+        fixtures.insert_flow(conn, 1, "203.0.113.9", 500, now - 30, proto="UDP", pkts_toserver=10)
+        fixtures.insert_flow(conn, 1, "198.51.100.7", 51820, now - 30, proto="TCP", pkts_toserver=10)
+        self.assertEqual(correlation.vpn_tunnel_signal(conn), 0)
+
+    def test_too_few_packets_is_not_noted(self):
+        conn = self._db()
+        fixtures.insert_flow(conn, 1, "198.51.100.7", 51820, time.time() - 30, proto="UDP", pkts_toserver=2)
+        self.assertEqual(correlation.vpn_tunnel_signal(conn), 0)
+
+    def test_old_flows_are_outside_the_window(self):
+        conn = self._db()
+        fixtures.insert_flow(conn, 1, "198.51.100.7", 51820, time.time() - 3600, proto="UDP", pkts_toserver=40)
+        self.assertEqual(correlation.vpn_tunnel_signal(conn), 0)
+
+    def test_it_never_adds_to_risk(self):
+        import risk
+        conn = self._db()
+        fixtures.insert_flow(conn, 1, "198.51.100.7", 51820, time.time() - 30, proto="UDP", pkts_toserver=40)
+        correlation.vpn_tunnel_signal(conn)
+        self.assertEqual(risk.device_risk(conn, 1)["score"], 0)
+
+    def test_it_has_a_playbook_and_no_attack_tactic(self):
+        import playbooks
+        self.assertIn("what_it_means", playbooks.get_playbook("vpn_tunnel"))
+        self.assertFalse(playbooks.get_attack("vpn_tunnel"))
+
 
 class BehavioralBaselineSignalTests(unittest.TestCase):
     def _seed_history(self, conn, device_id, hour_of_day, now, days, avg_bytes):

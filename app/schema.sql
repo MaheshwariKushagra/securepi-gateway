@@ -145,6 +145,9 @@ CREATE TABLE IF NOT EXISTS events (
     --   dpi_ads_removed: count of ad objects removed, for 'ads_stripped' rows
     dpi_action      TEXT,
     dpi_ads_removed INTEGER,
+    --   dpi_module:      the site module (ADBLOCK-ENHANCEMENT-PLAN.md B5),
+    --                    e.g. 'youtube'; NULL for a passthrough
+    dpi_module      TEXT,
 
     -- DHCP option 55 (the Parameter Request List a client sends when
     -- asking for a lease) - device fingerprinting evidence

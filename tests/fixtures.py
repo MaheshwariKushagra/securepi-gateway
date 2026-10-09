@@ -61,13 +61,14 @@ def insert_device(conn, device_id, hostname=None, friendly_name=None,
 
 def insert_flow(conn, device_id, dest_ip, dest_port, ts,
                  src_ip="10.10.0.50", bytes_toclient=0, bytes_toserver=0, flow_start=None,
-                 pkts_toclient=None, proto=None):
+                 pkts_toclient=None, proto=None, pkts_toserver=None):
     conn.execute(
         "INSERT INTO events (ts, ts_iso, source, event_type, src_ip, dest_ip, dest_port,"
-        " device_id, bytes_toclient, bytes_toserver, blocked, flow_start, pkts_toclient, proto)"
-        " VALUES (?, 'test', 'suricata', 'flow', ?, ?, ?, ?, ?, ?, 0, ?, ?, ?)",
+        " device_id, bytes_toclient, bytes_toserver, blocked, flow_start, pkts_toclient, proto,"
+        " pkts_toserver)"
+        " VALUES (?, 'test', 'suricata', 'flow', ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?)",
         (ts, src_ip, dest_ip, dest_port, device_id, bytes_toclient, bytes_toserver, flow_start,
-         pkts_toclient, proto),
+         pkts_toclient, proto, pkts_toserver),
     )
     conn.commit()
 
@@ -123,12 +124,12 @@ def insert_bypass_attempt(conn, device_id, block_reason, ts, src_ip="10.10.0.50"
     conn.commit()
 
 
-def insert_dpi_event(conn, device_id, dpi_action, ts, dpi_ads_removed=0):
+def insert_dpi_event(conn, device_id, dpi_action, ts, dpi_ads_removed=0, dpi_module=None):
     conn.execute(
         "INSERT INTO events (ts, ts_iso, source, event_type, device_id, dpi_action,"
-        " dpi_ads_removed, blocked)"
-        " VALUES (?, 'test', 'dpi', 'dpi_decision', ?, ?, ?, 0)",
-        (ts, device_id, dpi_action, dpi_ads_removed),
+        " dpi_ads_removed, dpi_module, blocked)"
+        " VALUES (?, 'test', 'dpi', 'dpi_decision', ?, ?, ?, ?, 0)",
+        (ts, device_id, dpi_action, dpi_ads_removed, dpi_module),
     )
     conn.commit()
 

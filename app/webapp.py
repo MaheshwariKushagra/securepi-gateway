@@ -186,7 +186,7 @@ async def security_headers_middleware(request: Request, call_next):
 
 @app.get("/login", response_class=HTMLResponse)
 def login_page(request: Request, next: str = Query("/"), error: Optional[str] = Query(None)):
-    return templates.TemplateResponse("login.html", {"request": request, "next": next, "error": error})
+    return templates.TemplateResponse(request, "login.html", {"request": request, "next": next, "error": error})
 
 
 @app.post("/login")
@@ -217,7 +217,7 @@ async def do_login(request: Request):
     conn = db()
     session_auth.cleanup_expired(conn)
     if not session_auth.check_rate_limit(conn, ip):
-        return templates.TemplateResponse("login.html", {
+        return templates.TemplateResponse(request, "login.html", {
             "request": request, "next": next_path,
             "error": "Too many attempts from this address. Wait a few minutes and try again.",
         }, status_code=429)
@@ -257,7 +257,7 @@ async def do_login(request: Request):
 
     session_auth.record_failed_attempt(conn, ip)
     print("console: failed login attempt from %s" % ip, flush=True)
-    return templates.TemplateResponse("login.html", {
+    return templates.TemplateResponse(request, "login.html", {
         "request": request, "next": next_path, "error": "Incorrect password.",
     }, status_code=401)
 
@@ -1254,7 +1254,7 @@ def page_hunt(request: Request):
     c = db()
     devices = [{"id": d["id"], "name": device_label(d)}
                for d in c.execute("SELECT * FROM devices ORDER BY last_seen DESC")]
-    return templates.TemplateResponse("hunt.html", {
+    return templates.TemplateResponse(request, "hunt.html", {
         "request": request, "active": "hunt", "title": "Hunt", "devices": devices,
     })
 
@@ -3194,37 +3194,37 @@ def api_notifications_recent(limit: int = Query(40, ge=1)):
 
 @app.get("/", response_class=HTMLResponse)
 def page_dashboard(request: Request):
-    return templates.TemplateResponse("dashboard.html", {
+    return templates.TemplateResponse(request, "dashboard.html", {
         "request": request, "active": "dashboard", "title": "Dashboard"})
 
 
 @app.get("/devices", response_class=HTMLResponse)
 def page_devices(request: Request):
-    return templates.TemplateResponse("devices.html", {
+    return templates.TemplateResponse(request, "devices.html", {
         "request": request, "active": "devices", "title": "Devices"})
 
 
 @app.get("/incidents", response_class=HTMLResponse)
 def page_incidents(request: Request):
-    return templates.TemplateResponse("incidents.html", {
+    return templates.TemplateResponse(request, "incidents.html", {
         "request": request, "active": "incidents", "title": "Incidents"})
 
 
 @app.get("/filtering", response_class=HTMLResponse)
 def page_filtering(request: Request):
-    return templates.TemplateResponse("filtering.html", {
+    return templates.TemplateResponse(request, "filtering.html", {
         "request": request, "active": "filtering", "title": "Filtering"})
 
 
 @app.get("/response", response_class=HTMLResponse)
 def page_response(request: Request):
-    return templates.TemplateResponse("response.html", {
+    return templates.TemplateResponse(request, "response.html", {
         "request": request, "active": "response", "title": "Response"})
 
 
 @app.get("/settings", response_class=HTMLResponse)
 def page_settings(request: Request):
-    return templates.TemplateResponse("settings.html", {
+    return templates.TemplateResponse(request, "settings.html", {
         "request": request, "active": "settings", "title": "Settings"})
 
 
@@ -3330,7 +3330,7 @@ def api_weekly_report(week: str = Query("")):
 
 @app.get("/reports/weekly", response_class=HTMLResponse)
 def page_weekly_report(request: Request):
-    return templates.TemplateResponse("reports_weekly.html", {
+    return templates.TemplateResponse(request, "reports_weekly.html", {
         "request": request, "active": "reports", "title": "Weekly Report"})
 
 
@@ -3388,7 +3388,7 @@ def page_device_detail(request: Request, device_id: int):
 
     dev_risk = risk.device_risk(c, device_id, now)
 
-    return templates.TemplateResponse("device_detail.html", {
+    return templates.TemplateResponse(request, "device_detail.html", {
         "request": request, "active": "devices", "title": device_label(d),
         "device": {
             "id": d["id"], "name": device_label(d), "hostname": d["hostname"],
@@ -3434,7 +3434,7 @@ def page_incident_detail(request: Request, incident_id: int):
     timeline = _incident_timeline(c, incident_id, i["created_at"])
     related = _related_open_incidents(c, i["device_id"], incident_id, now) if i["device_id"] else []
 
-    return templates.TemplateResponse("incident_detail.html", {
+    return templates.TemplateResponse(request, "incident_detail.html", {
         "request": request, "active": "incidents", "title": i["title"],
         "incident": {
             "id": i["id"], "title": i["title"], "description": i["description"],

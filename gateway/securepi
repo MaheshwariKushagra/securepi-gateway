@@ -35,8 +35,10 @@ except Exception:
 }
 
 enrolled_ips() {
+    # Addresses only: elements now carry "timeout 1d expires ..." (5.6c), and
+    # nft spreads a long set over several lines.
     nft list set ip nat enrolled 2>/dev/null \
-        | grep -oP 'elements = \{ \K[^}]*' | tr -d ' ' | tr ',' '\n' | grep -v '^$'
+        | awk '/elements = \{/,/\}/' | grep -oE '([0-9]{1,3}\.){3}[0-9]{1,3}'
 }
 
 service_list() {

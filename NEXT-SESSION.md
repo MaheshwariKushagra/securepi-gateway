@@ -426,6 +426,10 @@ script, canary and log-rotation units).
   - The tablet's leftover tabs were closed.
 - **Incidents to close:** #760 and #764 (tablet `adblock_ineffective`) are false positives explained by the HTML-logging bug.
 
+**Start the next session with one of these** (the user's choice, offered on 10 Oct 2026):
+- **F4** (`ADBLOCK-ENHANCEMENT-PLAN.md`, follow-ups): key the pin bypass on a ClientHello fingerprint too, so a pinned app stops switching ad removal off for the browser on the same phone for 24 h. Needs the A33 plugged in and unlocked.
+- **Stage 8, step 1:** the 7.9 usability fixes (F17 is already done).
+
 **Then Stage 8 (documentation and demo).** Queued inputs from Stage 7:
 1. **The 7.9 recommendations** (`heuristic-evaluation.md`, end), worst first:
    - dark-theme contrast: `--text-3`/`--muted` → about `#8792a6`;
@@ -434,9 +438,7 @@ script, canary and log-rotation units).
    - keyboard-scrollable regions;
    - a persistent domain-test result with the list named;
    - the console dialog instead of `prompt()` for Allow.
-2. **F17:** switch the 13 `TemplateResponse(name, ctx)` calls to
-   `TemplateResponse(request, name, ctx)`. Starlette 1.x has removed the old
-   form, so an Ubuntu upgrade would break the console.
+2. **F17: done (10 Oct 2026).** All 13 `TemplateResponse` calls pass the request first. Checked under the gateway's Starlette 0.31.1 with deprecation warnings as errors (every page 200), deployed; `tests/test_template_response_form.py` guards it.
 3. **The remaining held-out false positives**, for the next detection work:
    - beacon on ordinary periodic app traffic (Google push 5228, STUN 3478,
      port 80 checks);
@@ -448,13 +450,9 @@ script, canary and log-rotation units).
    ready: `sudo /opt/securepi-eval/collect_run.sh mark|collect`).
 
 **Housekeeping for the next session:**
-- **Test incidents to resolve** (they come from deliberate tests, not real
-  detections):
-  - tablet (98): #761 beacon (the TTFB cells' repeated fetches), #760 and
-    #764 adblock_ineffective (relaunch and TTFB testing);
-  - A33 (2) and tablet: the 2 Oct incidents raised during the 7.7 chaos runs
-    and the tablet tests;
-  - older ones: #476 (from 26 Sep).
+- **Test incidents:**
+  - **Closed 10 Oct 2026, with notes:** #760 and #764 (false positives from the HTML-logging bug), #761 (the tablet's timing-test fetches), #476 (resolved).
+  - **Still open: 465 incidents**, mostly from deliberate test runs (the 7.2 battery, 7.5 benchmark, 7.7 chaos). Triage them in the console before the demo; bulk-closing needs a person's judgement.
 - **The run monitor** (`securepi-run-monitor.service`) is still running. It is
   harmless and useful for any later run; stop and disable it if not wanted.
 - **On the gateway:** `/var/lib/securepi-eval/soak-2026-10-03T093855/mark`

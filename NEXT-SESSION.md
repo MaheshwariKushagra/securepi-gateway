@@ -80,7 +80,8 @@ compact summary. Results from Stage 1 onward are in `EVALUATION-RESULTS-2.md`.
 | **5** | Ad blocking & privacy filtering (5.11 scoped to Path 1; Path 2 deferred with reasoning recorded) | **Complete** |
 | **6** | Intelligence & console — behavioural baselines, device fingerprinting, settings, incident workbench, hunt/explorer, weekly report, responsive layout | **Complete** |
 | **7** | Evaluation 2.0 — expanded benchmark battery | **Complete** (3 Oct 2026). 7.0 and 7.9 were replaced by one-session equivalents (user decision); see below |
-| **8** | Documentation & demo | **Next** |
+| **7A** | Ad-blocking enhancement - measured gaps, then Tier 2 for X/Instagram/Facebook/Spotify after a feasibility check (`ADBLOCK-ENHANCEMENT-PLAN.md`) | **Next** (approved 9 Oct 2026) |
+| **8** | Documentation & demo | After 7A |
 
 Stages 5 and 6 were built before Stages 1–2 deliberately, then Stages 1 and 2
 were completed in later sessions — each such out-of-order decision is recorded
@@ -376,7 +377,12 @@ script, canary and log-rotation units).
 - **A multi-hour soak was dropped by the user.** There is no multi-day run of
   the frozen code; that is stated as a limit.
 
-**Next: Stage 8 (documentation and demo).** Queued inputs from Stage 7:
+**Next: Stage 7A, the ad-blocking enhancement plan** (`ADBLOCK-ENHANCEMENT-PLAN.md`,
+approved 9 October 2026), starting with Phase A. Its prerequisites from the
+user: dedicated test accounts for X, Instagram, Facebook and Spotify; the A33
+on SecurePi-Test; a yes/no on trimming OISD Big and AdAway.
+
+**Then Stage 8 (documentation and demo).** Queued inputs from Stage 7:
 1. **The 7.9 recommendations** (`heuristic-evaluation.md`, end), worst first:
    - dark-theme contrast: `--text-3`/`--muted` → about `#8792a6`;
    - a Risk column on the Devices list;

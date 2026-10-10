@@ -43,9 +43,12 @@ class DnsFailopenError(Exception):
     """nft could not be run, or refused a command."""
 
 
-def _run(args):
+def _run(args, input_text=None):
+    """Run nft with `args`. `input_text`, if given, is fed to nft's standard
+    input - used with ["-f", "-"] to apply several rules as one batch."""
     try:
-        return subprocess.run(["nft"] + args, capture_output=True, text=True, timeout=NFT_TIMEOUT_S)
+        return subprocess.run(["nft"] + args, input=input_text, capture_output=True, text=True,
+                              timeout=NFT_TIMEOUT_S)
     except (OSError, subprocess.TimeoutExpired) as e:
         raise DnsFailopenError("could not run nft: %s" % e)
 
@@ -59,6 +62,25 @@ def _add_rule_argv(proto):
             proto, "dport", "53", "counter",
             "dnat", "to", "%s:53" % UPSTREAM_RESOLVER,
             "comment", RULE_COMMENT]
+
+
+def _add_rule_line(proto):
+    """The same rule as _add_rule_argv(), as one line of an `nft -f` batch.
+    In a batch file the interface name and the comment need their quotes."""
+    argv = _add_rule_argv(proto)
+    words = []
+    for i, word in enumerate(argv):
+        if argv[i - 1] in ("iifname", "comment"):
+            word = '"%s"' % word
+        words.append(word)
+    return " ".join(words)
+
+
+def _activate_batch():
+    """Both fail-open rules, as one `nft -f -` batch. nft applies a batch
+    as a single transaction: if any line is refused, none of them is
+    added (Audit10Oct H8)."""
+    return "\n".join(_add_rule_line(proto) for proto in ("udp", "tcp")) + "\n"
 
 
 def _delete_rule_argv(handle):
@@ -93,7 +115,7 @@ def is_active():
 
 def activate():
     """Idempotent: a call while already active does nothing. Adds both a
-    UDP and a TCP rule - a resolver reply too large for one UDP packet
+    UDP and a TCP rule, in one transaction - a resolver reply too large for one UDP packet
     falls back to TCP, and that fallback needs to be redirected too.
 
     "Already active" means BOTH rules are there. If only one is - the
@@ -105,10 +127,12 @@ def activate():
         return
     if handles:
         deactivate()
-    for proto in ("udp", "tcp"):
-        result = _run(_add_rule_argv(proto))
-        if result.returncode != 0:
-            raise DnsFailopenError("could not activate dns fail-open (%s): %s" % (proto, result.stderr.strip()))
+    # One batch, so both rules go in or neither does. Two separate adds
+    # used to leave a live UDP bypass behind if the TCP add then failed -
+    # with nothing in the database saying so (Audit10Oct H8).
+    result = _run(["-f", "-"], input_text=_activate_batch())
+    if result.returncode != 0:
+        raise DnsFailopenError("could not activate dns fail-open: %s" % result.stderr.strip())
 
 
 def deactivate():

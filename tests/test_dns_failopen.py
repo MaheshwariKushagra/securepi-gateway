@@ -93,7 +93,7 @@ class ActivateDeactivateTests(unittest.TestCase):
     def test_activate_does_nothing_when_already_active(self):
         calls = []
 
-        def fake_run(args):
+        def fake_run(args, input_text=None):
             calls.append(args)
             return _FakeResult(stdout=WITH_FAILOPEN_OUTPUT)
         dns_failopen._run = fake_run
@@ -102,19 +102,41 @@ class ActivateDeactivateTests(unittest.TestCase):
         self.assertEqual(len(calls), 1, "should only check, never add, when already active")
         self.assertEqual(calls[0][0], "-a")
 
-    def test_activate_adds_both_udp_and_tcp_rules_when_not_active(self):
+    def test_activate_adds_both_udp_and_tcp_rules_in_one_transaction(self):
+        # Audit10Oct H8: the two rules used to be added by two separate nft
+        # calls, so a failure on the second left the first in place. They
+        # now go in through one `nft -f -` batch - both or neither.
         calls = []
 
-        def fake_run(args):
-            calls.append(args)
+        def fake_run(args, input_text=None):
+            calls.append((args, input_text))
             return _FakeResult(stdout=BASE_LIST_OUTPUT)
         dns_failopen._run = fake_run
 
         dns_failopen.activate()
-        add_calls = [c for c in calls if c[:2] == ["add", "rule"]]
-        self.assertEqual(len(add_calls), 2)
-        protos = {c[c.index("dport") - 1] for c in add_calls}
-        self.assertEqual(protos, {"udp", "tcp"})
+        batches = [text for args, text in calls if args == ["-f", "-"]]
+        self.assertEqual(len(batches), 1)
+        self.assertEqual([args for args, text in calls if args[:2] == ["add", "rule"]], [])
+        lines = [l for l in batches[0].splitlines() if l.strip()]
+        self.assertEqual(len(lines), 2)
+        self.assertTrue(any(" udp dport 53 " in l for l in lines))
+        self.assertTrue(any(" tcp dport 53 " in l for l in lines))
+        for line in lines:
+            self.assertIn('comment "%s"' % dns_failopen.RULE_COMMENT, line)
+            self.assertIn("dnat to %s:53" % dns_failopen.UPSTREAM_RESOLVER, line)
+
+    def test_a_refused_batch_adds_nothing_and_raises(self):
+        calls = []
+
+        def fake_run(args, input_text=None):
+            calls.append(args)
+            if args == ["-f", "-"]:
+                return _FakeResult(returncode=1, stderr="Error: Could not process rule")
+            return _FakeResult(stdout=BASE_LIST_OUTPUT)
+        dns_failopen._run = fake_run
+        with self.assertRaises(dns_failopen.DnsFailopenError):
+            dns_failopen.activate()
+        self.assertEqual([c for c in calls if c[:2] == ["add", "rule"]], [])
 
     def test_a_half_installed_failopen_is_rebuilt_with_both_rules(self):
         # Audit.md: one leftover rule used to count as "active", so the
@@ -127,19 +149,18 @@ class ActivateDeactivateTests(unittest.TestCase):
         )
         calls = []
 
-        def fake_run(args):
+        def fake_run(args, input_text=None):
             calls.append(args)
             return _FakeResult(stdout=only_udp)
         dns_failopen._run = fake_run
 
         dns_failopen.activate()
         deletes = [c for c in calls if c[:2] == ["delete", "rule"]]
-        adds = [c for c in calls if c[:2] == ["add", "rule"]]
         self.assertEqual(len(deletes), 1)
-        self.assertEqual({c[c.index("dport") - 1] for c in adds}, {"udp", "tcp"})
+        self.assertIn(["-f", "-"], calls)
 
     def test_activate_raises_if_nft_refuses_the_add(self):
-        def fake_run(args):
+        def fake_run(args, input_text=None):
             if args[0] == "-a":
                 return _FakeResult(stdout=BASE_LIST_OUTPUT)
             return _FakeResult(returncode=1, stderr="some nft error")
@@ -151,7 +172,7 @@ class ActivateDeactivateTests(unittest.TestCase):
     def test_deactivate_removes_every_handle_found(self):
         calls = []
 
-        def fake_run(args):
+        def fake_run(args, input_text=None):
             calls.append(args)
             return _FakeResult(stdout=WITH_FAILOPEN_OUTPUT)
         dns_failopen._run = fake_run
@@ -164,7 +185,7 @@ class ActivateDeactivateTests(unittest.TestCase):
     def test_deactivate_does_nothing_when_nothing_is_active(self):
         calls = []
 
-        def fake_run(args):
+        def fake_run(args, input_text=None):
             calls.append(args)
             return _FakeResult(stdout=BASE_LIST_OUTPUT)
         dns_failopen._run = fake_run
@@ -174,9 +195,9 @@ class ActivateDeactivateTests(unittest.TestCase):
         self.assertEqual(len(delete_calls), 0)
 
     def test_is_active_reflects_whether_any_handle_is_found(self):
-        dns_failopen._run = lambda args: _FakeResult(stdout=BASE_LIST_OUTPUT)
+        dns_failopen._run = lambda args, input_text=None: _FakeResult(stdout=BASE_LIST_OUTPUT)
         self.assertFalse(dns_failopen.is_active())
-        dns_failopen._run = lambda args: _FakeResult(stdout=WITH_FAILOPEN_OUTPUT)
+        dns_failopen._run = lambda args, input_text=None: _FakeResult(stdout=WITH_FAILOPEN_OUTPUT)
         self.assertTrue(dns_failopen.is_active())
 
 

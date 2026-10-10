@@ -267,11 +267,59 @@ class CheckDnsFailopenTests(unittest.TestCase):
         self._orig_resolves = health._dns_resolves
         self._orig_activate = dns_failopen.activate
         self._orig_deactivate = dns_failopen.deactivate
+        self._orig_is_active = dns_failopen.is_active
+        dns_failopen.is_active = lambda: False   # the live firewall, as these tests set it
 
     def tearDown(self):
         health._dns_resolves = self._orig_resolves
         dns_failopen.activate = self._orig_activate
         dns_failopen.deactivate = self._orig_deactivate
+        dns_failopen.is_active = self._orig_is_active
+
+    # Audit10Oct H8: recovery used to trust the database's `active` flag.
+    # An activation that failed half-way left a live bypass rule with the
+    # flag still 0, so recovery skipped deactivate() and every device's DNS
+    # stayed unfiltered for good.
+
+    def test_recovery_removes_a_leftover_rule_the_database_doesnt_know_about(self):
+        conn = fixtures.temp_db()
+        health._dns_resolves = lambda host: False
+
+        def half_activate():
+            dns_failopen.is_active = lambda: True       # one rule went in...
+            raise dns_failopen.DnsFailopenError("could not activate dns fail-open (tcp): boom")
+        dns_failopen.activate = half_activate
+        now = time.time()
+        health.check_dns_failopen(conn, now)
+        with self.assertRaises(dns_failopen.DnsFailopenError):
+            health.check_dns_failopen(conn, now + 15)
+        state = conn.execute("SELECT * FROM dns_failopen_state WHERE id=1").fetchone()
+        self.assertEqual(state["active"], 0)                # ...but the flag never said so
+
+        deactivated = []
+        dns_failopen.deactivate = lambda: deactivated.append(1)
+        health._dns_resolves = lambda host: True
+        health.check_dns_failopen(conn, now + 20)
+        self.assertEqual(deactivated, [1])
+        row = conn.execute("SELECT * FROM audit_log WHERE action='platform.dns_failopen_leftover_removed'").fetchone()
+        self.assertIsNotNone(row)
+
+    def test_a_healthy_check_never_touches_the_firewall_when_nothing_is_left(self):
+        conn = fixtures.temp_db()
+        health._dns_resolves = lambda host: True
+        deactivated = []
+        dns_failopen.deactivate = lambda: deactivated.append(1)
+        health.check_dns_failopen(conn, time.time())
+        self.assertEqual(deactivated, [])
+
+    def test_an_unreadable_firewall_does_not_break_the_healthy_path(self):
+        conn = fixtures.temp_db()
+        health._dns_resolves = lambda host: True
+
+        def cannot_read():
+            raise dns_failopen.DnsFailopenError("could not run nft: not found")
+        dns_failopen.is_active = cannot_read
+        health.check_dns_failopen(conn, time.time())   # must not raise
 
     def test_no_action_while_resolution_keeps_working(self):
         conn = fixtures.temp_db()

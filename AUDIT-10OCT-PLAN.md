@@ -502,3 +502,8 @@ H9 no journal purge; no deliberate outages on the real network.*
   - **Fix:** `--set flow_detail=0` in `deploy-dpi.sh`'s unit. The live unit file matched the script byte for byte before the change; it was regenerated from the script and installed (`.bak-7B5-*` kept), then daemon-reload and restart. The running command line now shows `--set flow_detail=0`.
   - **Proof, on the Dell's localhost test proxy** (same binary, production addon): a YouTube request carrying a unique token printed the URL and token with `flow_detail=1` (1 line), and nothing with `0` (0 lines). Only `client connect` / `server connect` lines (address and hostname) remain.
   - **Test proxy:** `~/securepi-browser/test-sites.json` set to `{"127.0.0.1": ["youtube"]}` (the old effective behaviour under deny-by-default); `.bak-7B5` kept.
+- **7B.6 (H8) done in code** (deployed with Group 2).
+  - `dns_failopen.activate()` installs both rules in one `nft -f -` batch, so both go in or neither does; the batch syntax was validated on the gateway with `nft -c` (check only, nothing applied).
+  - On recovery, `check_dns_failopen()` removes any fail-open rule still in the firewall even when the database says inactive, and writes `platform.dns_failopen_leftover_removed` to the audit log. If nft can't be read, the healthy path still works.
+  - 4 new or rewritten tests failed on the old code.
+  - Live state now: no fail-open rule, DB inactive.

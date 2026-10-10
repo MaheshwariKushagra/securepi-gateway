@@ -48,6 +48,7 @@ import shutil
 import subprocess
 import time
 
+import audit
 import correlation
 import dns_failopen
 import dpi_gate
@@ -364,6 +365,16 @@ def _dns_resolves(host):
     return result.returncode == 0
 
 
+def _leftover_failopen_rule():
+    """True if the firewall holds a fail-open rule right now. If nft can't
+    be read, say so and answer False: nothing could be removed anyway."""
+    try:
+        return dns_failopen.is_active()
+    except dns_failopen.DnsFailopenError as exc:
+        print("health: could not check for a leftover dns fail-open rule: %s" % exc, flush=True)
+        return False
+
+
 def check_dns_failopen(conn, now):
     """ENHANCEMENT-PLAN.md step 3.6 (F§8.4): if the DNS filter stops actually
     answering DNS queries, redirect plaintext DNS to a public upstream
@@ -393,6 +404,16 @@ def check_dns_failopen(conn, now):
         if row["active"]:
             dns_failopen.deactivate()
             conn.execute("UPDATE dns_failopen_state SET active=0, changed_at=? WHERE id=1", (now,))
+        elif _leftover_failopen_rule():
+            # The database says fail-open is off, but the firewall still has
+            # a redirect rule - an activation that failed part-way, or a
+            # rule added by hand. Recovery used to trust the flag and leave
+            # it, so every device's DNS stayed unfiltered (Audit10Oct H8).
+            dns_failopen.deactivate()
+            print("health: removed a dns fail-open rule the database didn't know about", flush=True)
+            audit.log(conn, "health", "platform.dns_failopen_leftover_removed", target="dns-failopen",
+                      detail="the DNS filter answers, but a fail-open redirect rule was still in the "
+                             "firewall with fail-open recorded as off - removed")
         if row["down_since"] is not None or row["active"]:
             conn.commit()
         return

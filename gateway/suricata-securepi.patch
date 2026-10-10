@@ -1,0 +1,54 @@
+# SecurePi Gateway - the four changes to Ubuntu 24.04's packaged
+# /etc/suricata/suricata.yaml (suricata 1:7.0.3-1build3). Applied by
+# gateway/install.sh with `patch`; reversible with `patch -R`.
+#   1. HOME_NET is the project LAN only.
+#   2. community-id on (cross-tool flow correlation).
+#   3. DHCP logger in extended mode (option 55 for device fingerprinting).
+#   4. AF_PACKET capture on the AP (ap0, 2 threads) and the test harness's
+#      veth-atk (1 thread) instead of eth0.
+--- suricata.yaml.packaged
++++ suricata.yaml
+@@ -15,7 +15,7 @@
+ vars:
+   # more specific is better for alert accuracy and performance
+   address-groups:
+-    HOME_NET: "[192.168.0.0/16,10.0.0.0/8,172.16.0.0/12]"
++    HOME_NET: "[10.10.0.0/24]"
+     #HOME_NET: "[192.168.0.0/16]"
+     #HOME_NET: "[10.0.0.0/8]"
+     #HOME_NET: "[172.16.0.0/12]"
+@@ -133,7 +133,7 @@
+       # to make the id less predictable.
+ 
+       # enable/disable the community id feature.
+-      community-id: false
++      community-id: true
+       # Seed value for the ID output. Valid values are 0-65535.
+       community-id-seed: 0
+ 
+@@ -298,7 +298,7 @@
+             # with full detail. When extended mode is off (the
+             # default), just enough information to map a MAC address
+             # to an IP address is logged.
+-            extended: no
++            extended: yes
+         - ssh
+         - mqtt:
+             # passwords: yes           # enable output of passwords
+@@ -612,9 +612,14 @@
+ 
+ # Linux high speed capture support
+ af-packet:
+-  - interface: eth0
++  - interface: veth-atk
++    threads: 1
++    cluster-id: 98
++    cluster-type: cluster_flow
++    defrag: yes
++  - interface: ap0
+     # Number of receive threads. "auto" uses the number of cores
+-    #threads: auto
++    threads: 2
+     # Default clusterid. AF_PACKET will load balance packets based on flow.
+     cluster-id: 99
+     # Default AF_PACKET cluster type. AF_PACKET can load balance per flow or per hash.

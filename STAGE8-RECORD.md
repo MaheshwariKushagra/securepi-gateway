@@ -116,10 +116,10 @@ Diffed against `etc/suricata/suricata.yaml` extracted from
 | ID | What disagrees | Detail | Resolution in Stage 8 |
 |---|---|---|---|
 | M-1 | `GATEWAY-SETUP-RUNBOOK.md` vs the live network | The runbook's Plan A puts the WAN on the RJ45 port and management on a USB adapter at `192.168.100.1/24` (Mac `192.168.100.2`), names the netplan file `01-securepi.yaml`, uses an SSH alias `securepi`, an `rsync --delete` deploy to `~/securepi` and a plain-HTTP console at `http://192.168.100.1:8000`. Live: management on the built-in RJ45 `enp1s0` at `192.168.2.5/24` (Mac `192.168.2.1` via Internet Sharing); WAN on the Wi-Fi station `wlp2s0` with the AP `ap0` on the same radio; netplan `01-ethernet.yaml` + `99-wifi.yaml`; no SSH alias (the `Makefile` says so); `make deploy` rsyncs `app/` to `/opt/securepi` without `--delete`; the console is HTTPS-only on `10.10.0.1:8000`, reached from the Mac through `mac-tunnel.sh` | Runbook kept as the historical day-1 plan, with a banner pointing to `docs/INSTALL.md` (8.2), which documents the live layout |
-| M-2 | Units and scripts that exist only on the gateway | 12 unit files, 2 timers and 2 scripts had no copy in the repo: `AdGuardHome.service`, `securepi-ap0.service`, `securepi-backlight-off.service`, `securepi-ca-server.service`, `securepi-doh-refresh.service`/`.timer`, `securepi-dpi.service` (only as a heredoc in `deploy-dpi.sh`), `securepi-engine.service`, `securepi-ingest.service`, `securepi-intel-refresh.service`/`.timer`, `securepi-privacy-canary.service` (heredoc in `deploy-privacy-canary.sh`), `securepi-static.service`, `securepi-test-harness.service`, `suricata.service.d/override.conf`; `/usr/local/sbin/securepi-ap0-up`, `/usr/local/bin/sni-capture`. `gateway/REBOOT-SAFETY.md` says the harness units are "not committed here in full" | Committed under `gateway/systemd/` and `gateway/sbin/` (8.2), byte-identical to the live copies |
+| M-2 | Units and scripts that exist only on the gateway | 12 unit files, 2 timers and 2 scripts had no copy in the repo: `AdGuardHome.service`, `securepi-ap0.service`, `securepi-backlight-off.service`, `securepi-ca-server.service`, `securepi-doh-refresh.service`/`.timer`, `securepi-dpi.service` (only as a heredoc in `deploy-dpi.sh`), `securepi-engine.service`, `securepi-ingest.service`, `securepi-intel-refresh.service`/`.timer`, `securepi-privacy-canary.service` (heredoc in `deploy-privacy-canary.sh`), `securepi-static.service`, `securepi-test-harness.service`, `suricata.service.d/override.conf`; `/usr/local/sbin/securepi-ap0-up`, `/usr/local/bin/sni-capture`. `gateway/REBOOT-SAFETY.md` says the harness units are "not committed here in full" Committed in 8.2: the gateway units in `gateway/systemd/` (`AdGuardHome.service` differs only by M-12), the three DPI units in `dpi/` (identical to the live units and to the heredocs they replace), and `gateway/securepi-ap0-up` and `gateway/sni-capture`, byte-identical. `gateway/REBOOT-SAFETY.md` updated |
 | M-3 | `EVALUATION-RESULTS-2.md` line 574 | Says `/etc/nftables.conf` and `/opt/securepi/nftables.conf` are identical. The `/opt` copy is now 105 diff lines stale (later firewall changes, including 7B.7, only went to `/etc`). Nothing loads the `/opt` copy | Noted here; the installer no longer copies `nftables.conf` into `/opt/securepi`. The stale copy is harmless and left alone |
 | M-4 | Comment wording | The live `AdGuardHome.service.d/securepi-wait-for-ap0.conf` and `/opt/securepi/setup-test-harness.sh` still say "AdGuard"/"Suricata" where the repo (commit `bfc9ce1`) says "the DNS filter"/"the IDS". Comments only | The installer installs the repo versions |
-| M-5 | `hostapd.conf` | Live `channel=1` vs repo `channel=6` (expected: `securepi-ap-follow-uplink` rewrites it to the uplink's channel) and the live file has no comments (rewritten by the same script). **The live file is mode 644, so the Wi-Fi passphrase is readable by any local user** | Installer installs it as 600 `root:root`; the repo copy keeps the passphrase redacted and the installer asks for it |
+| M-5 | `hostapd.conf` | Live `channel=1` vs repo `channel=6` (expected: `securepi-ap-follow-uplink` rewrites it to the uplink's channel) and the live file has no comments (rewritten by the same script). **The live file is mode 644, so the Wi-Fi passphrase is readable by any local user** The installer writes a new file as 600 `root:root` from the redacted repo copy plus the passphrase typed at a hidden prompt. It never replaces an existing file, but sets it to 600 (`--check` reports it). **Not yet applied on the live gateway** (see 8.2 below) |
 | M-6 | IDS rules freshness | ET Open rules last updated 2026-09-12 by a single `suricata-update` run; no timer updates them | Installer runs `suricata-update` once. A rule-update timer is listed in future scope (8.1), not added silently |
 | M-7 | DPI environment | `adblock==0.6.0` is installed in `/opt/securepi-dpi` but nothing in the repo imports it (left over from an experiment) | Kept in `requirements-dpi.txt` so the reinstall matches the measured environment exactly; flagged here |
 | M-8 | `/var/log/securepi` ownership | `maheshwari:maheshwari` 755 (`deploy-dpi.sh` chowns it to the admin user) although only root writes to it | Installer makes it `root:root` 755; nothing else changes |
@@ -128,11 +128,13 @@ Diffed against `etc/suricata/suricata.yaml` extracted from
 | M-11 | `README.md` numbers | The detection, memory and throughput rows still quote Day 14 (`EVALUATION-RESULTS.md`), not Stage 7 | Updated in 8.1 |
 | M-12 | `AdGuardHome.service` | `WorkingDirectory=/home/maheshwari` (written by `AdGuardHome -s install` run from the admin's home) | Installer writes `WorkingDirectory=/opt/AdGuardHome` |
 | M-13 | `STEP-1-INSTALL-UBUNTU.md` §7-9 | Describes the hand-over with the Plan A wiring of M-1 | Same banner as M-1 |
+| M-14 | README demo instructions | `python3 seed.py && python3 serve.py` cannot run on the Mac (Homebrew Python 3.14 has no FastAPI); the demo used a git-ignored `.venv-demo` | `docs/demo/requirements.txt`, installed with `--no-deps` (details in §3, 8.1) |
+| M-15 | DoH resolver set after a reboot (**found by the 8.2 check run**) | `nftables.conf` seeds `inet filter doh_resolvers` with 14 addresses; `securepi-doh-refresh.timer` (`OnCalendar=daily`, `RandomizedDelaySec=30m`, `Persistent=true`) refills it with ~1,436 from HaGeZi. `Persistent=true` only catches up a run that was *missed* while the machine was off, so after a reboot (or any full `nft -f /etc/nftables.conf`) the set keeps only the 14 seeds until the next daily run, up to ~24 h. Live on 10 Oct 2026: booted 12:14, last refresh 00:28 that day, set = 14 at 13:57, next refresh ~00:21 on 11 Oct. No document mentions this; `EVALUATION-RESULTS-2.md` §2.2 reports the 1,445 figure from a manual run. DNS-level DoH blocking (the HaGeZi DoH filter in AdGuard) and the DoH detection are unaffected; only the IP-level block of DoH by address is weakened | Installer refreshes the set whenever it holds fewer than 500 entries and `--check` reports it; `docs/INSTALL.md` §7.1 shows how to check it. **The fix itself is not made** (it changes a live unit, so it needs the operator's go-ahead): add `OnBootSec=2min` to the `[Timer]` of `gateway/systemd/securepi-doh-refresh.timer`, or `After=nftables.service` plus `WantedBy=multi-user.target` on the service. Interim: `sudo systemctl start securepi-doh-refresh.service` after each reboot |
 
 ## 3. Progress
 
-- **Inventory (13:15-13:35)** - done; recorded above.
-- **8.1 report (13:35-14:20)** - done.
+- **Inventory (Stage 8 started 13:22 IST)** - done; recorded above.
+- **8.1 report (committed 13:38 IST, `0551c1e`)** - done.
   - **`REPORT.md` (new):** the consolidated report material. It covers problem, final technology table with versions, topology as built, architecture and the **contribution boundary** (feasibility §17.2 brought up to date with what was built), implementation by stage including 7A and 7B, evaluation (every Stage 7/7A/7B figure with its source), the **final deviations table** (plan §1's decisions → outcome), limitations, future scope, and an appendix giving the command and result file behind every figure. It states plainly that the original replay input databases were not kept.
   - **`REPORT-adblocking.md`:**
     - upstream row corrected (DoT 1.1.1.1 + 9.9.9.9 in parallel with fallbacks, not 1.1.1.1/1.0.0.1);
@@ -151,3 +153,48 @@ Diffed against `etc/suricata/suricata.yaml` extracted from
   - **Banners and notes:** `GATEWAY-SETUP-RUNBOOK.md` and `STEP-1-INSTALL-UBUNTU.md` marked historical, pointing to `docs/INSTALL.md` (M-1, M-13); the stale `/opt/securepi/nftables.conf` claim in `EVALUATION-RESULTS-2.md` annotated (M-3); the plan's §1 points to the final table.
   - **Not done, by decision:** the 7.9 usability recommendations (M-9), listed as future scope.
   - **Gate:** 751 tests pass; all relative links in the edited documents resolve except the three Stage 8 documents still to be written (`docs/INSTALL.md`, `docs/DEMO.md`, `docs/CLOSE-OUT.md`).
+- **8.2 installer (13:40-14:00)** - written and checked against the live gateway. Two parts are **still open**: applying it on the live gateway, and a fresh-machine install. Both are below.
+  - **`gateway/install.sh` (new, 14 steps).**
+    - `--check` reports every change as `would:` and changes nothing. Apply mode changes only what differs and keeps each replaced file as `<file>.bak-install-<timestamp>`.
+    - It never disables or removes anything. It never overwrites `hostapd.conf`, netplan files, `AdGuardHome.yaml`, either password, either CA, the rules file, the site map or the database.
+    - Secrets are asked at hidden prompts and passed to Python through the environment, never argv.
+    - Settings via environment variables (defaults = the Dell): `WAN_IF`, `MGMT_IF`, `MGMT_ADDR`, `AP_SSID`, `AP_COUNTRY`, `AP_CHANNEL`, `AP_PASSPHRASE`, `UPLINK_SSID`, `TIMEZONE`, `INSTALL_DPI`, `INSTALL_EVAL_TOOLS`, `ENABLE_RUN_MONITOR`, `TEST_WITHOUT_WIFI`.
+    - HTTPS inspection is installed off: the `enrolled` set is empty and `device-sites.json` is `{}`.
+  - **New repo files.**
+    - `gateway/systemd/` (11 units and timers, plus the Suricata drop-in) and `dpi/securepi-{dpi,ca-server,privacy-canary}.service` (M-2).
+    - `gateway/securepi-ap0-up`, `gateway/sni-capture`, `gateway/logind-securepi.conf`, `gateway/sysctl-securepi.conf`.
+    - `gateway/adguard/AdGuardHome.yaml.template`: the live config with the password hash as a placeholder and the persistent clients emptied. Parsed with PyYAML on the gateway: schema 34; values as in §1.
+    - `gateway/suricata-securepi.patch`: the four changes in §1. Verified that applying it to the packaged `suricata.yaml` gives a file identical to the live one, and that a reverse dry-run against the live file detects it as already applied.
+    - `dpi/requirements-dpi.txt`: the live `pip freeze`, 44 packages (M-10).
+    - `gateway/requirements-console.txt`: the apt versions, for reference only.
+  - **Rewritten:**
+    - `dpi/deploy-dpi.sh` creates the venv and installs the pins (M-10); takes the unit files from `dpi/` instead of heredocs; seeds `device-sites.json` as `{}`; sets `/var/log/securepi` to `root:root 755` (M-8).
+    - `dpi/deploy-privacy-canary.sh` installs `dpi/securepi-privacy-canary.service`.
+  - **`docs/INSTALL.md` (new).** Covers:
+    - hardware checks, including the `iw list` interface combinations;
+    - the Ubuntu install choices;
+    - the management link on both ends, and copying the repo;
+    - running the installer: prompts, a settings table, what each step does, expected end output;
+    - verification commands with the outputs measured on the Dell;
+    - console and DNS-filter access, the file table, the pinned versions;
+    - the check-run evidence;
+    - rollback per change, plus a full-removal list (destructive; documented, not scripted);
+    - the VM procedure.
+  - **Verification done.**
+    - `bash -n` and `shellcheck` (every level) are clean on `install.sh`, `deploy-dpi.sh`, `deploy-privacy-canary.sh`, `securepi-ap0-up` and `sni-capture`. `make test`: 751 pass.
+    - Read-only facts confirmed on the gateway:
+      - all 30 packages are installed;
+      - the 8 key versions match;
+      - `htpasswd -inBC 10 ""` produces a `$2y$10$` hash that `htpasswd -vb` accepts for the password without its trailing newline, which is how `app/adguard.py` reads it (`.strip()`);
+      - `AdGuardHome --version` prints `AdGuard Home, version v0.107.79`;
+      - Ubuntu's `hostapd.service` already sets `DAEMON_CONF`, so the installer does not write `/etc/default/hostapd`;
+      - `/etc/nftables.conf` is 644, and the installer uses 644;
+      - `af-packet` interfaces are `veth-atk`, `ap0`, `default`;
+      - the canary's last line is `ok - passthrough and decrypt decisions correct for every site module`.
+    - `sudo ./gateway/install.sh --check` on the live gateway, from a copy in `~/securepi-install-check`: 13:51 run 7 changes; 13:57 re-run 8 changes, 0 warnings, exit 0, nothing changed. The 8 are M-5, M-4 (×2), M-12, M-8 (re-runs `deploy-dpi.sh`), `dns_ab.py`, `dash_latency.py`, and the DoH refresh (M-15). Transcript in `docs/INSTALL.md` §10.
+  - **Bugs found and fixed in the installer before any apply:**
+    1. The "first DoH refill" test (`grep '\.'`) was always true because of the 14 seeds, so it never refreshed. It now counts elements with `nft -j ... | jq` and refreshes below 500. This check is what exposed M-15.
+    2. `securepi-ap0.service` hard-codes `wlp2s0` in `After=`, so it is now rendered like the other interface-specific files.
+    3. A `/etc/default/hostapd` rewrite that would have replaced Ubuntu's commented default file was removed: not needed.
+  - **Open: applying on the live gateway.** `sudo ./gateway/install.sh` on the Dell was refused by the session's permission policy ("Production Deploy") at 13:53 and **has not run**. It needs the operator's go-ahead. What it would do is exactly the 8 items above, then: daemon-reload; a restart of `securepi-dpi` (no device enrolled, so no user impact) and of `securepi-ca-server`; no AdGuard restart, so the new `WorkingDirectory` takes effect at its next restart. After applying, `--check` must report 0 changes.
+  - **Open: fresh-machine install (the 8.2 exit criterion).** Not done. Even a read-only probe for Lima on the Mac (`which limactl`) was refused by the same policy at 13:54. The VM procedure is in `docs/INSTALL.md` §12 and has not been run. Until it is, the fresh-install path is checked only piece by piece against the live system, as listed above.

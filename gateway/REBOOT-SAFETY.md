@@ -12,8 +12,11 @@ earlier version of this setup left it created ad hoc — meaning a reboot
 would have started the IDS pointed at an interface that didn't exist yet,
 an unverified risk.
 
-Fixed with two systemd units, present on the gateway (not committed here in
-full, since they are host configuration, but documented for reference):
+Fixed with two systemd units. At first they existed only on the gateway. Since
+Stage 8.2 (10 October 2026), byte-identical copies are committed as
+`gateway/systemd/securepi-test-harness.service` and
+`gateway/systemd/suricata.service.d/override.conf`, and `gateway/install.sh`
+installs them (see `STAGE8-RECORD.md` M-2):
 
 - `securepi-test-harness.service` — a oneshot unit, `RemainAfterExit=yes`,
   running `setup-test-harness.sh` (in this directory). Idempotent: checks

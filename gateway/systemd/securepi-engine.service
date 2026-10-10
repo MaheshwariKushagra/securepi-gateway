@@ -1,0 +1,16 @@
+[Unit]
+Description=SecurePi Gateway - correlation engine
+After=securepi-ingest.service
+Wants=securepi-ingest.service
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/securepi
+ExecStart=/usr/bin/python3 /opt/securepi/engine.py
+Restart=on-failure
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

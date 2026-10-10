@@ -1,43 +1,31 @@
 #!/bin/bash
-# SecurePi Gateway - deploy the Tier 2 privacy-scope canary.
+# SecurePi Gateway - install or update the Tier 2 privacy-scope canary.
 #
-# Run this ON THE DELL, after deploy-dpi.sh. Installs privacy_canary.py as
-# its own systemd service (independent of securepi-dpi's own lifecycle, so
-# restarting one doesn't restart the other) - see ENHANCEMENT-PLAN.md
-# step 5.7 for what this checks and why it's scoped the way it is.
+# Run this ON THE GATEWAY, after deploy-dpi.sh and after the console code is
+# in /opt/securepi (the canary imports correlation, dbconn and dpi_enroll
+# from there). gateway/install.sh runs it for a fresh install:
+#
+#   sudo ./dpi/deploy-privacy-canary.sh
+#
+# Installs privacy_canary.py as its own systemd service (independent of
+# securepi-dpi's own lifecycle, so restarting one doesn't restart the
+# other) - see ENHANCEMENT-PLAN.md step 5.7 and REPORT-adblocking.md §14 for
+# what it checks and what it does not cover. Safe to run again.
 set -e
 
+HERE=$(cd "$(dirname "$0")" && pwd)
 DPI=/opt/securepi-dpi
 echo "==> 1/2  installing the canary script"
-sudo install -m 644 -o root -g root "$(dirname "$0")/privacy_canary.py" $DPI/privacy_canary.py
+sudo install -m 644 -o root -g root "$HERE/privacy_canary.py" $DPI/privacy_canary.py
 
-echo "==> 2/2  creating the canary service"
-sudo tee /etc/systemd/system/securepi-privacy-canary.service >/dev/null <<'UNIT'
-[Unit]
-Description=SecurePi Gateway - Tier 2 privacy-scope canary
-After=securepi-dpi.service
-Wants=securepi-dpi.service
-
-[Service]
-Type=simple
-# Must be the mitmproxy venv's own python3, not /usr/bin/python3 directly -
-# confirmed live: the addon file this canary imports does `from mitmproxy
-# import http`, and mitmproxy is only installed inside this venv. Even
-# though bin/python3 here is itself a symlink to /usr/bin/python3, running
-# it via this path is what makes Python pick up the venv's pyvenv.cfg and
-# add its site-packages to sys.path - invoking the bare system path skips
-# that and fails with "No module named 'mitmproxy'".
-ExecStart=/opt/securepi-dpi/bin/python3 /opt/securepi-dpi/privacy_canary.py
-Restart=on-failure
-RestartSec=10
-
-[Install]
-WantedBy=multi-user.target
-UNIT
-
+echo "==> 2/2  installing the canary service (dpi/securepi-privacy-canary.service)"
+# The unit runs the canary with the proxy venv's own python3, because the
+# addon it imports needs mitmproxy (see the unit file's comment).
+sudo install -m 644 -o root -g root "$HERE/securepi-privacy-canary.service" \
+    /etc/systemd/system/securepi-privacy-canary.service
 sudo systemctl daemon-reload
 # enable, then an explicit restart: `enable --now` only STARTS a unit, so
-# re-running this script against an already-running securepi-privacy-canary left the old
+# re-running this script against an already-running canary left the old
 # process (and the old unit file) in place (Audit10Oct M18).
 sudo systemctl enable securepi-privacy-canary
 sudo systemctl restart securepi-privacy-canary
@@ -45,6 +33,7 @@ sleep 3
 sudo systemctl is-active securepi-privacy-canary || {
     echo "FAILED - check: journalctl -u securepi-privacy-canary -n 40"; exit 1;
 }
+sudo journalctl -u securepi-privacy-canary -n 1 --no-pager -o cat
 
 echo
 echo "================================================================"

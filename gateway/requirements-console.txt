@@ -1,0 +1,27 @@
+# The console, ingest, engine and helpers run on the SYSTEM Python 3.12.3
+# of Ubuntu 24.04 with packages from the Ubuntu archive - not a venv and
+# not pip. This file records the exact versions everything was measured
+# with (`importlib.metadata` on the gateway, 10 October 2026), in pip
+# notation, with the Ubuntu package that provides each. gateway/install.sh
+# installs the apt packages and warns if a version differs.
+#
+# Do NOT `pip install -r` this file on the gateway: it would shadow the apt
+# packages. (For the demo console on a Mac, see docs/demo/requirements.txt.)
+#
+# Note: Ubuntu pairs fastapi 0.101.0 with starlette 0.31.1, which PyPI's
+# fastapi 0.101.0 metadata does not allow (starlette<0.28); the pair works,
+# and is what the gateway has run since 12 September.
+fastapi==0.101.0          # python3-fastapi 0.101.0-3
+starlette==0.31.1         # python3-starlette 0.31.1-1
+pydantic==1.10.14         # python3-pydantic 1.10.14-1
+uvicorn==0.27.1           # python3-uvicorn 0.27.1-1
+Jinja2==3.1.2             # python3-jinja2 3.1.2-1ubuntu1.3
+MarkupSafe==2.1.5         # python3-markupsafe 2.1.5-1build2
+anyio==4.2.0              # python3-anyio 4.2.0-1
+h11==0.14.0               # python3-h11 0.14.0-1ubuntu0.24.04.1
+click==8.1.6              # python3-click 8.1.6-2
+sniffio==1.3.0            # python3-sniffio 1.3.0-2
+idna==3.6                 # python3-idna 3.6-2ubuntu0.2
+typing_extensions==4.10.0 # python3-typing-extensions 4.10.0-1
+python-multipart==0.0.9   # python3-multipart 0.0.9-1
+PyYAML==6.0.1             # python3-yaml 6.0.1-2build2 (securepi-add-uplink)

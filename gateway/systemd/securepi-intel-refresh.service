@@ -1,0 +1,9 @@
+[Unit]
+Description=SecurePi Gateway - refresh offline threat intel feeds (ENHANCEMENT-PLAN.md step 2.4)
+After=network-online.target securepi-static.service AdGuardHome.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=/opt/securepi
+ExecStart=/usr/bin/python3 /opt/securepi/intel.py

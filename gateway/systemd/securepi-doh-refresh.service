@@ -1,0 +1,8 @@
+[Unit]
+Description=SecurePi Gateway - refresh the doh_resolvers nftables set
+After=network-online.target nftables.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/opt/securepi/refresh-doh-set.sh

@@ -1,0 +1,14 @@
+[Unit]
+Description=SecurePi Gateway - create AP virtual interface on the Wi-Fi radio
+Wants=network.target
+Before=hostapd.service
+After=sys-subsystem-net-devices-wlp2s0.device
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/local/sbin/securepi-ap0-up
+ExecStop=/sbin/iw dev ap0 del
+
+[Install]
+WantedBy=multi-user.target

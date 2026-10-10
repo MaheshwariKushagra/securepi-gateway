@@ -1,0 +1,12 @@
+[Unit]
+Description=SecurePi Gateway - static file server for AdGuard-consumed local blocklists (loopback only)
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/securepi/static
+ExecStart=/usr/bin/python3 -m http.server 8082 --bind 127.0.0.1
+Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target

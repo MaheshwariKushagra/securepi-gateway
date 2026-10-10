@@ -1,0 +1,15 @@
+[Unit]
+Description=SecurePi Gateway - event ingest
+After=suricata.service
+Wants=suricata.service
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/python3 /opt/securepi/ingest.py
+Restart=on-failure
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

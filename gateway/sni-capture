@@ -1,0 +1,17 @@
+#!/bin/bash
+# Capture the TLS Server Name Indication (SNI) of every HTTPS connection a
+# LAN device opens. SNI is the hostname the client asks for, sent in the
+# clear during the TLS handshake -- it is the most the gateway can see
+# without decrypting traffic.
+#
+# Usage:  sni-capture <client-ip> <seconds>
+IP=${1:-10.10.0.50}
+SECS=${2:-90}
+OUT=/tmp/sni-$(date +%H%M%S).txt
+echo "Capturing SNI from $IP for ${SECS}s ..."
+sudo timeout "$SECS" tcpdump -i ap0 -l -nn "src host $IP and tcp port 443" -A 2>/dev/null \
+  | grep -oP "(?<=\x00\x00)[a-z0-9][a-z0-9.-]{4,80}\.(com|net|org|io|tv|be|googlevideo\.com)" \
+  | sort | uniq -c | sort -rn > "$OUT"
+echo "--- hostnames contacted ---"
+cat "$OUT"
+echo "(saved to $OUT)"

@@ -1,0 +1,16 @@
+#!/bin/bash
+# Create the access-point virtual interface that shares the Wi-Fi radio with the
+# station link. The AP must have a MAC distinct from the station interface or
+# mac80211 refuses to bring it up ("Name not unique on network").
+set -e
+/sbin/iw dev ap0 del 2>/dev/null || true
+/sbin/iw dev wlp2s0 interface add ap0 type __ap
+BASE=$(cat /sys/class/net/wlp2s0/address)
+FIRST=$(echo "$BASE" | cut -d: -f1)
+REST=$(echo "$BASE" | cut -d: -f2-)
+NEW=$(printf "%02x" $(( 0x$FIRST ^ 0x02 ))):$REST
+/sbin/ip link set ap0 down
+/sbin/ip link set dev ap0 address "$NEW"
+/sbin/ip addr flush dev ap0
+/sbin/ip addr add 10.10.0.1/24 dev ap0
+/sbin/ip link set ap0 up

@@ -1,0 +1,12 @@
+[Unit]
+Description=SecurePi Gateway - turn the laptop panel backlight off (headless gateway, lid closed)
+After=multi-user.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/bin/sh -c "echo 0 > /sys/class/backlight/intel_backlight/brightness"
+ExecStop=/bin/sh -c "echo 30000 > /sys/class/backlight/intel_backlight/brightness"
+
+[Install]
+WantedBy=multi-user.target

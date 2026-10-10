@@ -1,0 +1,10 @@
+[Unit]
+Description=Daily refresh of the doh_resolvers nftables set (ENHANCEMENT-PLAN.md step 2.2)
+
+[Timer]
+OnCalendar=daily
+RandomizedDelaySec=30m
+Persistent=true
+
+[Install]
+WantedBy=timers.target

@@ -1,0 +1,10 @@
+[Unit]
+Description=Daily refresh of offline threat intel feeds (ENHANCEMENT-PLAN.md step 2.4)
+
+[Timer]
+OnCalendar=daily
+RandomizedDelaySec=30m
+Persistent=true
+
+[Install]
+WantedBy=timers.target

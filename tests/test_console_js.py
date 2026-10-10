@@ -79,5 +79,46 @@ class BackgroundPollTests(unittest.TestCase):
         self.assertIn('"/login?next="', self.src)
 
 
+class PollingTests(unittest.TestCase):
+    """Audit10Oct M12: a timer tick started a new refresh without waiting
+    for the last one, an older incident request could overwrite a newer
+    one, and the page-level timers kept running with Live paused."""
+
+    def setUp(self):
+        with open(APP_JS) as fh:
+            self.src = fh.read()
+
+    def test_a_refresh_never_overlaps_itself(self):
+        poll = _function_source("backgroundPoll")
+        self.assertIn("SP.running.has(fn)", poll)
+        self.assertIn("SP.running.delete(fn)", poll)
+        tick = re.search(r"\nfunction tick\(\) \{\n(.*?)\n\}\n", self.src, re.DOTALL).group(1)
+        self.assertIn("backgroundPoll(tickOnce)", tick)   # the same function each time
+
+    def test_page_timers_respect_the_live_switch(self):
+        for m in re.finditer(r"setInterval\((.*?)\);", self.src):
+            body = m.group(1)
+            if body.startswith("tick"):
+                continue
+            self.assertIn("SP.live", body, body)
+
+    def test_only_the_latest_incident_request_is_shown(self):
+        src = _function_source("refreshIncidents") or re.search(
+            r"\nasync function refreshIncidents\(.*?\n}\n", self.src, re.DOTALL).group(0)
+        self.assertIn("++SP.incidentRequest", src)
+        self.assertIn("if (mine !== SP.incidentRequest) return;", src)
+
+    @unittest.skipIf(shutil.which("node") is None, "node is not installed")
+    def test_overlapping_ticks_run_the_refresh_once(self):
+        code = ("const SP = {backgroundPolls: 0, running: new Set()};\n" + _function_source("backgroundPoll") +
+                "\nlet runs = 0; let finish;\n"
+                "function slow() { runs++; return new Promise(r => { finish = r; }); }\n"
+                "backgroundPoll(slow); backgroundPoll(slow); backgroundPoll(slow);\n"
+                "setTimeout(() => { finish(); setTimeout(() => { backgroundPoll(slow);"
+                " setTimeout(() => process.stdout.write(String(runs)), 0); }, 0); }, 0);")
+        out = subprocess.run(["node", "-e", code], capture_output=True, text=True, check=True).stdout
+        self.assertEqual(out, "2")   # one while busy, one after it finished
+
+
 if __name__ == "__main__":
     unittest.main()

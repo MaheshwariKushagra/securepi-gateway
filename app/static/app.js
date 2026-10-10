@@ -11,6 +11,8 @@ const SP = {
     charts: {},
     notifSeen: null,
     backgroundPolls: 0,   // timer-driven refreshes still in flight
+    running: new Set(),   // which of them, so one never overlaps itself
+    incidentRequest: 0,   // numbers the incident-list requests; only the latest is shown
 };
 
 /* Every request goes through this wrapper, for two reasons (Audit10Oct M13):
@@ -37,13 +39,18 @@ window.fetch = async function (resource, options) {
     return res;
 };
 
-/* Run a timer-driven refresh with its requests marked as background. */
+/* Run a timer-driven refresh with its requests marked as background.
+   If the same refresh is still running from the previous tick - a slow
+   moment on the gateway - this tick is skipped rather than starting a
+   second copy alongside it (Audit10Oct M12). */
 function backgroundPoll(fn) {
+    if (SP.running.has(fn)) return Promise.resolve();
+    SP.running.add(fn);
     SP.backgroundPolls += 1;
     return Promise.resolve()
         .then(fn)
         .catch(() => { /* each refresh shows its own errors */ })
-        .finally(() => { SP.backgroundPolls -= 1; });
+        .finally(() => { SP.backgroundPolls -= 1; SP.running.delete(fn); });
 }
 
 const STATUS_META = {
@@ -154,7 +161,11 @@ function schedule() {
 }
 
 function tick() {
-    backgroundPoll(() => Promise.all([refresh(), refreshSystem(), refreshNotifications(), refreshDnsStatus()]));
+    backgroundPoll(tickOnce);
+}
+
+function tickOnce() {
+    return Promise.all([refresh(), refreshSystem(), refreshNotifications(), refreshDnsStatus()]);
 }
 
 /* --------------------------------------------------------------- toasts */
@@ -932,8 +943,13 @@ async function refreshIncidents(source) {
     const p = new URLSearchParams();
     if (incidentFilter.severity) p.set("severity", incidentFilter.severity);
     if (incidentFilter.status) p.set("status", incidentFilter.status);
+    // Numbered, so an older request that happens to answer last (say, a
+    // timer refresh still using the previous filter) can't overwrite the
+    // list the operator just asked for (Audit10Oct M12).
+    const mine = ++SP.incidentRequest;
     const res = await fetch("/api/incidents?" + p.toString());
     const d = await res.json();
+    if (mine !== SP.incidentRequest) return;
     window.__incidents = d.incidents;
 
     $("#cntAll") && ($("#cntAll").textContent = d.counts.total);
@@ -3084,7 +3100,7 @@ function initDeviceQuarantine() {
 
     document.addEventListener("sp:device-changed", load);
     load();
-    setInterval(() => { if (!document.hidden) backgroundPoll(load); }, 30000);
+    setInterval(() => { if (!document.hidden && SP.live) backgroundPoll(load); }, 30000);
 }
 
 /* --------------------------------------------- device profile and pause */
@@ -3262,7 +3278,7 @@ function initDevicePolicies() {
     });
     document.addEventListener("sp:device-changed", load);
     load();
-    setInterval(() => { if (!document.hidden) backgroundPoll(load); }, 30000);
+    setInterval(() => { if (!document.hidden && SP.live) backgroundPoll(load); }, 30000);
 }
 
 /* -------------------------------------------------- incident Respond card */
@@ -3815,7 +3831,7 @@ function initNetworkPause() {
         }
     });
     load();
-    setInterval(() => { if (!document.hidden) backgroundPoll(load); }, 20000);
+    setInterval(() => { if (!document.hidden && SP.live) backgroundPoll(load); }, 20000);
 }
 
 /* ---------------------------------------------- settings: notifications */
@@ -3990,7 +4006,7 @@ function initNotifications() {
     loadChannels();
     loadRules();
     loadRecent();
-    setInterval(() => { if (!document.hidden) backgroundPoll(loadRecent); }, 20000);
+    setInterval(() => { if (!document.hidden && SP.live) backgroundPoll(loadRecent); }, 20000);
 }
 
 function initRetention() {

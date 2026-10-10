@@ -579,3 +579,9 @@ H9 no journal purge; no deliberate outages on the real network.*
   - **M10:** all three attribution passes only consider events newer than `registry.ATTRIBUTION_WINDOW_HOURS = 24` (the `ts` index bounds the scan); the unused `limit` parameter is gone. A module constant rather than the console setting the plan named, since it is a cost bound, not something to tune.
   - **E1:** `retention.prune_incidents` deletes through a subquery, not a bound id list. Tested with SQLite's variable limit lowered to 100 and 300 expired incidents.
   - 2 new tests failed on the old code.
+- **7B.17 (M12) done in code.**
+  - `backgroundPoll` skips a refresh that is still running from the previous tick (a `Set` of running functions; `tick` now passes the same `tickOnce` each time).
+  - `refreshIncidents` numbers its requests and ignores any answer that isn't the latest.
+  - The four page-level timers also check `SP.live`.
+  - Tested structurally, plus a node run of `backgroundPoll` showing three overlapping ticks run the refresh once.
+  - **Not done live:** a browser network-panel check needs a logged-in console session, and the console password isn't available unattended.

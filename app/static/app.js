@@ -361,7 +361,7 @@ function initSidebar() {
 
 async function refreshNotifications() {
     try {
-        const res = await fetch("/api/incidents?status=new");
+        const res = await fetch("/api/incidents?status=open");
         const d = await res.json();
         const items = d.incidents.slice(0, 8);
         const openCount = d.incidents.length;
@@ -402,7 +402,7 @@ function renderNotifPanel(items) {
     const el = $("#notifPanelBody");
     if (!el) return;
     if (!items.length) {
-        el.innerHTML = `<div class="empty"><span class="empty-icon">✓</span>No new incidents. The network is quiet.</div>`;
+        el.innerHTML = `<div class="empty"><span class="empty-icon">✓</span>No open incidents. The network is quiet.</div>`;
         return;
     }
     el.innerHTML = items.map(i => `

@@ -590,6 +590,16 @@ class RuleRemove(BaseModel):
     rule: str
 
 
+# One meaning of an "open" incident everywhere in the console: the
+# statuses risk scoring already treats as live - 'new' AND 'investigating'.
+# The console used to count only 'new', so moving an incident to
+# investigating made it vanish from the open counts and the active list,
+# and the dashboard could call the network quiet mid-investigation
+# (Audit10Oct M14). Built from risk.LIVE_STATUSES (fixed strings, not
+# user input) so the two can't drift apart again.
+OPEN_STATUSES_SQL = "(%s)" % ",".join("'%s'" % s for s in risk.LIVE_STATUSES)
+
+
 def db():
     # Same open path as every other service - see app/dbconn.py.
     return dbconn.connect(DB_PATH)
@@ -834,9 +844,9 @@ def api_overview(range: str = Query("6h")):
     events_per_min = round(events_window / max(1, spec["seconds"] / 60.0), 1)
 
     incidents_open = c.execute(
-        "SELECT count(*) FROM incidents WHERE status='new'").fetchone()[0]
+        "SELECT count(*) FROM incidents WHERE status IN " + OPEN_STATUSES_SQL).fetchone()[0]
     incidents_high = c.execute(
-        "SELECT count(*) FROM incidents WHERE status='new' AND severity='high'").fetchone()[0]
+        "SELECT count(*) FROM incidents WHERE status IN " + OPEN_STATUSES_SQL + " AND severity='high'").fetchone()[0]
 
     dns_total = c.execute(
         "SELECT count(*) FROM events WHERE event_type='dns_query' AND ts >= ?",
@@ -853,7 +863,7 @@ def api_overview(range: str = Query("6h")):
     # --- breakdowns ------------------------------------------------------
     severity = {"high": 0, "medium": 0, "low": 0}
     for r in c.execute(
-        "SELECT severity, count(*) n FROM incidents WHERE status='new' GROUP BY severity"):
+        "SELECT severity, count(*) n FROM incidents WHERE status IN " + OPEN_STATUSES_SQL + " GROUP BY severity"):
         if r["severity"] in severity:
             severity[r["severity"]] = r["n"]
 
@@ -926,7 +936,7 @@ def api_overview(range: str = Query("6h")):
     for r in c.execute(
         "SELECT i.*, d.hostname, d.friendly_name FROM incidents i"
         " LEFT JOIN devices d ON d.id = i.device_id"
-        " WHERE i.status='new'"
+        " WHERE i.status IN " + OPEN_STATUSES_SQL +
         " ORDER BY CASE i.severity WHEN 'high' THEN 0 WHEN 'medium' THEN 1 ELSE 2 END,"
         "          i.last_seen DESC LIMIT 8"):
         active_incidents.append({
@@ -1091,7 +1101,7 @@ def api_devices():
             "  FROM events WHERE device_id=?", (d["id"],)).fetchone()
         inc = c.execute(
             "SELECT count(*) n, COALESCE(sum(severity='high'),0) high"
-            "  FROM incidents WHERE device_id=? AND status='new'", (d["id"],)).fetchone()
+            "  FROM incidents WHERE device_id=? AND status IN " + OPEN_STATUSES_SQL, (d["id"],)).fetchone()
         r = risk.device_risk(c, d["id"], now)
         # Stage 4: what the console is enforcing on this device, from the
         # policies table (the device page reads the live firewall state).
@@ -1133,7 +1143,9 @@ def api_incidents(severity: str = Query(""), status: str = Query(""),
     if severity:
         sql += " AND i.severity = ?"
         params.append(severity)
-    if status:
+    if status == "open":
+        sql += " AND i.status IN " + OPEN_STATUSES_SQL
+    elif status:
         sql += " AND i.status = ?"
         params.append(status)
     if signal:
@@ -2056,7 +2068,7 @@ def api_privacy_scope():
     last_run = row["last_run_ts"] if row else None
     stale = (last_run is None) or (now - last_run) >= PRIVACY_SCOPE_STALE_AFTER
     failing = c.execute(
-        "SELECT id FROM incidents WHERE signal_type='privacy_scope_failure' AND status='new'"
+        "SELECT id FROM incidents WHERE signal_type='privacy_scope_failure' AND status IN " + OPEN_STATUSES_SQL +
         " ORDER BY last_seen DESC LIMIT 1").fetchone()
     return {
         "last_checked": time.strftime("%H:%M:%S", time.localtime(last_run)) if last_run else None,
@@ -2246,7 +2258,7 @@ def api_dpi_effectiveness():
     rows = c.execute(
         "SELECT i.id, i.device_id, d.hostname, d.friendly_name, i.last_seen"
         "  FROM incidents i LEFT JOIN devices d ON d.id = i.device_id"
-        " WHERE i.signal_type='adblock_ineffective' AND i.status='new'"
+        " WHERE i.signal_type='adblock_ineffective' AND i.status IN " + OPEN_STATUSES_SQL +
         " ORDER BY i.last_seen DESC").fetchall()
     return {
         "healthy": len(rows) == 0,
@@ -2458,7 +2470,7 @@ def api_device_baseline(device_id: int):
     days_seen = (now - d["first_seen"]) / 86400.0
     open_incident = c.execute(
         "SELECT id, last_seen FROM incidents"
-        " WHERE device_id=? AND signal_type='volume_anomaly' AND status='new'"
+        " WHERE device_id=? AND signal_type='volume_anomaly' AND status IN " + OPEN_STATUSES_SQL +
         " ORDER BY last_seen DESC LIMIT 1", (device_id,)).fetchone()
     return {
         "learning": days_seen < BASELINE_LEARNING_DAYS,

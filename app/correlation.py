@@ -40,6 +40,7 @@ import time
 from collections import Counter, defaultdict
 
 import dbconn
+import intel
 import playbooks
 import settings
 import signature_taxonomy
@@ -785,6 +786,9 @@ def ids_alert_signal(conn):
 
 
 def _threat_intel_matches(conn, since):
+    # Only CURRENT indicators - the same freshness rule the DNS blocklist
+    # uses (intel.current_indicator_sql; Audit10Oct M15).
+    current = intel.current_indicator_sql("i")
     return conn.execute(
         """
         SELECT device_id, indicator, ioc_type, source, description, ts
@@ -792,17 +796,17 @@ def _threat_intel_matches(conn, since):
             SELECT e.device_id device_id, i.indicator indicator, i.ioc_type ioc_type,
                    i.source source, i.description description, e.ts ts
               FROM events e JOIN ioc i ON i.ioc_type='ip' AND e.dest_ip = i.indicator
-             WHERE e.event_type='flow' AND e.device_id IS NOT NULL AND e.ts > ?
+             WHERE e.event_type='flow' AND e.device_id IS NOT NULL AND e.ts > ? AND {current}
             UNION ALL
             SELECT e.device_id, i.indicator, i.ioc_type, i.source, i.description, e.ts
               FROM events e JOIN ioc i ON i.ioc_type='domain' AND e.dns_rrname = i.indicator
-             WHERE e.event_type='dns_query' AND e.device_id IS NOT NULL AND e.ts > ?
+             WHERE e.event_type='dns_query' AND e.device_id IS NOT NULL AND e.ts > ? AND {current}
             UNION ALL
             SELECT e.device_id, i.indicator, i.ioc_type, i.source, i.description, e.ts
               FROM events e JOIN ioc i ON i.ioc_type='domain' AND e.tls_sni = i.indicator
-             WHERE e.event_type='tls' AND e.device_id IS NOT NULL AND e.ts > ?
+             WHERE e.event_type='tls' AND e.device_id IS NOT NULL AND e.ts > ? AND {current}
           )
-        """,
+        """.format(current=current),
         (since, since, since),
     ).fetchall()
 

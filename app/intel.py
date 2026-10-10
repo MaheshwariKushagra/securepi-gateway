@@ -179,16 +179,26 @@ def _write_domain_blocklist_file(conn):
     doesn't empty the blocklist."""
     os.makedirs(DOMAIN_BLOCKLIST_DIR, exist_ok=True)
     rows = conn.execute(
-        """SELECT DISTINCT i.indicator FROM ioc i
-            WHERE i.ioc_type = 'domain'
-              AND i.last_seen >= (SELECT max(j.last_seen) FROM ioc j WHERE j.source = i.source) - ?""",
-        (BLOCKLIST_MAX_AGE_DAYS * 86400,),
+        "SELECT DISTINCT i.indicator FROM ioc i WHERE i.ioc_type = 'domain' AND " + current_indicator_sql("i")
     ).fetchall()
     with open(DOMAIN_BLOCKLIST_PATH, "w") as f:
         f.write("! Title: SecurePi Gateway - offline threat intel (abuse.ch)\n")
         f.write("! Rewritten by app/intel.py - do not edit by hand\n")
         for r in rows:
             f.write("||%s^\n" % r["indicator"])
+
+
+def current_indicator_sql(alias):
+    """An SQL condition: the ioc row `alias` is CURRENT - its feed listed it
+    within BLOCKLIST_MAX_AGE_DAYS of that feed's own most recent refresh.
+
+    The one definition shared by the DNS blocklist written below and the
+    threat-intel incident signal (app/correlation.py). Until Audit10Oct M15
+    the signal matched indicators of any age, so a hacked site the feed
+    stopped listing months ago still raised a high-severity incident.
+    `alias` is a fixed table alias from the calling code, never user input."""
+    return ("%s.last_seen >= (SELECT max(j.last_seen) FROM ioc j WHERE j.source = %s.source) - %d"
+            % (alias, alias, BLOCKLIST_MAX_AGE_DAYS * 86400))
 
 
 def refresh_all(conn):

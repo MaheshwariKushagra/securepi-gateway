@@ -571,3 +571,7 @@ H9 no journal purge; no deliberate outages on the real network.*
   - another of its MACs is associated with the AP right now (the station list `update_devices` already reads is passed through).
 
   **Deviation from the plan text, deliberately:** a person's quarantine and other restrictive policies (blocked domains, profiles) do *not* block the merge. Blocking it would let a quarantined unknown device escape just by rotating its MAC. A first version used "other MAC seen in the last 10 minutes" for the second case; that would have split a phone that rotates its MAC and reconnects within seconds, so it uses live association instead. 3 new tests failed on the old code; the randomization, ended-policy and quarantine cases are tested as controls.
+- **7B.15 (M14, M15) done in code.**
+  - **M14:** `webapp.OPEN_STATUSES_SQL` is built from `risk.LIVE_STATUSES` ('new', 'investigating'). All eight `status='new'` incident queries use it: dashboard counts and severity split, active feed, device list, privacy-scope failure, ad-block effectiveness, volume anomaly. `/api/incidents?status=open` is new; the notification badge uses it, and its empty text now says "No open incidents".
+  - **M15:** `intel.current_indicator_sql()` is the one freshness rule, used by the blocklist writer and by the threat-intel signal's three joins. An indicator its feed stopped listing more than 30 days before the feed's latest refresh no longer raises incidents; a feed that couldn't refresh keeps its list.
+  - 4 structural and 1 functional test failed on the old code.

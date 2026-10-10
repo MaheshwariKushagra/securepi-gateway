@@ -655,6 +655,33 @@ class ThreatIntelSignalTests(unittest.TestCase):
         self.assertEqual(rows[0]["evidence_count"], 2)
 
 
+class ThreatIntelFreshnessTests(unittest.TestCase):
+    """Audit10Oct M15: the blocklist only uses indicators their feed still
+    listed recently (abuse.ch lists many hacked sites that are later
+    cleaned), but the incident signal matched indicators of ANY age - so a
+    long-cleaned site still raised a high-severity incident."""
+
+    def test_an_indicator_its_feed_stopped_listing_long_ago_does_not_fire(self):
+        conn = fixtures.temp_db()
+        fixtures.insert_device(conn, 1)
+        now = time.time()
+        fixtures.insert_ioc(conn, "cleaned.example.com", "domain", source="urlhaus", ts=now - 60 * 86400)
+        fixtures.insert_ioc(conn, "still-bad.example.com", "domain", source="urlhaus", ts=now)
+        fixtures.insert_dns_query(conn, 1, "cleaned.example.com", now - 10)
+        self.assertEqual(correlation.threat_intel_signal(conn), 0)
+        fixtures.insert_dns_query(conn, 1, "still-bad.example.com", now - 5)
+        self.assertEqual(correlation.threat_intel_signal(conn), 1)
+
+    def test_freshness_is_measured_against_the_feeds_own_latest_refresh(self):
+        # A feed that couldn't be downloaded for a while keeps its list.
+        conn = fixtures.temp_db()
+        fixtures.insert_device(conn, 1)
+        now = time.time()
+        fixtures.insert_ioc(conn, "203.0.113.99", "ip", source="feodo", ts=now - 45 * 86400)
+        fixtures.insert_flow(conn, 1, "203.0.113.99", 443, now - 10)
+        self.assertEqual(correlation.threat_intel_signal(conn), 1)
+
+
 class DnsTunnelingSignalTests(unittest.TestCase):
     """ENHANCEMENT-PLAN.md step 2.5. High-entropy subdomains generated
     with Python's own random module - deterministic given a fixed seed,

@@ -749,6 +749,24 @@ def desired_state(conn, b, now):
     for p in policies:
         by_device.setdefault(p["device_id"], []).append(p)
 
+    # The DNS filter is only asked for anything when a device-scoped DNS
+    # policy needs its client list or service catalogue - and if it can't
+    # be reached, only the two DNS-filter enforcement points are affected.
+    # The firewall ones (quarantine, IP blocks, HTTPS inspection) are
+    # still worked out and enforced. Until Audit10Oct H1 this function
+    # simply raised, and reconcile then skipped EVERY enforcement point.
+    dns_kinds = ("block_domain", "allow_domain", "native_profile", "profile", "pause")
+    needs_clients = any(p["kind"] in dns_kinds and p["device_id"] is not None for p in policies)
+    needs_catalog = any(p["kind"] in ("profile", "pause") and p["device_id"] is not None for p in policies)
+    dns_error = None
+    try:
+        if needs_clients:
+            client_list = b.clients()
+        if needs_catalog:
+            catalog = b.catalog()
+    except BACKEND_ERRORS as e:
+        dns_error = "the DNS filter could not be reached, so its rules and device settings were not checked: %s" % e
+
     def _client_for(device_id):
         nonlocal client_list
         if device_id in clients:
@@ -770,6 +788,8 @@ def desired_state(conn, b, now):
             ip = p["target"]
             ips[ip] = _later(ips[ip], p["expires_at"]) if ip in ips else p["expires_at"]
             owners["ips"].setdefault(ip, []).append(p["id"])
+        elif dns_error and kind in dns_kinds:
+            continue  # reported as unavailable below; the firewall still goes ahead
         elif kind in ("block_domain", "allow_domain"):
             action = "block" if kind == "block_domain" else "allow"
             name = _client_for(dev)["name"] if dev is not None else None
@@ -795,7 +815,7 @@ def desired_state(conn, b, now):
 
     # Per-device client settings: a profile and/or a pause.
     for dev, plist in by_device.items():
-        if dev is None:
+        if dev is None or dns_error:
             continue
         prof_p = next((p for p in plist if p["kind"] == "profile"), None)
         pause_p = next((p for p in plist if p["kind"] == "pause"), None)
@@ -823,6 +843,10 @@ def desired_state(conn, b, now):
         "macs": macs, "ips": ips, "rules": rules, "clients": clients,
         "protection": protection, "enrolled": enrolled,
         "_owners": owners, "_rule_owner": rule_owner,
+        # Enforcement points whose desired state is unknown right now, and
+        # why. Nothing is changed there: a half-known rule list converged
+        # would delete the rules that couldn't be worked out.
+        "_unavailable": {"rules": dns_error, "clients": dns_error} if dns_error else {},
     }
 
 
@@ -1158,6 +1182,9 @@ def _apply_and_verify(conn, b, domains, now):
                                         now, restored_after_boot)
             for note in notes:
                 audit.log(conn, ACTOR, "policy.drift_corrected", target="orchestrator", detail=note)
+        unavailable = [d for d in domains if d in desired["_unavailable"]]
+        if unavailable:
+            raise PolicyApplyError(desired["_unavailable"][unavailable[0]])
         for d in domains:
             new_applied[d] = _converge(conn, b, d, desired, snap[d], applied, now)
         after = _snapshot(b, domains)
@@ -1171,7 +1198,7 @@ def _apply_and_verify(conn, b, domains, now):
         if mismatched:
             error = "read-back did not match what was applied (%s)" % ", ".join(
                 DOMAIN_LABELS[d] for d in mismatched)
-    except BACKEND_ERRORS as e:
+    except (PolicyApplyError,) + BACKEND_ERRORS as e:
         error = str(e)
 
     if error is None:
@@ -1536,6 +1563,10 @@ def reconcile(conn, backends=None, now=None):
         new_applied = dict(applied)
         if desired is not None:
             for d in DOMAINS:
+                if d in desired["_unavailable"]:
+                    summary["errors"][d] = desired["_unavailable"][d]
+                    domain_status[d] = {"ok": False, "checked_at": now, "error": desired["_unavailable"][d]}
+                    continue
                 try:
                     have = _observe(b, d)
                     drifted = not _applied_matches(d, have, applied, now)
@@ -1597,13 +1628,16 @@ def reconcile(conn, backends=None, now=None):
         if summary["restored"]:
             audit.log(conn, ACTOR, "policy.restored_after_restart", target="orchestrator",
                       detail="re-applied after a gateway restart: %s" % ", ".join(summary["restored"]))
-        failing = {d: e for d, e in summary["errors"].items() if d in DOMAINS}
+        # "desired" too: not being able to work out the desired state at all
+        # used to slip past this incident (Audit10Oct H1).
+        failing = {d: e for d, e in summary["errors"].items() if d in DOMAINS or d == "desired"}
         if failing:
             correlation.raise_incident(
                 conn, None, "policy_enforcement_failed", "high",
                 "The gateway could not enforce every response policy",
                 "The orchestrator could not check or apply: " + "; ".join(
-                    "%s (%s)" % (DOMAIN_LABELS[d], e) for d, e in failing.items()) +
+                    "%s (%s)" % (DOMAIN_LABELS.get(d, "working out what to enforce"), e)
+                    for d, e in failing.items()) +
                 ". It will keep retrying every cycle.",
                 now, now, [])
 

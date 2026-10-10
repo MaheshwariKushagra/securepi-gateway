@@ -56,6 +56,7 @@ class FakeBackends:
         self.sticky_deletes = False
         self.ignore_client_adds = False
         self.ignore_client_updates = False
+        self.dns_down = False          # Audit10Oct H1: the DNS filter's API unreachable
         self.calls = []
 
     def _secs(self, s):
@@ -100,6 +101,7 @@ class FakeBackends:
         self.calls.append(("reset_https", ip))
 
     def user_rules(self):
+        self._check_dns()
         return list(self.rules)
 
     def set_user_rules(self, rules):
@@ -110,7 +112,12 @@ class FakeBackends:
             rules = list(rules) + [r for r in self.rules if r not in rules]
         self.rules = list(rules)
 
+    def _check_dns(self):
+        if self.dns_down:
+            raise adguard.AdGuardError("could not reach the DNS filter: connection refused")
+
     def clients(self):
+        self._check_dns()
         return copy.deepcopy(self.client_list)
 
     def add_client(self, obj):
@@ -131,6 +138,7 @@ class FakeBackends:
         self.client_list = [c for c in self.client_list if c["name"] != name]
 
     def protection(self):
+        self._check_dns()
         return self.protection_on, 0
 
     def set_protection(self, enabled, duration_ms):
@@ -138,6 +146,7 @@ class FakeBackends:
         self.protection_until = None if enabled else self.clock() + (duration_ms or 0) / 1000.0
 
     def catalog(self):
+        self._check_dns()
         return dict(CATALOG)
 
 
@@ -272,6 +281,51 @@ class RollbackTests(OrchestratorTestCase):
             self.create("profile", 1, "strict_privacy")
         row = self.conn.execute("SELECT status FROM policies WHERE id=?", (first["id"],)).fetchone()
         self.assertEqual(row["status"], "active")
+
+
+class DnsFilterDownTests(OrchestratorTestCase):
+    """Audit10Oct H1: working out the desired state asked the DNS filter for
+    its clients and service catalogue whenever a device had a profile or a
+    device rule. With the DNS filter down that failed, and every
+    enforcement point was skipped - quarantine and IP blocks included -
+    without the enforcement-failure incident."""
+
+    def setUp(self):
+        super().setUp()
+        self.create("profile", 2, "kids")       # needs the DNS filter's clients
+        self.b.dns_down = True
+
+    def test_a_quarantine_still_applies_while_the_dns_filter_is_down(self):
+        p = self.create("quarantine", 1)
+        self.assertEqual(p["status"], "active")
+        self.assertIn("aa:bb:cc:00:00:01", self.b.mac_set)
+
+    def test_reconcile_keeps_the_firewall_in_line(self):
+        self.b.mac_set.clear()
+        self.b.dns_down = False
+        p = self.create("quarantine", 1)
+        self.b.mac_set.clear()                 # removed by hand while the DNS filter is down
+        self.b.dns_down = True
+        summary = self.reconcile()
+        self.assertIn("aa:bb:cc:00:00:01", self.b.mac_set)
+        self.assertNotIn("macs", summary["errors"])
+        self.assertIn("rules", summary["errors"])
+        self.assertIn("clients", summary["errors"])
+        self.assertEqual(self.conn.execute("SELECT status FROM policies WHERE id=?", (p["id"],)).fetchone()[0],
+                         "active")
+
+    def test_the_failure_raises_the_enforcement_incident(self):
+        self.reconcile()
+        row = self.conn.execute("SELECT description FROM incidents"
+                                " WHERE signal_type='policy_enforcement_failed'").fetchone()
+        self.assertIsNotNone(row)
+        self.assertIn("Device filtering settings", row["description"])
+
+    def test_a_dns_policy_change_is_refused_not_half_applied(self):
+        with self.assertRaises(orchestrator.PolicyApplyError):
+            self.create("block_domain", 1, "tracker.example.com")
+        self.b.dns_down = False
+        self.assertFalse(any("tracker.example.com" in r for r in self.b.rules))
 
 
 class RemovalVerificationTests(OrchestratorTestCase):

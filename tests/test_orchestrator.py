@@ -723,6 +723,33 @@ class EnrollTests(OrchestratorTestCase):
         self.assertIsNone(orchestrator.device_ip(self.conn, 1))
         self.assertEqual(orchestrator.device_ip(self.conn, 2), "10.10.0.31")
 
+    # Audit10Oct M1: extending an enrollment replaces the policy with a
+    # longer one, but the IP was already in the set, so nothing renewed its
+    # kernel timeout. At the old expiry the element vanished and the
+    # orchestrator ended the extended policy as "removed outside the console".
+
+    def test_extending_an_enrollment_renews_the_kernel_timeout(self):
+        self.create("enroll", 1, minutes=60)
+        self.create("enroll", 1, minutes=180, reason="extended")
+        self.assertGreaterEqual(self.b.enrolled()["10.10.0.31"], 180 * 60)
+        self.clock.t += 2 * 3600      # past the original hour
+        self.reconcile()
+        self.assertIn("10.10.0.31", self.b.enroll_set)
+        active = orchestrator.active_policies(self.conn, "enroll", 1)
+        self.assertEqual(len(active), 1)
+
+    def test_shortening_an_enrollment_needs_no_renewal(self):
+        self.create("enroll", 1, minutes=180)
+        self.create("enroll", 1, minutes=60, reason="shorter")
+        self.assertEqual([c for c in self.b.calls if c[0] == "enroll"], [("enroll", "10.10.0.31", 3)])
+
+    def test_a_kernel_timeout_shorter_than_the_policy_fails_verification(self):
+        self.create("enroll", 1, minutes=180)
+        self.b.enroll_set["10.10.0.31"] = self.clock() + 600    # cut short outside the console
+        summary = self.reconcile()
+        self.assertGreaterEqual(self.b.enrolled()["10.10.0.31"], 170 * 60)
+        self.assertEqual(summary["errors"], {})
+
     def test_cli_enrollment_is_adopted_not_removed(self):
         self.b.enroll_set["10.10.0.32"] = self.clock() + 3600
         self.reconcile()

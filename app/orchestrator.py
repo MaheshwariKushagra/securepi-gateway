@@ -912,6 +912,10 @@ def _domain_matches(domain, want, have, applied, now):
     if domain == "enrolled":
         if not set(want) <= set(have):
             return False
+        # Present is not enough: the kernel must keep it at least as long
+        # as the policy lasts (Audit10Oct M1).
+        if any(_enroll_timeout_too_short(have[ip], info["expires_at"], now) for ip, info in want.items()):
+            return False
         if any(ip in have for ip in (applied.get("enrolled") or {}) if ip not in want):
             return False
         # The site map is part of an enrollment: the firewall decides who
@@ -1041,6 +1045,15 @@ def _converge(conn, b, domain, desired, have, applied, now):
     raise ValueError(domain)
 
 
+def _enroll_timeout_too_short(seconds_left, expires_at, now):
+    """True if the kernel's own timeout on an enrolled IP runs out before
+    the policy does. None means the element has no timeout at all (added
+    by hand), which can't run out early."""
+    if seconds_left is None:
+        return False
+    return seconds_left < (expires_at - now) - 5
+
+
 def _converge_enrolled(conn, b, want, have, applied_enrolled, now):
     """Enrollments only move in one direction on their own - see the module
     docstring. Adds every wanted IP that isn't there and removes IPs no
@@ -1059,8 +1072,17 @@ def _converge_enrolled(conn, b, want, have, applied_enrolled, now):
     changed = write_site_map(want)
     record = {}
     for ip, info in want.items():
+        hours = max(1, min(720, int((info["expires_at"] - now + 3599) // 3600)))
         if ip not in have:
-            hours = max(1, min(720, int((info["expires_at"] - now + 3599) // 3600)))
+            b.enroll(ip, hours)
+        elif _enroll_timeout_too_short(have[ip], info["expires_at"], now):
+            # Still enrolled, but the kernel would drop it before the policy
+            # ends - an extension (Audit10Oct M1). Renewing an enrollment
+            # that is still in the set is not re-enabling one: anything
+            # flushed or cleared by a reboot was already taken out of
+            # `want` by _reconcile_enrolled. dpi_enroll.enroll() deletes
+            # and re-adds, because nft ignores a new timeout on an
+            # element that already exists.
             b.enroll(ip, hours)
         record[ip] = info["expires_at"]
         conn.execute("UPDATE policies SET applied_state=? WHERE id=?",

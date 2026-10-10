@@ -529,3 +529,10 @@ H9 no journal purge; no deliberate outages on the real network.*
   - **M19:** `setup-privilege-separation.sh` fixes ownership and write permission recursively and lists what it fixed (not run unattended). Read-only check of the gateway: no writable code. Two stray top-level copies `/opt/securepi/app.js` and `app.css` (`maheshwari:staff` 644, not served; the console serves `static/`), and four 7A `.bak` rule-file backups in `/opt/securepi-dpi` that the `securepi` group can write.
   - Also fixed: the stale "stopgap" docstring (Q5).
   - **Tests:** 15 new, which failed on the old code; one structural test updated for the recursive `chown`. **Group 2 gate:** 697 tests, py_compile, node --check and shellcheck all clean.
+- **Group 2 deployed and verified live (08:20-08:21).**
+  - **Backups:** `pre-group2-20261010-082013.tar.gz` and `.bak-7B-g2-*` copies.
+  - **Deploy:** `make deploy`; `adfilter_rules.py` also installed into `/opt/securepi-dpi` (the addon imports it from there) and compiled; proxy and canary restarted. All services active; canary ok; the live rule file (v9) still validates under the new overlap check.
+  - **Login (H5/H6):** 15 concurrent wrong-password POSTs from `127.0.0.1` (so the address the Mac's tunnel uses was never locked) got 9×401 and 6×429. With the one probe sent just before, exactly 10 reached the password check, which is the limit. A 10 KB body got 413. The re-read check returns True on the real password file as `securepi-web` (no rehash pending), so a correct login still gets its session. The 10 test rows were removed from `login_attempts` afterwards.
+  - **Fail-open (H8):** the new code ran within seconds of deploy; no leftover rule; DB inactive.
+  - **Journals:** no errors since deploy.
+  - **Not done live:** a real fail-open cycle (no deliberate DNS outage).

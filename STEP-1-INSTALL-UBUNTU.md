@@ -1,5 +1,10 @@
 # Step 1 — Prepare the Dell Vostro 3501 and hand it over
 
+> **Historical document (day-1 hand-over).** Sections 1-6 (Ubuntu installation) still apply.
+> Sections 7-10 describe the original wiring plan, which the build did not keep; see
+> [`docs/INSTALL.md`](docs/INSTALL.md) for the gateway as built (`STAGE8-RECORD.md` §2, M-1 and M-13).
+
+
 Everything here happens at the Dell's own keyboard, plus a little on the Mac.
 No Python, no programming. Once step 9 passes, I take over remotely and you stop
 needing to touch the Dell except to plug things in.

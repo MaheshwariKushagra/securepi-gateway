@@ -1,5 +1,14 @@
 # Gateway Setup Runbook — Dell Vostro 3501
 
+> **Historical document (day-1 plan, 12 September 2026).** The gateway as built differs:
+> management is on the built-in RJ45 (`enp1s0`, `192.168.2.5/24`, the Mac sharing Internet over
+> its USB Ethernet adapter as `192.168.2.1`), the WAN is the Wi-Fi station (`wlp2s0`) with the
+> access point (`ap0`) on the same radio, there is no `securepi` SSH alias, `make deploy` rsyncs
+> `app/` to `/opt/securepi` without `--delete`, and the console is HTTPS-only on `10.10.0.1:8000`.
+> To build a gateway today, follow [`docs/INSTALL.md`](docs/INSTALL.md). Mismatch list:
+> `STAGE8-RECORD.md` §2 (M-1).
+
+
 Goal: a headless Linux gateway I can operate fully over a dedicated wired link,
 with the MacBook as the development machine.
 

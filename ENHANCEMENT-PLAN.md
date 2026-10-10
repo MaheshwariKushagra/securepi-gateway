@@ -41,6 +41,9 @@ The 15-day plan was about 1/25th of the 38-week schedule. It kept the concept an
 architecture and cut breadth. This section lists each reduction, checks it against
 the code as built, and decides whether it comes back.
 
+*The decisions below are as taken on 13 September 2026. Their final outcome (as of
+10 October 2026) is the deviations table in [`REPORT.md`](REPORT.md) §7.*
+
 ### 1.1 Technology substitutions
 
 | Area | Feasibility (38 wk) | 15-day plan | Actually built | **Decision now** | Why |

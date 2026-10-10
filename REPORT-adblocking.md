@@ -1,8 +1,9 @@
 # SecurePi Gateway — Ad Blocking Subsystem
 ### Report material: design, implementation, results and findings
 
-Working session, 12 September 2026. All figures below are measured on the project
-network, not estimated.
+Working session, 12 September 2026, updated through Stage 7A (10 October) and, in
+ENHANCEMENT-PLAN.md step 8.1, with Stage 7B's findings (§6 and §11 corrections, §14).
+All figures below are measured on the project network, not estimated.
 
 ---
 
@@ -61,7 +62,7 @@ Two tiers were implemented, differing in coverage, capability and privacy cost.
 |---|---|
 | Resolver | DNS filter, headless, UI bound to `127.0.0.1` and never exposed |
 | Blocklists | AdGuard DNS filter, HaGeZi Pro, Peter Lowe, HaGeZi encrypted-DNS bypass, offline threat intel — **392,229 rules** (October 2026; OISD Big and AdAway were dropped after measuring that they added 0.6% of blocks between them, which cut the DNS filter's memory from 271 to 187 MB) |
-| Upstream | DNS-over-TLS to `1.1.1.1` / `1.0.0.1` |
+| Upstream | DNS-over-TLS to `1.1.1.1` and `9.9.9.9` in parallel, with `1.0.0.1` and `149.112.112.112` as fallbacks, optimistic caching and DNSSEC (step 5.5's tuning, on since 3 October; until then DoT to Cloudflare only) |
 
 Three firewall controls were added, because filtering is only effective if it cannot be
 circumvented:
@@ -69,7 +70,7 @@ circumvented:
 | Control | Purpose | Measured |
 |---|---|---|
 | DNAT of all port 53 to the gateway | Defeats hardcoded resolvers in IoT firmware | 0 attempts observed |
-| DoH/DoT resolver blocking | Prevents Chrome and apps tunnelling DNS past the filter | 0 attempts observed |
+| DoH/DoT resolver blocking | Prevents Chrome and apps tunnelling DNS past the filter | 0 attempts observed (12 Sep). Since then: DoT (TCP 853) rejected for **every** destination, not just known resolvers (step 1.8); DoH resolvers' addresses refreshed daily; DNS-over-QUIC (UDP 853) rejected and logged since 7B (§14). Full bypass matrix: §14 |
 | QUIC (UDP/443) rejection | Forces TLS-over-TCP so SNI stays observable | 112 packets blocked in 30 min |
 
 The two zero results are themselves a finding: on this network, DNS filtering was **not**
@@ -178,6 +179,19 @@ Exposure was bounded: the proxy ran without a flow-capture flag, so no request o
 bodies were written to disk, and the journal contained request lines only — zero
 credential-shaped entries.
 
+> **Correction (10 October 2026, Stage 7B, finding H9).** "Request lines only" was true, but
+> it was not limited to this incident. mitmdump's default output (`flow_detail=1`) printed
+> every decrypted request line - method, full URL including the query string, and the
+> response status - to standard output, which systemd stores in the journal. That continued
+> for allowlisted hosts after the fix above: **5,163 such lines over the 14 days before
+> 10 October**, for example `10.10.0.50: GET https://www.youtube.com/<path> HTTP/2.0`.
+> The project's own telemetry never recorded URLs; the proxy's default logging did.
+> Fixed by `--set flow_detail=0` in the service unit (verified: a request carrying a unique
+> token produced 1 journal line before and 0 after). The old lines are removed only by the
+> close-out journal purge (step 8.4, `docs/CLOSE-OUT.md`). The same lesson as above applies:
+> the addon's intent ("record metadata only") was checked; the behaviour of the component
+> that actually wrote the journal was not, until an external audit asked.
+
 **Lesson, stated for the report: verify a security property from the observable behaviour
 of the component that enforces it, never from the intent expressed by the component that
 requests it.** The correct evidence — absence of decrypted URLs for non-allowlisted hosts
@@ -269,6 +283,9 @@ look*, not a dashboard that keeps reporting success on data it hasn't actually c
 | Privacy scope | Hosts decrypted vs. passed through | 0 non-allowlisted of 56 connections |
 | DNS bypass attempts | Firewall counters | 0 hardcoded, 0 DoH, 0 DoT |
 | QUIC downgrade | Firewall counter | 112 packets in 30 min |
+| Bypass matrix | DoH, Firefox, Chrome Secure DNS, Android Private DNS, iCloud Private Relay, VPN, DNS-over-QUIC (§14) | All blocked except VPN (flagged, not blocked) |
+| Per-list unique contribution | `tools/blocklist_utility.py` over all ordinary use | HaGeZi Pro 21.3% of blocked queries alone; OISD Big + AdAway 0.6% together, dropped |
+| Privacy scope over time | The privacy canary, every 15 min | 265 checks, 0 failures (13 Sep - 3 Oct); now drives the real site-map loader (§14) |
 
 Report the two first-party figures **side by side**. A single headline percentage invites
 "so why do I still see YouTube ads?" and leaves it to be answered live. Presenting 0% for
@@ -278,6 +295,9 @@ the boundary was measured and understood rather than merely encountered.
 ---
 
 ## 10. Demonstration script
+
+*The full 15-minute demo, with exact commands, expected output and recovery steps, is
+`docs/DEMO.md` (step 8.3). The steps below are the ad-blocking part of it.*
 
 1. **Ad-heavy page, filtering off then on** — immediate, visual, needs no explanation
 2. **`dig doubleclick.net`** → `0.0.0.0`, versus `dig youtube.com` → resolves normally.
@@ -307,7 +327,10 @@ Step 6 is the one that distinguishes this from a naive interception proxy.
   and login - held in the proxy's memory only, never parsed or stored; live message
   delivery stays on separate, never-decrypted hosts. Each site needed its own written
   privacy review and the user's sign-off (`docs/adblock-feasibility.md`)
-- No request or response bodies are written to disk
+- No request or response bodies are written to disk. Request **lines** (URLs) of decrypted
+  connections were written to the system journal by mitmdump's default output until
+  10 October 2026; that output is now off (§6, correction), and the old lines go in the
+  close-out purge
 - The CA private key is root-only, mode `600`, and never leaves the gateway
 - **The CA must be uninstalled from every enrolled device after the demonstration.** A
   forgotten trusted CA from a student project is a durable liability
@@ -382,3 +405,77 @@ Each site is switched on **per device**. Enrolment alone still means YouTube onl
 - **Reach:** web only. Every app pins its certificate, and Android apps don't trust a user CA at all; they pass through after two failed handshakes, with ads.
 - **Privacy:** a device with a site switched on has that site's own host decrypted, inbox list and login included, in memory.
 - **Measurement:** one browser and one account per site, and not through a phone's real redirect path, so mobile web may differ.
+
+---
+
+## 14. Stage 7B: consent made deny-by-default, and verifying the privacy scope (October 2026)
+
+An independent static audit (`Audit10Oct.md`, triaged in `AUDIT-10OCT-PLAN.md`) found
+three problems in this subsystem. Each was confirmed against the code, fixed with a test
+that failed first, and checked live on the gateway.
+
+**1. Unknown scope used to mean YouTube.** Each enrolled device has a site list in
+`/var/lib/securepi-dpi/device-sites.json`. If the file was missing or unreadable, or a
+device had no entry, the addon fell back to YouTube - correct while YouTube was the only
+site, wrong once a device could be enrolled for Instagram alone: a lost map would decrypt
+YouTube for a device that never agreed to it. Now:
+- any doubt (no map, unreadable map, no entry, empty entry) means **nothing is decrypted**;
+- the site map is written *before* a device is redirected, and a failed write rolls the
+  enrolment back instead of being reported as applied;
+- every request re-checks the device's sites, so a site switched off is never rewritten,
+  even on a connection decrypted before the switch;
+- a failed connection reset is retried every cycle and shown on the enrolment.
+
+Checked live:
+- with a test device enrolled for Instagram only, the deployed addon decrypted Instagram
+  for it and **not** YouTube;
+- on the A33, through the real redirect: YouTube only, 0/10 pre-rolls; Instagram only,
+  YouTube passed through (3/3 control pre-rolls) with Chrome left running;
+- with the map moved aside, the A33's YouTube connections **passed through** until the
+  orchestrator restored the map (0.73 s), then were decrypted again.
+
+**2. The proxy's own logging** - see the §6 correction.
+
+**3. DNS-over-QUIC (UDP 853) was not blocked.** Only TCP 853 (DoT) and UDP 443 (QUIC) were
+rejected. Now rejected and logged as `doq-bypass` and counted by `dns_bypass`. A probe from
+the A33 was rejected, logged (`SRC=10.10.0.50 DST=94.140.14.14`) and stored as a bypass
+attempt attributed to the phone.
+
+### The privacy-scope canary as a verification method
+
+Section 6's lesson - verify a security property from the behaviour of the component that
+enforces it - is turned into a recurring control. `dpi/privacy_canary.py` runs as its own
+service every 15 minutes. It imports the addon file actually on disk and asks its real
+`tls_clienthello()` what it would decide for a set of host names:
+- each site's decrypt suffixes and a subdomain of each must be decrypted when that site is
+  switched on;
+- look-alike names (`notyoutube.com`, `youtube.com.canary.example`) and every module's
+  passthrough carve-outs must never be;
+- an ordinary host (`example.com`) must never be.
+
+Since 7B it runs these checks against **six site-map cases** through the addon's real map
+loader: every site on, one site on, no map, an unreadable map, the device absent, and an
+empty entry. The last four must decrypt nothing. A test proves it now catches the old
+YouTube fallback, which the earlier canary could not see because it replaced the loader
+with a stand-in. Any wrong decision unenrols every device at once and raises a
+high-severity incident.
+
+**What it does not cover**, stated as for every measurement here: it tests the addon's
+decision code, not the firewall redirect or mitmproxy's transparent mode. Those are
+covered by the scope checks through a device's real redirect (`tools/scope_check_device.py`:
+tablet on 9 October, A33 on 10 October, 0 unexpected decryptions each), which remain a
+gate for every Tier 2 deploy. Record: 265 canary checks, 0 failures (13 September -
+3 October); 3 of 3 passing after each 7B deploy.
+
+### Bypass matrix (7.5, updated)
+
+| Bypass | Blocked | Detected |
+|---|---|---|
+| DoH to known resolvers (Cloudflare, Google, Quad9, AdGuard, NextDNS) and lesser-known ones (dns.sb, Mullvad, AliDNS) | yes (`doh-bypass`, daily address set) | yes (`dns_bypass`) |
+| Firefox's DoH roll-out | yes (canary `use-application-dns.net` → NXDOMAIN) | yes |
+| Chrome Secure DNS | yes | yes |
+| Android Private DNS, strict, to a blocked provider name | yes (no DNS at all; fails closed) | no (nothing to log) |
+| Android Private DNS, strict, to `dot.sb` | yes (`dot-bypass`) | yes |
+| iCloud Private Relay | yes (Apple's opt-out canary) | counted |
+| DNS-over-QUIC (UDP 853) | **yes since 7B** (`doq-bypass`) | **yes since 7B** |
+| VPN (WireGuard, Cloudflare WARP, OpenVPN) | **no** | **flagged since 7A** (`vpn_tunnel`, informational, never adds to risk) |

@@ -1,0 +1,27 @@
+# The demo console (docs/demo/serve.py) runs the real app/webapp.py, so it
+# needs the same web stack the gateway runs from Ubuntu 24.04's packages
+# (python3-fastapi 0.101.0, python3-starlette 0.31.1, python3-pydantic
+# 1.10.14, python3-uvicorn 0.27.1, python3-jinja2 3.1.2). Pinned to the
+# versions in the .venv-demo used for the screenshots and the 7.9 review
+# (pydantic 1.10.26 is the newest 1.x with wheels for Python 3.14; the
+# gateway's 1.10.14 behaves the same for this code).
+#   python3 -m venv .venv-demo && .venv-demo/bin/pip install --no-deps -r docs/demo/requirements.txt
+#
+# --no-deps is required: PyPI's fastapi 0.101.0 declares starlette<0.28, but Ubuntu
+# ships it with starlette 0.31.1 (the combination the gateway runs and these files
+# were tested with). Every dependency is listed here, so nothing is missing.
+# Verified 10 Oct 2026 in a fresh venv (Python 3.14.8): seed.py, serve.py,
+# sign-in with 'demo', and /, /devices, /incidents, /filtering and their APIs all 200.
+fastapi==0.101.0
+starlette==0.31.1
+pydantic==1.10.26
+uvicorn==0.27.1
+Jinja2==3.1.2
+MarkupSafe==3.0.4
+python-multipart==0.0.9
+anyio==4.2.0
+sniffio==1.3.1
+idna==3.20
+h11==0.16.0
+click==8.5.0
+typing_extensions==4.16.0

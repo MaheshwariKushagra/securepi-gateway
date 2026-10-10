@@ -11,7 +11,7 @@ Built as a final-year engineering project, deployed on real hardware, and measur
 
 ![Python](https://img.shields.io/badge/Python-3.12-3776AB?style=for-the-badge&logo=python&logoColor=white) ![FastAPI](https://img.shields.io/badge/FastAPI-console-009688?style=for-the-badge&logo=fastapi&logoColor=white) ![IDS](https://img.shields.io/badge/IDS-intrusion_detection-EF3B2D?style=for-the-badge) ![DNS filter](https://img.shields.io/badge/DNS_filter-blocklists-68BC71?style=for-the-badge) ![mitmproxy](https://img.shields.io/badge/mitmproxy-selective_DPI-2B6CB0?style=for-the-badge) ![Ubuntu](https://img.shields.io/badge/Ubuntu-24.04_LTS-E95420?style=for-the-badge&logo=ubuntu&logoColor=white)
 
-![Tests](https://img.shields.io/badge/tests-751_passing-2fbf71?style=flat-square) ![Detection signals](https://img.shields.io/badge/detection_signals-14-4f9cf9?style=flat-square) ![ATT&CK](https://img.shields.io/badge/MITRE_ATT%26CK-mapped-7b5cf0?style=flat-square) ![Stages complete](https://img.shields.io/badge/roadmap-stages_0%E2%80%936_complete-2fbf71?style=flat-square) ![No Docker](https://img.shields.io/badge/footprint-3.6_GiB_RAM,_no_Docker-8d99ad?style=flat-square)
+![Tests](https://img.shields.io/badge/tests-751_passing-2fbf71?style=flat-square) ![Detection signals](https://img.shields.io/badge/detection_signals-14-4f9cf9?style=flat-square) ![ATT&CK](https://img.shields.io/badge/MITRE_ATT%26CK-mapped-7b5cf0?style=flat-square) ![Stages complete](https://img.shields.io/badge/roadmap-stages_0%E2%80%937B_complete-2fbf71?style=flat-square) ![No Docker](https://img.shields.io/badge/footprint-3.6_GiB_RAM,_no_Docker-8d99ad?style=flat-square)
 
 <br>
 
@@ -64,20 +64,21 @@ and puts back anything altered outside the console.
 > [!NOTE]
 > **Built to be defended, not only demonstrated.** Every detection is a plain SQL query you
 > can run by hand. Every incident links to the exact events that caused it. Every number
-> in this README can be reproduced with [`gateway/evaluate.py`](gateway/evaluate.py).
+> in this README links to where it was measured, and [`REPORT.md`](REPORT.md) §10 gives the command that reproduces it.
 > Limitations are written down next to the results, not left out.
 
 ### At a glance
 
 | | Result | Source |
 |---|---|---|
-| **Alert-to-incident reduction** | **1,588 : 1** over a clean 24-hour window | [Evaluation §2](EVALUATION-RESULTS.md) |
+| **Alert-to-incident reduction** | **200 : 1** on attack traffic, **47 : 1** on real devices (every signal firing → the incidents an operator sees, 7.4). Day 14's raw-events measure: 1,588 : 1 | [Evaluation 2.0 §7.4](EVALUATION-RESULTS-2.md) |
 | **Third-party ad blocking** | **−83% requests, −99% tracker companies**, 0/48 popular sites broken (240 page loads, 20 ad-heavy sites); matches uBlock Origin Lite | [Evaluation 2.0 §7.5](EVALUATION-RESULTS-2.md) |
 | **First-party ad removal (Tier 2)** | YouTube pre-rolls **10/10 → 0/30** videos, Instagram feed ads **4/6 → 0/6** runs (both on a real phone); Facebook partial | [Evaluation 2.0, Stage 7A](EVALUATION-RESULTS-2.md) |
-| **Detection** | 4 attack types × 3 runs each, **all detected**. 6/6 signals verified live. One real bug found and fixed along the way | [Evaluation §1](EVALUATION-RESULTS.md) |
+| **Detection** | **15 signal types × 5 runs, all detected**; recall 1.00, precision 0.91. On 53 scans and brute-force runs from inside the LAN, the IDS's own signatures alerted **0** times, the behavioural signals **53** | [Evaluation 2.0 §7.2-7.4](EVALUATION-RESULTS-2.md) |
 | **DNS rules enforced** | **392,229** across 5 curated lists (trimmed from 656,735 after measuring each list's unique contribution) | Live DNS filter |
-| **Memory under attack load** | **40%** of 3.6 GiB used, over 2 GiB free | [Evaluation §5](EVALUATION-RESULTS.md) |
-| **Throughput headroom** | Limited by the WAN (~30 Mbps). The inspection path itself ran at **39.9 Gbps** on virtual links | [Evaluation §6](EVALUATION-RESULTS.md) |
+| **Memory** | Peak under heavy real browsing: IDS 871 MB, DNS filter 365 MB, console 294 MB, ingest 216 MB. In normal running, 1,475 of 3,683 MiB used | [Evaluation 2.0 §7.0](EVALUATION-RESULTS-2.md) |
+| **Throughput headroom** | **No capture loss up to 400 Mbit/s** on one IDS thread at a third of a core; the 2.4 GHz access point is the real limit | [Evaluation 2.0 §7.8](EVALUATION-RESULTS-2.md) |
+| **Resilience** | Every component recovers by itself; DNS and HTTPS inspection **fail open**; a DNS-filter outage costs devices about 15 s | [Evaluation 2.0 §7.7](EVALUATION-RESULTS-2.md) |
 | **Automated tests** | **751** unit tests (`make test`), all on synthetic data | [`tests/`](tests) |
 
 ---
@@ -231,7 +232,7 @@ flowchart LR
     LEASE["DHCP leases"]
     REG["<b>registry.py</b><br/>device identity<br/>IP history"]
     DB[("<b>SQLite · WAL</b><br/>events · devices<br/>incidents · audit_log")]
-    ENG["<b>engine.py</b> · every 15 s<br/>6 signals · rollups<br/>retention"]
+    ENG["<b>engine.py</b> · every 15 s<br/>15 signals · rollups<br/>retention"]
     UI["<b>Console</b><br/>FastAPI · Jinja2 · JS"]
     NFT{{"nftables<br/>quarantine · enrolled"}}
 
@@ -568,40 +569,46 @@ erDiagram
 
 ## Evaluation
 
-Measured on 13 September 2026 against the live gateway with a scripted harness. Attacks ran from isolated network
-namespaces (`ns_attacker` → `ns_victim`) using `nmap` and `hydra`, and **never touched the real
-devices on the network**. Full method and raw figures: [`EVALUATION-RESULTS.md`](EVALUATION-RESULTS.md).
+Stage 7 (26 September - 3 October 2026), with Stage 7A and 7B checks on 9-10 October. Attacks ran from
+isolated network namespaces (`ns_attacker` → `ns_victim`) and the project's own red-team laptop, and **never
+touched the real devices on the network**. Full method and raw figures: [`EVALUATION-RESULTS-2.md`](EVALUATION-RESULTS-2.md);
+the consolidated report, with the command behind every figure: [`REPORT.md`](REPORT.md). The first evaluation
+(Day 14, 13 September) is kept as history in [`EVALUATION-RESULTS.md`](EVALUATION-RESULTS.md).
 
 <table>
 <tr>
 <td width="55%" valign="top">
 
-**Detection rate and time to detect** (3 runs per attack)
+**Time to detect, final code** (5 runs per signal type, median, from the start of each run)
 
-| Signal | Detected | Mean latency |
+| Signal | Detected | Median TTD |
 |---|:---:|---:|
-| Port scan | 3 / 3 | 25.4 s |
-| Brute force | 3 / 3 | 34.0 s |
-| Malicious domain | 3 / 3 | 11.3 s* |
-| New device | 3 / 3 | 45.1 s |
+| DNS tunnelling, DGA, DNS bypass, threat intel | 5 / 5 each | 10.5 - 11.7 s |
+| IDS alert | 5 / 5 | 15.1 s |
+| New device | 5 / 5 | 31.2 s |
+| Brute force | 5 / 5 | 77.6 s |
+| Port scan, network sweep | 5 / 5 each | 92.2 s |
+| Volume anomaly | 5 / 5 | 106.5 s |
+| Beacon, campaign | 5 / 5 each | 139 s |
+| Slow port scan, slow sweep | 5 / 5 each | 494 - 581 s |
 
-<sub>The first run of each attack is the slowest because it waits for a fresh engine cycle. Runs 2 and 3 fall inside the dedup window and extend the same incident, which is the reduction ratio working as designed. New-device latency is structural: 30 s grace plus one 15 s cycle.</sub>
+<sub>Fast scans wait for their 300 s window to show a pattern; slow scans are, by design, caught over a much longer one. Precision 0.91, recall 1.00 over 154 labelled runs; held-out false positives 0.46 per 10,000 events (the 7.0 held-out replay).</sub>
 
 </td>
 <td width="45%" valign="top">
 
-**Resource use under attack load**
+**Memory, peak per service** (heavy real browsing, 2 Oct)
 
 | Service | Memory |
 |---|---:|
-| IDS | 683 MB |
-| DNS filter | 235 MB |
-| Console (`securepi-web`) | 121 MB |
-| Ingest | 15 MB |
-| Correlation engine | 5 MB |
-| **System total** | **1,457 / 3,683 MB** |
+| IDS | 871 MB |
+| DNS filter | 365 MB |
+| Console (`securepi-web`) | 294 MB |
+| Ingest | 216 MB |
+| HTTPS proxy (decrypting video) | 116 - 221 MB |
+| **System, normal running (10 Oct)** | **1,475 / 3,683 MiB** |
 
-<sub>Load average 0.17. The day-1 memory budget from the build plan held.</sub>
+<sub>Ingest lag p95 about 4 s per source; 414 bytes per event stored, levelling off at about 80 MB per device under retention.</sub>
 
 </td>
 </tr>
@@ -612,6 +619,7 @@ devices on the network**. Full method and raw figures: [`EVALUATION-RESULTS.md`]
 > - **A real bug found during evaluation:** `new_device_signal` used a persisted watermark that meant new devices were almost never detected. It was fixed, verified live, and is now covered by regression tests.
 > - **\*Malicious-domain latency** was originally limited by the DNS filter only flushing its on-disk query log every 1,000 queries. Ingest now polls the DNS filter's API in real time instead (step 1.4).
 > - **One false positive** on a real phone: ordinary ad-SDK background traffic crossed a *raw-count* threshold. The signal now counts **distinct** domains (step 1.6).
+> - **An external audit (Stage 7B) found two consent and verification bugs, both fixed and checked live:** a device with no entry in the inspection site map fell back to YouTube (now: no entry means no inspection), and removals were verified against the record that no longer listed them. It also found that the HTTPS proxy's default logging had written decrypted request URLs to the system journal; that is off now, and the old lines go in the close-out purge ([`AUDIT-10OCT-PLAN.md`](AUDIT-10OCT-PLAN.md)).
 > - **Two earlier features had silently stopped working, found while building Stage 4:** the DNS filter does not ignore a trailing `# comment` on a rule line, so step 5.2's temporary allows and 5.5's vendor-telemetry rules never matched; and step 2.2's firewall change was never saved as the boot-time `/etc/nftables.conf`, so reboots dropped the DNS-bypass logging. Both fixed and verified live ([Evaluation 2 §Stage 4](EVALUATION-RESULTS-2.md)).
 
 ---
@@ -632,7 +640,8 @@ is in [`ENHANCEMENT-PLAN.md`](ENHANCEMENT-PLAN.md).
 | **6** | **Intelligence and console**: baselines, fingerprinting, settings, incident workbench, hunt, weekly report, responsive layout | ![Complete](https://img.shields.io/badge/-complete-2fbf71?style=flat-square) |
 | **7** | **Evaluation 2.0**: detection battery, precision/recall, ad-blocking benchmark, chaos tests, performance (the 7-day run and the participant study were replaced by one-session equivalents) | ![Complete](https://img.shields.io/badge/-complete-2fbf71?style=flat-square) |
 | **7A** | **Ad-blocking enhancement** ([`ADBLOCK-ENHANCEMENT-PLAN.md`](ADBLOCK-ENHANCEMENT-PLAN.md)): per-site modules (Instagram; Facebook, partly), per-device site switches, immediate switching, per-client pin bypass, in-app ad-network blocking measured | ![Complete](https://img.shields.io/badge/-complete-2fbf71?style=flat-square) |
-| **8** | Documentation and demo | ![Not started](https://img.shields.io/badge/-not_started-5a6679?style=flat-square) |
+| **7B** | **Audit remediation** ([`AUDIT-10OCT-PLAN.md`](AUDIT-10OCT-PLAN.md)): deny-by-default inspection scope, verified removals and rollbacks, DNS-filter-independent firewall enforcement, DNS-over-QUIC blocked, proxy URL logging off, login and session hardening, ingest that can't lose or stall | ![Complete](https://img.shields.io/badge/-complete-2fbf71?style=flat-square) |
+| **8** | **Documentation and demo**: report ([`REPORT.md`](REPORT.md)), one-command installer ([`docs/INSTALL.md`](docs/INSTALL.md)), demo script ([`docs/DEMO.md`](docs/DEMO.md)), close-out ([`docs/CLOSE-OUT.md`](docs/CLOSE-OUT.md)) | ![In progress](https://img.shields.io/badge/-in_progress-e8a33d?style=flat-square) |
 
 <sub>Stages 5 and 6 were built before Stages 1–2 on purpose, where the order didn't affect correctness. Each of those decisions and its reasoning is recorded in the plan.</sub>
 
@@ -647,7 +656,7 @@ securepi-gateway/
 ├── app/                      Ingest, identity, correlation engine and console
 │   ├── ingest.py             IDS / DNS filter / DPI → unified events table
 │   ├── registry.py           Device identity across MAC randomization
-│   ├── correlation.py        The six detection signals + incident dedup
+│   ├── correlation.py        15 detection signals + incident dedup + campaigns
 │   ├── engine.py             15-second loop: signals, rollups, retention
 │   ├── orchestrator.py       Desired state → nftables + DNS filter, verified, drift repaired
 │   ├── profiles.py · notify.py   Filtering profiles and schedules · incident notifications
@@ -675,10 +684,15 @@ make test        # python3 -m unittest discover -s tests -p 'test_*.py' -v
 ### 2. Run the console locally with demo data
 
 ```bash
+python3 -m venv .venv-demo                                   # once; any Python 3.12+
+.venv-demo/bin/pip install --no-deps -r docs/demo/requirements.txt   # the gateway's console versions
 cd docs/demo
-python3 seed.py && python3 serve.py
+../../.venv-demo/bin/python seed.py && ../../.venv-demo/bin/python serve.py
 # open http://127.0.0.1:8765  (password: demo)
 ```
+
+The console is pinned to the gateway's Ubuntu packages (FastAPI 0.101, Starlette 0.31, pydantic 1.x);
+a system Python without them, or with Starlette 1.x and pydantic 2, will not run it.
 
 See [`docs/demo/README.md`](docs/demo/README.md) for regenerating the screenshots.
 
@@ -739,7 +753,10 @@ validates every argument (a malformed IP or an out-of-range timeout is rejected 
 called) and hardcodes which firewall set each action can touch. Set up once with
 `gateway/setup-privilege-separation.sh`.
 
-Full host setup: [`STEP-1-INSTALL-UBUNTU.md`](STEP-1-INSTALL-UBUNTU.md) → [`GATEWAY-SETUP-RUNBOOK.md`](GATEWAY-SETUP-RUNBOOK.md).
+Full host setup from a blank machine: [`docs/INSTALL.md`](docs/INSTALL.md) (`sudo gateway/install.sh`).
+The original day-1 notes, [`STEP-1-INSTALL-UBUNTU.md`](STEP-1-INSTALL-UBUNTU.md) and
+[`GATEWAY-SETUP-RUNBOOK.md`](GATEWAY-SETUP-RUNBOOK.md), are kept as history; their network plan differs from the
+gateway as built (see `STAGE8-RECORD.md`, M-1).
 Power-on and reboot notes: [`NEXT-SESSION.md`](NEXT-SESSION.md) and [`gateway/REBOOT-SAFETY.md`](gateway/REBOOT-SAFETY.md).
 
 </details>
@@ -749,7 +766,7 @@ Power-on and reboot notes: [`NEXT-SESSION.md`](NEXT-SESSION.md) and [`gateway/RE
 ## Security and privacy
 
 - **No secrets in git.** Keys, certificates, passwords, tokens, packet captures and query logs are all excluded by [`.gitignore`](.gitignore). The committed `hostapd.conf` has its passphrase redacted.
-- **Minimal decryption.** HTTPS inspection is opt-in per device, expires after 24 hours, covers only a short hostname allowlist, and is checked by a canary every 15 minutes that unenrolls every device if the scope is wrong.
+- **Minimal decryption.** HTTPS inspection is opt-in per device and per site, expires (24 hours from the console, at most 30 days), is off after every reboot, decrypts nothing for a device whose scope is unknown, and is checked by a canary every 15 minutes that unenrolls every device if the scope is wrong. The proxy logs no request URLs.
 - **Fails closed.** The console rejects every request if its password file is missing, and the firewall's forward policy is `drop`.
 - **Accountable.** Every console action that changes something is written to an audit log that retention never deletes.
 - **Tested without real people's data.** Tests and demo screenshots use synthetic data only. Evaluation attacks ran in isolated namespaces.
@@ -760,13 +777,19 @@ Power-on and reboot notes: [`NEXT-SESSION.md`](NEXT-SESSION.md) and [`gateway/RE
 
 | Document | Contents |
 |---|---|
-| [`ENHANCEMENT-PLAN.md`](ENHANCEMENT-PLAN.md) | **Active plan.** Market comparison, gap analysis, the stage-by-stage roadmap, and a log of how each step was implemented and verified |
-| [`EVALUATION-RESULTS.md`](EVALUATION-RESULTS.md) | Detection rate, reduction ratio, false positives, ad-block ratio, resources, throughput |
+| [`REPORT.md`](REPORT.md) | **The project report**: problem, architecture and contribution boundary, implementation, evaluation, deviations, limitations, future scope, and how to reproduce every figure |
+| [`ENHANCEMENT-PLAN.md`](ENHANCEMENT-PLAN.md) | **The plan.** Market comparison, gap analysis, the stage-by-stage roadmap, and a log of how each step was implemented and verified |
+| [`docs/INSTALL.md`](docs/INSTALL.md) | Installing a gateway from a blank machine with `gateway/install.sh`: versions, settings, expected output, rollback |
+| [`docs/DEMO.md`](docs/DEMO.md) | The 15-minute demonstration: exact commands, expected results, recovery steps |
+| [`docs/CLOSE-OUT.md`](docs/CLOSE-OUT.md) | Ending the project safely: journal purge, CA removal, enrolments, test accounts |
+| [`STAGE8-RECORD.md`](STAGE8-RECORD.md) | Inventory of the live gateway, every repo/doc mismatch found, Stage 8 progress |
+| [`AUDIT-10OCT-PLAN.md`](AUDIT-10OCT-PLAN.md) · [`ADBLOCK-ENHANCEMENT-PLAN.md`](ADBLOCK-ENHANCEMENT-PLAN.md) | Stage 7B (audit remediation) and Stage 7A (ad-blocking enhancement), with their progress logs |
+| [`EVALUATION-RESULTS.md`](EVALUATION-RESULTS.md) | The first evaluation (Day 14, 13 September): detection rate, reduction ratio, resources, throughput |
 | [`EVALUATION-RESULTS-2.md`](EVALUATION-RESULTS-2.md) | Results from Stage 1 onward — starts with the Stage 0 baseline snapshot |
 | [`REPORT-adblocking.md`](REPORT-adblocking.md) | Report material for the two-tier ad-blocking subsystem |
 | [`FIRST-PARTY-ADS-ANALYSIS.md`](FIRST-PARTY-ADS-ANALYSIS.md) | What network-level filtering can and cannot block |
 | [`SECUREPI-15-DAY-PLAN.md`](SECUREPI-15-DAY-PLAN.md) | Original build plan, hardware constraints, confirmed topology, scope decisions |
-| [`GATEWAY-SETUP-RUNBOOK.md`](GATEWAY-SETUP-RUNBOOK.md) · [`STEP-1-INSTALL-UBUNTU.md`](STEP-1-INSTALL-UBUNTU.md) | Host and network setup |
+| [`GATEWAY-SETUP-RUNBOOK.md`](GATEWAY-SETUP-RUNBOOK.md) · [`STEP-1-INSTALL-UBUNTU.md`](STEP-1-INSTALL-UBUNTU.md) | The day-1 host and network setup, kept as history (superseded by `docs/INSTALL.md`) |
 | [`NEXT-SESSION.md`](NEXT-SESSION.md) | Handoff notes: bringing the gateway back up, current status, what comes next |
 | [`docs/feasibility-study.md`](docs/feasibility-study.md) | Original pre-implementation study: the full 38-week scope, architecture reasoning and technology selection behind every "why" in this README |
 | [`docs/day1-status.md`](docs/day1-status.md) | Point-in-time status snapshot from the end of Day 1 of the original build |

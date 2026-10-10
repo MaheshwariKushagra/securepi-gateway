@@ -1,5 +1,27 @@
 # Starting the next session
 
+## ★ Stage 8 (10 Oct 2026, 13:22-14:55): read this first
+
+Everything an agent could do for Stage 8 is done and committed locally (not pushed). Full detail:
+`STAGE8-RECORD.md` §3. What is left needs you:
+
+1. **Resolve incident #806 on the console** (Incidents → #806 → Resolved). It is the privacy-scope
+   incident from the demo dry-run's deliberate canary sabotage; until it is resolved the Filtering
+   page's privacy badge reads red. The canary itself passes.
+2. **Apply the installer on the gateway (8.2):** `cd ~/securepi-install-check && sudo ./gateway/install.sh`,
+   then `--check` again (expect 0 changes). It makes the 10 changes listed in `docs/INSTALL.md` §10:
+   hostapd.conf 600, the AdGuard unit's working directory, the DoH set refresh (M-15), and the rest.
+3. **Fresh-machine install (8.2 exit criterion):** a Lima VM on the Mac (`docs/INSTALL.md` §12) or
+   a spare machine.
+4. **M-15 fix decision:** add `OnBootSec=2min` to `securepi-doh-refresh.timer`, so the DoH set
+   refills after a reboot. Until then, run `sudo systemctl start securepi-doh-refresh.service` after
+   each boot. Right now the set holds only its 14 seed addresses (the gateway booted at 12:14).
+5. **Rehearse the demo 3 times with the A33, and record the backup video** (`docs/DEMO.md` §9-10).
+6. **Then the close-out** (`docs/CLOSE-OUT.md`). Every item has been pre-checked; none has been run.
+
+The 7.9 usability recommendations stay as they are, by your decision of 10 Oct 2026 (M-9). The
+"Stage 8, step 1: the 7.9 usability fixes" option below is therefore withdrawn.
+
 ## ★ Stage 7B unattended run (10 Oct 2026, 08:00-08:50): read this first
 
 **The Dell is on battery.** Its charger came out between 06:32 and 08:08;
@@ -497,7 +519,7 @@ script, canary and log-rotation units).
 
 **Start the next session with one of these** (the user's choice, offered on 10 Oct 2026):
 - **F4 check on the A33** (the code is done): with the A33 enrolled, open YouTube in Chrome and in the app, and compare their `client_fp` values in the DPI telemetry.
-- **Stage 8, step 1:** the 7.9 usability fixes (F17 is already done).
+- ~~**Stage 8, step 1:** the 7.9 usability fixes (F17 is already done).~~ Withdrawn: 7.9 is left as it is (decision of 10 Oct 2026; `STAGE8-RECORD.md` M-9).
 
 **Then Stage 8 (documentation and demo).** For 8.1: the README's ad-blocking rows, rule count, test count and stage table were updated on 10 Oct 2026; its detection, memory and throughput rows still quote the first evaluation (`EVALUATION-RESULTS.md`) and need Stage 7's numbers. Queued inputs from Stage 7:
 1. **The 7.9 recommendations** (`heuristic-evaluation.md`, end), worst first:

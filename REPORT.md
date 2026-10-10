@@ -169,8 +169,10 @@ change what the rest of this report can claim:
   rollbacks are now read back too.
 - **Decrypted request URLs were in the system journal.** mitmdump's default
   `flow_detail=1` printed every decrypted request line: 5,163 lines over
-  14 days. Fixed with `--set flow_detail=0`; the old lines are removed only by
-  the close-out journal purge (8.4). This corrects statements in
+  14 days (26 Sep-10 Oct). With 4,065 more from 12 Sep, the journal holds
+  9,228 in all, the last at 10 Oct 03:40. Fixed with `--set flow_detail=0`;
+  the old lines are removed only by the close-out journal purge
+  (`docs/CLOSE-OUT.md` §7). This corrects statements in
   `REPORT-adblocking.md` §6 and §11.
 - **DNS-over-QUIC (UDP 853) was not blocked.** Now rejected and logged.
 - Also: firewall enforcement no longer depends on the DNS filter being up;

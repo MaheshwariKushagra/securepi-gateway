@@ -11,7 +11,7 @@ was never actually built with (`STAGE8-RECORD.md` M-1, M-13).
 > | Check | Result |
 > |---|---|
 > | `bash -n` and `shellcheck` (all levels) | Clean. |
-> | `sudo ./gateway/install.sh --check` on the live gateway | Read-only. Reported 8 differences and no package-version warnings: the 7 known from the inventory, plus a post-reboot gap in the DoH resolver set that this check found (`STAGE8-RECORD.md` M-15). Transcript in [§10](#10-evidence-the-check-run-on-the-live-gateway). |
+> | `sudo ./gateway/install.sh --check` on the live gateway | Read-only. Reported 8 differences and no package-version warnings: the 7 known from the inventory, plus a post-reboot gap in the DoH resolver set that this check found (`STAGE8-RECORD.md` M-15). It reports 10 since the two demo helpers were added (14:36). Transcript in [§10](#10-evidence-the-check-run-on-the-live-gateway). |
 > | `sudo ./gateway/install.sh` (apply) on the live gateway | **Not run.** The session's permission policy blocked it as a production deploy; it is waiting on the operator's decision. |
 > | Fresh install on a blank machine or VM | **Not done yet**, so the step 8.2 exit criterion ("fresh-machine install from the docs alone") is still open. §12 describes how to run it in a VM. |
 >
@@ -203,8 +203,8 @@ in check mode it prints `would:` instead. `WARNING:` lines are counted and repea
 | 10 IDS | Applies `gateway/suricata-securepi.patch` to `/etc/suricata/suricata.yaml` (it detects an already-applied patch). Installs the test-harness unit and the `suricata.service.d/override.conf` drop-in. Runs `suricata-update` if there is no rules file. Runs `gateway/install-ids-logrotate.sh` if the rotation is not installed. Enables and starts Suricata. |
 | 11 database | Creates `/var/lib/securepi/securepi.db` from `schema.sql` (`ingest.open_db()`) if it is absent, as `664 root:securepi`. |
 | 12 services | Installs and enables `securepi-ingest`, `securepi-engine`, `securepi-web`, `securepi-static`, both refresh timers and, on a laptop with `intel_backlight`, `securepi-backlight-off`. Restarts ingest, engine and web if step 7 changed code. Refreshes the DoH resolver set if it holds fewer than 500 entries (only the 14-address seed from `nftables.conf`), and runs the threat-intel refresh if `ioc-domains.txt` is missing. |
-| 13 HTTPS inspection | Runs `dpi/deploy-dpi.sh` if anything differs: the venv's `pip freeze` against `dpi/requirements-dpi.txt`, the addon, the rules module, the gate script, either unit, a missing site map, or `/var/log/securepi` not `root:root`. Runs `dpi/deploy-privacy-canary.sh` if the canary or its unit differs. |
-| 14 eval tools | Installs `battery.py chaos.py collect_run.sh run_monitor.py throughput_sweep.py dns_ab.py dash_latency.py` (from `gateway/`) and `run_report.py` (from `tools/`) into `/opt/securepi-eval`, plus the run-monitor unit. It enables that unit only if `ENABLE_RUN_MONITOR=yes`. |
+| 13 HTTPS inspection | Runs `dpi/deploy-dpi.sh` if anything differs: the venv's `pip freeze` against `dpi/requirements-dpi.txt`, the addon, the rules module, the gate script, either unit, a missing site map, or `/var/log/securepi` not `root:root`. Runs `dpi/deploy-privacy-canary.sh` if the canary or its unit differs. Installs the demo helper `dpi/canary_demo.py` (755), which runs only when called (`docs/DEMO.md`). |
+| 14 eval tools | Installs `battery.py chaos.py collect_run.sh run_monitor.py throughput_sweep.py dns_ab.py dash_latency.py demo_attacks.py` (from `gateway/`) and `run_report.py` (from `tools/`) into `/opt/securepi-eval`, plus the run-monitor unit. It enables that unit only if `ENABLE_RUN_MONITOR=yes`. |
 
 AdGuard Home archive checksums, taken from the release's `checksums.txt`. The amd64 binary inside the
 archive matches the Dell's binary byte for byte (`7e247573e63ce771a5925d16ca4ca9344e6e888673244289dc302f0fdfdfbf4e`).
@@ -344,7 +344,7 @@ The command-line alternative is `sudo securepi enroll 10.10.0.50` and `sudo secu
 | `/etc/securepi/logrotate-suricata.conf`, `securepi-ids-logrotate.{service,timer}`; `/etc/logrotate.d/suricata` diverted to `/etc/securepi/logrotate-suricata.packaged` | 644 root:root | `gateway/install-ids-logrotate.sh` |
 | `/var/lib/securepi/securepi.db` (only if absent) | 664 root:securepi | `app/schema.sql` |
 | `/etc/systemd/system/securepi-{ingest,engine,web,static,doh-refresh,intel-refresh,backlight-off}.*` | 644 root:root | `gateway/systemd/`, `gateway/securepi-web.service` |
-| `/opt/securepi-dpi/` (venv, `securepi_adfilter.py`, `adfilter_rules.py`, `dpi-gate.sh`, `privacy_canary.py`, `ca/`) | 755 root:root; `ca/mitmproxy-ca.pem` 600 | `dpi/deploy-dpi.sh`, `dpi/deploy-privacy-canary.sh` |
+| `/opt/securepi-dpi/` (venv, `securepi_adfilter.py`, `adfilter_rules.py`, `dpi-gate.sh`, `privacy_canary.py`, `canary_demo.py`, `ca/`) | 755 root:root; `ca/mitmproxy-ca.pem` 600 | `dpi/deploy-dpi.sh`, `dpi/deploy-privacy-canary.sh` |
 | `/var/lib/securepi-dpi/adfilter-rules.json` (only if absent), `device-sites.json` = `{}` (only if absent) | 664 root:securepi | `dpi/` |
 | `/var/log/securepi/` | 755 root:root | `dpi/deploy-dpi.sh` |
 | `/var/www-ca/securepi-ca.crt` | 644 root:root | the proxy's public CA certificate |
@@ -411,7 +411,12 @@ Steps that reported nothing are shortened here to their heading.
  8 change(s) would be made, 0 warning(s).
 ```
 
-Seven are known, intended differences, and one is a gap the run found (`STAGE8-RECORD.md` §2):
+A third run at 14:36, after the demo helpers were added to steps 13 and 14 (8.3), reported **10**:
+the same 8, plus `would: install /opt/securepi-dpi/canary_demo.py` and
+`would: install /opt/securepi-eval/demo_attacks.py`.
+
+Seven are known, intended differences, one is a gap the run found, and two are new files
+(`STAGE8-RECORD.md` §2):
 
 | Reported | Why | Record |
 |---|---|---|
@@ -421,6 +426,7 @@ Seven are known, intended differences, and one is a gap the run found (`STAGE8-R
 | `securepi-wait-for-ap0.conf` replaced | Comment-only wording ("AdGuard Home" → "the DNS filter"). | M-4 |
 | `deploy-dpi.sh` re-run | `/var/log/securepi` is `maheshwari:maheshwari`; it becomes `root:root 755`. Its two files are already `root:root 644`, and the console (`securepi-web`) only reads them. The re-run also restarts the proxy, which has no enrolled device. | M-8 |
 | `dns_ab.py`, `dash_latency.py` added | The evaluation reproduction commands in `REPORT.md` §10 had them copied to `/tmp` by hand. | REPORT §10 |
+| `canary_demo.py`, `demo_attacks.py` added | The demo's helpers (`docs/DEMO.md`). They run only when called. | 8.3 |
 | DoH set refresh | The gateway rebooted at 12:14. `nftables.service` loaded the 14 seed addresses, and the daily timer had already run at 00:28, so it will not refill the set until about 00:21 tomorrow. DoH-IP blocking covers 14 addresses instead of 1,436 until then. | **M-15 (new)** |
 
 Also confirmed by the same run: all 30 packages are installed and the eight key packages match the

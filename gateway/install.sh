@@ -629,6 +629,10 @@ if [ "$INSTALL_DPI" = yes ]; then
             bash "$REPO/dpi/deploy-privacy-canary.sh"
         fi
     fi
+    # The demo's "canary goes red" helper (docs/DEMO.md); runs only when called.
+    if [ -d /opt/securepi-dpi ] || [ "$MODE" = check ]; then
+        put_file "$REPO/dpi/canary_demo.py" /opt/securepi-dpi/canary_demo.py 755 root:root
+    fi
 else
     say "skipped (INSTALL_DPI=$INSTALL_DPI)"
 fi
@@ -640,7 +644,7 @@ if [ "$INSTALL_EVAL_TOOLS" = yes ]; then
     ensure_dir /opt/securepi-eval 755 root:root
     for spec in gateway/battery.py:755 gateway/chaos.py:644 gateway/collect_run.sh:755 \
                 gateway/run_monitor.py:755 gateway/throughput_sweep.py:755 tools/run_report.py:755 \
-                gateway/dns_ab.py:755 gateway/dash_latency.py:755; do
+                gateway/dns_ab.py:755 gateway/dash_latency.py:755 gateway/demo_attacks.py:755; do
         f=${spec%%:*}
         put_rendered "$REPO/$f" "/opt/securepi-eval/$(basename "$f")" "${spec##*:}" root:root
     done

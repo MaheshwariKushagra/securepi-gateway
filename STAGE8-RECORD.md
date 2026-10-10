@@ -130,6 +130,10 @@ Diffed against `etc/suricata/suricata.yaml` extracted from
 | M-13 | `STEP-1-INSTALL-UBUNTU.md` §7-9 | Describes the hand-over with the Plan A wiring of M-1 | Same banner as M-1 |
 | M-14 | README demo instructions | `python3 seed.py && python3 serve.py` cannot run on the Mac (Homebrew Python 3.14 has no FastAPI); the demo used a git-ignored `.venv-demo` | `docs/demo/requirements.txt`, installed with `--no-deps` (details in §3, 8.1) |
 | M-15 | DoH resolver set after a reboot (**found by the 8.2 check run**) | `nftables.conf` seeds `inet filter doh_resolvers` with 14 addresses; `securepi-doh-refresh.timer` (`OnCalendar=daily`, `RandomizedDelaySec=30m`, `Persistent=true`) refills it with ~1,436 from HaGeZi. `Persistent=true` only catches up a run that was *missed* while the machine was off, so after a reboot (or any full `nft -f /etc/nftables.conf`) the set keeps only the 14 seeds until the next daily run, up to ~24 h. Live on 10 Oct 2026: booted 12:14, last refresh 00:28 that day, set = 14 at 13:57, next refresh ~00:21 on 11 Oct. No document mentions this; `EVALUATION-RESULTS-2.md` §2.2 reports the 1,445 figure from a manual run. DNS-level DoH blocking (the HaGeZi DoH filter in AdGuard) and the DoH detection are unaffected; only the IP-level block of DoH by address is weakened | Installer refreshes the set whenever it holds fewer than 500 entries and `--check` reports it; `docs/INSTALL.md` §7.1 shows how to check it. **The fix itself is not made** (it changes a live unit, so it needs the operator's go-ahead): add `OnBootSec=2min` to the `[Timer]` of `gateway/systemd/securepi-doh-refresh.timer`, or `After=nftables.service` plus `WantedBy=multi-user.target` on the service. Interim: `sudo systemctl start securepi-doh-refresh.service` after each reboot |
+| M-16 | `redteam/README.md` | The pre-demo checklist told the presenter to open `http://localhost:8000` / `http://10.10.0.1:8000`. The console has been HTTPS-only since step 3.2, so plain HTTP gets no answer | Fixed to `https://` (8.3) |
+| M-17 | The URL lines in the journal, against the report | `REPORT-adblocking.md` §6 and `REPORT.md` §5.1 say mitmdump wrote 5,163 decrypted request URLs "over the 14 days before" 7B.5. That is exact for 26 Sep-10 Oct (94 + 1,515 + 56 + 923 + 2,575). The journal also still holds 4,065 such lines from 12 Sep, so **9,228 in total**. None was written after 10 Oct 03:40:35; the running unit has `flow_detail=0` | Recorded in `docs/CLOSE-OUT.md` §7, whose journal purge removes all 9,228. The report figures stay as they are (they name their window) |
+| M-18 | The inspection CA's subject | The live CA (`/opt/securepi-dpi/ca/`, 12 Sep 2026 07:06, valid to 9 Sep 2036) is "CN = SecurePi Gateway, O = SecurePi Gateway, OU = Network Security Platform". mitmproxy wrote its own files at 07:04 (`dhparam`), and the CA was replaced by hand two minutes later. No script in the repo makes this CA: `dpi/deploy-dpi.sh` lets mitmproxy create its default "mitmproxy" CA. So a reinstall, or a rotation (`docs/CLOSE-OUT.md` 6b), shows "mitmproxy" in a phone's user certificates, not "SecurePi Gateway" | Documented in `docs/CLOSE-OUT.md` §5 and §6b; not scripted |
+| M-19 | README signal count | "A correlation engine runs fourteen signal checks" and the badge `detection_signals-14`. `SIGNALS` in `app/correlation.py` lists 15 (campaign included). The README's own architecture diagram and file list already said 15 | Both fixed to 15 (8.3) |
 
 ## 3. Progress
 
@@ -198,3 +202,50 @@ Diffed against `etc/suricata/suricata.yaml` extracted from
     3. A `/etc/default/hostapd` rewrite that would have replaced Ubuntu's commented default file was removed: not needed.
   - **Open: applying on the live gateway.** `sudo ./gateway/install.sh` on the Dell was refused by the session's permission policy ("Production Deploy") at 13:53 and **has not run**. It needs the operator's go-ahead. What it would do is exactly the 8 items above, then: daemon-reload; a restart of `securepi-dpi` (no device enrolled, so no user impact) and of `securepi-ca-server`; no AdGuard restart, so the new `WorkingDirectory` takes effect at its next restart. After applying, `--check` must report 0 changes.
   - **Open: fresh-machine install (the 8.2 exit criterion).** Not done. Even a read-only probe for Lima on the Mac (`which limactl`) was refused by the same policy at 13:54. The VM procedure is in `docs/INSTALL.md` §12 and has not been run. Until it is, the fresh-install path is checked only piece by piece against the live system, as listed above.
+- **8.3 demo (14:05-14:50)** - script written, helpers built and tested, the gateway-side segments dry-run twice. **Still open:** the three presenter rehearsals with the phone, and the backup video. Both need a person.
+  - **`docs/DEMO.md` (new).** Covers:
+    - a table mapping every plan item to its segment and expected timing, with sources;
+    - equipment and set-up (Mac via `mac-tunnel.sh`, two gateway terminals, the A33 in Chrome mirrored with `scrcpy`);
+    - day-before and 30-minute checklists, including the M-15 DoH set check;
+    - a minute-by-minute script of 12 segments with exact commands and console click paths. Every click path was checked against `app/static/app.js` and the templates; four were corrected: quarantine offers 15 min/1 h/24 h/until released, not 2 min; the profile schedule editor is under Filtering → Profiles & Schedules; Tier 2 is site ticks plus "Enroll device"; Tier 2 needs a browser restart because it applies to new connections only;
+    - a recovery table and a put-it-all-back table;
+    - what is real versus staged, the rehearsal record, and how to record the backup video.
+  - **Helpers (new).**
+    - `gateway/demo_attacks.py` (`slow-scan`, `campaign`, `cleanup`) calls the 7.2 battery's attack functions unchanged, from new harness addresses `.247`/`.248`, each run as a new `[TEST HARNESS] demo ...` device.
+    - `dpi/canary_demo.py` (`break`, `restore`) runs the canary's real `run_check()`, including its real fail-safe, against a temporary *copy* of the addon with the report §6 `ignore_conn` typo. The live addon is never written: mitmproxy reloads it on change.
+    - Both are installed by `gateway/install.sh` (steps 13 and 14).
+    - `tests/test_demo_helpers.py`: 6 tests, written after the helpers rather than first (a deviation from the step rule). They check that the live addon is byte-for-byte untouched and the path restored, that a passing check is refused, that the broken copy fails the real decision logic, that the demo addresses never collide with battery or victim addresses, and that `campaign` runs the three battery functions unchanged.
+  - **Technical dry-runs on the live gateway** (`docs/DEMO.md` §9):
+    - campaign: 84.6/84.8/84.5/147.1 s;
+    - slow scan: 486.1 s;
+    - canary break → incident #806, live addon SHA-256 unchanged; restore → ok;
+    - kill-ids: restarted in the same second, `NRestarts=1`, no incident;
+    - stop-dns: `platform_service_down` at +11.3 s, fail-open on at +17.4 s, back at +61.3 s;
+    - an overlapped second run: slow scan 489.2 s, campaign 80.7 s.
+  - **Found by the dry-runs, now in the script:**
+    - Killing the IDS raises no incident: it is back before the health supervisor looks. The script used to claim one.
+    - The campaign's chain reads "Command and Control → Credential Access → Discovery": tactics are ordered by first evidence, and the beacon starts first.
+    - The brute force's nine SSH attempts are periodic enough that the beacon signal links them too (incident titled "Possible C2 beacon to 10.10.0.222:22").
+    - The fast 40-port scan also raises `slow_port_scan`.
+  - **Left on the gateway by the dry-runs, as test data:**
+    - devices 100-103 (`[TEST HARNESS] demo ...`) with their incidents;
+    - campaigns #43 and #44;
+    - platform incidents #808 and #809;
+    - **privacy-scope incident #806, still open**, so the console's privacy badge reads red until it is resolved on the console (Incidents → #806 → Resolved). Resolving it needs a console sign-in, so it was left to the operator.
+  - **Not dry-run:** segments 2, 3, 4, 5b, 7, 8 and 11 need the phone and a console sign-in. The A33 was not connected (no device seen in the 30 minutes before 14:15).
+  - **M-16 fixed** (redteam README's `http://` console URLs). **M-19:** the README said "fourteen signal checks" and its badge said 14, but `SIGNALS` in `app/correlation.py` has 15. Both fixed.
+- **8.4 close-out (14:25-14:50)** - `docs/CLOSE-OUT.md` written. **Nothing in it was executed.**
+  - **Read-only pre-checks** on the gateway at 14:25, recorded per item:
+    - nothing enrolled, and `device-sites.json` is `{}`;
+    - no test browser or proxy process;
+    - `~/securepi-browser` is 1.8 GB, holding the test-account profiles and the test CA's private key;
+    - the inspection CA's subject and SHA-256;
+    - the journal is 430.2 MB over 21 boots, with **9,228 decrypted-URL lines** (M-17), the last at 10 Oct 03:40:35;
+    - the run monitor is enabled and active;
+    - three pre-change DB backups (29 MB, 34 MB, 274 MB);
+    - 10 code `.bak` files;
+    - the 36 MB DNS query log;
+    - the Mac's locked `a33-checks` worktree.
+  - **For each item:** the exact command, how to verify it, and whether it can be undone. Items 4, 6 and 7 are marked IRREVERSIBLE.
+  - **The CA rotation path** documents M-18: the live CA's "SecurePi Gateway" subject was made by hand, so a rotated CA shows as "mitmproxy".
+  - **The "soak DB copy" leftover** listed in the session notes does not exist on either machine (searched `/var/tmp`, `/tmp`, home directories and the repo), so it is not in the runbook.

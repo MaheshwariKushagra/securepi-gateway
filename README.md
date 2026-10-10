@@ -11,7 +11,7 @@ Built as a final-year engineering project, deployed on real hardware, and measur
 
 ![Python](https://img.shields.io/badge/Python-3.12-3776AB?style=for-the-badge&logo=python&logoColor=white) ![FastAPI](https://img.shields.io/badge/FastAPI-console-009688?style=for-the-badge&logo=fastapi&logoColor=white) ![IDS](https://img.shields.io/badge/IDS-intrusion_detection-EF3B2D?style=for-the-badge) ![DNS filter](https://img.shields.io/badge/DNS_filter-blocklists-68BC71?style=for-the-badge) ![mitmproxy](https://img.shields.io/badge/mitmproxy-selective_DPI-2B6CB0?style=for-the-badge) ![Ubuntu](https://img.shields.io/badge/Ubuntu-24.04_LTS-E95420?style=for-the-badge&logo=ubuntu&logoColor=white)
 
-![Tests](https://img.shields.io/badge/tests-751_passing-2fbf71?style=flat-square) ![Detection signals](https://img.shields.io/badge/detection_signals-14-4f9cf9?style=flat-square) ![ATT&CK](https://img.shields.io/badge/MITRE_ATT%26CK-mapped-7b5cf0?style=flat-square) ![Stages complete](https://img.shields.io/badge/roadmap-stages_0%E2%80%937B_complete-2fbf71?style=flat-square) ![No Docker](https://img.shields.io/badge/footprint-3.6_GiB_RAM,_no_Docker-8d99ad?style=flat-square)
+![Tests](https://img.shields.io/badge/tests-757_passing-2fbf71?style=flat-square) ![Detection signals](https://img.shields.io/badge/detection_signals-15-4f9cf9?style=flat-square) ![ATT&CK](https://img.shields.io/badge/MITRE_ATT%26CK-mapped-7b5cf0?style=flat-square) ![Stages complete](https://img.shields.io/badge/roadmap-stages_0%E2%80%937B_complete-2fbf71?style=flat-square) ![No Docker](https://img.shields.io/badge/footprint-3.6_GiB_RAM,_no_Docker-8d99ad?style=flat-square)
 
 <br>
 
@@ -42,7 +42,7 @@ partly, Facebook) for devices that opt in, site by site. It decrypts nothing els
 
 ### Detect
 **IDS**, the DNS resolver and the inspection proxy all write into one event
-store. A **correlation engine** runs fourteen signal checks over that data every 15 seconds,
+store. A **correlation engine** runs fifteen signal checks over that data every 15 seconds,
 merges repeat detections, and links related incidents into **campaigns** mapped to a MITRE
 ATT&CK kill chain, so **15,884 raw events became 10 incidents** over a real
 24-hour window.
@@ -79,7 +79,7 @@ and puts back anything altered outside the console.
 | **Memory** | Peak under heavy real browsing: IDS 871 MB, DNS filter 365 MB, console 294 MB, ingest 216 MB. In normal running, 1,475 of 3,683 MiB used | [Evaluation 2.0 §7.0](EVALUATION-RESULTS-2.md) |
 | **Throughput headroom** | **No capture loss up to 400 Mbit/s** on one IDS thread at a third of a core; the 2.4 GHz access point is the real limit | [Evaluation 2.0 §7.8](EVALUATION-RESULTS-2.md) |
 | **Resilience** | Every component recovers by itself; DNS and HTTPS inspection **fail open**; a DNS-filter outage costs devices about 15 s | [Evaluation 2.0 §7.7](EVALUATION-RESULTS-2.md) |
-| **Automated tests** | **751** unit tests (`make test`), all on synthetic data | [`tests/`](tests) |
+| **Automated tests** | **757** unit tests (`make test`), all on synthetic data | [`tests/`](tests) |
 
 ---
 
@@ -666,7 +666,7 @@ securepi-gateway/
 │   ├── templates/  static/   Jinja2 pages, vanilla JS, one stylesheet
 ├── dpi/                      Selective HTTPS inspection (mitmproxy addon, rules, canary)
 ├── gateway/                  nftables, hostapd, `securepi` CLI, evaluation harness
-├── tests/                    751 unit tests on synthetic fixtures (`make test`)
+├── tests/                    757 unit tests on synthetic fixtures (`make test`)
 └── docs/
     ├── assets/               Banner, social preview, screenshots
     └── demo/                 Synthetic-data console used for the screenshots

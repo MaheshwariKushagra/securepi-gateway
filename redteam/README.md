@@ -83,8 +83,8 @@ Useful options:
    ```
    Confirm `securepi-ingest`, `securepi-engine`, and `securepi-web` are active.
 2. **Console open on the presenter screen.** Either start the tunnel
-   (`./mac-tunnel.sh start`, then <http://localhost:8000>) or open
-   <http://10.10.0.1:8000> directly on the SecurePi LAN. Log in (`securepi` / the
+   (`./mac-tunnel.sh start`, then <https://localhost:8000>) or open
+   <https://10.10.0.1:8000> directly on the SecurePi LAN (HTTPS only since step 3.2; plain HTTP gets no answer). Log in (`securepi` / the
    console password).
 3. **Attacker laptop on the right Wi-Fi.** Join `SecurePi-Test`. Confirm it gets a
    `10.10.0.x` address and shows up as a new device in the console’s Devices page.

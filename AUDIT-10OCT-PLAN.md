@@ -604,3 +604,8 @@ H9 no journal purge; no deliberate outages on the real network.*
   - **Q5:** the stale "stopgap" docstring was fixed in 7B.9.
   - **Q7:** step 8.2 in `ENHANCEMENT-PLAN.md` now says the installer ships `requirements` files from `pip freeze` of both environments.
   - **Q6:** the README test badge is updated at the end of this run.
+- **7B.20 (M9) measured and closed, no change.**
+  - **Read-only counts:** last 30 days in the database: `quic-blocked` 8,238 lines (about 11 an hour on average), `doh-bypass` 202, `dot-bypass` 10. The kernel journal across boots for the last 7 days: 3,181 `quic-blocked`.
+  - **Peaks:** only three hours passed 1,000 (2,355 at 02:00 on 10 Oct during the 7A checks; 1,551 and 1,026 on 2 Oct, the benchmark day), all during test campaigns.
+  - **No detection impact:** `dns_bypass_signal` excludes `quic-blocked` entirely (since 7.3), so its volume affects no signal.
+  - **Optional, when the firewall is next touched for 7B.7:** split the QUIC rule into `limit rate 10/second ... log` plus an unlogged reject.

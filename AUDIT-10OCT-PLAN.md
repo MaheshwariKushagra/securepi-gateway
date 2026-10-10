@@ -609,3 +609,12 @@ H9 no journal purge; no deliberate outages on the real network.*
   - **Peaks:** only three hours passed 1,000 (2,355 at 02:00 on 10 Oct during the 7A checks; 1,551 and 1,026 on 2 Oct, the benchmark day), all during test campaigns.
   - **No detection impact:** `dns_bypass_signal` excludes `quic-blocked` entirely (since 7.3), so its volume affects no signal.
   - **Optional, when the firewall is next touched for 7B.7:** split the QUIC rule into `limit rate 10/second ... log` plus an unlogged reject.
+- **Group 5 deployed (08:46):** `fingerprint.py` via `make deploy`; `chaos.py` installed at `/opt/securepi-eval/chaos.py` (the live copy matched `0707bcb` before; `.bak-7B-g5-*` kept). All services active.
+- **Final health sweep (08:45):**
+  - **Journals:** no errors in ingest, engine, web, proxy or canary since 08:05.
+  - **Canary:** 3/3 checks ok since deploy.
+  - **Orchestrator:** healthy, no pending resets.
+  - **Live state:** nothing enrolled; fail-open off; inspection gate open.
+  - **Platform incidents:** all from before the run.
+  - **README:** the test count is updated to 751.
+- **Run complete.** Summary for the user at the top of `NEXT-SESSION.md`.

@@ -11,7 +11,7 @@ Built as a final-year engineering project, deployed on real hardware, and measur
 
 ![Python](https://img.shields.io/badge/Python-3.12-3776AB?style=for-the-badge&logo=python&logoColor=white) ![FastAPI](https://img.shields.io/badge/FastAPI-console-009688?style=for-the-badge&logo=fastapi&logoColor=white) ![IDS](https://img.shields.io/badge/IDS-intrusion_detection-EF3B2D?style=for-the-badge) ![DNS filter](https://img.shields.io/badge/DNS_filter-blocklists-68BC71?style=for-the-badge) ![mitmproxy](https://img.shields.io/badge/mitmproxy-selective_DPI-2B6CB0?style=for-the-badge) ![Ubuntu](https://img.shields.io/badge/Ubuntu-24.04_LTS-E95420?style=for-the-badge&logo=ubuntu&logoColor=white)
 
-![Tests](https://img.shields.io/badge/tests-362_passing-2fbf71?style=flat-square) ![Detection signals](https://img.shields.io/badge/detection_signals-14-4f9cf9?style=flat-square) ![ATT&CK](https://img.shields.io/badge/MITRE_ATT%26CK-mapped-7b5cf0?style=flat-square) ![Stages complete](https://img.shields.io/badge/roadmap-stages_0%E2%80%936_complete-2fbf71?style=flat-square) ![No Docker](https://img.shields.io/badge/footprint-3.6_GiB_RAM,_no_Docker-8d99ad?style=flat-square)
+![Tests](https://img.shields.io/badge/tests-751_passing-2fbf71?style=flat-square) ![Detection signals](https://img.shields.io/badge/detection_signals-14-4f9cf9?style=flat-square) ![ATT&CK](https://img.shields.io/badge/MITRE_ATT%26CK-mapped-7b5cf0?style=flat-square) ![Stages complete](https://img.shields.io/badge/roadmap-stages_0%E2%80%936_complete-2fbf71?style=flat-square) ![No Docker](https://img.shields.io/badge/footprint-3.6_GiB_RAM,_no_Docker-8d99ad?style=flat-square)
 
 <br>
 
@@ -78,7 +78,7 @@ and puts back anything altered outside the console.
 | **DNS rules enforced** | **392,229** across 5 curated lists (trimmed from 656,735 after measuring each list's unique contribution) | Live DNS filter |
 | **Memory under attack load** | **40%** of 3.6 GiB used, over 2 GiB free | [Evaluation §5](EVALUATION-RESULTS.md) |
 | **Throughput headroom** | Limited by the WAN (~30 Mbps). The inspection path itself ran at **39.9 Gbps** on virtual links | [Evaluation §6](EVALUATION-RESULTS.md) |
-| **Automated tests** | **641** unit tests (`make test`), all on synthetic data | [`tests/`](tests) |
+| **Automated tests** | **751** unit tests (`make test`), all on synthetic data | [`tests/`](tests) |
 
 ---
 
@@ -657,7 +657,7 @@ securepi-gateway/
 │   ├── templates/  static/   Jinja2 pages, vanilla JS, one stylesheet
 ├── dpi/                      Selective HTTPS inspection (mitmproxy addon, rules, canary)
 ├── gateway/                  nftables, hostapd, `securepi` CLI, evaluation harness
-├── tests/                    362 unit tests on synthetic fixtures (`make test`)
+├── tests/                    751 unit tests on synthetic fixtures (`make test`)
 └── docs/
     ├── assets/               Banner, social preview, screenshots
     └── demo/                 Synthetic-data console used for the screenshots

@@ -1,5 +1,70 @@
 # Starting the next session
 
+## ★ Stage 7B unattended run (10 Oct 2026, 08:00-08:50): read this first
+
+**The Dell is on battery.** Its charger came out between 06:32 and 08:08;
+the Mac is on AC, so it isn't a power cut. It was at 82% at 08:47,
+draining about 20% an hour. **Plug it back in**, or the gateway shuts down
+uncleanly around midday.
+
+**What was done.** All 20 steps of `AUDIT-10OCT-PLAN.md` are done.
+- Four of five groups were deployed to the gateway and verified live. Group 5 only changed tools, docs and one dead variable; its two deployable files were installed too.
+- Tests went from **641 to 751, all passing**, along with py_compile, `node --check` and shellcheck.
+- Each fix began with a test that failed on the old code.
+- The full step-by-step record, with every live check, is the **Progress** section at the end of `AUDIT-10OCT-PLAN.md`.
+
+**Where the code is.**
+- Local branch **`audit-7b`**: 25 commits, 53 files.
+- **Nothing was pushed.** `origin/main` and local `main` are both still at `0707bcb`, your safe reference point.
+- `./session-start.sh` will report unpushed work; that's expected.
+- Merging and pushing is your call once you've looked.
+
+**What is live now, in short.**
+- **Consent:** a device with no site-map entry is never decrypted. A site switched off is never rewritten, even on an open connection. A failed site-map write rolls the change back.
+- **Verification:** removals are verified against what was there before, and rollbacks are read back. Enrollment extensions renew the firewall timeout.
+- **Firewall independence:** quarantine and IP blocks keep working while the DNS filter is down.
+- **Privacy (H9):** mitmdump no longer writes decrypted request URLs to the journal.
+- **Fail-open:** rules install as one transaction; recovery removes leftovers the database missed.
+- **Login:** attempts are counted before the password check (a burst of 15 got exactly 10 through); request bodies are capped; no session is issued for a password that just changed.
+- **Console:** the session check runs off the event loop. **The console now signs out after 30 minutes without operator activity**, because background polls no longer keep it alive (decision M13, default applied). A 401 now goes to the login page.
+- **Ingest:** a DNS backlog beyond the page cap is caught up, and one bad record can't stall a source.
+- **Engine:** a failed step rolls back; a dead notification channel can't hold up the cycle.
+- **Proxy:** video and binary responses stream instead of being buffered.
+- **Other fixes:** narrower hostname merge, one meaning of "open" incidents, only current threat indicators raise incidents, bounded attribution (old scan 90 ms every 2 s, new under 1 ms), console polls never overlap.
+
+**Waiting for you.**
+1. **Charger** (above).
+2. **7B.7, DNS-over-QUIC block: staged, not loaded.** The run didn't touch the live firewall. To apply without a full reload (this keeps the quarantine and enrollment sets), add the rule after the DoT rule (handle 32 at 08:14; check first with `sudo nft -a list chain inet filter forward`):
+   `ssh maheshwari@192.168.2.5 'sudo nft add rule inet filter forward position 32 iifname "ap0" udp dport 853 counter log prefix \"doq-bypass: \" reject comment \"doq-bypass\"'`
+   then copy `~/nft-staged/nftables-7B7-doq.conf` to `/etc/nftables.conf` so it survives a reboot.
+3. **H9, the old journal.** 5,163 lines from before 08:12 still hold decrypted request URLs (YouTube, from 10.10.0.50). They were **not** purged (default decision). Purge now, or leave it for step 8.4.
+4. **A33 checks, phone not connected.** To run under the 7A protocol:
+   - YouTube pre-rolls still removed for a YouTube-only enrollment;
+   - Instagram feed check;
+   - Instagram-only enrollment leaves YouTube undecrypted.
+
+   The last case was already shown with the deployed addon on a test-harness device.
+5. **Facebook (M6).** What an "empty" streamed GraphQL reply should be needs a live capture. Until then, a chunk made only of sponsored stories passes as it is.
+6. **Live failure paths not run** (no deliberate outages): the DNS filter down while quarantining (H1), a real fail-open cycle (H8), a forced ingest backlog (H2). All are unit-tested; run them as 7.7-style chaos repeats if you want them live.
+7. **`gateway/setup-privilege-separation.sh` was updated but not run.**
+   - A read-only check found no writable code.
+   - Two stray top-level copies, `/opt/securepi/app.js` and `app.css` (`maheshwari:staff`), aren't served and can be deleted.
+   - Four 7A `.bak` rule backups in `/opt/securepi-dpi` are writable by the `securepi` group.
+8. **Behaviour changes to know about:**
+   - `securepi enroll` from the CLI now starts inspecting about 15 s later, when the engine adopts it (YouTube only); before that the device is redirected but not decrypted.
+   - The Dell's test proxy needed `127.0.0.1` in `~/securepi-browser/test-sites.json`. It is set to YouTube, matching its old behaviour.
+
+**Observations, not caused by the run.**
+- Incident #791 ("no fresh output from IDS, DNS filter"), opened 04:51, keeps being extended because the network is idle.
+- The gateway address `10.10.0.1` has been mapped to 19 battery devices over time, so its own queries aren't attributed until the harness re-maps it.
+
+**Rolling back, if needed.**
+- **Backups** are in `/var/backups/securepi-7B/` on the Dell: `pre-group1..4` tarballs and the full database copy `securepi-pre-group3-20261010-083117.db`. Every changed file also has a `.bak-7B-g<N>-<timestamp>` copy next to it, and the DPI unit has a `.bak-7B5-*` copy.
+- **Simplest code rollback:** `git checkout main && make deploy`, then reinstall the `0707bcb` DPI addon, canary and `securepi-dpi.service` from the backups.
+- The three new `ingest_state.catchup_*` columns are harmless to old code.
+
+---
+
 ## 0. First, run the health check
 
 ```

@@ -566,3 +566,8 @@ H9 no journal purge; no deliberate outages on the real network.*
     - latency (5 runs each): `/api/system` about 6 ms, `/api/devices` about 360 ms, `/api/overview` about 135 ms (the first call 300 ms), `/api/incidents` about 37 ms, in line with 7.8.
   - **Streaming (M5), Dell test proxy** with the deployed addon: a YouTube thumbnail streamed (mitmproxy "content missing", the client got the full 21,011-byte JPEG); `robots.txt` (text) was still buffered (792 b).
   - **Not done live:** the A33 YouTube/Instagram regression run (phone not connected) and a mitmproxy RSS comparison under real playback.
+- **7B.14 (H7) done in code.** `resolve_device` no longer merges a new MAC into an unapproved device by hostname in either of two cases:
+  - the device holds an active `enroll`, `allow_domain` or `pause` policy (`MERGE_BLOCKING_POLICY_KINDS`);
+  - another of its MACs is associated with the AP right now (the station list `update_devices` already reads is passed through).
+
+  **Deviation from the plan text, deliberately:** a person's quarantine and other restrictive policies (blocked domains, profiles) do *not* block the merge. Blocking it would let a quarantined unknown device escape just by rotating its MAC. A first version used "other MAC seen in the last 10 minutes" for the second case; that would have split a phone that rotates its MAC and reconnects within seconds, so it uses live association instead. 3 new tests failed on the old code; the randomization, ended-policy and quarantine cases are tested as controls.

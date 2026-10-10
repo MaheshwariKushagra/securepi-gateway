@@ -170,7 +170,38 @@ def touch_interval(conn, table, device_id, value, column, now):
     )
 
 
-def resolve_device(conn, mac, hostname, now):
+# Policies that loosen protection or carry consent. A device holding one is
+# never merged with a newcomer by hostname: the policy would follow the
+# merged identity to what may be a different physical device - HTTPS
+# inspection for someone who never installed the CA, or a filtering
+# exception for someone it was never meant for (Audit10Oct H7). Restrictive
+# policies (quarantine, blocked domains, profiles) are deliberately NOT on
+# this list: they keep following a rotated MAC, so a device can't shed a
+# quarantine just by changing its address.
+MERGE_BLOCKING_POLICY_KINDS = ("enroll", "allow_domain", "pause")
+
+def _merge_refused_because(conn, device_id, now, associated=None):
+    """Why a new MAC must NOT be merged into this (unapproved) device by
+    hostname, or None if merging is fine. `associated` is the set of MACs
+    on the Wi-Fi right now (None if unknown)."""
+    placeholders = ",".join("?" for _ in MERGE_BLOCKING_POLICY_KINDS)
+    policy = conn.execute(
+        "SELECT kind FROM policies WHERE status='active' AND device_id=? AND kind IN (%s) LIMIT 1"
+        % placeholders, (device_id,) + MERGE_BLOCKING_POLICY_KINDS).fetchone()
+    if policy is not None:
+        return "that device has an active %s policy" % policy["kind"]
+    # Another MAC of the same device associated with the access point at
+    # this very moment means two radios are on the network at once: two
+    # devices sharing a hostname, not one phone that re-randomised its
+    # address (which drops the old MAC before joining with the new one).
+    if associated:
+        for r in conn.execute("SELECT mac FROM device_macs WHERE device_id=?", (device_id,)):
+            if r["mac"].lower() in associated:
+                return "its other MAC %s is on the network right now" % r["mac"]
+    return None
+
+
+def resolve_device(conn, mac, hostname, now, associated=None):
     """Find or create the device this MAC belongs to. Returns the device id."""
     # 1. Known MAC - straightforward.
     row = conn.execute(
@@ -198,9 +229,15 @@ def resolve_device(conn, mac, hostname, now):
             (hostname,),
         ).fetchone()
         if row is not None and row["trust"] != "approved":
-            print("registry: %s reappeared with a new MAC %s (randomization)"
-                  % (hostname, mac), flush=True)
-            return row["id"]
+            refused = _merge_refused_because(conn, row["id"], now, associated)
+            if refused is None:
+                print("registry: %s reappeared with a new MAC %s (randomization)"
+                      % (hostname, mac), flush=True)
+                return row["id"]
+            print("registry: new MAC %s claims the hostname of device %d (%s), but %s -"
+                  " registering it as a separate, unknown device" % (mac, row["id"], hostname, refused),
+                  flush=True)
+            row = None
         if row is not None:
             print("registry: new MAC %s claims the hostname of approved device %d (%s) -"
                   " registering it as a separate, unknown device" % (mac, row["id"], hostname), flush=True)
@@ -230,7 +267,7 @@ def update_devices(conn):
     for mac, ip, hostname in read_leases():
         if associated is not None and mac.lower() not in associated:
             continue  # still holds a lease, but has left the network
-        device_id = resolve_device(conn, mac, hostname, now)
+        device_id = resolve_device(conn, mac, hostname, now, associated)
         touch_interval(conn, "device_macs", device_id, mac, "mac", now)
         touch_interval(conn, "device_ips", device_id, ip, "ip", now)
         conn.execute(
@@ -248,7 +285,7 @@ def update_devices(conn):
             continue  # a leftover (stale) entry for a device that has left
         row = conn.execute("SELECT device_id FROM device_macs WHERE mac = ?", (mac,)).fetchone()
         if row is None:
-            device_id = resolve_device(conn, mac, "", now)
+            device_id = resolve_device(conn, mac, "", now, associated)
             touch_interval(conn, "device_macs", device_id, mac, "mac", now)
         else:
             device_id = row["device_id"]

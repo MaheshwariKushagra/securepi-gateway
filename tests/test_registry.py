@@ -51,6 +51,72 @@ class ResolveDeviceHostnameTests(unittest.TestCase):
         self._device_with_mac(conn, 1, "bad-laptop", "blocked", "aa:bb:cc:00:00:01")
         self.assertEqual(registry.resolve_device(conn, "de:ad:be:ef:00:02", "bad-laptop", time.time()), 1)
 
+class HostnameMergeLimitsTests(unittest.TestCase):
+    """Audit10Oct H7: a new MAC claiming an unapproved device's hostname was
+    merged into it - and the device's HTTPS-inspection enrollment, allowed
+    domains or filtering pause followed the merged identity to what may be
+    a different physical device (default hostnames like "iPhone" collide
+    by accident). Restrictions still follow a rotated MAC, so a device
+    can't shed a quarantine by changing its address."""
+
+    MAC = "aa:bb:cc:00:00:01"
+    NEW = "de:ad:be:ef:00:02"
+
+    def setUp(self):
+        self.conn = fixtures.temp_db()
+        self.now = time.time()
+        fixtures.insert_device(self.conn, 1, hostname="Galaxy-A33-5G")
+        self.conn.execute("UPDATE devices SET trust='unknown' WHERE id=1")
+        self.conn.execute("INSERT INTO device_macs (device_id, mac, first_seen, last_seen) VALUES (1, ?, ?, ?)",
+                          (self.MAC, self.now - 7200, self.now - 3600))
+        self.conn.commit()
+
+    def policy(self, kind, source="console"):
+        self.conn.execute("INSERT INTO policies (kind, device_id, reason, source, created_by, created_at, status)"
+                          " VALUES (?, 1, 'test', ?, 'test', ?, 'active')", (kind, source, self.now))
+        self.conn.commit()
+
+    def resolve(self):
+        return registry.resolve_device(self.conn, self.NEW, "Galaxy-A33-5G", self.now)
+
+    def test_an_enrolled_device_is_not_merged(self):
+        self.policy("enroll")
+        self.assertNotEqual(self.resolve(), 1)
+
+    def test_a_device_with_an_allowed_domain_or_a_pause_is_not_merged(self):
+        for kind in ("allow_domain", "pause"):
+            self.conn.execute("DELETE FROM policies")
+            self.policy(kind)
+            self.conn.execute("DELETE FROM device_macs WHERE mac=?", (self.NEW,))
+            self.conn.commit()
+            self.assertNotEqual(self.resolve(), 1, kind)
+
+    def test_a_quarantined_device_still_merges_so_it_cannot_escape(self):
+        self.policy("quarantine")
+        self.assertEqual(self.resolve(), 1)
+
+    def test_a_device_whose_other_mac_is_on_the_wifi_right_now_is_not_merged(self):
+        new_id = registry.resolve_device(self.conn, self.NEW, "Galaxy-A33-5G", self.now,
+                                         associated={self.MAC, self.NEW})
+        self.assertNotEqual(new_id, 1)
+
+    def test_a_phone_that_just_rotated_its_mac_still_merges(self):
+        # The old MAC was seen seconds ago but is no longer associated.
+        self.conn.execute("UPDATE device_macs SET last_seen=? WHERE mac=?", (self.now - 5, self.MAC))
+        self.conn.commit()
+        self.assertEqual(registry.resolve_device(self.conn, self.NEW, "Galaxy-A33-5G", self.now,
+                                                 associated={self.NEW}), 1)
+
+    def test_an_ordinary_randomised_mac_still_merges(self):
+        self.assertEqual(self.resolve(), 1)
+
+    def test_an_ended_enrollment_does_not_block_the_merge(self):
+        self.policy("enroll")
+        self.conn.execute("UPDATE policies SET status='expired'")
+        self.conn.commit()
+        self.assertEqual(self.resolve(), 1)
+
+
 class AttributeEventsOverlapTieBreakTests(unittest.TestCase):
     """Regression tests for finding G6: two device_ips intervals for the
     SAME address that overlap in time used to be resolved arbitrarily

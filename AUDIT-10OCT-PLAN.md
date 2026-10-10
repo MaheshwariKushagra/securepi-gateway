@@ -497,3 +497,8 @@ H9 no journal purge; no deliberate outages on the real network.*
   - **Not done live:** the DNS-filter-down path of 7B.4 (no deliberate outages) and the A33 checks (phone not connected).
   - **Note for the user:** the Dell went from charger to battery between 06:32 and 08:08 (96% at 08:10). The Mac is on AC, so it isn't a power cut.
   - **Note for the user:** the Dell test proxy's `~/securepi-browser/test-sites.json` is `{}`. Under deny-by-default it now decrypts nothing until it lists `"127.0.0.1": ["youtube", ...]`.
+- **7B.5 (H9) done and deployed (08:12).**
+  - **Read-only check:** **5,163 journal lines in the last 14 days** carry full decrypted request URLs (for example `10.10.0.50: GET https://www.youtube.com/<path> HTTP/2.0`), plus response lines. Cause: mitmdump's default `flow_detail` is 1 (confirmed with `mitmdump --options`). **Not purged** (default decision); this is left for the user or 8.4. The proxy journal is part of the 409.6 MB system journal, going back to 12 Sep.
+  - **Fix:** `--set flow_detail=0` in `deploy-dpi.sh`'s unit. The live unit file matched the script byte for byte before the change; it was regenerated from the script and installed (`.bak-7B5-*` kept), then daemon-reload and restart. The running command line now shows `--set flow_detail=0`.
+  - **Proof, on the Dell's localhost test proxy** (same binary, production addon): a YouTube request carrying a unique token printed the URL and token with `flow_detail=1` (1 line), and nothing with `0` (0 lines). Only `client connect` / `server connect` lines (address and hostname) remain.
+  - **Test proxy:** `~/securepi-browser/test-sites.json` set to `{"127.0.0.1": ["youtube"]}` (the old effective behaviour under deny-by-default); `.bak-7B5` kept.

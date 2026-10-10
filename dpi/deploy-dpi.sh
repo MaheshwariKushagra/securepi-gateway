@@ -49,12 +49,20 @@ Type=simple
 # ap0-sourced traffic is 10.10.0.1, never the WAN uplink. Binding
 # 0.0.0.0 needlessly exposed the proxy's listening socket on the WAN
 # interface too, found live via `ss -tlnp` during that review.
+# --set flow_detail=0 : mitmdump's own per-request output is OFF. Its
+# default (1) prints every decrypted request as "GET https://host/path?query"
+# plus a response line - and systemd puts stdout in the journal. Found by
+# Audit10Oct H9: 5,163 such lines in 14 days, full URLs of decrypted
+# YouTube pages, against this project's "metadata only" rule. The addon's
+# own structured log lines (securepi: ...) are unaffected - they are what
+# the console and ingest actually use.
 ExecStart=/opt/securepi-dpi/bin/mitmdump \
     --mode transparent \
     --listen-host 10.10.0.1 \
     --listen-port 8080 \
     --set confdir=/opt/securepi-dpi/ca \
     --set block_global=false \
+    --set flow_detail=0 \
     --showhost \
     -s /opt/securepi-dpi/securepi_adfilter.py
 # Fail open (Stage 7.7): the redirect only happens while the gate is

@@ -402,7 +402,9 @@ script, canary and log-rotation units).
 - **Follow-ups 1 and 3 (10 Oct):**
   - Enrolment and site switches now apply at once: 6/6 within about 1 s, against 1/4 without the reset (`conntrack` installed on the Dell).
   - Tier 1 blocks AdMob in-app banners: 6/6 off → 0/5 on, on the tablet.
-  - **Open, F4:** a pinned app's two failed handshakes bypass that host for the whole device for 24 h, browser included. Key the bypass on a ClientHello fingerprint as well.
+  - **F4 done (10 Oct):** the pin bypass is keyed on a ClientHello fingerprint as well, so a pinned app no longer switches off browser ad removal on the same phone. Checked with curl vs Chrome on the Dell. **Still to check on the A33:** do the YouTube app and Chrome present different fingerprints? Look at `client_fp` in `/var/log/securepi/dpi-events.jsonl`.
+  - **Facebook settled (10 Oct): partial.** Scroll-loaded feed ads are removed. The page-embedded first sponsored story and the right-column ads are not, because removing them froze the feed or caused page errors. Rules version 9.
+  - **Desktop cosmetic CSS checked (10 Oct):** with ads stripped, nothing is left to hide; injection stays off.
 - **The A33 is still enrolled** with Instagram and YouTube for 24 h from about 03:15 on 10 Oct. Unenroll it from its device page when done.
 - **Mac Safari check:** the user will try it later (join SecurePi-Test, install the CA, enroll the Mac with Instagram; remove the CA afterwards).
 - **Dell test setup** (`~/securepi-browser`: logged-in test-account profile, test proxy script, test CA): stopped, not deleted.
@@ -427,7 +429,7 @@ script, canary and log-rotation units).
 - **Incidents to close:** #760 and #764 (tablet `adblock_ineffective`) are false positives explained by the HTML-logging bug.
 
 **Start the next session with one of these** (the user's choice, offered on 10 Oct 2026):
-- **F4** (`ADBLOCK-ENHANCEMENT-PLAN.md`, follow-ups): key the pin bypass on a ClientHello fingerprint too, so a pinned app stops switching ad removal off for the browser on the same phone for 24 h. Needs the A33 plugged in and unlocked.
+- **F4 check on the A33** (the code is done): with the A33 enrolled, open YouTube in Chrome and in the app, and compare their `client_fp` values in the DPI telemetry.
 - **Stage 8, step 1:** the 7.9 usability fixes (F17 is already done).
 
 **Then Stage 8 (documentation and demo).** Queued inputs from Stage 7:

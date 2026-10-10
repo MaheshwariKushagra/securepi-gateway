@@ -25,6 +25,7 @@ list rows only - no content)?
 """
 import argparse
 import json
+import re
 import subprocess
 import sys
 import time
@@ -107,13 +108,38 @@ def count_ads(site, doc):
     return ads, items
 
 
+SCRIPT_RE = re.compile(r'<script type="application/json"[^>]*>(.*?)</script>', re.S)
+
+
+def fb_ad_ids(node, feed, side):
+    """Distinct Facebook ad ids: feed stories (th_dat_spo.ad_id) and
+    right-column units (sponsored_data.ad_id), wherever they appear."""
+    if isinstance(node, dict):
+        for key, bucket in (("th_dat_spo", feed), ("sponsored_data", side)):
+            v = node.get(key)
+            if isinstance(v, dict) and v.get("ad_id"):
+                bucket.add(str(v["ad_id"]))
+        for v in node.values():
+            fb_ad_ids(v, feed, side)
+    elif isinstance(node, list):
+        for v in node:
+            fb_ad_ids(v, feed, side)
+
+
 def run_once(ctx, site, cfg, scrolls):
     page = ctx.new_page()
     rec = {"ads_received": 0, "items_received": 0, "labels": 0, "posts": 0, "page_errors": 0,
            "feed_responses": 0}
+    feed_ads, side_ads = set(), set()
 
     def on_response(resp):
         try:
+            if site == "facebook" and resp.request.resource_type == "document" \
+                    and resp.url.rstrip("/") == "https://www.facebook.com":
+                for block in SCRIPT_RE.findall(resp.text()):
+                    if "ad_id" in block:
+                        fb_ad_ids(json.loads(block), feed_ads, side_ads)
+                return
             if not resp.request.headers.get("x-fb-friendly-name", "").startswith(cfg["query"]):
                 return
             rec["feed_responses"] += 1
@@ -121,6 +147,8 @@ def run_once(ctx, site, cfg, scrolls):
                 a, i = count_ads(site, d)
                 rec["ads_received"] += a
                 rec["items_received"] += i
+                if site == "facebook":
+                    fb_ad_ids(d, feed_ads, side_ads)
         except Exception:
             pass
 
@@ -136,6 +164,14 @@ def run_once(ctx, site, cfg, scrolls):
                 rec["labels"] = max(rec["labels"], page.evaluate(LABELS_JS))
         time.sleep(2)
         rec["posts"] = page.evaluate(cfg["posts_js"])
+        if site == "facebook":
+            # What the page itself shows: a right-column "Sponsored" unit,
+            # and Facebook's own "No more posts" end-of-feed message.
+            shown = page.evaluate("""() => ({
+                side: [...document.querySelectorAll('[role=complementary]')].some(e => /\\bSponsored\\b/.test(e.innerText)),
+                no_more: /No more posts/.test(document.body.innerText)})""")
+            rec["right_column_sponsored"] = shown["side"]
+            rec["no_more_posts"] = shown["no_more"]
         if rec["posts"] < 3 and SHOT_DIR:
             # Keep a screenshot of a near-empty feed for a person to judge
             # (a slow load and a broken page look alike in the counts).
@@ -144,6 +180,9 @@ def run_once(ctx, site, cfg, scrolls):
     except Exception as e:
         rec["error"] = str(e)[:120]
     page.close()
+    if site == "facebook":
+        rec["feed_ad_ids"] = len(feed_ads)
+        rec["right_column_ad_ids"] = len(side_ads)
     return rec
 
 

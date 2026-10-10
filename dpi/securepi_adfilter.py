@@ -26,6 +26,7 @@ redirected here at all, via nftables) and by destination (only the hostnames
 listed below are decrypted).
 """
 
+import hashlib
 import ipaddress
 import json
 import logging
@@ -164,25 +165,30 @@ def _contains_key(node, key):
 
 
 def _drop_item(item, op):
-    if not isinstance(item, dict):
+    if not isinstance(item, (dict, list)):
         return False
     if op.get("where"):
-        return _resolve(item, op["where"]) is not None
+        return isinstance(item, dict) and _resolve(item, op["where"]) is not None
     return _contains_key(item, op["contains_key"])
 
 
 def prune(node, ops, hits=None):
     """Apply a module's drop_items operations (adfilter_rules.PRUNE_OPS)
     to one JSON document in place: in every list stored under an op's
-    list_key, at any depth, drop the objects the op matches. Returns the
-    number of objects dropped. `hits`, if given, counts per op."""
+    list_key, at any depth, drop the items the op matches. An op marked
+    innermost prunes the list's children first, so only the smallest
+    matching item goes, never an ancestor that merely contains it.
+    Returns the number of items dropped. `hits`, if given, counts per op."""
     removed = 0
     if isinstance(node, dict):
         for key, value in node.items():
             if isinstance(value, list):
-                for i, op in enumerate(ops):
+                for op in ops:
                     if op["op"] != "drop_items" or op["list_key"] != key:
                         continue
+                    if op.get("innermost"):
+                        for item in value:
+                            removed += prune(item, ops, hits)
                     keep = [x for x in value if not _drop_item(x, op)]
                     if len(keep) != len(value):
                         n = len(value) - len(keep)
@@ -373,6 +379,39 @@ def loosen_csp_for_inline_style(csp_header):
     return "; ".join(new_directives)
 
 
+# TLS ClientHello fingerprint (ADBLOCK-ENHANCEMENT-PLAN.md F4). The pin
+# bypass used to be keyed on (device, host) only, so an app that rejects
+# our certificate (the YouTube app, say) switched decryption off for every
+# client on that device - the browser included - for the whole bypass
+# period. Keyed on the client too, a bypass only covers clients that offer
+# the same TLS hello as the one that failed.
+#
+# What goes in: the offered cipher suites, extension types and ALPN list,
+# each sorted (Chrome shuffles its extension order on every connection),
+# without GREASE values (random by design) and without the extensions that
+# come and go between connections from the same client: padding (21),
+# pre_shared_key (41) and early_data (42), which appear only when a session
+# is resumed or the hello needs padding.
+_GREASE = frozenset(0x0A0A + 0x1010 * i for i in range(16))
+_VOLATILE_EXTENSIONS = frozenset((21, 41, 42))
+
+
+def client_fingerprint(client_hello):
+    """A short, stable label for the kind of client that sent this hello,
+    or None if it can't be read (then the bypass falls back to device and
+    host only, as before)."""
+    try:
+        ciphers = sorted(c for c in client_hello.cipher_suites if c not in _GREASE)
+        exts = sorted(t for t, _ in client_hello.extensions
+                      if t not in _GREASE and t not in _VOLATILE_EXTENSIONS)
+        alpn = [a.decode("ascii", "replace") if isinstance(a, bytes) else str(a)
+                for a in (client_hello.alpn_protocols or [])]
+    except Exception:
+        return None
+    raw = "%s|%s|%s" % (",".join(map(str, ciphers)), ",".join(map(str, exts)), ",".join(alpn))
+    return hashlib.sha256(raw.encode()).hexdigest()[:12]
+
+
 def _looks_like_ip(host):
     try:
         ipaddress.ip_address(host.strip("[]"))
@@ -399,8 +438,11 @@ class SecurePiAdFilter:
         # Resets on a service restart, which is an acceptable, honest
         # trade-off: a fresh process makes no promises about a bypass that
         # started under a previous run.
-        self._pin_fail_count = {}    # (src_ip, sni) -> consecutive TLS failures
-        self._pin_bypass_until = {}  # (src_ip, sni) -> epoch time the bypass ends
+        # Keys are (src_ip, sni, client fingerprint) since F4; the
+        # fingerprint is None when it couldn't be read.
+        self._pin_fail_count = {}    # key -> consecutive TLS failures
+        self._pin_bypass_until = {}  # key -> epoch time the bypass ends
+        self._conn_fp = {}           # client connection id -> its fingerprint
 
         # Rule set state (step 5.9). Starts on the built-in defaults so the
         # addon works even before adfilter-rules.json has ever been read
@@ -538,7 +580,8 @@ class SecurePiAdFilter:
             self._log_event(src_ip, "ads_stripped", sni=flow.request.host, ads_removed=removed, module=name)
             self._write_rule_stats()
 
-    def _log_event(self, src_ip, decision, sni=None, ads_removed=None, blocked_path=None, module=None):
+    def _log_event(self, src_ip, decision, sni=None, ads_removed=None, blocked_path=None, module=None,
+                   client_fp=None):
         """Append one telemetry line. Failures here (disk full, permissions)
         must never take down ad-blocking itself, so they are swallowed after
         one journal warning - this is a nice-to-have analytics feed, not the
@@ -566,6 +609,7 @@ class SecurePiAdFilter:
                 "ads_removed": ads_removed,
                 "blocked_path": blocked_path,
                 "module": module,
+                "client_fp": client_fp,
             })
             self._events_fh.write(line + "\n")
             self._events_fh.flush()
@@ -601,16 +645,27 @@ class SecurePiAdFilter:
         if site_off:
             wanted = False
 
+        # The client's fingerprint, remembered for this connection so a
+        # failed handshake can be pinned on this kind of client (F4).
+        fp = client_fingerprint(data.client_hello)
+        try:
+            if len(self._conn_fp) > 20000:
+                self._conn_fp.clear()
+            self._conn_fp[data.context.client.id] = fp
+        except Exception:
+            pass
+
         # Pinning-aware auto-passthrough (step 5.8): even though this host
-        # is one we'd normally decrypt, back off if this exact (device,
-        # host) pair has recently failed the handshake too many times in a
-        # row - see tls_failed_client below for where the bypass gets set.
-        bypass_until = self._pin_bypass_until.get((src_ip, sni))
+        # is one we'd normally decrypt, back off if this kind of client on
+        # this device has recently failed the handshake for this host too
+        # many times in a row - see tls_failed_client below for where the
+        # bypass gets set.
+        bypass_until = self._pin_bypass_until.get((src_ip, sni, fp))
         if wanted and bypass_until and bypass_until > time.time():
             data.ignore_connection = True
             self.passed_through += 1
             self._log_event(src_ip, "pin_bypass", sni=sni, ads_removed=int(bypass_until),
-                            module=module_name)
+                            module=module_name, client_fp=fp)
             return
 
         if not wanted:
@@ -623,7 +678,7 @@ class SecurePiAdFilter:
             self._log_event(src_ip, "passthrough", sni=sni, module=module_name if site_off else None)
         else:
             self.decrypted += 1
-            self._log_event(src_ip, "decrypt", sni=sni, module=module_name)
+            self._log_event(src_ip, "decrypt", sni=sni, module=module_name, client_fp=fp)
 
     @staticmethod
     def _tls_pair(data):
@@ -654,8 +709,9 @@ class SecurePiAdFilter:
         many failures in total, however many successes came in between.
         """
         src_ip, sni = self._tls_pair(data)
+        fp = self._conn_fp.pop(getattr(data.conn, "id", None), None)
         if src_ip is not None and sni:
-            self._pin_fail_count.pop((src_ip, sni), None)
+            self._pin_fail_count.pop((src_ip, sni, fp), None)
 
     def tls_failed_client(self, data):
         """
@@ -680,11 +736,13 @@ class SecurePiAdFilter:
         tls_clienthello above - rather than trying, and failing, forever.
         """
         src_ip, sni = self._tls_pair(data)
-        self._log_event(src_ip, "tls_failed", sni=sni, module=module_for_host(self._rules, sni)[0])
+        fp = self._conn_fp.pop(getattr(data.conn, "id", None), None)
+        self._log_event(src_ip, "tls_failed", sni=sni, module=module_for_host(self._rules, sni)[0],
+                        client_fp=fp)
 
         if src_ip is None or not sni:
             return  # nothing to key a (device, host) pair on
-        key = (src_ip, sni)
+        key = (src_ip, sni, fp)
         # Keep this state small: forget bypasses that have run out, and
         # start counting afresh if a flood of distinct pairs piles up.
         now = time.time()
@@ -699,9 +757,9 @@ class SecurePiAdFilter:
         if self._pin_fail_count[key] >= threshold:
             self._pin_bypass_until[key] = time.time() + hours * 3600
             self._pin_fail_count[key] = 0
-            logger.info("securepi: %s failed the handshake for %s %d times in a row - "
-                        "bypassing (undecrypted) for %dh, likely certificate pinning",
-                        src_ip, sni, threshold, hours)
+            logger.info("securepi: %s (client %s) failed the handshake for %s %d times in a row - "
+                        "bypassing that client (undecrypted) for %dh, likely certificate pinning",
+                        src_ip, fp, sni, threshold, hours)
 
     def request(self, flow):
         """

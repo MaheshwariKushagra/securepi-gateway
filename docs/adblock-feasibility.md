@@ -97,7 +97,7 @@ Both go sites were built as modules (rules version 7 on the gateway), switched o
 | Site | Runs with ads reaching the browser, off → on | Notes |
 |---|---|---|
 | Instagram | 10/10 → **0/10** (44 ads → 0) | Needed a second rule: the first screen of the feed is embedded in the home page |
-| Facebook | 7/10 → **0/10** (15 → 0) | Marker is a non-null `th_dat_spo`; breakage not excluded at this sample size |
+| Facebook | **Partial**: scroll-loaded feed ads 5 → 0 | The first sponsored story and the right-column ads are embedded in the page; removing them broke it, so they stay |
 
 **Changes to the rules above, made before the counted runs:**
 - Both modules gained `html_json_pages: ["/"]`.

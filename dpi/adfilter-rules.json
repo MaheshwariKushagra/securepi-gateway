@@ -123,7 +123,8 @@
         {
           "op": "drop_items",
           "list_key": "edges",
-          "contains_key": "th_dat_spo"
+          "contains_key": "th_dat_spo",
+          "innermost": true
         }
       ],
       "ad_fields": [],

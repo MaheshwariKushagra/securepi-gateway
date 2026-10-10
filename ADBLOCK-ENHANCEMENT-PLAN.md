@@ -159,5 +159,7 @@ For each site:
 | F1 | Enrolment and site switches apply at once (reset the device's HTTPS connections) | **Done and deployed**: 6/6 switches applied within about 1 s, against 1/4 without the reset |
 | F2 | Short-lived CA (the current one is valid until 2036) | Skipped by the user's decision |
 | F3 | Measure in-app ads blocked by Tier 1 | **Done** (tablet, File Manager+): AdMob banner 6/6 off → 0/5 on; existing lists suffice. More apps would need the A33 |
-| F4 | **New:** key pin bypass on the client (ClientHello fingerprint) as well as device and host, so a pinned app no longer switches ad removal off for the browser on the same phone for 24 h | Open: found during F1 |
+| F4 | Key pin bypass on the client (ClientHello fingerprint) as well as device and host, so a pinned app no longer switches ad removal off for the browser on the same phone for 24 h | **Done and deployed** (10 Oct): curl bypassed, Chrome on the same device and host still decrypted. Whether the YouTube app's hello differs from Chrome's is still to check on the A33 |
+| F5 | Settle Facebook | **Done** (10 Oct): partial. Scroll-loaded ads removed; the page-embedded first story and right-column ads remain, because removing them breaks the page. Rules version 9 |
+| F6 | Desktop cosmetic selectors | **Done** (10 Oct): 2 of 8 selectors match real desktop ad elements, but with ads stripped nothing is left to hide; injection stays off |
 

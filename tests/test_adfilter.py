@@ -562,15 +562,15 @@ class TlsFailureBypassTests(unittest.TestCase):
         a = _quiet_addon()
         for _ in range(a._rules["pin_failure_threshold"]):
             a.tls_failed_client(_tls_data())
-        self.assertIn(("10.10.0.5", "www.youtube.com"), a._pin_bypass_until)
+        self.assertIn(("10.10.0.5", "www.youtube.com", None), a._pin_bypass_until)
 
     def test_the_default_threshold_is_two_failures(self):
         # 7.5: a YouTube app version retries each host only twice.
         a = _quiet_addon()
         a.tls_failed_client(_tls_data())
-        self.assertNotIn(("10.10.0.5", "www.youtube.com"), a._pin_bypass_until)
+        self.assertNotIn(("10.10.0.5", "www.youtube.com", None), a._pin_bypass_until)
         a.tls_failed_client(_tls_data())
-        self.assertIn(("10.10.0.5", "www.youtube.com"), a._pin_bypass_until)
+        self.assertIn(("10.10.0.5", "www.youtube.com", None), a._pin_bypass_until)
 
     def test_threshold_and_duration_come_from_the_rules(self):
         a = _quiet_addon()
@@ -580,7 +580,7 @@ class TlsFailureBypassTests(unittest.TestCase):
             a.tls_failed_client(_tls_data())
         self.assertEqual(a._pin_bypass_until, {})
         a.tls_failed_client(_tls_data())
-        left = a._pin_bypass_until[("10.10.0.5", "www.youtube.com")] - addon.time.time()
+        left = a._pin_bypass_until[("10.10.0.5", "www.youtube.com", None)] - addon.time.time()
         self.assertTrue(3500 < left <= 3600, left)
 
     def test_a_successful_handshake_resets_the_count(self):
@@ -589,7 +589,7 @@ class TlsFailureBypassTests(unittest.TestCase):
             a.tls_failed_client(_tls_data())
         a.tls_established_client(_tls_data())
         a.tls_failed_client(_tls_data())
-        self.assertNotIn(("10.10.0.5", "www.youtube.com"), a._pin_bypass_until)
+        self.assertNotIn(("10.10.0.5", "www.youtube.com", None), a._pin_bypass_until)
 
     def test_failures_for_another_device_do_not_count(self):
         a = _quiet_addon()

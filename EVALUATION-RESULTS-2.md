@@ -852,6 +852,66 @@ The A33 was meant to run this test but was unplugged. The tablet doesn't need to
 - `www.instagram.com` was also bypassed on the A33 after two failed handshakes, from a client that couldn't be identified (mitmproxy's log was buffered).
 - **Not fixed here.** The planned remedy is to key the bypass on the client too, using a ClientHello fingerprint, as A1 suggested. It is recorded as the next item in ADBLOCK-ENHANCEMENT-PLAN.md.
 
+### Follow-up F4: the pin bypass is per client, not per device (10 October 2026)
+
+**Problem** (found during follow-up 1). The automatic bypass for pinned apps was keyed on (device, host). Two failed handshakes from the YouTube app therefore switched decryption off for that host for every client on the phone, Chrome included, for 24 h.
+
+**Change** (`dpi/securepi_adfilter.py`). Each connection's TLS ClientHello is reduced to a fingerprint:
+- the offered cipher suites, extension types and ALPN list, sorted;
+- without GREASE values, and without padding, pre_shared_key and early_data, which come and go between connections from the same client.
+
+The bypass is keyed on (device, host, fingerprint), so it only covers clients that offer the same hello as the one that failed. An unreadable hello falls back to the old (device, host) behaviour. Every decrypt, failure and bypass line in the telemetry now carries `client_fp`, so the A33 can show whether Chrome and the YouTube app differ.
+
+**Checked with two real clients** on the same device and host (the Dell, through the test proxy):
+
+| Client | Handshakes | Result |
+|---|---|---|
+| curl (doesn't trust the test CA; fingerprint `a20820…`) | failed, failed | **bypassed**: third request went through with the real certificate (HTTP 200) |
+| Chrome 155 (trusts it; fingerprint `de7d40…`) | after curl's bypass | **still decrypted** (issuer: the test CA) |
+
+Before F4, curl's two failures would have bypassed Chrome too.
+
+**Still to check on the A33:** whether the YouTube app's hello differs from Chrome's. The app uses Cronet, Chrome's network stack, so they may look alike. If they do, the behaviour is as before for that pair, and a shorter `pin_bypass_hours` is the remaining lever.
+
+### Facebook, settled (10 October 2026)
+
+The question left open was breakage. Twenty more pairs, then a closer look at where Facebook's ads actually come from (`eval/results/sites/facebook-20261010-b.jsonl`, `-c.jsonl`):
+
+- **"No more posts" is not breakage.** The two empty "on" feeds earlier showed Facebook's own "No more posts - add more friends" page. With the measurement extended to detect it, it also appears with Facebook **off**: this account's feed is thin and runs out.
+- **Two kinds of Facebook ad were never counted.** Ads also arrive **inside the home page itself**, not only in the feed requests the measurement read:
+  - the first sponsored story, as a prefetched streamed chunk;
+  - the right-column "Sponsored" unit (`viewer.auxColumnUnits`, items with `sponsored_data`).
+- **Removing them breaks the page, so they are not removed.** Tried on the test proxy only, three loads per variant:
+
+  | Rule tried | Result |
+  |---|---|
+  | Drop the page-embedded sponsored chunk (new `innermost` option, so only that chunk goes) | **feed stuck** after one post on loading placeholders; Relay waits for the missing chunk |
+  | Drop the right-column ad unit | ads gone, but **a page error on every load** |
+  | Drop only the ad items inside the right-column unit (`innermost`) | ads gone, still **a page error on every load** |
+
+- **Shipped rules (version 9):** fetched feed chunks marked `th_dat_spo` are dropped, and `edges` are pruned innermost (safer: never an ancestor that merely contains an ad).
+- **Measured with those rules,** 6 pairs:
+
+  | | Off | On |
+  |---|---|---|
+  | Feed ads fetched while scrolling | 5 | **0** |
+  | Feed ads in all (distinct ad ids, page-embedded included) | 11 (6/6 runs) | 6 (6/6 runs: the one embedded in the page) |
+  | Right-column "Sponsored" shown | 6/6 | 6/6 |
+  | Page errors / feeds that never loaded | 0 / 0 | 0 / 0 |
+  | Inbox renders | yes | yes |
+
+**Verdict: Facebook is partial.** Ads that load as you scroll are removed. The first sponsored story and the right-column ads are not, because removing them breaks the page. Instagram, by contrast, removes all feed ads, including the page-embedded one.
+
+The screenshots showed the user's own account, so they were kept out of the repository.
+
+### Desktop cosmetic selectors (A3, desktop half; 10 October 2026)
+
+`tools/cosmetic_probe_desktop.py` on the Dell test browser (desktop Chromium 155, logged out) through the test proxy: the home page and 4 watch pages, with YouTube switched off and on (`eval/results/cosmetic/desktop-20261010.jsonl`). `ytd-masthead`, the site's header, is not an ad and is ignored below.
+
+- **YouTube off (ads delivered):** visible `ytd-statement-banner-renderer` on the home page, and `ytd-player-legacy-desktop-watch-ads-renderer` plus `ytd-companion-slot-renderer` on the first watch page. Companion slots were present (not visible) on the others. **Two of the eight `ytd-*` selectors match real elements.**
+- **YouTube on (ads stripped):** **no ad-shaped element at all**, and no selector matches. Stripping the ad data stops YouTube creating the ad boxes, so no empty box is left. The video element was present on every page.
+- **Decision:** cosmetic injection stays off on desktop too, as on mobile. The selectors stay as a verified fallback.
+
 ### Follow-up 3: in-app ads from ad networks, blocked by Tier 1 (10 October 2026)
 
 Apps pin their certificates, so Tier 2 can't reach them. But ads that apps load from ad networks (AdMob and the like) come from the networks' own domains, so DNS filtering can block them.

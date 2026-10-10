@@ -370,5 +370,137 @@ class ModuleValidationTests(unittest.TestCase):
         self.assertTrue(rules["modules"]["youtube"]["cosmetic_selectors"])
 
 
+def hello(ciphers, ext_types, alpn=(b"h2", b"http/1.1"), sni="www.youtube.com"):
+    return types.SimpleNamespace(cipher_suites=list(ciphers), extensions=[(t, b"") for t in ext_types],
+                                 alpn_protocols=list(alpn), sni=sni)
+
+
+CHROME = ([0x1301, 0x1302, 0x1303, 0xc02b], [0, 10, 11, 13, 16, 23, 35, 43, 45, 51, 65281])
+APP = ([0x1301, 0x1302, 0xc02f], [0, 10, 13, 16, 43, 45, 51])
+
+
+class ClientFingerprintTests(unittest.TestCase):
+    """F4: the pin bypass is keyed on the kind of client as well."""
+
+    def test_order_grease_and_padding_do_not_change_it(self):
+        a = addon.client_fingerprint(hello(*CHROME))
+        shuffled = addon.client_fingerprint(hello([0xAAAA] + CHROME[0][::-1],
+                                                  [0x1A1A, 21] + CHROME[1][::-1] + [41]))
+        self.assertEqual(a, shuffled)
+
+    def test_different_clients_differ(self):
+        self.assertNotEqual(addon.client_fingerprint(hello(*CHROME)), addon.client_fingerprint(hello(*APP)))
+        self.assertNotEqual(addon.client_fingerprint(hello(*CHROME)),
+                            addon.client_fingerprint(hello(*CHROME, alpn=(b"http/1.1",))))
+
+    def test_unreadable_hello_is_none(self):
+        self.assertIsNone(addon.client_fingerprint(types.SimpleNamespace(sni="x")))
+
+
+class PerClientBypassTests(unittest.TestCase):
+    """A pinned app failing twice must not switch decryption off for the
+    browser on the same device (found 10 Oct 2026 on the A33)."""
+
+    def setUp(self):
+        self.a = quiet_addon(sites=["youtube"])
+        self.n = 0
+
+    def connect(self, kind, ip="10.10.0.50"):
+        self.n += 1
+        ciphers, exts = CHROME if kind == "browser" else APP
+        data = types.SimpleNamespace(
+            client_hello=hello(ciphers, exts),
+            context=types.SimpleNamespace(client=types.SimpleNamespace(peername=(ip, 1), id="c%d" % self.n)))
+        self.a.tls_clienthello(data)
+        return data, "c%d" % self.n, not getattr(data, "ignore_connection", False)
+
+    def fail(self, conn_id, ip="10.10.0.50"):
+        self.a.tls_failed_client(types.SimpleNamespace(
+            conn=types.SimpleNamespace(sni="www.youtube.com", id=conn_id),
+            context=types.SimpleNamespace(client=types.SimpleNamespace(peername=(ip, 1)))))
+
+    def test_app_failures_bypass_the_app_only(self):
+        for _ in range(2):
+            _, cid, decrypted = self.connect("app")
+            self.assertTrue(decrypted)
+            self.fail(cid)
+        self.assertFalse(self.connect("app")[2], "the app is now passed through")
+        self.assertTrue(self.connect("browser")[2], "the browser is still decrypted")
+
+    def test_bypass_is_still_per_device(self):
+        for _ in range(2):
+            _, cid, _ = self.connect("app")
+            self.fail(cid)
+        self.assertTrue(self.connect("app", ip="10.10.0.53")[2])
+
+    def test_a_success_in_between_resets_that_clients_count(self):
+        _, cid, _ = self.connect("app")
+        self.fail(cid)
+        _, ok_id, _ = self.connect("app")
+        self.a.tls_established_client(types.SimpleNamespace(
+            conn=types.SimpleNamespace(sni="www.youtube.com", id=ok_id),
+            context=types.SimpleNamespace(client=types.SimpleNamespace(peername=("10.10.0.50", 1)))))
+        _, cid, _ = self.connect("app")
+        self.fail(cid)
+        self.assertTrue(self.connect("app")[2])
+
+
+def fb_page_json():
+    """The shape Facebook's home page embeds (10 Oct 2026 capture): nested
+    "require" lists of prefetched chunks - one organic story, one
+    sponsored - and the right column's sponsored unit."""
+    organic = ["RelayPrefetchedStreamCache", "next", [], ["adp_feed", {"__bbox": {"result": {
+        "label": "CometNewsFeed_viewerConnection$stream", "data": {"node": {"id": "organic", "th_dat_spo": None}}}}}]]
+    sponsored = ["RelayPrefetchedStreamCache", "next", [], ["adp_feed", {"__bbox": {"result": {
+        "label": "CometNewsFeed_viewerConnection$stream",
+        "data": {"node": {"id": "ad", "comet_sections": {"footer": {"story": {"th_dat_spo": {"ad_id": "7"}}}}}}}}}]]
+    aux = ["RelayPrefetchedStreamCache", "next", [], ["adp_aux", {"__bbox": {"result": {"data": {"viewer": {
+        "auxColumnUnits": {"nodes": [
+            {"id": "contacts", "item_collection": {"nodes": [{"name": "c1", "sponsored_data": None}]}},
+            {"id": "ads", "item_collection": {"nodes": [{"sponsored_data": {"ad_id": "8"}}]}}]}}}}}}]]
+    return {"require": [["ScheduledServerJS", "handle", None, [{"__bbox": {"require": [organic, sponsored, aux]}}]]]}
+
+
+class InnermostTests(unittest.TestCase):
+    OPS = [{"op": "drop_items", "list_key": "require", "contains_key": "th_dat_spo", "innermost": True},
+           {"op": "drop_items", "list_key": "nodes", "contains_key": "sponsored_data"}]
+
+    def test_only_the_smallest_matching_item_goes(self):
+        doc = fb_page_json()
+        n = addon.prune(doc, self.OPS)
+        text = json.dumps(doc)
+        self.assertNotIn('"ad_id": "7"', text)
+        self.assertNotIn('"ad_id": "8"', text)
+        self.assertIn('"organic"', text)
+        self.assertIn('"contacts"', text)
+        self.assertEqual(n, 2)
+
+    def test_without_innermost_the_whole_page_would_go(self):
+        doc = fb_page_json()
+        addon.prune(doc, [{"op": "drop_items", "list_key": "require", "contains_key": "th_dat_spo"}])
+        self.assertEqual(doc["require"], [], "the outer handle holds the ad, so it all goes - why innermost exists")
+
+    def test_innermost_must_be_boolean(self):
+        rules = adfilter_rules.default_rules()
+        rules["modules"]["site"] = {"decrypt_suffixes": ["example.org"], "prune": [
+            {"op": "drop_items", "list_key": "x", "contains_key": "y", "innermost": "yes"}]}
+        with self.assertRaises(ValueError):
+            adfilter_rules.validate_rules(rules)
+
+    def test_shipped_facebook_rules_leave_page_chunks_alone(self):
+        # Measured 10 Oct 2026: dropping the page-embedded sponsored chunk
+        # left the feed stuck on loading placeholders, and dropping the
+        # right-column ad units caused a page error on every load - so the
+        # shipped rules remove fetched feed ads only (EVALUATION-RESULTS-2.md).
+        a = quiet_addon()
+        content = json.dumps(fb_page_json()).replace("<", "\\u003c")
+        page = '<html><body><script type="application/json" data-content-len="%d" data-sjs>%s</script></body></html>' % (
+            len(content), content)
+        f = flow("www.facebook.com", "/", page, content_type="text/html; charset=utf-8")
+        a.response(f)
+        self.assertEqual(f.response.text, page)
+        self.assertEqual(a.lines, [])
+
+
 if __name__ == "__main__":
     unittest.main()

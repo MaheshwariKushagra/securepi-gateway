@@ -200,7 +200,8 @@ determines whether such failures are caught.
 | Feed advertisement renderers | Enrolled devices | ✅ removed |
 | Non-allowlisted traffic privacy | Enrolled devices | ✅ 0 hosts decrypted |
 | YouTube **app** advertisements | — | ❌ certificate pinning; out of reach by design |
-| Instagram and Facebook **web** feed ads | Devices with that site switched on | ✅ removed (§13: 0/10 runs each) |
+| Instagram **web** feed ads | Devices with that site switched on | ✅ removed (§13) |
+| Facebook **web** ads | Devices with that site switched on | ◐ partial: ads loaded while scrolling removed; the first sponsored story and right-column ads are not (removing them breaks the page) |
 | Instagram, Facebook, X, Spotify **apps** | — | ❌ pinning; pass through with ads |
 | **Ad-network ads inside apps** (AdMob and the like) | All devices, Tier 1 | ✅ blocked by DNS: banner shown 6/6 runs off → 0/5 on (one app, File Manager+) |
 | Spotify web player ads | — | ❌ no-go (needs Widevine DRM; ads from the main API host) |
@@ -264,7 +265,7 @@ look*, not a dashboard that keeps reporting success on data it hasn't actually c
 | First-party block rate, DNS only | YouTube with Tier 1 alone | **0%** — the measured boundary |
 | First-party block rate, Tier 2 | YouTube with inspection enabled | **Effective** — pre-rolls removed (7.5: 30/30 → 0/29) |
 | First-party block rate, Tier 2, Instagram web | Feed ads reaching the browser, site off vs on (§13) | **10/10 runs → 0/10** (44 ads → 0) |
-| First-party block rate, Tier 2, Facebook web | Sponsored stories reaching the browser, site off vs on (§13) | **7/10 runs → 0/10** (15 → 0); breakage not excluded |
+| First-party block rate, Tier 2, Facebook web | Ads reaching the browser, site off vs on (§13) | **Partial**: scroll-loaded feed ads 5 → 0; page-embedded first story and right-column ads remain |
 | Privacy scope | Hosts decrypted vs. passed through | 0 non-allowlisted of 56 connections |
 | DNS bypass attempts | Firewall counters | 0 hardcoded, 0 DoH, 0 DoT |
 | QUIC downgrade | Firewall counter | 112 packets in 30 min |
@@ -364,7 +365,7 @@ Each site is switched on **per device**. Enrolment alone still means YouTube onl
 
 **Results** (the Dell test browser through a localhost test proxy running the production addon; the gateway itself untouched):
 - **Instagram:** feed ads reached the browser in 10 of 10 runs with the site off and **0 of 10** with it on (44 ads → 0, visible "Sponsored" labels 3 → 0). Posts and the inbox rendered normally.
-- **Facebook:** 7 of 10 → **0 of 10** (15 sponsored stories → 0), with no page errors and the inbox rendering. Breakage can't be excluded at this sample size (one "on" run loaded no feed; not reproduced).
+- **Facebook: partial.** Ads that load as you scroll are removed (5 → 0). The first sponsored story and the right-column ads come embedded in the page itself. Removing the first left the feed stuck on loading placeholders; removing the right-column unit caused a page error on every load. Both stay, by decision. With the shipped rules: no page errors, and the inbox works.
 
 **On a real phone** (the A33's Chrome, through the real redirect):
 - **Instagram:** ads reached the phone in 4 of 6 runs with the site off, **0 of 6** with it on.
@@ -373,6 +374,7 @@ Each site is switched on **per device**. Enrolment alone still means YouTube onl
 - **Apps:** the YouTube app plays, passed through after two failed handshakes per host. The Instagram app is untouched; it never contacts the decrypted host.
 
 **What measuring taught**, in the spirit of section 6:
+- **A rule must be judged on whether the page still works, not only on whether the ad disappears.** Three Facebook rules removed their ads and were still rejected: one froze the feed, two caused a page error on every load.
 - **The first screen of a feed isn't fetched; it's embedded in the page.** A rule that only rewrote the GraphQL API left one sponsored post per load. The module now also prunes the page's embedded JSON, updating the length attribute the page checks.
 - **Ad-shaped keys appear on organic content, set to null.** Matching "has key `sponsored_data`" would have dropped organic stories. The marker that held was a *non-null* `th_dat_spo`: 6 of 6 sponsored chunks, 0 of 135 organic ones.
 

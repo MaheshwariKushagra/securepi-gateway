@@ -92,6 +92,10 @@ OPTIONAL_LIST_KEYS = ("passthrough_suffixes", "json_endpoints", "query_names", "
 #   {"op": "drop_items", "list_key": K, "contains_key": X}
 #       ... drop the objects that contain key X, with a non-null value, at
 #       any depth
+#   either drop_items form may add "innermost": true - children are pruned
+#       first, so only the SMALLEST item containing the match is dropped,
+#       never an ancestor that merely holds it somewhere below (Facebook's
+#       page wraps every prefetched feed chunk in nested "require" lists)
 #   {"op": "drop_documents", "contains_key": X}
 #       in a streamed response (several JSON documents), drop each document
 #       containing key X, non-null, at any depth (Facebook: a sponsored feed
@@ -262,12 +266,15 @@ def _validate_prune(ops):
         if not isinstance(op, dict) or op.get("op") not in PRUNE_OPS:
             raise ValueError("each prune entry needs op = %s" % " or ".join(PRUNE_OPS))
         for key, value in op.items():
-            if key != "op" and not (isinstance(value, str) and value.strip()):
+            if key == "innermost":
+                if not isinstance(value, bool):
+                    raise ValueError("prune %s: innermost must be true or false" % op["op"])
+            elif key != "op" and not (isinstance(value, str) and value.strip()):
                 raise ValueError("prune %s: %s must be a non-empty string" % (op["op"], key))
         if op["op"] == "drop_items":
             if not op.get("list_key") or bool(op.get("where")) == bool(op.get("contains_key")):
                 raise ValueError("drop_items needs list_key and exactly one of where / contains_key")
-            allowed = {"op", "list_key", "where", "contains_key"}
+            allowed = {"op", "list_key", "where", "contains_key", "innermost"}
         else:
             if not op.get("contains_key"):
                 raise ValueError("drop_documents needs contains_key")

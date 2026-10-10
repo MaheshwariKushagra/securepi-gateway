@@ -162,6 +162,17 @@ orchestrator.LOCK_PATH = os.path.join(HERE, "orchestrator.lock")
 DEMO_RULES = os.path.join(HERE, "adfilter-rules.demo.json")
 shutil.copyfile(os.path.join(REPO, "dpi/adfilter-rules.json"), DEMO_RULES)
 
+# ---- The demo password ("demo"), as a real hash file the console reads
+# itself. It used to be faked by replacing _console_password() with a
+# function returning the plain word - but since Audit10Oct H6 the login
+# re-reads the password file before issuing a session, and refuses if it
+# no longer holds what was checked, so a faked value refused every login.
+# Created when missing (the file is gitignored, so a fresh checkout has none).
+import session_auth  # noqa: E402
+DEMO_PASSWORD_FILE = os.path.join(HERE, "console-password.demo")
+if not os.path.exists(DEMO_PASSWORD_FILE):
+    session_auth.write_password_file(DEMO_PASSWORD_FILE, session_auth.hash_password("demo"))
+
 # ---- Load webapp.py with its gateway paths pointed at the repo / demo DB
 src = open(os.path.join(REPO, "app/webapp.py")).read()
 src = (src.replace('"/opt/securepi/static"', repr(os.path.join(REPO, "app/static")))
@@ -173,7 +184,7 @@ src = (src.replace('"/opt/securepi/static"', repr(os.path.join(REPO, "app/static
           # of /root in step 3.3, but still root:securepi-group-owned,
           # which this Mac has no matching group for anyway).
           .replace('CONSOLE_PASSWORD_FILE = "/etc/securepi/console-password"',
-                    "CONSOLE_PASSWORD_FILE = %r" % os.path.join(HERE, "console-password.demo"))
+                    "CONSOLE_PASSWORD_FILE = %r" % DEMO_PASSWORD_FILE)
           .replace('DPI_RULES_PATH = "/var/lib/securepi-dpi/adfilter-rules.json"',
                    "DPI_RULES_PATH = %r" % DEMO_RULES)
           .replace('"/var/log/securepi/dpi-rule-stats.json"', repr(os.path.join(HERE, "dpi-rule-stats.json"))))
@@ -181,7 +192,6 @@ webapp = types.ModuleType("webapp")
 webapp.__file__ = os.path.join(REPO, "app/webapp.py")
 sys.modules["webapp"] = webapp
 exec(compile(src, webapp.__file__, "exec"), webapp.__dict__)
-webapp._console_password = lambda: "demo"
 webapp._ca_info = lambda: {"available": True,
                            "fingerprint_sha256": "4F:9C:F9:2B:...:DEMO:ONLY",
                            "not_before": "Sep 12 08:00:00 2026 GMT", "not_after": "Sep 12 08:00:00 2028 GMT"}

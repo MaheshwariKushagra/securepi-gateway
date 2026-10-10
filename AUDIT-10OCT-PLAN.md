@@ -515,3 +515,9 @@ H9 no journal purge; no deliberate outages on the real network.*
     `sudo nft add rule inet filter forward position 32 iifname "ap0" udp dport 853 counter log prefix \"doq-bypass: \" reject comment \"doq-bypass\"`
     then `sudo cp ~/nft-staged/nftables-7B7-doq.conf /etc/nftables.conf` so it survives a reboot.
   - 3 new tests failed on the old code.
+- **7B.8 (H5, H6) done in code** (deployed with Group 2).
+  - `session_auth.reserve_login_attempt()` checks the limit and counts the attempt in one step, before the password check, with no `await` in between. `clear_attempts` on success is unchanged.
+  - The login body is refused (413) over 4 KiB, by declared length or while being read (`_read_body_capped`).
+  - After a successful check, `/login` re-reads the password file and issues no session if it changed meanwhile.
+  - A legacy rehash writes only if the file is unchanged (`rehash_if_unchanged`), under the same lock a password change takes (`replace_password`).
+  - FastAPI isn't on the Mac, so the wiring is guarded by structural tests like `test_security_headers`. 12 new tests failed on the old code.

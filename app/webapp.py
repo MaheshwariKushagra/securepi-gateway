@@ -189,6 +189,20 @@ def login_page(request: Request, next: str = Query("/"), error: Optional[str] = 
     return templates.TemplateResponse(request, "login.html", {"request": request, "next": next, "error": error})
 
 
+async def _read_body_capped(request, limit):
+    """The request body, or None if it is longer than `limit` bytes. Read
+    piece by piece, so a long body is abandoned as soon as it passes the
+    limit instead of being held in memory first."""
+    chunks = []
+    size = 0
+    async for chunk in request.stream():
+        size += len(chunk)
+        if size > limit:
+            return None
+        chunks.append(chunk)
+    return b"".join(chunks)
+
+
 @app.post("/login")
 async def do_login(request: Request):
     """Check the password, and on success issue a session cookie instead
@@ -206,8 +220,15 @@ async def do_login(request: Request):
     on anywhere, on the Mac or the gateway. A hand-rolled parse of a
     single flat field avoids that dependency entirely, in keeping with
     this project's own "plain Python" standing constraint."""
-    body = await request.body()
-    form = parse_qs(body.decode(), keep_blank_values=True)
+    # Bounded (Audit10Oct H5): a login is two short fields, and this page
+    # needs no session, so an unbounded read would let anyone on the LAN
+    # make the console buffer as much as they cared to send.
+    if session_auth.content_length_too_large(request.headers.get("content-length")):
+        return PlainTextResponse("request too large", status_code=413)
+    body = await _read_body_capped(request, session_auth.LOGIN_BODY_MAX_BYTES)
+    if body is None:
+        return PlainTextResponse("request too large", status_code=413)
+    form = parse_qs(body.decode(errors="replace"), keep_blank_values=True)
     password = form.get("password", [""])[0]
     next_path = form.get("next", ["/"])[0] or "/"
     if not next_path.startswith("/") or next_path.startswith("//"):
@@ -216,7 +237,9 @@ async def do_login(request: Request):
 
     conn = db()
     session_auth.cleanup_expired(conn)
-    if not session_auth.check_rate_limit(conn, ip):
+    # Counted now, before the password check, so concurrent attempts can't
+    # all get past the limit first (Audit10Oct H5). Cleared on success.
+    if not session_auth.reserve_login_attempt(conn, ip):
         return templates.TemplateResponse(request, "login.html", {
             "request": request, "next": next_path,
             "error": "Too many attempts from this address. Wait a few minutes and try again.",
@@ -234,10 +257,20 @@ async def do_login(request: Request):
     # run_in_threadpool runs the same plain function on a worker thread
     # and waits for its answer without blocking everything else.
     ok = stored is not None and await run_in_threadpool(session_auth.verify_password, password, stored)
+    # The check above took a moment. If the password was changed meanwhile,
+    # this login proved knowledge of the OLD one: no session for it
+    # (Audit10Oct H6) - the change has just signed every other session out.
+    if ok and not session_auth.password_file_unchanged(CONSOLE_PASSWORD_FILE, stored):
+        print("console: login from %s refused - the password changed while it was being checked" % ip,
+              flush=True)
+        return templates.TemplateResponse(request, "login.html", {
+            "request": request, "next": next_path,
+            "error": "The console password was just changed. Sign in with the new one.",
+        }, status_code=401)
     if ok:
         if session_auth.needs_rehash(stored):
             encoded = await run_in_threadpool(session_auth.hash_password, password)
-            session_auth.write_password_file(CONSOLE_PASSWORD_FILE, encoded)
+            session_auth.rehash_if_unchanged(CONSOLE_PASSWORD_FILE, stored, encoded)
         session_auth.clear_attempts(conn, ip)
         token = session_auth.create_session(conn, CONSOLE_USERNAME)
         audit.log(conn, CONSOLE_USERNAME, "auth.login", detail="ip=%s" % ip)
@@ -255,7 +288,7 @@ async def do_login(request: Request):
         )
         return response
 
-    session_auth.record_failed_attempt(conn, ip)
+    # Already counted by reserve_login_attempt() above.
     print("console: failed login attempt from %s" % ip, flush=True)
     return templates.TemplateResponse(request, "login.html", {
         "request": request, "next": next_path, "error": "Incorrect password.",
@@ -2517,7 +2550,8 @@ def api_settings_password(body: PasswordChange, request: Request):
     if body.new_password == body.current_password:
         raise HTTPException(400, "new password must be different from the current one")
     encoded = session_auth.hash_password(body.new_password)
-    session_auth.write_password_file(CONSOLE_PASSWORD_FILE, encoded)
+    # Under the same lock a login's rehash takes (Audit10Oct H6).
+    session_auth.replace_password(CONSOLE_PASSWORD_FILE, encoded)
     c = db()
     session_auth.delete_other_sessions(c, request.cookies.get(session_auth.SESSION_COOKIE))
     audit.log(c, CONSOLE_USERNAME, "settings.password_change",

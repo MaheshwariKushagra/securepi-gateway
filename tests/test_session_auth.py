@@ -221,6 +221,112 @@ class RateLimitTests(unittest.TestCase):
         self.assertTrue(session_auth.check_rate_limit(conn, ip))
 
 
+class LoginAdmissionTests(unittest.TestCase):
+    """Audit10Oct H5: attempts were only counted after the (slow) password
+    check finished, so a burst of concurrent logins all passed the limit
+    check before any of them was recorded. reserve_login_attempt() checks
+    and records in one step, before the password is checked."""
+
+    def test_a_burst_cannot_pass_the_limit_before_anything_is_recorded(self):
+        conn = fixtures.temp_db()
+        ip = "10.10.0.50"
+        admitted = [session_auth.reserve_login_attempt(conn, ip) for _ in range(25)]
+        self.assertEqual(admitted.count(True), 10)   # login_rate_limit_max_attempts default
+        self.assertFalse(admitted[-1])
+
+    def test_a_successful_login_still_clears_the_counter(self):
+        conn = fixtures.temp_db()
+        ip = "10.10.0.50"
+        for _ in range(10):
+            session_auth.reserve_login_attempt(conn, ip)
+        self.assertFalse(session_auth.reserve_login_attempt(conn, ip))
+        session_auth.clear_attempts(conn, ip)
+        self.assertTrue(session_auth.reserve_login_attempt(conn, ip))
+
+    def test_a_large_declared_body_is_refused(self):
+        self.assertTrue(session_auth.content_length_too_large(str(5 * 1024 * 1024)))
+        self.assertTrue(session_auth.content_length_too_large(str(session_auth.LOGIN_BODY_MAX_BYTES + 1)))
+        self.assertFalse(session_auth.content_length_too_large("120"))
+        self.assertFalse(session_auth.content_length_too_large(None))      # chunked: capped while reading
+        self.assertFalse(session_auth.content_length_too_large("nonsense"))
+
+
+class PasswordRaceTests(unittest.TestCase):
+    """Audit10Oct H6: a login that read the old password, then lost the
+    race to a password change, could still be issued a session - and a
+    legacy rehash could write the OLD password back over the new one."""
+
+    def setUp(self):
+        import tempfile
+        self._dir = tempfile.TemporaryDirectory()
+        self.path = os.path.join(self._dir.name, "console-password")
+        with open(self.path, "w") as fh:
+            fh.write("old-hash")
+
+    def tearDown(self):
+        self._dir.cleanup()
+
+    def test_the_file_is_recognised_as_unchanged(self):
+        self.assertTrue(session_auth.password_file_unchanged(self.path, "old-hash"))
+
+    def test_a_change_during_the_check_is_noticed(self):
+        session_auth.replace_password(self.path, "new-hash")
+        self.assertFalse(session_auth.password_file_unchanged(self.path, "old-hash"))
+
+    def test_a_missing_file_never_counts_as_unchanged(self):
+        os.remove(self.path)
+        self.assertFalse(session_auth.password_file_unchanged(self.path, "old-hash"))
+
+    def test_a_rehash_never_overwrites_a_newer_password(self):
+        session_auth.replace_password(self.path, "new-hash")
+        self.assertFalse(session_auth.rehash_if_unchanged(self.path, "old-hash", "rehash-of-old"))
+        with open(self.path) as fh:
+            self.assertEqual(fh.read(), "new-hash")
+
+    def test_a_rehash_still_happens_when_nothing_changed(self):
+        self.assertTrue(session_auth.rehash_if_unchanged(self.path, "old-hash", "rehashed"))
+        with open(self.path) as fh:
+            self.assertEqual(fh.read(), "rehashed")
+
+
+class LoginWiringTests(unittest.TestCase):
+    """Structural, like test_security_headers.py: FastAPI isn't installed
+    on the Mac, so /login's handler is read as text."""
+
+    def setUp(self):
+        import re
+        with open(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                               "app", "webapp.py")) as fh:
+            src = fh.read()
+        m = re.search(r"async def do_login\(request: Request\):\n(.*?)\n\n\n", src, re.DOTALL)
+        self.assertIsNotNone(m, "do_login not found")
+        self.body = m.group(1)
+        m = re.search(r"def api_settings_password\(.*?\n(.*?)\n\n\n", src, re.DOTALL)
+        self.assertIsNotNone(m, "api_settings_password not found")
+        self.change = m.group(1)
+
+    def test_the_attempt_is_reserved_before_the_password_check(self):
+        reserve = self.body.index("session_auth.reserve_login_attempt(")
+        verify = self.body.index("session_auth.verify_password")
+        self.assertLess(reserve, verify)
+        self.assertNotIn("record_failed_attempt", self.body)
+
+    def test_the_body_is_read_with_a_cap(self):
+        self.assertNotIn("await request.body()", self.body)
+        self.assertIn("_read_body_capped(", self.body)
+        self.assertIn("content_length_too_large(", self.body)
+
+    def test_the_password_file_is_re_read_before_a_session_is_issued(self):
+        unchanged = self.body.index("session_auth.password_file_unchanged(")
+        create = self.body.index("session_auth.create_session(")
+        self.assertLess(unchanged, create)
+        self.assertIn("session_auth.rehash_if_unchanged(", self.body)
+        self.assertNotIn("write_password_file", self.body)
+
+    def test_a_password_change_goes_through_the_same_lock(self):
+        self.assertIn("session_auth.replace_password(", self.change)
+
+
 class OriginCheckTests(unittest.TestCase):
     def test_a_missing_origin_header_is_allowed(self):
         self.assertTrue(session_auth.origin_is_allowed(None, "10.10.0.1:8000"))

@@ -38,6 +38,7 @@ import hmac
 import os
 import secrets
 import tempfile
+import threading
 import time
 
 import settings
@@ -235,7 +236,76 @@ def cleanup_expired(conn):
     conn.commit()
 
 
+# ------------------------------------------- password file, under a lock --
+# Audit10Oct H6: a login reads the password file, then spends a fraction of
+# a second checking the password. If the password is changed in that time,
+# the login must not go on to issue a session for the OLD password, and a
+# legacy rehash must not write the old password back over the new one.
+# Both writers (a password change, a rehash) take this lock, and a login
+# re-reads the file before it issues a session.
+_password_file_lock = threading.Lock()
+
+
+def password_file_unchanged(path, expected):
+    """True if the password file still holds exactly `expected` (what a
+    login read before checking the password). A missing or unreadable file
+    is never "unchanged"."""
+    try:
+        with open(path) as f:
+            return f.read().strip() == expected
+    except OSError:
+        return False
+
+
+def replace_password(path, encoded):
+    """A password change: write_password_file() under the lock."""
+    with _password_file_lock:
+        write_password_file(path, encoded)
+
+
+def rehash_if_unchanged(path, expected_old, encoded):
+    """A login's rehash of a legacy or outdated hash. Writes `encoded` only
+    if the file still holds `expected_old`; returns whether it wrote."""
+    with _password_file_lock:
+        if not password_file_unchanged(path, expected_old):
+            return False
+        write_password_file(path, encoded)
+        return True
+
+
 # --------------------------------------------------------- rate limiting --
+
+# The login form has two short fields. Anything bigger than this is not a
+# login (Audit10Oct H5: the body used to be read whole, however large).
+LOGIN_BODY_MAX_BYTES = 4096
+
+
+def content_length_too_large(header_value, limit=LOGIN_BODY_MAX_BYTES):
+    """True if a Content-Length header declares more than `limit` bytes.
+    No header (a chunked body) or a garbled one returns False - the body
+    is still capped while it is read."""
+    try:
+        return int(header_value) > limit
+    except (TypeError, ValueError):
+        return False
+
+
+def reserve_login_attempt(conn, ip):
+    """Check the limit and count this attempt in one step, BEFORE the
+    password is checked. Returns False if `ip` is over the limit.
+
+    Attempts used to be counted only after a failed check. The check is
+    slow (PBKDF2) and runs on a worker thread, so a burst of concurrent
+    logins all passed check_rate_limit() before the first failure was
+    recorded (Audit10Oct H5). The console's login handler calls this with
+    no `await` between the check and the insert, so on its single event
+    loop nothing else can slip in between. A successful login clears the
+    count (clear_attempts), as before."""
+    if not check_rate_limit(conn, ip):
+        return False
+    record_failed_attempt(conn, ip)
+    return True
+
 
 def check_rate_limit(conn, ip):
     """True if `ip` may attempt another login right now. Counts only

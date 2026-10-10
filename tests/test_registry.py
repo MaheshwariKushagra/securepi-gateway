@@ -117,6 +117,35 @@ class HostnameMergeLimitsTests(unittest.TestCase):
         self.assertEqual(self.resolve(), 1)
 
 
+class AttributionWindowTests(unittest.TestCase):
+    """Audit10Oct M10: every 2-second pass reconsidered EVERY unattributed
+    event ever stored - events from addresses no device will ever own were
+    rescanned forever - and the `limit` argument did nothing. A pass now
+    only looks at events from the last ATTRIBUTION_WINDOW_HOURS."""
+
+    def setUp(self):
+        self.conn = fixtures.temp_db()
+        fixtures.insert_device(self.conn, 1)
+        self.now = time.time()
+        self.conn.execute("INSERT INTO device_ips (device_id, ip, first_seen, last_seen) VALUES (1, '10.10.0.60', ?, ?)",
+                          (self.now - 60, self.now))
+        self.conn.commit()
+
+    def event(self, age_s):
+        self.conn.execute("INSERT INTO events (ts, ts_iso, source, event_type, src_ip, blocked)"
+                          " VALUES (?, 'test', 'suricata', 'flow', '10.10.0.60', 0)", (self.now - age_s,))
+        self.conn.commit()
+
+    def test_a_recent_event_is_attributed(self):
+        self.event(3600)
+        self.assertEqual(registry.attribute_events(self.conn), 1)
+
+    def test_an_event_older_than_the_window_is_left_alone(self):
+        self.event((registry.ATTRIBUTION_WINDOW_HOURS + 1) * 3600)
+        self.assertEqual(registry.attribute_events(self.conn), 0)
+        self.assertIsNone(self.conn.execute("SELECT device_id FROM events").fetchone()[0])
+
+
 class AttributeEventsOverlapTieBreakTests(unittest.TestCase):
     """Regression tests for finding G6: two device_ips intervals for the
     SAME address that overlap in time used to be resolved arbitrarily

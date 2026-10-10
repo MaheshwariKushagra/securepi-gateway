@@ -318,7 +318,18 @@ def mac_from_link_local(addr):
         return None
 
 
-def attribute_events(conn, limit=50000):
+# How far back each attribution pass looks for events with no device yet.
+# Every pass used to reconsider EVERY unattributed event ever stored, so
+# events from addresses no device will ever own (the gateway's own
+# traffic, test addresses) were rescanned every 2 seconds for as long as
+# retention kept them (Audit10Oct M10). An event whose device isn't known
+# within a day is left unattributed; that is the same answer the rescans
+# kept arriving at, without the cost. A module constant, not a console
+# setting: it is a cost bound, not something an operator needs to tune.
+ATTRIBUTION_WINDOW_HOURS = 24
+
+
+def attribute_events(conn, now=None):
     """
     Fill in device_id on events that do not have one yet.
 
@@ -337,6 +348,8 @@ def attribute_events(conn, limit=50000):
     """
     lan = LAN_PREFIX + "%"
     attributed = 0
+    now = now if now is not None else time.time()
+    since = now - ATTRIBUTION_WINDOW_HOURS * 3600
 
     # Pass 1 - the address interval actually contains the event's timestamp.
     # This is the only pass that is unambiguous when an address has been
@@ -363,14 +376,14 @@ def attribute_events(conn, limit=50000):
                   AND events.ts <= di.last_seen + 300
                 ORDER BY di.first_seen DESC
                 LIMIT 1)
-         WHERE device_id IS NULL AND src_ip LIKE ?
+         WHERE device_id IS NULL AND src_ip LIKE ? AND ts > ?
            AND EXISTS (
                SELECT 1 FROM device_ips di
                 WHERE di.ip = events.src_ip
                   AND events.ts >= di.first_seen
                   AND events.ts <= di.last_seen + 300)
         """,
-        (lan,),
+        (lan, since),
     ).rowcount
 
     # Pass 2 - the address has only ever belonged to one device, so the
@@ -383,18 +396,18 @@ def attribute_events(conn, limit=50000):
            SET device_id = (
                SELECT di.device_id FROM device_ips di
                 WHERE di.ip = events.src_ip LIMIT 1)
-         WHERE device_id IS NULL AND src_ip LIKE ?
+         WHERE device_id IS NULL AND src_ip LIKE ? AND ts > ?
            AND (SELECT count(DISTINCT di.device_id) FROM device_ips di
                  WHERE di.ip = events.src_ip) = 1
         """,
-        (lan,),
+        (lan, since),
     ).rowcount
 
     # Pass 3 - IPv6 link-local traffic, identified by the MAC embedded in the
     # address itself.
     rows = conn.execute(
         "SELECT DISTINCT src_ip FROM events"
-        " WHERE device_id IS NULL AND src_ip LIKE 'fe80%'"
+        " WHERE device_id IS NULL AND src_ip LIKE 'fe80%' AND ts > ?", (since,)
     ).fetchall()
     for row in rows:
         mac = mac_from_link_local(row["src_ip"])
@@ -405,8 +418,8 @@ def attribute_events(conn, limit=50000):
         ).fetchone()
         if owner:
             attributed += conn.execute(
-                "UPDATE events SET device_id = ? WHERE device_id IS NULL AND src_ip = ?",
-                (owner["device_id"], row["src_ip"]),
+                "UPDATE events SET device_id = ? WHERE device_id IS NULL AND src_ip = ? AND ts > ?",
+                (owner["device_id"], row["src_ip"], since),
             ).rowcount
 
     conn.commit()

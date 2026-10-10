@@ -107,6 +107,22 @@ class PruneIncidentsTests(unittest.TestCase):
         self.assertEqual(conn.execute("SELECT count(*) FROM incident_notes").fetchone()[0], 0)
         self.assertEqual(conn.execute("SELECT count(*) FROM notifications").fetchone()[0], 0)
 
+    def test_a_backlog_bigger_than_sqlites_variable_limit_is_pruned(self):
+        # Audit10Oct E1: every expired id went into one "IN (?, ?, ...)"
+        # list, which fails past SQLite's limit on bound variables. The
+        # limit is lowered here so the test needs only a few hundred rows.
+        import sqlite3
+        conn = fixtures.temp_db()
+        old = time.time() - 400 * DAY
+        conn.executemany(
+            "INSERT INTO incidents (device_id, signal_type, severity, title, description, status,"
+            " first_seen, last_seen, created_at, updated_at, evidence_count) VALUES"
+            " (NULL, 'port_scan', 'low', 't', 'd', 'resolved', ?, ?, ?, ?, 0)", [(old, old, old, old)] * 300)
+        conn.commit()
+        conn.setlimit(sqlite3.SQLITE_LIMIT_VARIABLE_NUMBER, 100)
+        self.assertEqual(retention.prune_incidents(conn, time.time()), 300)
+        self.assertEqual(conn.execute("SELECT count(*) FROM incidents").fetchone()[0], 0)
+
     def test_recent_incidents_are_kept(self):
         conn = fixtures.temp_db()
         fixtures.insert_device(conn, 1)

@@ -575,3 +575,7 @@ H9 no journal purge; no deliberate outages on the real network.*
   - **M14:** `webapp.OPEN_STATUSES_SQL` is built from `risk.LIVE_STATUSES` ('new', 'investigating'). All eight `status='new'` incident queries use it: dashboard counts and severity split, active feed, device list, privacy-scope failure, ad-block effectiveness, volume anomaly. `/api/incidents?status=open` is new; the notification badge uses it, and its empty text now says "No open incidents".
   - **M15:** `intel.current_indicator_sql()` is the one freshness rule, used by the blocklist writer and by the threat-intel signal's three joins. An indicator its feed stopped listing more than 30 days before the feed's latest refresh no longer raises incidents; a feed that couldn't refresh keeps its list.
   - 4 structural and 1 functional test failed on the old code.
+- **7B.16 (M10, E1) done in code.**
+  - **M10:** all three attribution passes only consider events newer than `registry.ATTRIBUTION_WINDOW_HOURS = 24` (the `ts` index bounds the scan); the unused `limit` parameter is gone. A module constant rather than the console setting the plan named, since it is a cost bound, not something to tune.
+  - **E1:** `retention.prune_incidents` deletes through a subquery, not a bound id list. Tested with SQLite's variable limit lowered to 100 and 300 expired incidents.
+  - 2 new tests failed on the old code.

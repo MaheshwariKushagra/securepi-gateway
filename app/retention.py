@@ -54,17 +54,20 @@ RUN_INTERVAL_SECONDS = 86400  # once a day
 def prune_incidents(conn, now=None):
     now = now if now is not None else time.time()
     cutoff = now - INCIDENT_RETENTION_DAYS * 86400
-    ids = [r["id"] for r in conn.execute("SELECT id FROM incidents WHERE last_seen < ?", (cutoff,))]
-    if not ids:
+    # Selected with a subquery, not a list of ids bound as "IN (?, ?, ...)":
+    # a long enough backlog went past SQLite's limit on bound variables and
+    # the whole prune failed (Audit10Oct E1).
+    expired = "SELECT id FROM incidents WHERE last_seen < ?"
+    count = conn.execute("SELECT count(*) FROM incidents WHERE last_seen < ?", (cutoff,)).fetchone()[0]
+    if not count:
         return 0
-    placeholders = ",".join("?" * len(ids))
-    conn.execute("DELETE FROM incident_events WHERE incident_id IN (%s)" % placeholders, ids)
-    conn.execute("DELETE FROM incident_notes WHERE incident_id IN (%s)" % placeholders, ids)
+    conn.execute("DELETE FROM incident_events WHERE incident_id IN (%s)" % expired, (cutoff,))
+    conn.execute("DELETE FROM incident_notes WHERE incident_id IN (%s)" % expired, (cutoff,))
     # Notification history for these incidents too - otherwise those rows
     # outlive the incident they describe and pile up for ever (Audit.md).
-    conn.execute("DELETE FROM notifications WHERE incident_id IN (%s)" % placeholders, ids)
-    conn.execute("DELETE FROM incidents WHERE id IN (%s)" % placeholders, ids)
-    return len(ids)
+    conn.execute("DELETE FROM notifications WHERE incident_id IN (%s)" % expired, (cutoff,))
+    conn.execute("DELETE FROM incidents WHERE last_seen < ?", (cutoff,))
+    return count
 
 
 def prune_events(conn, now=None):

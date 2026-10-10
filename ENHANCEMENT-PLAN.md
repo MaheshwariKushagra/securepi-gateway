@@ -490,6 +490,20 @@ This restores feasibility Phase 10. ⚡ = run a first time **as soon as the feat
 | 7.8 | Performance: throughput + drops sweep, dashboard query latency, memory/CPU with everything on, ⚡ storage before/after retention | System table |
 | 7.9 | ~~**Usability study** (5–8 people)~~ **Replaced (3 Oct 2026, user decision): expert review.** Heuristic evaluation, cognitive walkthrough, scripted expert paths with click counts and Keystroke-Level Model times, axe-core WCAG audit, keyboard checks, all on the study's six tasks. The participant kit stays ready | Findings by severity, end-state success of expert paths, KLM time, accessibility violations. No SUS or real success rates |
 
+### Stage 7B — Audit10Oct remediation (~6½ days, before Stage 8)
+
+Triage and plan in `AUDIT-10OCT-PLAN.md`. Every finding in `Audit10Oct.md` (Codex, static, 10 Oct 2026) was checked against the code, with the 641-test baseline run and C2 reproduced. Result: 27 accepted, 13 modified, 7 rejected (M8 and M21 each get two verdicts). Twenty steps in five groups, each group gated by `make test`, compile and syntax checks and a live check:
+
+| Group | Steps | Covers |
+|---|---|---|
+| 1 Consent and enforcement | 7B.1–7B.4 | C2 removal verification, C1 deny-by-default inspection scope, M1 enrollment extension, H1 DNS-filter-independent firewall enforcement |
+| 2 Privacy and security | 7B.5–7B.9 | H9 proxy URL logging, H8 fail-open recovery, M8 DNS-over-QUIC, H5/H6 login, small fixes (H10, M7, M16, M17, M19) |
+| 3 Reliability | 7B.10–7B.13 | H4 console event loop and short write transactions, H2/H3 ingest, M3/M4 engine and notifications, M5/M6 proxy buffering |
+| 4 Correctness and data quality | 7B.14–7B.17 | H7 hostname merge, M14/M15 open statuses and intel freshness, M10/E1 bounded work, M12 polling |
+| 5 Tooling and docs | 7B.18–7B.20 | Evaluation tools, cleanup, firewall log volume |
+
+Three decisions are open (M13 idle definition, H9 journal purge, live failure-path checks). See that file's "Decisions" section.
+
 ### Stage 8 — Documentation and demonstration (~5 days, restores Day 15 / feasibility Phase 11)
 
 | Step | Work | Exit criteria |
@@ -566,6 +580,7 @@ Never cut Stage 2, steps 5.2, 5.3, 5.7, or evaluation items 7.2–7.5.
 | 6 | **6.1 done, 6.2 done, 6.3 done, 6.4 done, 6.5 done, 6.6 done, 6.7 done** | Stage 6 complete |
 | 7 | **Complete (3 Oct 2026), with 7.0 and 7.9 replaced** (see the deviations note below). 7.1-7.5, 7.7, 7.8 as measured on 2 Oct (7.2 all 15 signals 5/5; 7.3 precision 0.64 → 0.91, recall 1.00; 7.4 signatures 0/53 vs signals 53/53; 7.5 Tier 1 −83% requests, breakage 0/48, Tier 2 pre-rolls 30/30 → 0/29; 7.7 everything self-recovers; 7.8 performance) · **3 Oct:** boot faults found and fixed ("database is locked" at every boot since 20 Sep, gate timeout, attribution count, unguarded engine steps); pre-freeze fixes (uplink-aware fail-open, IDS rotation, TLD rules, malicious_domain retired, resolver tuning on, presence by association), 541 tests, tag `stage7-final` · **7.0 replaced:** held-out FPs 126 (original) → 22 (7.3) → 14 (frozen) on the Mac's benchmark; 2 clean reboot tests; rotation 361/361 lines; fail-open held through an upstream outage; 17/17 clean shutdowns; canary 265/0 · **7.9 replaced:** expert review, 6/6 expert paths, 17 findings, top 3 severity-3 queued for Stage 8 · see `EVALUATION-RESULTS-2.md` §Stage 7 | Participant study (7.9 kit) and a multi-day run remain possible future work |
 | 7A | Ad-blocking enhancement (`ADBLOCK-ENHANCEMENT-PLAN.md`): A1–A6 gaps · B0 feasibility for X/Instagram/Facebook/Spotify · B1–B5 per-site framework · C per-site modules · D fold into Stage 8 | Approved 9 Oct 2026. **A1–A6, B0–B5, C (Instagram; Facebook partial), D, follow-ups F1, F3–F6 done** (10 Oct): immediate switching, in-app ad-network blocking measured, per-client pin bypass, Facebook settled, desktop cosmetic check; F2 (short-lived CA) skipped by the user; Spotify no-go, X not verified; see that file's Progress section. Runs before Stage 8 |
+| 7B | Audit10Oct remediation (`AUDIT-10OCT-PLAN.md`): 7B.1–7B.20 in five groups | Triaged and planned 10 Oct 2026 (baseline 641 tests passing). **Not started.** Waiting for approval and three decisions (M13, H9 purge, live failure-path checks). Runs after 7A, before Stage 8 |
 | 8 | 8.1 · 8.2 · 8.3 · 8.4 | Not started. From the queued 7.9 inputs, F17 (TemplateResponse form) is done (10 Oct 2026) |
 
 **Note on 3 October (Stage 7 deviations):** the user asked for Stage 7 to

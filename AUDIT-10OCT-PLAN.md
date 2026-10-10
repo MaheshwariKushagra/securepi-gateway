@@ -481,3 +481,19 @@ H9 no journal purge; no deliberate outages on the real network.*
   - **Tests:** 13 existing addon tests relied on the old default; their fake device now has sites switched on explicitly. The new deny-by-default tests fail on the old addon (5/5). Gateway baseline before changes: the live addon and canary match `0707bcb`, nothing is enrolled, the live map is `{}`, the canary is green. 659 tests pass.
 - **7B.3 (M1) done in code** - an enrolled IP whose kernel timeout would run out before its policy is re-added with the new hours (renewal, not re-enabling: flushed IPs were already dropped from `want`). Enrollment verification now checks the timeout as well as presence. 2 of 3 new tests failed on the old code (the shortening test is a control). 662 tests pass.
 - **7B.4 (H1) done in code** - `desired_state()` asks the DNS filter for clients and the service catalogue once, up front, and only if a device-scoped DNS policy needs them. If that fails, `rules` and `clients` are marked unavailable (not converged, since a half-known rule list would delete rules), and the firewall domains are still worked out. Reconcile reports the unavailable domains as per-domain errors, so `policy_enforcement_failed` fires. An error in working out the desired state is now included in that incident too. A quarantine now applies while the DNS filter is down. 3 of 4 new tests failed on the old code (the fourth is a control). Group 1 gate: 666 tests, py_compile, shellcheck and node --check all clean.
+- **Group 1 deployed and verified live (08:09-08:10).**
+  - **Backups:** `/var/backups/securepi-7B/pre-group1-20261010-080905.tar.gz` plus `.bak-7B-g1-20261010-080905` copies of each changed file.
+  - **Deploy:** `make deploy` for app/; DPI addon and canary installed, compiled with the DPI venv's Python and both units restarted; `securepi` CLI installed. `securepi status` shows all services active, including the canary, which is now listed.
+  - **Canary:** the new canary passes on the gateway.
+  - **Live checks, test-harness device only** (`[TEST HARNESS] test-victim`, id 5, 10.10.0.221, on the isolated test bridge):
+    - enroll for Instagram only: nft element with about 1 h timeout, map `{"10.10.0.221": ["instagram"]}`;
+    - the deployed addon, using the real map, decrypts Instagram for it but **not YouTube**, and nothing for 10.10.0.50 (not in the map);
+    - extend to 3 h: kernel timeout 10,799 s;
+    - reconcile: no errors, no drift;
+    - end: set and map both empty;
+    - quarantine and release: MAC in and out of the set;
+    - orchestrator healthy, no pending resets.
+  - **Journals:** no errors in engine, ingest or web since deploy. Console: login 200, unauthenticated API 401.
+  - **Not done live:** the DNS-filter-down path of 7B.4 (no deliberate outages) and the A33 checks (phone not connected).
+  - **Note for the user:** the Dell went from charger to battery between 06:32 and 08:08 (96% at 08:10). The Mac is on AC, so it isn't a power cut.
+  - **Note for the user:** the Dell test proxy's `~/securepi-browser/test-sites.json` is `{}`. Under deny-by-default it now decrypts nothing until it lists `"127.0.0.1": ["youtube", ...]`.

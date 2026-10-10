@@ -123,6 +123,42 @@ class DispatchTests(unittest.TestCase):
         notify.dispatch(self.conn, now=self.now + 60, sender=s)
         self.assertEqual(len(s.sent), 1)
 
+    # Audit10Oct M4: sends run inside the engine's 15-second cycle. A dead
+    # channel was tried for every incident in turn, each waiting up to the
+    # send timeout, which held up detection and policy reconciliation.
+
+    def test_a_failing_channel_is_tried_once_per_cycle(self):
+        for i in range(5):
+            add_incident(self.conn, title="incident %d" % i)
+        s = FakeSender(fail=True)
+        calls = []
+
+        def counting(*args):
+            calls.append(1)
+            s(*args)
+        out = notify.dispatch(self.conn, now=self.now, sender=counting)
+        self.assertEqual(len(calls), 1)
+        self.assertEqual(out["failed"], 1)
+        good = FakeSender()
+        notify.dispatch(self.conn, now=self.now + 60, sender=good)   # nothing was lost
+        self.assertEqual(len(good.sent), 5)
+
+    def test_sending_stops_at_the_cycle_budget_and_resumes_next_cycle(self):
+        self.addCleanup(setattr, notify, "CYCLE_SEND_BUDGET_S", notify.CYCLE_SEND_BUDGET_S)
+        notify.CYCLE_SEND_BUDGET_S = 0.05
+        for i in range(3):
+            add_incident(self.conn, title="incident %d" % i)
+
+        def slow(*args):
+            time.sleep(0.06)
+            FakeSender()(*args)
+        out = notify.dispatch(self.conn, now=self.now, sender=slow)
+        self.assertEqual(out["sent"], 1)
+        notify.CYCLE_SEND_BUDGET_S = 20
+        good = FakeSender()
+        notify.dispatch(self.conn, now=self.now + 60, sender=good)
+        self.assertEqual(len(good.sent), 2)
+
     def test_no_write_transaction_is_open_while_a_message_is_sent(self):
         # Audit.md H6: a slow provider must not hold SQLite's one writer
         # slot - ingest and console logins need it too.

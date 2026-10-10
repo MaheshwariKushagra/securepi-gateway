@@ -547,3 +547,7 @@ H9 no journal purge; no deliberate outages on the real network.*
   - **H3:** `parse_rfc3339()` returns None instead of "now". In the IDS, querylog-file, DPI and API readers, everything about one record is inside its own try; non-objects, wrong field types and missing times are counted in `parse_errors` and passed over, so the cursor still moves.
   - **Also found while testing H3:** a DPI line without `ts_iso` (or any row missing a required column) failed the whole batch on `NOT NULL`, which is another way to stall a source. `insert_events` now drops just that row, and DPI lines derive `ts_iso` from `ts`.
   - 7 new tests failed on the old code; one test that asserted the old fall-back-to-now behaviour now asserts None. 715 tests pass.
+- **7B.12 (M3, M4) done in code.**
+  - **Engine:** `run_step` rolls back a failed step's uncommitted writes, so the next step's commit can't save them.
+  - **Notifications:** `dispatch` keeps per-cycle limits. A channel that fails once is skipped for the rest of the cycle; its rows stay `failed` and the normal retry picks them up. Sending stops after `CYCLE_SEND_BUDGET_S = 20`, with the rest deferred, not lost.
+  - 3 new tests failed on the old code; all pass now.

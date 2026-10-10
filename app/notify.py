@@ -50,6 +50,9 @@ KINDS = ("ntfy", "telegram", "email", "webhook")
 SEVERITY_RANK = {"low": 1, "medium": 2, "high": 3}
 MAX_ATTEMPTS = 3
 SEND_TIMEOUT_S = 8
+# Sends run inside the engine's 15-second cycle, so one cycle spends at most
+# this long sending; anything left waits for the next cycle (Audit10Oct M4).
+CYCLE_SEND_BUDGET_S = 20
 CONSOLE_URL = "https://10.10.0.1:8000"
 
 # Which config fields each kind needs, and which of them are secrets.
@@ -362,7 +365,14 @@ def dispatch(conn, now=None, sender=None):
     pass a fake. Returns {"sent": n, "held": n, "failed": n, "digests": n}."""
     now = now if now is not None else time.time()
     sender = sender or send
-    out = {"sent": 0, "held": 0, "failed": 0, "digests": 0}
+    out = {"sent": 0, "held": 0, "failed": 0, "digests": 0, "deferred": 0}
+    # This cycle's limits (Audit10Oct M4): a channel that fails once is not
+    # tried again until the next cycle - its messages stay 'failed' and the
+    # normal retry picks them up - and sending stops once the cycle has
+    # spent CYCLE_SEND_BUDGET_S on it. A dead channel used to be tried for
+    # every incident in turn, each waiting up to SEND_TIMEOUT_S, holding
+    # up detection and policy reconciliation in the same engine loop.
+    cycle = {"failed_channels": set(), "deadline": time.monotonic() + CYCLE_SEND_BUDGET_S}
 
     state = conn.execute("SELECT * FROM notify_state WHERE id=1").fetchone()
     max_id = conn.execute("SELECT COALESCE(MAX(id), 0) FROM incidents").fetchone()[0]
@@ -397,18 +407,31 @@ def dispatch(conn, now=None, sender=None):
                 continue  # already handled - the one-per-incident guarantee
             nid = cur.lastrowid
             _try_send(conn, sender, ch, config, nid, title, body, inc["severity"],
-                      {"type": "incident", "incident_id": inc["id"]}, now, out)
+                      {"type": "incident", "incident_id": inc["id"]}, now, out, cycle)
     conn.execute("UPDATE notify_state SET last_incident_id=? WHERE id=1", (max_id,))
     conn.commit()
 
-    _retry_failed(conn, sender, channels, now, out, quiet, limit)
+    _retry_failed(conn, sender, channels, now, out, quiet, limit, cycle)
     if not quiet:
-        _send_digests(conn, sender, channels, now, out)
+        _send_digests(conn, sender, channels, now, out, cycle)
     conn.commit()
     return out
 
 
-def _try_send(conn, sender, ch, config, nid, title, body, severity, event, now, out):
+def _may_send(ch, cycle, out):
+    """False if this channel already failed this cycle, or the cycle's send
+    budget is spent. What isn't sent stays queued for a later cycle."""
+    if cycle is None:
+        return True
+    if ch["id"] in cycle["failed_channels"] or time.monotonic() > cycle["deadline"]:
+        out["deferred"] += 1
+        return False
+    return True
+
+
+def _try_send(conn, sender, ch, config, nid, title, body, severity, event, now, out, cycle=None):
+    if not _may_send(ch, cycle, out):
+        return
     # Commit BEFORE the network call. SQLite allows one writer at a time,
     # and an uncommitted write keeps that slot for as long as it's open -
     # so waiting up to SEND_TIMEOUT_S on a slow provider (per channel, per
@@ -428,10 +451,12 @@ def _try_send(conn, sender, ch, config, nid, title, body, severity, event, now, 
                      (str(e), nid))
         _record_result(conn, ch["id"], False, str(e), now)
         out["failed"] += 1
+        if cycle is not None:
+            cycle["failed_channels"].add(ch["id"])
     conn.commit()
 
 
-def _retry_failed(conn, sender, channels, now, out, quiet=False, limit=None):
+def _retry_failed(conn, sender, channels, now, out, quiet=False, limit=None, cycle=None):
     """Try failed sends again. Retries follow the same rules as first
     attempts (Audit.md): nothing below high severity during quiet hours,
     and never past a channel's hourly rate limit. They used to ignore
@@ -455,12 +480,15 @@ def _retry_failed(conn, sender, channels, now, out, quiet=False, limit=None):
                "description": r["description"]}
         title, body = incident_message(inc, _device_name(conn, r["device_id"]), config.get("include_details"))
         _try_send(conn, sender, ch, config, r["id"], title, body, r["severity"],
-                  {"type": "incident", "incident_id": r["inc_id"]}, now, out)
+                  {"type": "incident", "incident_id": r["inc_id"]}, now, out, cycle)
 
 
-def _send_digests(conn, sender, channels, now, out):
+def _send_digests(conn, sender, channels, now, out, cycle=None):
     interval = settings.get(conn, "notify_digest_minutes") * 60
     for ch in channels:
+        if cycle is not None and (ch["id"] in cycle["failed_channels"]
+                                  or time.monotonic() > cycle["deadline"]):
+            continue  # the held incidents wait for a later cycle
         held = conn.execute("SELECT n.id, i.severity, i.title FROM notifications n JOIN incidents i"
                             " ON i.id = n.incident_id WHERE n.channel_id=? AND n.status='held'"
                             " ORDER BY i.id", (ch["id"],)).fetchall()
@@ -478,6 +506,8 @@ def _send_digests(conn, sender, channels, now, out):
         except NotifyError as e:
             _record_result(conn, ch["id"], False, str(e), now)
             out["failed"] += 1
+            if cycle is not None:
+                cycle["failed_channels"].add(ch["id"])
             continue
         conn.execute("INSERT INTO notifications (channel_id, incident_id, ts, status, attempts, title)"
                      " VALUES (?, NULL, ?, 'sent', 1, ?)", (ch["id"], now, title))

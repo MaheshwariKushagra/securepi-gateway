@@ -71,5 +71,32 @@ class RunCycleTests(unittest.TestCase):
         self.assertEqual(calls[-1], "heartbeat")
 
 
+class RollbackTests(unittest.TestCase):
+    """Audit10Oct M3: a failed step's half-written rows stayed pending on
+    the shared connection, and the next step's commit saved them. The
+    engine now rolls a failed step back, as ingest and correlation do."""
+
+    def test_a_failed_steps_writes_are_not_committed_by_the_next_step(self):
+        sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+        import fixtures
+        conn = fixtures.temp_db()
+
+        def half_writes_then_fails(c):
+            c.execute("INSERT INTO signal_state (signal_type, last_run_ts) VALUES ('half-written', 1)")
+            raise sqlite3.OperationalError("database is locked")
+
+        def commits(c):
+            c.execute("INSERT INTO signal_state (signal_type, last_run_ts) VALUES ('next-step', 2)")
+            c.commit()
+        engine.run_step("first", half_writes_then_fails, conn)
+        engine.run_step("second", commits, conn)
+        names = {r[0] for r in conn.execute("SELECT signal_type FROM signal_state")}
+        self.assertIn("next-step", names)
+        self.assertNotIn("half-written", names)
+
+    def test_a_step_without_a_connection_still_just_logs(self):
+        self.assertIsNone(engine.run_step("x", lambda: 1 / 0))
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -25,6 +25,17 @@ def run_step(name, fn, *args):
         return fn(*args)
     except Exception as exc:
         print("%s error: %s" % (name, exc), flush=True)
+        # Undo whatever the failed step had written but not committed.
+        # Every step shares one connection, so those rows used to be saved
+        # by the next step's commit - half of a failed step's work, kept
+        # as if it had finished (Audit10Oct M3). Ingest and correlation
+        # already roll a failed step back the same way.
+        conn = args[0] if args else None
+        if conn is not None:
+            try:
+                conn.rollback()
+            except Exception:
+                pass
         return None
 
 

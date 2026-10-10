@@ -542,3 +542,8 @@ H9 no journal purge; no deliberate outages on the real network.*
   - **401 handling:** the console JS had none, so polls failed silently after a session ended. The wrapper now sends the browser to `/login?next=<this page>`.
   - **Short transactions:** `health.check_services` asks systemd about every service first, then writes. `check_platform_health` commits after each check. `intel.refresh_all` commits after each feed.
   - 11 new tests failed on the old code. 711 tests pass.
+- **7B.11 (H2, H3) done in code** (deployed with Group 3, after a database backup).
+  - **H2:** when a poll's 20-page cap is hit before the watermark, the missing range is kept as a catch-up (`ingest_state.catchup_cursor/floor/ceiling`; three new columns in `SCHEMA_MIGRATIONS` and `schema.sql`) and drained `AGH_CATCHUP_PAGES_PER_POLL` pages at a time, inserting only entries strictly inside the range. A fake paging API with a 25-entry backlog (page size 2, cap 3) loses nothing and duplicates nothing, while new entries keep arriving.
+  - **H3:** `parse_rfc3339()` returns None instead of "now". In the IDS, querylog-file, DPI and API readers, everything about one record is inside its own try; non-objects, wrong field types and missing times are counted in `parse_errors` and passed over, so the cursor still moves.
+  - **Also found while testing H3:** a DPI line without `ts_iso` (or any row missing a required column) failed the whole batch on `NOT NULL`, which is another way to stall a source. `insert_events` now drops just that row, and DPI lines derive `ts_iso` from `ts`.
+  - 7 new tests failed on the old code; one test that asserted the old fall-back-to-now behaviour now asserts None. 715 tests pass.

@@ -41,6 +41,9 @@ EVE_PATH = "/var/log/suricata/eve.json"
 AGH_QUERYLOG_PATH = "/opt/AdGuardHome/data/querylog.json"
 AGH_API_PAGE_SIZE = 500  # comfortably covers real accumulation between 2s polls - see read_agh_api's docstring
 AGH_API_MAX_PAGES = 20   # up to 10,000 entries per poll when catching up after a gap (restart, outage)
+# A backlog bigger than AGH_API_MAX_PAGES pages is drained over the next
+# polls, this many older pages per poll (Audit10Oct H2) - see read_agh_api.
+AGH_CATCHUP_PAGES_PER_POLL = 10
 AGH_WATERMARK_STARTUP_LOOKBACK_SECONDS = 300  # first-ever run: start 5 minutes back, not from epoch 0
 DPI_EVENTS_PATH = "/var/log/securepi/dpi-events.jsonl"
 NFT_LOG_STARTUP_LOOKBACK_SECONDS = 300  # same first-run convention as the DNS filter's watermark above
@@ -99,6 +102,10 @@ SCHEMA_MIGRATIONS = [
     "CREATE INDEX IF NOT EXISTS idx_incident_notes_incident ON incident_notes(incident_id)",
     "CREATE INDEX IF NOT EXISTS idx_events_dest_ip ON events(dest_ip)",
     "ALTER TABLE ingest_state ADD COLUMN watermark_ts REAL",
+    # Audit10Oct H2: an unfinished DNS backlog - see read_agh_api.
+    "ALTER TABLE ingest_state ADD COLUMN catchup_cursor TEXT",
+    "ALTER TABLE ingest_state ADD COLUMN catchup_floor REAL",
+    "ALTER TABLE ingest_state ADD COLUMN catchup_ceiling REAL",
     """CREATE TABLE IF NOT EXISTS saved_searches (
            id         INTEGER PRIMARY KEY,
            name       TEXT NOT NULL,
@@ -376,7 +383,11 @@ def parse_rfc3339(timestamp):
         frac = (frac[:6] if frac else "").ljust(6, "0")
         return datetime.fromisoformat("%s.%s%s" % (head, frac, offset)).timestamp()
     except Exception:
-        return time.time()
+        # None, not "now" (Audit10Oct H3): a made-up time gave a broken
+        # record a plausible-looking place in the timeline, and could move
+        # the DNS watermark past entries not yet imported. Every caller
+        # skips a record whose time is None and counts it as a parse error.
+        return None
 
 
 def to_epoch(timestamp):
@@ -396,12 +407,15 @@ def save_sensor_stats(conn, event):
     the IDS's own documented stats.capture fields, confirmed against a
     real record on the live gateway before writing this, not guessed."""
     capture = event.get("stats", {}).get("capture", {})
+    ts = to_epoch(event["timestamp"])
+    if ts is None:
+        raise ValueError("stats record with no usable timestamp")
     conn.execute(
         "INSERT INTO sensor_stats (id, ts, kernel_packets, kernel_drops, capture_errors)"
         " VALUES (1, ?, ?, ?, ?)"
         " ON CONFLICT(id) DO UPDATE SET ts=excluded.ts, kernel_packets=excluded.kernel_packets,"
         " kernel_drops=excluded.kernel_drops, capture_errors=excluded.capture_errors",
-        (to_epoch(event["timestamp"]), capture.get("kernel_packets"),
+        (ts, capture.get("kernel_packets"),
          capture.get("kernel_drops"), capture.get("errors")),
     )
 
@@ -500,9 +514,17 @@ def insert_events(conn, rows):
         "dpi_action", "dpi_ads_removed", "dpi_module",
         "dhcp_params",
     ]
+    # A row missing a column the table requires would make the whole batch
+    # fail - and the caller's cursor not move, so the same batch failed on
+    # every pass after (Audit10Oct H3). Such a row is dropped on its own.
+    required = ("ts", "ts_iso", "source", "event_type")
+    complete = [r for r in rows if all(r.get(c) is not None for c in required)]
+    if len(complete) != len(rows):
+        print("ingest: dropped %d event(s) missing a required field" % (len(rows) - len(complete)),
+              file=sys.stderr, flush=True)
     placeholders = ",".join("?" for _ in columns)
     sql = "INSERT INTO events (%s) VALUES (%s)" % (",".join(columns), placeholders)
-    values = [tuple(r.get(c) for c in columns) for r in rows]
+    values = [tuple(r.get(c) for c in columns) for r in complete]
     conn.executemany(sql, values)
     return len(values)
 
@@ -593,17 +615,28 @@ def read_eve(conn):
     rows = []
     for line in lines:
         read += 1
+        # Everything about one line is inside this try, not only the JSON
+        # decoding (Audit10Oct H3). A line that is valid JSON but not an
+        # event - a bare list, a field of the wrong type, no usable time -
+        # used to raise further on, roll the whole pass back without moving
+        # the cursor, and so fail again on every pass after: one bad line
+        # stopped this source for good. Now it is counted and passed over.
         try:
             event = json.loads(line)
+            if not isinstance(event, dict):
+                raise ValueError("not a JSON object")
+            if event.get("event_type") == "stats":
+                save_sensor_stats(conn, event)
+                continue
+            if event.get("event_type") in SKIP_TYPES:
+                continue
+            row = flatten_suricata(event)
+            if row["ts"] is None:
+                raise ValueError("no usable timestamp")
         except Exception:
             errors += 1
             continue
-        if event.get("event_type") == "stats":
-            save_sensor_stats(conn, event)
-            continue
-        if event.get("event_type") in SKIP_TYPES:
-            continue
-        rows.append(flatten_suricata(event))
+        rows.append(row)
 
     saved = insert_events(conn, rows)
     if not draining_rotated_file:
@@ -708,10 +741,14 @@ def read_agh_querylog(conn):
         read += 1
         try:
             entry = json.loads(line)
+            if not isinstance(entry, dict):
+                raise ValueError("not a JSON object")
+            row = flatten_agh(entry)
+            if row["ts"] is None:
+                raise ValueError("no usable timestamp")
         except Exception:
-            errors += 1
+            errors += 1   # see read_eve: counted and passed over (Audit10Oct H3)
             continue
-        row = flatten_agh(entry)
         if row["ts"] > already_imported_up_to:
             rows.append(row)
 
@@ -814,6 +851,85 @@ def set_agh_watermark(conn, ts):
     )
 
 
+def get_agh_catchup(conn):
+    """An unfinished DNS backlog (Audit10Oct H2), as (cursor, floor,
+    ceiling), or None. `cursor` is the DNS filter's own older_than value
+    for the next page still to read; entries with floor < time < ceiling
+    are the ones still to import."""
+    row = conn.execute(
+        "SELECT catchup_cursor, catchup_floor, catchup_ceiling FROM ingest_state WHERE source='adguard_api'"
+    ).fetchone()
+    if row is None or row["catchup_cursor"] is None:
+        return None
+    return row["catchup_cursor"], row["catchup_floor"], row["catchup_ceiling"]
+
+
+def set_agh_catchup(conn, catchup):
+    cursor, floor, ceiling = catchup if catchup is not None else (None, None, None)
+    conn.execute(
+        "UPDATE ingest_state SET catchup_cursor=?, catchup_floor=?, catchup_ceiling=? WHERE source='adguard_api'",
+        (cursor, floor, ceiling),
+    )
+
+
+def _fetch_agh_pages(older_than, stop_at, max_pages):
+    """Ask the DNS filter for pages of its query log, newest first, starting
+    just below `older_than` (None: from the very newest). Stops when a page
+    reaches back to `stop_at`, when there is nothing older, or after
+    `max_pages` pages. Returns (entries, next_cursor): next_cursor is None
+    when it stopped because it was finished, or the older_than value for
+    the next page when it stopped at the page limit."""
+    entries = []
+    for _ in range(max_pages):
+        path = "/control/querylog?limit=%d" % AGH_API_PAGE_SIZE
+        if older_than:
+            path += "&older_than=%s" % urllib.parse.quote(older_than)
+        resp = adguard._request("GET", path) or {}
+        page = resp.get("data") or []
+        entries.extend(page)
+        # Newest first, so the page's last entry is its oldest.
+        if len(page) < AGH_API_PAGE_SIZE or not resp.get("oldest"):
+            return entries, None
+        last = parse_rfc3339(page[-1].get("time", ""))
+        if last is not None and last <= stop_at:
+            return entries, None
+        older_than = resp["oldest"]
+    return entries, older_than
+
+
+def _agh_rows(entries, after, before, seen):
+    """Event rows for the entries timed strictly between `after` and
+    `before` (None: no upper limit). `seen` is the poll's duplicate guard -
+    the API has no stable per-entry id, so (time, client, name, type) is the
+    best available key; query type is part of it because a device asks for
+    A and AAAA records of the same name at the same instant, and those are
+    two queries, not one. Returns (rows, newest time, entries with no usable
+    time)."""
+    rows = []
+    newest = None
+    bad = 0
+    for entry in entries:
+        ts = parse_rfc3339(entry.get("time", "")) if isinstance(entry, dict) else None
+        if ts is None:
+            bad += 1   # never imported, never moves the watermark (Audit10Oct H3)
+            continue
+        if ts <= after or (before is not None and ts >= before):
+            continue
+        question = entry.get("question") or {}
+        key = (ts, entry.get("client"), question.get("name"), question.get("type"))
+        if key in seen:
+            continue
+        seen.add(key)
+        try:
+            rows.append(flatten_agh_api(entry, ts))
+        except Exception:
+            bad += 1
+            continue
+        if newest is None or ts > newest:
+            newest = ts
+    return rows, newest, bad
+
+
 def read_agh_api(conn):
     """Poll the DNS filter's /control/querylog API - real-time, not gated on
     the DNS filter's own flush-to-disk cadence the way tailing querylog.json is
@@ -829,63 +945,61 @@ def read_agh_api(conn):
     plenty (measured live - ENHANCEMENT-PLAN.md step 6.6: roughly 950 DNS
     queries/day network-wide). After a gap - this service restarted or
     down for a while, or a real traffic spike - more than one page can
-    pile up, and taking only the newest page then jumping the watermark
-    to it silently lost everything older (Audit.md H5). So this keeps
-    asking for the next-older page (the DNS filter's `older_than` cursor, which
-    each reply supplies as "oldest") until a page reaches back to entries
-    already imported, up to AGH_API_MAX_PAGES pages per poll.
-    """
-    watermark = get_agh_watermark(conn)
-    data = []
-    older_than = None
-    for _ in range(AGH_API_MAX_PAGES):
-        path = "/control/querylog?limit=%d" % AGH_API_PAGE_SIZE
-        if older_than:
-            path += "&older_than=%s" % urllib.parse.quote(older_than)
-        resp = adguard._request("GET", path) or {}
-        page = resp.get("data") or []
-        data.extend(page)
-        # Newest first, so the page's last entry is its oldest. Stop when
-        # that already reaches the watermark, when the page wasn't full
-        # (nothing older exists), or when the DNS filter gives no cursor.
-        if len(page) < AGH_API_PAGE_SIZE or not resp.get("oldest"):
-            break
-        if parse_rfc3339(page[-1].get("time", "")) <= watermark:
-            break
-        older_than = resp["oldest"]
+    pile up, so this keeps asking for the next-older page (the DNS filter's
+    `older_than` cursor, which each reply supplies as "oldest") until a
+    page reaches back to entries already imported (Audit.md H5).
 
-    rows = []
-    newest = watermark
-    seen_this_page = set()
-    for entry in data:
-        ts = parse_rfc3339(entry.get("time", ""))
-        if ts <= watermark:
-            continue
-        # A defensive duplicate guard within one fetched page - the API
-        # has no stable per-entry id to key on, so this is the best
-        # available "have I already queued this exact entry" check.
-        # Query type is part of the key: a device asks for A and AAAA
-        # records of the same name at the same instant, and those are two
-        # different queries, not a duplicate.
-        question = entry.get("question") or {}
-        dedup_key = (ts, entry.get("client"), question.get("name"), question.get("type"))
-        if dedup_key in seen_this_page:
-            continue
-        seen_this_page.add(dedup_key)
-        rows.append(flatten_agh_api(entry, ts))
-        if ts > newest:
-            newest = ts
+    Up to AGH_API_MAX_PAGES pages per poll. If even that doesn't reach
+    back to the watermark, the watermark still moves to the newest entry -
+    but the range left behind (from the old watermark up to the oldest
+    entry fetched) is remembered as a "catch-up" and drained over the
+    following polls, AGH_CATCHUP_PAGES_PER_POLL pages at a time. Before
+    Audit10Oct H2 that range was simply never imported."""
+    watermark = get_agh_watermark(conn)
+    catchup = get_agh_catchup(conn)
+    seen = set()
+
+    # 1. Everything new since the last poll, down to the watermark.
+    data, cursor = _fetch_agh_pages(None, watermark, AGH_API_MAX_PAGES)
+    rows, newest, bad = _agh_rows(data, watermark, None, seen)
+    read = len(data)
+    if cursor is not None:
+        fetched = [parse_rfc3339(e.get("time", "")) for e in data if isinstance(e, dict)]
+        ceiling = min([t for t in fetched if t is not None], default=None)
+        if ceiling is not None and catchup is None:
+            catchup = (cursor, watermark, ceiling)
+            print("DNS-filter backlog beyond %d pages - the older entries will be caught up over the "
+                  "next polls" % AGH_API_MAX_PAGES, flush=True)
+        elif ceiling is not None:
+            # A second backlog while the first is still draining needs more
+            # than 10,000 queries in one 2-second poll, twice over. Say so
+            # rather than pretend: this range is not imported.
+            print("DNS-filter backlog: a second gap opened while an earlier one is still draining - "
+                  "entries between %.3f and %.3f are not imported" % (watermark, ceiling), flush=True)
+
+    # 2. A few more pages of an earlier backlog, if there is one.
+    if catchup is not None:
+        c_cursor, floor, ceiling = catchup
+        older, next_cursor = _fetch_agh_pages(c_cursor, floor, AGH_CATCHUP_PAGES_PER_POLL)
+        more, _, more_bad = _agh_rows(older, floor, ceiling, seen)
+        rows += more
+        bad += more_bad
+        read += len(older)
+        catchup = None if next_cursor is None else (next_cursor, floor, ceiling)
+        if catchup is None:
+            print("DNS-filter backlog caught up", flush=True)
 
     saved = insert_events(conn, rows)
-    if newest > watermark:
+    set_agh_catchup(conn, catchup)
+    if newest is not None and newest > watermark:
         set_agh_watermark(conn, newest)
     conn.execute(
         "UPDATE ingest_stats SET events_read = events_read + ?,"
-        " events_saved = events_saved + ?, last_run = ? WHERE id = 1",
-        (len(data), saved, time.time()),
+        " events_saved = events_saved + ?, parse_errors = parse_errors + ?, last_run = ? WHERE id = 1",
+        (read, saved, bad, time.time()),
     )
     conn.commit()
-    return len(data), saved, 0
+    return read, saved, bad
 
 
 def read_agh(conn):
@@ -907,8 +1021,12 @@ def flatten_dpi(entry):
     than a bespoke table, the same reasoning schema.sql's header gives for
     keeping the IDS and DNS filter on one table."""
     return {
-        "ts": entry.get("ts") or time.time(),
-        "ts_iso": entry.get("ts_iso"),
+        # The addon always writes a numeric ts. A line without one is
+        # broken, not "now" (Audit10Oct H3) - read_dpi_events skips it.
+        "ts": entry.get("ts") if isinstance(entry.get("ts"), (int, float)) else None,
+        "ts_iso": entry.get("ts_iso") or (
+            time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(entry["ts"]))
+            if isinstance(entry.get("ts"), (int, float)) else None),
         "source": "dpi",
         "event_type": "dpi_decision",
         "src_ip": entry.get("src_ip"),
@@ -953,10 +1071,15 @@ def read_dpi_events(conn):
         read += 1
         try:
             entry = json.loads(line)
+            if not isinstance(entry, dict):
+                raise ValueError("not a JSON object")
+            row = flatten_dpi(entry)
+            if row["ts"] is None:
+                raise ValueError("no usable timestamp")
         except Exception:
-            errors += 1
+            errors += 1   # see read_eve: counted and passed over (Audit10Oct H3)
             continue
-        rows.append(flatten_dpi(entry))
+        rows.append(row)
 
     saved = insert_events(conn, rows)
     save_state(conn, "dpi", DPI_EVENTS_PATH, stat.st_ino, offset)

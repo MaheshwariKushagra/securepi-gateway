@@ -189,7 +189,13 @@ CREATE TABLE IF NOT EXISTS ingest_state (
     -- watermark instead - REAL, not byte_offset's INTEGER, since the DNS filter's
     -- own timestamps carry nanosecond precision and truncating to whole
     -- seconds could re-ingest (or skip) an entry at a second boundary.
-    watermark_ts REAL
+    watermark_ts REAL,
+    -- Audit10Oct H2: an unfinished DNS-filter backlog still to import
+    -- (app/ingest.py read_agh_api): the API's older_than cursor for the next
+    -- page, and the time range (floor, ceiling) still missing.
+    catchup_cursor  TEXT,
+    catchup_floor   REAL,
+    catchup_ceiling REAL
 );
 
 -- ------------------------------------------------------------- statistics --

@@ -69,11 +69,12 @@ class ParseRfc3339Tests(unittest.TestCase):
         utc_epoch = ingest.parse_rfc3339("2026-09-12T09:27:53.123456Z")
         self.assertAlmostEqual(epoch - utc_epoch, 5 * 3600, places=0)
 
-    def test_malformed_timestamp_falls_back_to_now_rather_than_crashing(self):
-        before = time.time()
-        epoch = ingest.parse_rfc3339("not a real timestamp")
-        after = time.time()
-        self.assertTrue(before <= epoch <= after)
+    def test_malformed_timestamp_is_none_not_now(self):
+        # Audit10Oct H3: a bad timestamp used to become "now", which made
+        # up an event time and could move the DNS watermark past real,
+        # not-yet-imported entries. Callers now skip such a record.
+        self.assertIsNone(ingest.parse_rfc3339("not a real timestamp"))
+        self.assertIsNone(ingest.parse_rfc3339(""))
 
     def test_to_epoch_and_to_epoch_agh_both_delegate_to_the_same_parser(self):
         """Also the direct regression guard for the old to_epoch_agh bug:
@@ -338,6 +339,144 @@ class ReadAghApiTests(unittest.TestCase):
             result = ingest.read_agh(conn)
         m.assert_called_once()
         self.assertEqual(result, (0, 0, 0))
+
+
+class FakeQueryLogApi:
+    """The DNS filter's /control/querylog, enough of it for paging: entries
+    newest first, `limit` per page, `older_than` (a timestamp) as the cursor,
+    and "oldest" in each reply naming the page's oldest entry."""
+
+    def __init__(self):
+        self.entries = []   # (epoch, entry)
+        self.calls = 0
+
+    def add(self, minute, second):
+        t = "2026-09-14T10:%02d:%02dZ" % (minute, second)
+        entry = fixtures.make_agh_api_entry(domain="m%02ds%02d.example.com" % (minute, second), timestamp=t)
+        self.entries.append((ingest.parse_rfc3339(t), entry))
+
+    def request(self, method, path):
+        import urllib.parse
+        self.calls += 1
+        q = urllib.parse.parse_qs(urllib.parse.urlparse(path).query)
+        limit = int(q["limit"][0])
+        newest_first = sorted(self.entries, key=lambda e: -e[0])
+        if "older_than" in q:
+            cut = ingest.parse_rfc3339(q["older_than"][0])
+            newest_first = [e for e in newest_first if e[0] < cut]
+        page = newest_first[:limit]
+        if not page:
+            return {"data": [], "oldest": ""}
+        # The real API's cursor is a well-formed time even when an entry's
+        # own text is not, so it is built from the entry's real time here.
+        from datetime import datetime, timezone
+        oldest = datetime.fromtimestamp(page[-1][0], timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%fZ")
+        return {"data": [entry for _, entry in page], "oldest": oldest}
+
+
+class DnsCatchUpTests(unittest.TestCase):
+    """Audit10Oct H2: after AGH_API_MAX_PAGES pages the reader stopped and
+    moved the watermark to the newest entry, so everything older than the
+    last page it fetched - but newer than the old watermark - was never
+    imported. A backlog that big is now drained over the following polls."""
+
+    def setUp(self):
+        for name, value in (("AGH_API_PAGE_SIZE", 2), ("AGH_API_MAX_PAGES", 3), ("AGH_CATCHUP_PAGES_PER_POLL", 2)):
+            self.addCleanup(setattr, ingest, name, getattr(ingest, name))
+            setattr(ingest, name, value)
+        self.conn = fixtures.temp_db()
+        ingest.get_agh_watermark(self.conn)
+        ingest.set_agh_watermark(self.conn, ingest.parse_rfc3339("2026-09-14T09:59:59Z"))
+        self.api = FakeQueryLogApi()
+
+    def poll(self):
+        with mock.patch("adguard._request", side_effect=self.api.request):
+            ingest.read_agh_api(self.conn)
+
+    def stored(self):
+        return sorted(r[0] for r in self.conn.execute("SELECT dns_rrname FROM events"))
+
+    def test_a_backlog_beyond_the_page_cap_is_drained_without_gaps_or_duplicates(self):
+        for second in range(1, 26):
+            self.api.add(0, second)          # 25 entries; one poll reads at most 6
+        self.poll()
+        # 3 pages of new entries, then 2 pages of the backlog straight away:
+        # every poll stays bounded, whatever the backlog's size.
+        self.assertEqual(len(self.stored()), 10)
+        self.assertIsNotNone(ingest.get_agh_catchup(self.conn))
+        self.api.add(1, 0)                   # new traffic keeps arriving meanwhile
+        self.api.add(1, 1)
+        for _ in range(10):
+            self.poll()
+        expected = sorted(e["question"]["name"] for _, e in self.api.entries)
+        self.assertEqual(self.stored(), expected)
+        self.assertIsNone(ingest.get_agh_catchup(self.conn))
+        self.assertAlmostEqual(ingest.get_agh_watermark(self.conn),
+                               ingest.parse_rfc3339("2026-09-14T10:01:01Z"), places=3)
+
+    def test_an_ordinary_poll_leaves_no_catch_up_behind(self):
+        self.api.add(0, 1)
+        self.api.add(0, 2)
+        self.poll()
+        self.assertIsNone(ingest.get_agh_catchup(self.conn))
+        self.assertEqual(len(self.stored()), 2)
+
+    def test_an_entry_with_a_bad_time_is_skipped_and_never_moves_the_watermark(self):
+        self.api.add(0, 1)
+        bad = fixtures.make_agh_api_entry(domain="bad.example.com", timestamp="garbage")
+        self.api.entries.append((ingest.parse_rfc3339("2026-09-14T10:00:00.5Z"), bad))
+        self.poll()
+        self.assertEqual(self.stored(), ["m00s01.example.com"])
+        self.assertAlmostEqual(ingest.get_agh_watermark(self.conn),
+                               ingest.parse_rfc3339("2026-09-14T10:00:01Z"), places=3)
+
+
+class BadRecordTests(unittest.TestCase):
+    """Audit10Oct H3: only JSON decoding was guarded per record. A line
+    that was valid JSON but not an event (a bare list, a field of the wrong
+    type, no timestamp) raised later, the whole pass rolled back, the
+    cursor never moved, and the same line failed every pass after."""
+
+    def setUp(self):
+        import json
+        import tempfile
+        self.json = json
+        d = tempfile.TemporaryDirectory()
+        self.addCleanup(d.cleanup)
+        self.eve = os.path.join(d.name, "eve.json")
+        self.dpi = os.path.join(d.name, "dpi-events.jsonl")
+        for name, path in (("EVE_PATH", self.eve), ("DPI_EVENTS_PATH", self.dpi)):
+            patcher = mock.patch.object(ingest, name, path)
+            patcher.start()
+            self.addCleanup(patcher.stop)
+        self.conn = fixtures.temp_db()
+
+    def test_bad_ids_lines_are_counted_and_passed(self):
+        good = self.json.dumps(fixtures.make_eve_flow(dest_port=443))
+        bad_flow = dict(fixtures.make_eve_flow(dest_port=80), flow="not an object")
+        no_time = fixtures.make_eve_flow(dest_port=81)
+        no_time.pop("timestamp")
+        with open(self.eve, "w") as fh:
+            fh.write("[]\n" + self.json.dumps(bad_flow) + "\n" + self.json.dumps(no_time) + "\n"
+                     + '{"event_type": "stats", "stats": "oops"}\n' + good + "\n")
+        read, saved, errors = ingest.read_eve(self.conn)
+        self.assertEqual((read, saved, errors), (5, 1, 4))
+        with open(self.eve, "a") as fh:
+            fh.write(self.json.dumps(fixtures.make_eve_flow(dest_port=8443)) + "\n")
+        read, saved, errors = ingest.read_eve(self.conn)   # the cursor moved past them
+        self.assertEqual((read, saved, errors), (1, 1, 0))
+
+    def test_a_row_missing_a_required_column_is_dropped_not_the_batch(self):
+        good = ingest.flatten_suricata(fixtures.make_eve_flow(dest_port=443))
+        broken = dict(good, event_type=None)
+        self.assertEqual(ingest.insert_events(self.conn, [broken, good]), 1)
+
+    def test_bad_dpi_lines_are_counted_and_passed(self):
+        good = {"ts": 1790990000.5, "src_ip": "10.10.0.50", "decision": "decrypt", "sni": "m.youtube.com"}
+        with open(self.dpi, "w") as fh:
+            fh.write('[]\n{"decision": "decrypt"}\n' + self.json.dumps(good) + "\n")
+        read, saved, errors = ingest.read_dpi_events(self.conn)
+        self.assertEqual((read, saved, errors), (3, 1, 2))
 
 
 class PartialLineTests(unittest.TestCase):

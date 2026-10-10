@@ -509,7 +509,7 @@ Three decisions are open (M13 idle definition, H9 journal purge, live failure-pa
 | Step | Work | Exit criteria |
 |---|---|---|
 | 8.1 | Update the report: contribution boundary (F§17.2), deviations table (§1 here), ad-blocking chapter (new benchmark, list utility, bypass matrix, privacy-scope canary as a verification method, SSAI boundary, A12 correction), limitations, future scope | Chapters current |
-| 8.2 | **One-command installer** (`gateway/install.sh`, idempotent, includes the DPI components in an off state) | Fresh-machine install from docs alone |
+| 8.2 | **One-command installer** (`gateway/install.sh`, idempotent, includes the DPI components in an off state). Ships `requirements` files taken from the gateway's two Python environments (`pip freeze` of the console/engine Python and of `/opt/securepi-dpi`), so a reinstall gets the same versions - the repo has no dependency manifest today (Audit10Oct Q7) | Fresh-machine install from docs alone |
 | 8.3 | 15-minute demo script: F§17.4 plus slow scan, beaconing, DoH bypass blocked and detected, campaign, kill-Suricata, fail-open DNS, timed quarantine, **per-device unbreak in 30 s, schedule-based service block, the privacy-scope canary going red→safe when sabotaged, and (7A) switching Instagram on for one device: feed ads gone, inbox still loads, live-message hosts never decrypted** | Rehearsed 3×, backup video |
 | 8.4 | Close-out: purge journal, remove demo CA from the phone, rotate/destroy the DPI CA if the project is paused; (7A) end every Instagram/Facebook enrolment, stop the Dell test browser and test proxy, delete `~/securepi-browser` (test-account sessions and the test CA), and log the test accounts out of their other sessions | Done |
 

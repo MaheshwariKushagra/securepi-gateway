@@ -598,3 +598,9 @@ H9 no journal purge; no deliberate outages on the real network.*
   - **E2:** `heldout_replay.rate()` returns no rate for zero exposure instead of dividing by it.
   - **M21:** a dated note in `EVALUATION-RESULTS.md` §1 says `evaluate.py`'s latencies run from the end of each attack, and that the 7.2 battery is the reference.
   - 6 new tests (`tests/test_chaos.py`, `tests/test_heldout_replay.py`) failed on the old code.
+- **7B.19 (Q2, Q4, Q5, Q6, Q7) done.**
+  - **Q2:** `tests/test_schema_parity.py` checks everything a migration adds (columns, tables, indexes) is in a fresh `schema.sql`, and that migrating a fresh database changes nothing. It passes today, and guards future changes.
+  - **Q4:** the unused `placeholders` in `fingerprint._dhcp_params_evidence` is removed.
+  - **Q5:** the stale "stopgap" docstring was fixed in 7B.9.
+  - **Q7:** step 8.2 in `ENHANCEMENT-PLAN.md` now says the installer ships `requirements` files from `pip freeze` of both environments.
+  - **Q6:** the README test badge is updated at the end of this run.

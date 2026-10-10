@@ -190,7 +190,6 @@ def _dhcp_params_evidence(c, device_id):
         "SELECT mac FROM device_macs WHERE device_id=?", (device_id,))]
     if not macs:
         return []
-    placeholders = ",".join("?" for _ in macs)
     row = c.execute(
         "SELECT dhcp_params FROM events"
         " WHERE event_type='dhcp' AND dhcp_params IS NOT NULL"

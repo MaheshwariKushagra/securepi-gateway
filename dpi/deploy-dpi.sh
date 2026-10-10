@@ -70,7 +70,11 @@ UNIT
 
 echo "==> 3/5  starting proxy (generates our CA on first run)"
 sudo systemctl daemon-reload
-sudo systemctl enable --now securepi-dpi
+# enable, then an explicit restart: `enable --now` only STARTS a unit, so
+# re-running this script against an already-running securepi-dpi left the old
+# process (and the old unit file) in place (Audit10Oct M18).
+sudo systemctl enable securepi-dpi
+sudo systemctl restart securepi-dpi
 sleep 6
 sudo systemctl is-active securepi-dpi || { echo "FAILED - check: journalctl -u securepi-dpi -n 40"; exit 1; }
 

@@ -34,14 +34,20 @@ def seed_rules():
         return adfilter_rules.apply_defaults(adfilter_rules.validate_rules(json.load(f)))
 
 
-def quiet_addon(sites=None):
+def quiet_addon(sites="all"):
+    """A real addon on the seed rules, with disk writes switched off.
+    `sites`: "all" switches every site on for the test device (most tests
+    are about what the rules do), a list switches on just those, and None
+    leaves the real site-map loader in place (SiteSwitchTests)."""
     a = addon.SecurePiAdFilter()
     a._rules = seed_rules()
     a._ensure_rules_fresh = lambda force=False: None
     a._write_rule_stats = lambda: None
     a.lines = []
     a._log_event = lambda ip, decision, **kw: a.lines.append((decision, kw.get("module"), kw.get("ads_removed")))
-    if sites is not None:
+    if sites == "all":
+        a._sites_for = lambda ip: sorted(a._rules["modules"])
+    elif sites is not None:
         a._sites_for = lambda ip: sites
     return a
 
@@ -278,17 +284,78 @@ class SiteSwitchTests(unittest.TestCase):
         a.tls_clienthello(data)
         return not getattr(data, "ignore_connection", False)
 
-    def test_default_is_youtube_only(self):
-        a = quiet_addon()
-        a._site_map, a._site_map_mtime = {}, None
-        addon.SITE_MAP_PATH, orig = "/nonexistent/device-sites.json", addon.SITE_MAP_PATH
-        try:
-            self.assertTrue(self.hello(a, "m.youtube.com"))
-            self.assertFalse(self.hello(a, "www.instagram.com"))
-            self.assertFalse(self.hello(a, "www.facebook.com"))
-        finally:
+    def with_map(self, content):
+        """Point the addon's SITE_MAP_PATH at a temporary file holding
+        `content` (a string, written as-is), or at a missing file if None.
+        Returns a function that puts the real path back."""
+        import tempfile
+        orig = addon.SITE_MAP_PATH
+        d = tempfile.mkdtemp()
+        path = os.path.join(d, "device-sites.json")
+        if content is not None:
+            with open(path, "w") as f:
+                f.write(content)
+        addon.SITE_MAP_PATH = path
+
+        def restore():
             addon.SITE_MAP_PATH = orig
-        self.assertIn(("passthrough", "instagram", None), a.lines)
+        self.addCleanup(restore)
+        return path
+
+    def assert_nothing_decrypted(self, a, ip="10.10.0.53"):
+        for host in ("m.youtube.com", "www.youtube.com", "www.instagram.com", "www.facebook.com"):
+            self.assertFalse(self.hello(a, host, ip=ip), host)
+
+    # Audit10Oct C1: unknown scope used to mean "YouTube only", which
+    # decrypted YouTube for a device enrolled only for Instagram whenever
+    # the map was lost. Every kind of unknown now means no inspection.
+
+    def test_missing_map_means_no_inspection(self):
+        self.with_map(None)
+        a = quiet_addon(sites=None)
+        self.assert_nothing_decrypted(a)
+        self.assertIn(("passthrough", "youtube", None), a.lines)
+
+    def test_corrupt_map_means_no_inspection(self):
+        self.with_map('{"10.10.0.53": ["youtube"')
+        self.assert_nothing_decrypted(quiet_addon(sites=None))
+
+    def test_device_absent_from_the_map_is_not_inspected(self):
+        self.with_map(json.dumps({"10.10.0.99": ["youtube", "instagram"]}))
+        self.assert_nothing_decrypted(quiet_addon(sites=None))
+
+    def test_empty_entry_means_no_inspection(self):
+        self.with_map(json.dumps({"10.10.0.53": []}))
+        self.assert_nothing_decrypted(quiet_addon(sites=None))
+
+    def test_instagram_only_device_never_gets_youtube_decrypted(self):
+        self.with_map(json.dumps({"10.10.0.53": ["instagram"]}))
+        a = quiet_addon(sites=None)
+        self.assertTrue(self.hello(a, "www.instagram.com"))
+        self.assertFalse(self.hello(a, "m.youtube.com"))
+
+    def test_a_revoked_site_is_not_rewritten_on_an_already_open_connection(self):
+        # The connection was decrypted while YouTube was on; then YouTube
+        # is switched off. Even if closing the connection failed, the next
+        # response on it must pass through untouched and unlogged.
+        path = self.with_map(json.dumps({"10.10.0.53": ["youtube"]}))
+        a = quiet_addon(sites=None)
+        body = json.dumps({"adPlacements": [1], "contents": []})
+        f1 = flow("www.youtube.com", "/youtubei/v1/player", body)
+        a.response(f1)
+        self.assertNotIn("adPlacements", f1.response.text)
+        with open(path, "w") as f:
+            json.dump({"10.10.0.53": ["instagram"]}, f)
+        os.utime(path, (1, 1))   # a different mtime, so the addon re-reads it
+        a.lines.clear()
+        f2 = flow("www.youtube.com", "/youtubei/v1/player", body)
+        a.response(f2)
+        self.assertEqual(f2.response.text, body)
+        self.assertEqual(a.lines, [])
+        self.assertIn("/pagead/", a._rules["modules"]["youtube"]["blocked_paths"])
+        f3 = flow("www.youtube.com", "/pagead/1", "")
+        a.request(f3)
+        self.assertEqual(a.blocked_urls, 0)
 
     def test_switched_on_site_is_decrypted(self):
         a = quiet_addon(sites=["youtube", "instagram"])
@@ -308,7 +375,7 @@ class SiteSwitchTests(unittest.TestCase):
         orig = addon.SITE_MAP_PATH
         addon.SITE_MAP_PATH = f.name
         try:
-            a = quiet_addon()
+            a = quiet_addon(sites=None)
             self.assertTrue(self.hello(a, "www.facebook.com", ip="10.10.0.53"))
             self.assertFalse(self.hello(a, "www.facebook.com", ip="10.10.0.50"))
         finally:

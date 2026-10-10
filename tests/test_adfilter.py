@@ -542,7 +542,16 @@ def _quiet_addon():
     a._log_event = lambda *args, **kwargs: None
     a._write_rule_stats = lambda: None
     a._ensure_rules_fresh = lambda: None
+    _all_sites_on(a)
     return a
+
+
+def _all_sites_on(a):
+    """These tests are about what the rules do to a decrypted request, so
+    their test device has every site switched on. With no site map at all
+    the addon decrypts nothing (Audit10Oct C1) - that case has its own
+    tests in test_adfilter_modules.SiteSwitchTests."""
+    a._sites_for = lambda ip: sorted(a._rules["modules"])
 
 
 def _tls_data(ip="10.10.0.5", sni="www.youtube.com"):
@@ -704,6 +713,7 @@ class TelemetryModuleTests(unittest.TestCase):
     def test_decrypt_and_passthrough_lines(self):
         a = addon.SecurePiAdFilter()
         a._ensure_rules_fresh = lambda: None
+        _all_sites_on(a)
         lines = []
         a._log_event = lambda ip, decision, **kw: lines.append((decision, kw.get("module")))
         for sni in ("www.youtube.com", "example.com"):

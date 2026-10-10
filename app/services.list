@@ -14,6 +14,9 @@ securepi-ap0
 AdGuardHome
 nftables
 securepi-dpi
+# The Tier 2 privacy-scope canary (step 5.7). Added by Audit10Oct M2: it
+# is always on, so a stopped canary is a platform fault like any other.
+securepi-privacy-canary
 securepi-ca-server
 securepi-test-harness
 suricata

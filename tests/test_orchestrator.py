@@ -587,6 +587,60 @@ class EnrollSitesTests(OrchestratorTestCase):
         self.assertIn("10.10.0.31", self.b.enroll_set)
         self.assertEqual(self.site_map(), {"10.10.0.31": ["instagram"]})
 
+    # Audit10Oct C1: the site map is part of the verified change.
+
+    def test_a_failed_map_write_rolls_the_enrollment_back(self):
+        orig = orchestrator.SITE_MAP_PATH
+        orchestrator.SITE_MAP_PATH = os.path.join(tempfile.mkdtemp(), "missing-dir", "device-sites.json")
+        self.addCleanup(setattr, orchestrator, "SITE_MAP_PATH", orig)
+        with self.assertRaises(orchestrator.PolicyApplyError) as ctx:
+            self.create("enroll", 1, target="instagram", minutes=120)
+        self.assertIn("site map", str(ctx.exception))
+        self.assertEqual(self.b.enroll_set, {})
+        row = self.conn.execute("SELECT status FROM policies ORDER BY id DESC LIMIT 1").fetchone()
+        self.assertEqual(row["status"], "failed")
+
+    def test_the_map_is_written_before_the_device_is_redirected(self):
+        seen = {}
+        real_enroll = self.b.enroll
+
+        def enroll(ip, hours):
+            seen[ip] = orchestrator.read_site_map()
+            real_enroll(ip, hours)
+        self.b.enroll = enroll
+        self.create("enroll", 1, target="instagram", minutes=120)
+        self.assertEqual(seen["10.10.0.31"], {"10.10.0.31": ["instagram"]})
+
+    def test_a_map_changed_by_hand_is_put_back(self):
+        self.create("enroll", 1, target="instagram", minutes=120)
+        with open(orchestrator.SITE_MAP_PATH, "w") as f:
+            json.dump({"10.10.0.31": ["instagram", "youtube"]}, f)
+        self.reconcile()
+        self.assertEqual(self.site_map(), {"10.10.0.31": ["instagram"]})
+
+    def test_a_failed_reset_is_retried_until_it_works(self):
+        p = self.create("enroll", 1, target="instagram,youtube", minutes=120)
+        calls = []
+
+        def boom(ip):
+            calls.append(ip)
+            raise orchestrator.dpi_enroll.DpiEnrollError("conntrack missing")
+        self.b.reset_https = boom
+        self.create("enroll", 1, target="instagram", minutes=120)   # YouTube switched off
+        self.assertEqual(self.site_map(), {"10.10.0.31": ["instagram"]})
+        self.assertIsNotNone(self.conn.execute(
+            "SELECT 1 FROM audit_log WHERE action='policy.reset_failed'").fetchone())
+        self.reconcile()            # still failing: retried, and shown on the policy
+        self.assertEqual(calls, ["10.10.0.31", "10.10.0.31"])
+        active = orchestrator.active_policies(self.conn, "enroll", 1)[0]
+        self.assertIn("could not close", active["last_error"])
+        del self.b.reset_https      # the real (working) fake method again
+        self.reconcile()
+        self.assertEqual(self.resets()[-1], "10.10.0.31")
+        self.reconcile()            # nothing left to retry
+        self.assertEqual(orchestrator._pending_resets(self.conn), [])
+        self.assertEqual(self.resets().count("10.10.0.31"), 2)
+
     def test_bad_site_names_rejected(self):
         for bad in (["Instagram"], ["a b"], ["s%d" % i for i in range(9)]):
             with self.assertRaises(orchestrator.PolicyError, msg=bad):

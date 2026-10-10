@@ -65,7 +65,11 @@ since flush() below calls `nft` directly):
 """
 
 import importlib.util
+import json
+import os
+import shutil
 import sys
+import tempfile
 import time
 
 sys.path.insert(0, "/opt/securepi")
@@ -119,6 +123,10 @@ def _load_addon_fresh():
     very next run."""
     spec = importlib.util.spec_from_file_location("securepi_adfilter_canary", ADDON_PATH)
     module = importlib.util.module_from_spec(spec)
+    # Registered under its own name so wrong_decisions() can find the
+    # module an addon object came from and point its SITE_MAP_PATH at a
+    # temporary map. Replaced on every load, so it is always this file.
+    sys.modules[spec.name] = module
     spec.loader.exec_module(module)
     # Never let these synthetic checks land in the real Tier 2 telemetry
     # the analytics pages read (step 5.3) - _log_event writes to whatever
@@ -137,16 +145,14 @@ def will_decrypt(sni, addon=None):
     return not getattr(data, "ignore_connection", False)
 
 
-DEFAULT_SITES = ("youtube",)
-
-
 def expected_decisions(rules, enabled=None):
     """(host, must_decrypt) pairs covering every site module in the live
     rules (ADBLOCK-ENHANCEMENT-PLAN.md B4): each decrypt suffix and a
     subdomain of it must be decrypted - but only if that site is switched
-    on for the device (B2; `enabled`, every module if None); look-alike
-    names built from it, and each module's passthrough carve-outs, must
-    never be. Plus one ordinary host that no module may ever claim."""
+    on for the device (B2; `enabled` is a list of site names, every module
+    if None); look-alike names built from it, and each module's
+    passthrough carve-outs, must never be. Plus one ordinary host that no
+    module may ever claim."""
     checks = [(NON_ALLOWLISTED_HOST, False)]
     for name, module in rules["modules"].items():
         on = enabled is None or name in enabled
@@ -159,16 +165,54 @@ def expected_decisions(rules, enabled=None):
     return checks
 
 
+# The synthetic device every check runs as (see _FakeClient).
+CANARY_IP = _FakeClient.peername[0]
+
+
+def site_map_cases(rules):
+    """The per-device site maps the canary tries, as
+    (label, file content or None for no file at all, sites that must be on).
+
+    Until Audit10Oct C1 the canary replaced the addon's own map loader with
+    a stand-in, so it could not notice that a lost map meant "YouTube for
+    everyone". It now writes real map files and lets the addon's own
+    _sites_for() read them, including the four ways a map can be unknown -
+    every one of which must mean nothing is decrypted."""
+    every = sorted(rules["modules"])
+    one = ["youtube"] if "youtube" in rules["modules"] else every[:1]
+    return [
+        ("every site on", json.dumps({CANARY_IP: every}), every),
+        ("one site on", json.dumps({CANARY_IP: one}), one),
+        ("no site map", None, []),
+        ("unreadable site map", '{"%s": [' % CANARY_IP, []),
+        ("device not in the map", json.dumps({"198.51.100.7": every}), []),
+        ("empty entry", json.dumps({CANARY_IP: []}), []),
+    ]
+
+
 def wrong_decisions(addon):
-    """Every (host, must_decrypt) the addon gets wrong, in two passes for
-    the canary's synthetic device: with every site switched on, and with
-    none (the default a device gets - YouTube only)."""
+    """Every (host, must_decrypt) the addon gets wrong, across every case
+    in site_map_cases(), using the addon's real site-map loader."""
+    module = sys.modules[type(addon).__module__]
+    original_path = module.SITE_MAP_PATH
+    workdir = tempfile.mkdtemp(prefix="securepi-canary-")
     wrong = []
-    for enabled in (None, DEFAULT_SITES):
-        sites = sorted(addon._rules["modules"]) if enabled is None else list(enabled)
-        addon._sites_for = lambda ip, sites=sites: sites
-        wrong += [(h, must) for h, must in expected_decisions(addon._rules, enabled)
-                  if will_decrypt(h, addon) != must]
+    try:
+        for number, (label, content, on) in enumerate(site_map_cases(addon._rules)):
+            path = os.path.join(workdir, "device-sites-%d.json" % number)
+            if content is not None:
+                with open(path, "w") as f:
+                    f.write(content)
+            module.SITE_MAP_PATH = path
+            # Forget the map the previous case loaded: the addon only
+            # re-reads when the file's modification time changes.
+            addon._site_map, addon._site_map_mtime = {}, None
+            for host, must in expected_decisions(addon._rules, on):
+                if will_decrypt(host, addon) != must and (host, must) not in wrong:
+                    wrong.append((host, must))
+    finally:
+        module.SITE_MAP_PATH = original_path
+        shutil.rmtree(workdir, ignore_errors=True)
     return wrong
 
 

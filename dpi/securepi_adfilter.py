@@ -78,12 +78,16 @@ RULE_STATS_PATH = "/var/log/securepi/dpi-rule-stats.json"
 
 # Which site modules each enrolled device has switched on
 # (ADBLOCK-ENHANCEMENT-PLAN.md B2): {"10.10.0.53": ["youtube", "instagram"]},
-# written by the orchestrator from the active enroll policies. A device
-# missing from it gets DEFAULT_SITES - YouTube only, which is what
-# enrolment meant before there were other sites - so another site is only
-# ever decrypted for a device it was deliberately switched on for.
+# written by the orchestrator from the active enroll policies.
+#
+# A device that is missing from the map - or a map that is missing,
+# unreadable or empty - means NO site is switched on: nothing is decrypted
+# for that device. Until Audit10Oct C1 a missing entry meant "YouTube only",
+# which was safe while YouTube was the only site, but stopped being safe
+# once a device could be enrolled for Instagram alone: a lost map then
+# decrypted YouTube for a device that never agreed to it. Unknown scope now
+# always means less inspection, never different inspection.
 SITE_MAP_PATH = "/var/lib/securepi-dpi/device-sites.json"
-DEFAULT_SITES = ("youtube",)
 
 
 def strip_ads(node, ad_fields, ad_renderers, hits=None):
@@ -488,8 +492,12 @@ class SecurePiAdFilter:
 
     def _sites_for(self, ip):
         """The site modules switched on for this device - see SITE_MAP_PATH.
-        Re-read when the file changes. A missing or unreadable map means
-        DEFAULT_SITES for everyone: never more decryption, only less."""
+        Re-read when the file changes.
+
+        Returns an empty list - nothing decrypted - when the map is missing
+        or unreadable, when the device has no entry, or when its entry is
+        empty (Audit10Oct C1). Any doubt about what a device agreed to
+        means no inspection for it."""
         try:
             mtime = os.stat(SITE_MAP_PATH).st_mtime
             if mtime != self._site_map_mtime:
@@ -500,7 +508,36 @@ class SecurePiAdFilter:
                 self._site_map_mtime = mtime
         except (OSError, ValueError, AttributeError):
             self._site_map, self._site_map_mtime = {}, None
-        return self._site_map.get(ip) or list(DEFAULT_SITES)
+        return list(self._site_map.get(ip) or [])
+
+    @staticmethod
+    def _client_ip(flow):
+        """The device address a decrypted request came from, or None.
+        mitmproxy 12 calls it client_conn.peername (client_conn.address is
+        its deprecated alias, which the tests' fake flows use)."""
+        conn = getattr(flow, "client_conn", None)
+        for attr in ("peername", "address"):
+            try:
+                value = getattr(conn, attr, None)
+                if value:
+                    return value[0]
+            except Exception:
+                pass
+        return None
+
+    def _site_still_on(self, flow, module_name):
+        """True if the device this request came from still has this site
+        switched on.
+
+        The decrypt-or-not decision is made once per connection, in
+        tls_clienthello. When a site is switched off for a device, the
+        orchestrator closes that device's open connections so the browser
+        reconnects under the new decision - but if that reset fails, an
+        already-decrypted connection would carry on being rewritten.
+        Checking again on every request means a revoked site is never
+        modified or logged again, whatever happened to the reset
+        (Audit10Oct C1)."""
+        return module_name in self._sites_for(self._client_ip(flow))
 
     def _write_rule_stats(self):
         """Snapshot current per-rule hit counts to RULE_STATS_PATH for the
@@ -790,6 +827,8 @@ class SecurePiAdFilter:
         name, module = self._flow_module(flow)
         if module is None:
             return
+        if not self._site_still_on(flow, name):
+            return  # switched off for this device since the connection opened
         request_path = flow.request.path.split("?")[0]
         if self._never_touch(module, request_path):
             return
@@ -821,6 +860,8 @@ class SecurePiAdFilter:
         name, module = self._flow_module(flow)
         if module is None:
             return
+        if not self._site_still_on(flow, name):
+            return  # switched off for this device since the connection opened
         content_type = flow.response.headers.get("content-type", "")
         path = flow.request.path.split("?")[0]
         # Never-touch paths and responses outside the module's endpoints or

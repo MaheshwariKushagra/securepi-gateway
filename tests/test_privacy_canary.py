@@ -81,6 +81,47 @@ class CanaryTests(unittest.TestCase):
         self.assertFalse(checks["notexample.org"])
         self.assertFalse(checks["chat.example.org"])
 
+    def _broken_addon(self, find, replace):
+        """The real addon with one line changed, loaded the way the canary
+        loads it. Removed again by a cleanup."""
+        with open(ADDON) as f:
+            src = f.read()
+        self.assertIn(find, src)
+        with tempfile.NamedTemporaryFile("w", suffix=".py", dir=os.path.join(REPO, "dpi"),
+                                         delete=False) as f:
+            f.write(src.replace(find, replace))
+        self.addCleanup(os.remove, f.name)
+        privacy_canary.ADDON_PATH = f.name
+        return self._addon()
+
+    def test_the_old_youtube_fallback_is_caught(self):
+        # Audit10Oct C1: an unknown device used to get YouTube. The canary
+        # now drives the real loader, so that fallback is reported as a
+        # leak (YouTube decrypted with no site switched on).
+        addon = self._broken_addon("return list(self._site_map.get(ip) or [])",
+                                   'return self._site_map.get(ip) or ["youtube"]')
+        leaked = [h for h, must in privacy_canary.wrong_decisions(addon) if not must]
+        self.assertIn("youtube.com", leaked)
+
+    def test_the_canary_uses_the_real_site_map_loader(self):
+        addon = self._addon()
+        seen = []
+        real = addon._sites_for
+
+        def spy(ip):
+            seen.append(ip)
+            return real(ip)
+        addon._sites_for = spy
+        self.assertEqual(privacy_canary.wrong_decisions(addon), [])
+        self.assertIn(privacy_canary.CANARY_IP, seen)
+
+    def test_the_real_map_path_is_put_back(self):
+        addon = self._addon()
+        module = sys.modules[type(addon).__module__]
+        before = module.SITE_MAP_PATH
+        privacy_canary.wrong_decisions(addon)
+        self.assertEqual(module.SITE_MAP_PATH, before)
+
     def test_the_ignore_conn_typo_is_caught(self):
         # The report's §6 bug: the wrong attribute name means nothing is
         # ever passed through.

@@ -141,6 +141,12 @@ class OrchestratorBusy(Exception):
     """Another process held the lock for too long."""
 
 
+class SiteMapError(Exception):
+    """The Tier 2 site map (SITE_MAP_PATH) could not be written. Treated like
+    any other enforcement point refusing a change: the change is rolled
+    back, or reconcile reports it, instead of being called applied."""
+
+
 # ------------------------------------------------------------------ lock --
 
 _local = threading.local()
@@ -255,7 +261,8 @@ class Backends:
         return adguard.service_catalog()
 
 
-BACKEND_ERRORS = (adguard.AdGuardError, firewall_sets.FirewallSetError, dpi_enroll.DpiEnrollError)
+BACKEND_ERRORS = (adguard.AdGuardError, firewall_sets.FirewallSetError, dpi_enroll.DpiEnrollError,
+                  SiteMapError)
 
 
 def _backends(b):
@@ -400,23 +407,41 @@ def policy_sites(target):
     return target.split(",") if target else list(DEFAULT_SITES)
 
 
+def _site_map_wanted(enrolled):
+    """{ip: [sites]} for the addon, from the enrolled part of the desired
+    state. An enrollment adopted from the CLI carries no site list and
+    means YouTube only, as an enrollment without a target always has."""
+    return {ip: info.get("sites") or list(DEFAULT_SITES) for ip, info in sorted(enrolled.items())}
+
+
+def read_site_map(path=None):
+    """The site map as the addon will read it, or None if it is missing or
+    unreadable."""
+    try:
+        with open(path or SITE_MAP_PATH) as f:
+            data = json.load(f)
+    except (OSError, ValueError):
+        return None
+    return data if isinstance(data, dict) else None
+
+
 def write_site_map(enrolled, path=None):
     """Write {ip: [sites]} for the addon, only when it changed. Returns the
-    IPs whose entry changed (added, removed or different sites). A failure
-    is reported, never raised: without the file the addon falls back to
-    YouTube only for every device - less decryption, never more."""
+    IPs whose entry changed (added, removed or different sites).
+
+    Raises SiteMapError if the file can't be written. This used to print
+    and return [] - "nothing changed" - so an older, wider map stayed in
+    force while the change was reported as applied (Audit10Oct C1). The
+    addon treats a missing or unreadable map as "nothing switched on", so
+    a failure here can only ever mean less inspection, and the caller now
+    hears about it."""
     path = path or SITE_MAP_PATH
-    want = {ip: info.get("sites") or list(DEFAULT_SITES) for ip, info in sorted(enrolled.items())}
-    try:
-        with open(path) as f:
-            before = json.load(f)
-    except (OSError, ValueError):
-        before = {}
-    if not isinstance(before, dict):
-        before = {}
+    want = _site_map_wanted(enrolled)
+    before = read_site_map(path) or {}
     changed = sorted(ip for ip in set(before) | set(want) if before.get(ip) != want.get(ip))
     if not changed and os.path.exists(path):
         return []
+    tmp = None
     try:
         fd, tmp = tempfile.mkstemp(prefix=".device-sites.", dir=os.path.dirname(path))
         with os.fdopen(fd, "w") as f:
@@ -425,20 +450,69 @@ def write_site_map(enrolled, path=None):
         os.replace(tmp, path)
         return changed
     except OSError as e:
-        print("orchestrator: could not write %s: %s" % (path, e), flush=True)
-        return []
+        if tmp and os.path.exists(tmp):
+            try:
+                os.remove(tmp)
+            except OSError:
+                pass
+        raise SiteMapError("could not write the HTTPS inspection site map %s: %s" % (path, e))
 
 
-def sync_sites(b, enrolled):
-    """Write the site map, then reset the open HTTPS connections of every
-    device whose enrolment or sites just changed, so the change applies
-    now and not only to connections its browser opens later. A failed
-    reset is reported, not raised: the change itself has been made."""
-    for ip in write_site_map(enrolled):
+def _site_map_matches(enrolled, path=None):
+    """Read-back for the site map: does the file hold exactly the sites
+    the desired state asks for?"""
+    return read_site_map(path) == _site_map_wanted(enrolled)
+
+
+def _pending_resets(conn):
+    return list(_load_state(conn)["extra"].get("pending_resets") or [])
+
+
+def _save_pending_resets(conn, ips):
+    state = _load_state(conn)
+    extra = state["extra"]
+    extra["pending_resets"] = sorted(set(ips))
+    conn.execute("UPDATE orchestrator_state SET extra=? WHERE id=1", (json.dumps(extra),))
+    conn.commit()
+
+
+def reset_connections(conn, b, ips):
+    """Close the open HTTPS connections of `ips`, plus any device whose
+    reset failed before, so a change to its enrolment or sites applies now
+    and not only to connections its browser opens later.
+
+    A failed reset is not a reason to undo the change itself - the change
+    is made, and the addon re-checks the device's sites on every request,
+    so a switched-off site is never rewritten again either way. But it is
+    no longer forgotten (Audit10Oct C1): the address is kept in
+    orchestrator_state and retried by every reconcile until it works, the
+    first failure is written to the audit log, and reconcile shows it on
+    the device's enrollment as last_error. Returns the IPs still failing."""
+    previously = _pending_resets(conn)
+    todo = sorted(set(ips) | set(previously))
+    failed = []
+    for ip in todo:
         try:
             b.reset_https(ip)
         except BACKEND_ERRORS as e:
             print("orchestrator: %s" % e, flush=True)
+            failed.append(ip)
+            if ip not in previously:
+                audit.log(conn, ACTOR, "policy.reset_failed", target=ip,
+                          detail="could not close the open HTTPS connections of %s (%s) - "
+                                 "the change applies to new connections; retrying every cycle" % (ip, e))
+    if sorted(failed) != sorted(previously):
+        _save_pending_resets(conn, failed)
+    return failed
+
+
+def sync_sites(conn, b, enrolled):
+    """Write the site map, then reset the open HTTPS connections of every
+    device whose enrolment or sites just changed (and retry any earlier
+    failed reset). Raises SiteMapError if the map can't be written."""
+    changed = write_site_map(enrolled)
+    reset_connections(conn, b, changed)
+    return changed
 
 
 # --------------------------------------------------------------- policies --
@@ -836,8 +910,14 @@ def _domain_matches(domain, want, have, applied, now):
     if domain == "protection":
         return bool(have["enabled"]) == bool(want["enabled"])
     if domain == "enrolled":
-        return set(want) <= set(have) and not any(
-            ip in have for ip in (applied.get("enrolled") or {}) if ip not in want)
+        if not set(want) <= set(have):
+            return False
+        if any(ip in have for ip in (applied.get("enrolled") or {}) if ip not in want):
+            return False
+        # The site map is part of an enrollment: the firewall decides who
+        # is redirected, the map decides which sites are then decrypted.
+        # Both are read back (Audit10Oct C1).
+        return _site_map_matches(want)
     raise ValueError(domain)
 
 
@@ -968,9 +1048,15 @@ def _converge_enrolled(conn, b, want, have, applied_enrolled, now):
     come back: _reconcile_enrolled must run first (both reconcile() and
     _apply_and_verify do this), and it removes from `want` any enrollment
     that was flushed or cleared by a reboot."""
+    # Order matters (Audit10Oct C1). Redirects that are going away are
+    # removed first; then the site map is written; only then are new
+    # redirects added. A device is therefore never redirected to the proxy
+    # while its map entry is missing or out of date - and if the map write
+    # fails, nothing new is redirected at all.
     for ip in list(have):
         if ip not in want and ip in applied_enrolled:
             b.unenroll(ip)
+    changed = write_site_map(want)
     record = {}
     for ip, info in want.items():
         if ip not in have:
@@ -980,9 +1066,9 @@ def _converge_enrolled(conn, b, want, have, applied_enrolled, now):
         conn.execute("UPDATE policies SET applied_state=? WHERE id=?",
                      (json.dumps({"ip": ip}), info["policy_id"]))
     conn.commit()
-    # After the firewall change: write the sites, and reset the open
-    # connections of every device whose enrolment or sites changed.
-    sync_sites(b, want)
+    # Last: close the open connections of every device whose enrolment or
+    # sites changed, so the change applies straight away.
+    reset_connections(conn, b, changed)
     return record
 
 
@@ -1437,8 +1523,9 @@ def reconcile(conn, backends=None, now=None):
                         summary["drift"].extend(notes)
                         drifted = False
                         # Every cycle: a device's IP can change under the
-                        # same enrollment, and the map is keyed by IP.
-                        sync_sites(b, desired["enrolled"])
+                        # same enrollment, and the map is keyed by IP. Also
+                        # retries any reset that failed earlier.
+                        sync_sites(conn, b, desired["enrolled"])
                     if not _domain_matches(d, desired[d], have, applied, now):
                         if drifted and not restored_after_boot:
                             summary["drift"].append(_describe_drift(d, desired, have, applied, now))
@@ -1466,6 +1553,15 @@ def reconcile(conn, backends=None, now=None):
                     bad = [d for d in KIND_DOMAINS[p["kind"]] if d not in ok_domains]
                     conn.execute("UPDATE policies SET last_error=? WHERE id=?",
                                  ("; ".join(summary["errors"].get(d, "not checked") for d in bad), p["id"]))
+            # A device whose open connections could not be closed after a
+            # change: shown on its enrollment until a retry works.
+            pending = _pending_resets(conn)
+            if pending:
+                for ip, info in desired["enrolled"].items():
+                    if ip in pending:
+                        conn.execute("UPDATE policies SET last_error=? WHERE id=?",
+                                     ("could not close this device's open HTTPS connections after the "
+                                      "last change - it applies to new connections; retrying", info["policy_id"]))
 
         for note in summary["drift"]:
             audit.log(conn, ACTOR, "policy.drift_corrected", target="orchestrator", detail=note)
@@ -1489,6 +1585,10 @@ def reconcile(conn, backends=None, now=None):
                 ". It will keep retrying every cycle.",
                 now, now, [])
 
+        # reset_connections() keeps its retry list in orchestrator_state
+        # while this cycle runs; carry it over rather than writing back the
+        # copy read at the start.
+        extra["pending_resets"] = _pending_resets(conn)
         conn.execute(
             "UPDATE orchestrator_state SET applied=?, boot_id=?, last_run=?, last_ok=?, last_error=?,"
             " domains=?, extra=? WHERE id=1",

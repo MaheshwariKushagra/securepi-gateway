@@ -144,7 +144,18 @@ for l in leases:
     # The redirect is decided when a connection opens, so a browser keeps
     # its existing connections (inspected or not) until they close - in
     # 7.5, pre-rolls kept playing until Chrome reconnected.
-    echo "   applies to new connections: restart the browser on the device, or wait a few minutes"
+    #
+    # Since Audit10Oct C1 the proxy decrypts nothing for a device that has
+    # no entry in the site map, and only the orchestrator writes that map.
+    # A CLI enrollment is adopted by the engine's next cycle (about 15 s),
+    # which writes the device's entry (YouTube only) and closes its open
+    # connections; until then the device is redirected but not decrypted.
+    if [ "$1" = "enroll" ]; then
+        echo "   YouTube inspection starts within about 15 s, once the engine adopts this enrollment"
+        echo "   (for other sites, enroll the device from the console instead)"
+    else
+        echo "   applies to new connections: restart the browser on the device, or wait a few minutes"
+    fi
     ;;
 
   *)

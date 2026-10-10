@@ -36,7 +36,11 @@ WantedBy=multi-user.target
 UNIT
 
 sudo systemctl daemon-reload
-sudo systemctl enable --now securepi-privacy-canary
+# enable, then an explicit restart: `enable --now` only STARTS a unit, so
+# re-running this script against an already-running securepi-privacy-canary left the old
+# process (and the old unit file) in place (Audit10Oct M18).
+sudo systemctl enable securepi-privacy-canary
+sudo systemctl restart securepi-privacy-canary
 sleep 3
 sudo systemctl is-active securepi-privacy-canary || {
     echo "FAILED - check: journalctl -u securepi-privacy-canary -n 40"; exit 1;

@@ -121,10 +121,17 @@ def check_services(conn, now):
     every currently-inactive service - not one incident per service,
     since several going down at once (e.g. a reboot) is one platform
     event to triage, not a cascade of separate rows."""
-    down = []
+    # Ask systemd about every service FIRST, then write all the rows in one
+    # short transaction. Writing as it went kept SQLite's single write lock
+    # held across every systemctl call that followed (Audit10Oct H4).
+    results = []
     for service in _services_to_check():
         active = _is_active(service)
         mem, cpu = _resource_usage(service)
+        results.append((service, active, mem, cpu))
+
+    down = []
+    for service, active, mem, cpu in results:
         conn.execute(
             "INSERT INTO service_health (service, checked_at, is_active, memory_bytes, cpu_seconds)"
             " VALUES (?, ?, ?, ?, ?)"
@@ -313,7 +320,11 @@ def check_platform_health(conn, now=None):
             check(conn, now)
         except Exception as exc:
             print("health check %s failed: %s" % (check.__name__, exc), flush=True)
-    conn.commit()
+        # Commit after EACH check, not once at the end: the later checks
+        # ping, probe the proxy and run subprocesses, and an uncommitted
+        # write from an earlier check would hold SQLite's write lock all
+        # that time (Audit10Oct H4).
+        conn.commit()
 
 
 def run_if_due(conn, now=None):

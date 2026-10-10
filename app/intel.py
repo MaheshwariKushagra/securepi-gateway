@@ -222,7 +222,10 @@ def refresh_all(conn):
                 (source, str(exc)),
             )
             results[source] = (False, str(exc))
-    conn.commit()
+        # Commit each feed before downloading the next: an open write
+        # would hold SQLite's write lock for the whole download
+        # (Audit10Oct H4).
+        conn.commit()
     _write_domain_blocklist_file(conn)
     return results
 

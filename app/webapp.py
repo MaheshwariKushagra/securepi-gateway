@@ -132,6 +132,23 @@ def _console_password():
         return f.read().strip()
 
 
+def _check_session(token, background):
+    """True if `token` is a valid session. Runs on a worker thread (see the
+    middleware below), so it opens - and always closes - its own database
+    connection rather than sharing one across threads. Refreshes the idle
+    clock at most once a minute, and not at all for a background poll."""
+    conn = db()
+    try:
+        session = session_auth.get_session(conn, token)
+        if session is None:
+            return False
+        if not background:
+            session_auth.touch_session_if_stale(conn, token, session)
+        return True
+    finally:
+        conn.close()
+
+
 # Session-cookie auth as ASGI middleware rather than a FastAPI dependency,
 # for the same reason the Basic Auth it replaces (step 3.1) was one: it
 # runs ahead of routing, so it also covers the /static mount, and it keeps
@@ -155,14 +172,21 @@ async def session_auth_middleware(request: Request, call_next):
     if path == "/login" or path.startswith("/static/"):
         return await call_next(request)
 
-    conn = db()
     token = request.cookies.get(session_auth.SESSION_COOKIE)
-    session = session_auth.get_session(conn, token)
-    if session is None:
+    # A poll the console's own timers made (app.js marks those) is not the
+    # operator doing anything, so it doesn't keep the session alive - an
+    # unattended open console now signs out after the idle timeout, not
+    # only at the absolute one (Audit10Oct M13). Page loads and every
+    # change (POST and the rest) always count.
+    background = request.method == "GET" and request.headers.get("x-sp-background") == "1"
+    # The session check reads and writes SQLite. Done here, on the event
+    # loop, a moment of database contention froze every console request
+    # at once (Audit10Oct H4), so it runs on a worker thread instead.
+    ok = await run_in_threadpool(_check_session, token, background)
+    if not ok:
         if path.startswith("/api/"):
             return JSONResponse({"error": "authentication required"}, status_code=401)
         return RedirectResponse(url="/login?next=%s" % quote(path, safe=""), status_code=303)
-    session_auth.touch_session(conn, token)
     return await call_next(request)
 
 

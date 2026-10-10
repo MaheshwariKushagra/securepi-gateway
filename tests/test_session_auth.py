@@ -221,6 +221,61 @@ class RateLimitTests(unittest.TestCase):
         self.assertTrue(session_auth.check_rate_limit(conn, ip))
 
 
+class TouchThrottleTests(unittest.TestCase):
+    """Audit10Oct H4: every authenticated request wrote last_active, a
+    committed write per request. It's now written at most once a minute."""
+
+    def test_a_recent_touch_is_not_written_again(self):
+        conn = fixtures.temp_db()
+        token = session_auth.create_session(conn, "securepi")
+        session = session_auth.get_session(conn, token)
+        self.assertFalse(session_auth.touch_session_if_stale(conn, token, session))
+
+    def test_an_old_touch_is_refreshed(self):
+        conn = fixtures.temp_db()
+        token = session_auth.create_session(conn, "securepi")
+        conn.execute("UPDATE sessions SET last_active=? WHERE token=?", (time.time() - 120, token))
+        conn.commit()
+        session = session_auth.get_session(conn, token)
+        self.assertTrue(session_auth.touch_session_if_stale(conn, token, session))
+        row = conn.execute("SELECT last_active FROM sessions WHERE token=?", (token,)).fetchone()
+        self.assertGreater(row["last_active"], time.time() - 5)
+
+
+class MiddlewareWiringTests(unittest.TestCase):
+    """Structural (FastAPI isn't on the Mac): the auth middleware does its
+    database work on a worker thread, through one function that opens and
+    closes its own connection, and background polls don't refresh the idle
+    clock (Audit10Oct H4, M13)."""
+
+    def setUp(self):
+        import re
+        with open(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                               "app", "webapp.py")) as fh:
+            src = fh.read()
+        m = re.search(r"async def session_auth_middleware\(request.*?\n(.*?)\n\n\n", src, re.DOTALL)
+        self.assertIsNotNone(m, "session_auth_middleware not found")
+        self.middleware = m.group(1)
+        m = re.search(r"\ndef _check_session\(.*?\n(.*?)\n\n\n", src, re.DOTALL)
+        self.assertIsNotNone(m, "_check_session not found")
+        self.check = m.group(1)
+
+    def test_no_database_work_on_the_event_loop(self):
+        self.assertIn("await run_in_threadpool(_check_session", self.middleware)
+        self.assertNotIn("db()", self.middleware)
+        self.assertNotIn("session_auth.get_session", self.middleware)
+
+    def test_the_worker_closes_its_own_connection(self):
+        self.assertIn("conn = db()", self.check)
+        self.assertIn("finally:", self.check)
+        self.assertIn("conn.close()", self.check)
+        self.assertIn("touch_session_if_stale", self.check)
+
+    def test_background_gets_do_not_refresh_the_idle_clock(self):
+        self.assertIn('"x-sp-background"', self.middleware)
+        self.assertIn('request.method == "GET"', self.middleware)
+
+
 class LoginAdmissionTests(unittest.TestCase):
     """Audit10Oct H5: attempts were only counted after the (slow) password
     check finished, so a burst of concurrent logins all passed the limit

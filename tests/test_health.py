@@ -90,6 +90,51 @@ class CheckServicesTests(unittest.TestCase):
         self.assertEqual(len(rows), 0)
 
 
+class ShortWriteTransactionTests(unittest.TestCase):
+    """Audit10Oct H4: the health checks wrote a row, then went on to run
+    systemctl, ping and the proxy probe with that write still open -
+    holding SQLite's single write lock (and freezing the console's session
+    writes) for the whole time. No probe may run with a write open."""
+
+    def setUp(self):
+        self._saved = {name: getattr(health, name) for name in
+                       ("_services_to_check", "_is_active", "_resource_usage", "check_services",
+                        "check_staleness", "check_disk", "check_db_size", "check_wan", "check_dpi_proxy")}
+
+    def tearDown(self):
+        for name, value in self._saved.items():
+            setattr(health, name, value)
+
+    def test_service_probes_run_with_no_write_open(self):
+        conn = fixtures.temp_db()
+        seen = []
+        health._services_to_check = lambda: ["suricata", "AdGuardHome", "securepi-web"]
+        health._is_active = lambda s: seen.append(conn.in_transaction) or True
+        health._resource_usage = lambda s: seen.append(conn.in_transaction) or (1, 1.0)
+        health.check_services(conn, time.time())
+        self.assertEqual(seen, [False] * 6)
+        self.assertEqual(conn.execute("SELECT count(*) FROM service_health").fetchone()[0], 3)
+
+    def test_each_check_is_committed_before_the_next_one_runs(self):
+        conn = fixtures.temp_db()
+        seen = []
+
+        def writes(conn_, now):
+            conn_.execute("INSERT INTO signal_state (signal_type, last_run_ts) VALUES ('t', 1)"
+                          " ON CONFLICT(signal_type) DO UPDATE SET last_run_ts=2")
+
+        def probes(conn_, now):
+            seen.append(conn_.in_transaction)
+        health.check_services = writes
+        health.check_staleness = probes
+        health.check_disk = probes
+        health.check_db_size = probes
+        health.check_wan = probes
+        health.check_dpi_proxy = probes
+        health.check_platform_health(conn, time.time())
+        self.assertEqual(seen, [False] * 5)
+
+
 class CheckStalenessTests(unittest.TestCase):
     def test_no_incident_when_everything_is_fresh(self):
         conn = fixtures.temp_db()

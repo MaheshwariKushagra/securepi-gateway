@@ -121,6 +121,24 @@ class RefreshAllTests(unittest.TestCase):
         self.assertIsNone(state["threatfox"]["last_fetched"])
         self.assertIsNotNone(state["threatfox"]["last_error"])
 
+    def test_no_feed_is_fetched_with_a_write_open(self):
+        # Audit10Oct H4: each feed's rows used to stay uncommitted while
+        # the next feed was downloaded, holding SQLite's write lock for
+        # the whole download.
+        conn = fixtures.temp_db()
+        seen = []
+
+        def feed(indicator):
+            def fetch():
+                seen.append(conn.in_transaction)
+                return [(indicator, "ip", "test")]
+            return fetch
+        with mock.patch.dict(intel.FEEDS, {"feodo": feed("203.0.113.1"), "urlhaus": feed("203.0.113.2"),
+                                           "threatfox": feed("203.0.113.3")}, clear=True), \
+             mock.patch("intel._write_domain_blocklist_file"):
+            intel.refresh_all(conn)
+        self.assertEqual(seen, [False, False, False])
+
     def test_a_failed_fetch_leaves_existing_indicators_untouched(self):
         conn = fixtures.temp_db()
         fixtures.insert_ioc(conn, "203.0.113.1", "ip", source="feodo")

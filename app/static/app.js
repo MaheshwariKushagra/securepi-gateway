@@ -10,7 +10,41 @@ const SP = {
     timer: null,
     charts: {},
     notifSeen: null,
+    backgroundPolls: 0,   // timer-driven refreshes still in flight
 };
+
+/* Every request goes through this wrapper, for two reasons (Audit10Oct M13):
+   1. While a timer-driven refresh is running, its requests carry
+      X-SP-Background: 1, and the server doesn't count them as the operator
+      doing something - so an unattended open console signs out after the
+      idle timeout instead of staying signed in until the absolute one.
+   2. A 401 from the API means the session has ended. The page used to keep
+      showing stale numbers with nothing saying why; now it goes to the
+      login page, which brings you back here afterwards. */
+const nativeFetch = window.fetch.bind(window);
+window.fetch = async function (resource, options) {
+    if (SP.backgroundPolls > 0) {
+        options = Object.assign({}, options);
+        const headers = new Headers(options.headers || {});
+        headers.set("X-SP-Background", "1");
+        options.headers = headers;
+    }
+    const res = await nativeFetch(resource, options);
+    const url = typeof resource === "string" ? resource : (resource && resource.url) || "";
+    if (res.status === 401 && url.startsWith("/api/")) {
+        location.href = "/login?next=" + encodeURIComponent(location.pathname + location.search);
+    }
+    return res;
+};
+
+/* Run a timer-driven refresh with its requests marked as background. */
+function backgroundPoll(fn) {
+    SP.backgroundPolls += 1;
+    return Promise.resolve()
+        .then(fn)
+        .catch(() => { /* each refresh shows its own errors */ })
+        .finally(() => { SP.backgroundPolls -= 1; });
+}
 
 const STATUS_META = {
     new:            { label: "New",            cls: "" },
@@ -120,10 +154,7 @@ function schedule() {
 }
 
 function tick() {
-    refresh();
-    refreshSystem();
-    refreshNotifications();
-    refreshDnsStatus();
+    backgroundPoll(() => Promise.all([refresh(), refreshSystem(), refreshNotifications(), refreshDnsStatus()]));
 }
 
 /* --------------------------------------------------------------- toasts */
@@ -3053,7 +3084,7 @@ function initDeviceQuarantine() {
 
     document.addEventListener("sp:device-changed", load);
     load();
-    setInterval(() => { if (!document.hidden) load(); }, 30000);
+    setInterval(() => { if (!document.hidden) backgroundPoll(load); }, 30000);
 }
 
 /* --------------------------------------------- device profile and pause */
@@ -3231,7 +3262,7 @@ function initDevicePolicies() {
     });
     document.addEventListener("sp:device-changed", load);
     load();
-    setInterval(() => { if (!document.hidden) load(); }, 30000);
+    setInterval(() => { if (!document.hidden) backgroundPoll(load); }, 30000);
 }
 
 /* -------------------------------------------------- incident Respond card */
@@ -3784,7 +3815,7 @@ function initNetworkPause() {
         }
     });
     load();
-    setInterval(() => { if (!document.hidden) load(); }, 20000);
+    setInterval(() => { if (!document.hidden) backgroundPoll(load); }, 20000);
 }
 
 /* ---------------------------------------------- settings: notifications */
@@ -3959,7 +3990,7 @@ function initNotifications() {
     loadChannels();
     loadRules();
     loadRecent();
-    setInterval(() => { if (!document.hidden) loadRecent(); }, 20000);
+    setInterval(() => { if (!document.hidden) backgroundPoll(loadRecent); }, 20000);
 }
 
 function initRetention() {

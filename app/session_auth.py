@@ -206,6 +206,23 @@ def touch_session(conn, token):
     conn.commit()
 
 
+# How stale last_active may get before an authenticated request writes it
+# again. The idle timeout is measured in tens of minutes, so a minute of
+# slack changes nothing for it - and it turns one committed write per
+# request into at most one a minute (Audit10Oct H4).
+TOUCH_INTERVAL_S = 60
+
+
+def touch_session_if_stale(conn, token, session):
+    """touch_session(), but only if `session` (the row get_session()
+    returned) was last touched more than TOUCH_INTERVAL_S ago. Returns
+    whether it wrote."""
+    if time.time() - session["last_active"] < TOUCH_INTERVAL_S:
+        return False
+    touch_session(conn, token)
+    return True
+
+
 def delete_session(conn, token):
     """Sign out: remove the session row so the cookie (wherever it still
     sits in a browser) can never be used again."""

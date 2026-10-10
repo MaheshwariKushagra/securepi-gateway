@@ -536,3 +536,9 @@ H9 no journal purge; no deliberate outages on the real network.*
   - **Fail-open (H8):** the new code ran within seconds of deploy; no leftover rule; DB inactive.
   - **Journals:** no errors since deploy.
   - **Not done live:** a real fail-open cycle (no deliberate DNS outage).
+- **7B.10 (H4, M13) done in code** (deployed with Group 3).
+  - **Middleware:** the auth middleware does no database work on the event loop. It calls `_check_session()` through `run_in_threadpool`; that function opens its own connection and closes it in `finally`. `last_active` is written at most once a minute (`touch_session_if_stale`).
+  - **M13 (default applied):** background GETs (header `X-SP-Background: 1`) never refresh the idle clock; page loads and every non-GET do. `app.js` wraps `fetch`: requests made while a timer-driven refresh (`backgroundPoll`) is in flight carry the header. `tick()` and all four page-level 20-30 s timers go through `backgroundPoll`.
+  - **401 handling:** the console JS had none, so polls failed silently after a session ended. The wrapper now sends the browser to `/login?next=<this page>`.
+  - **Short transactions:** `health.check_services` asks systemd about every service first, then writes. `check_platform_health` commits after each check. `intel.refresh_all` commits after each feed.
+  - 11 new tests failed on the old code. 711 tests pass.

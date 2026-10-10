@@ -50,5 +50,34 @@ class CsvCellTests(unittest.TestCase):
         self.assertEqual(self.cell('a,"b"'), '"a,""b"""')
 
 
+class BackgroundPollTests(unittest.TestCase):
+    """Audit10Oct M13: timer-driven polls are marked so the server doesn't
+    count them as operator activity, and a 401 from the API (the session
+    has ended) sends the browser to the login page instead of leaving a
+    silently stale console."""
+
+    def setUp(self):
+        with open(APP_JS) as fh:
+            self.src = fh.read()
+
+    def test_the_fetch_wrapper_marks_background_requests(self):
+        self.assertIn('headers.set("X-SP-Background", "1")', self.src)
+        self.assertIn("function backgroundPoll(", self.src)
+
+    def test_every_timer_runs_through_background_poll(self):
+        self.assertIn("SP.timer = setInterval(tick, SP.intervalMs)", self.src)
+        tick = re.search(r"\nfunction tick\(\) \{\n(.*?)\n\}\n", self.src, re.DOTALL).group(1)
+        self.assertIn("backgroundPoll(", tick)
+        for m in re.finditer(r"setInterval\((.*?)\);", self.src):
+            body = m.group(1)
+            if body.startswith("tick"):
+                continue
+            self.assertIn("backgroundPoll(", body, body)
+
+    def test_a_401_from_the_api_goes_to_the_login_page(self):
+        self.assertIn("res.status === 401", self.src)
+        self.assertIn('"/login?next="', self.src)
+
+
 if __name__ == "__main__":
     unittest.main()

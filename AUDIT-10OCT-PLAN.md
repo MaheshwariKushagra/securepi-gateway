@@ -555,3 +555,14 @@ H9 no journal purge; no deliberate outages on the real network.*
   - **M5:** a new `responseheaders` hook streams any decrypted response that isn't JSON, HTML, JavaScript or text, or is declared over 8 MiB. Video segments, images and downloads are no longer held in memory. A response with no content type is still buffered (`response()` can recognise JSON by its first character). `response()` returns at once for a streamed flow.
   - **M6:** when `drop_documents` matches every document, the documents are kept and in-document pruning still runs (it used to be skipped entirely, so the response went out untouched); the case is logged. **Waiting for user:** what an "empty" streamed GraphQL reply should look like needs a live Facebook capture, so a chunk made only of sponsored stories with no inner list to prune still passes as it is.
   - 5 new tests failed on the old code (one was first written so the addon's own try/except hid the failure; it was rewritten).
+- **Group 3 deployed and verified live (08:31-08:36).**
+  - **Backups:** the live database (`securepi-pre-group3-20261010-083117.db`, 286 MB, `PRAGMA quick_check` ok, 691,204 events), `pre-group3-*.tar.gz` and `.bak-7B-g3-*` copies.
+  - **Deploy:** `make deploy`; DPI addon installed, compiled and restarted; canary ok; all services active.
+  - **Migration:** the three `catchup_*` columns exist.
+  - **Ingest:** the network was quiet (7 DNS events in the hour before). A probe query `dig @10.10.0.1 audit-7b-ingest-check.example.com` from the gateway was in the database 8 s later through the new API reader; no catch-up pending; no errors or dropped rows in the journals.
+  - **Console** (temporary session created and deleted afterwards):
+    - a request with the session gets 200, a bogus cookie gets 401;
+    - with `last_active` aged to 120 s, a background GET left it at 120 s; an ordinary GET and a background-marked POST both reset it to 0;
+    - latency (5 runs each): `/api/system` about 6 ms, `/api/devices` about 360 ms, `/api/overview` about 135 ms (the first call 300 ms), `/api/incidents` about 37 ms, in line with 7.8.
+  - **Streaming (M5), Dell test proxy** with the deployed addon: a YouTube thumbnail streamed (mitmproxy "content missing", the client got the full 21,011-byte JPEG); `robots.txt` (text) was still buffered (792 b).
+  - **Not done live:** the A33 YouTube/Instagram regression run (phone not connected) and a mitmproxy RSS comparison under real playback.

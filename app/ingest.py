@@ -983,7 +983,9 @@ def read_dpi_events(conn):
 # plain file with a stable inode to seek in, so a timestamp watermark is
 # the natural fit here too, not the inode-and-offset approach read_eve
 # and read_dpi_events use.
-NFT_LOG_PREFIXES = ("dot-bypass: ", "doh-bypass: ", "quic-blocked: ")
+# doq-bypass: DNS-over-QUIC on UDP 853 (Audit10Oct M8). dns_bypass_signal
+# counts it like dot-bypass - every bypass reason except quic-blocked.
+NFT_LOG_PREFIXES = ("dot-bypass: ", "doq-bypass: ", "doh-bypass: ", "quic-blocked: ")
 # A standard iptables/nftables kernel log line, e.g.:
 #   dot-bypass: IN=ap0 OUT=wlp2s0 ... SRC=10.10.0.50 DST=1.1.1.1 ...
 #   PROTO=TCP SPT=51000 DPT=853 ...

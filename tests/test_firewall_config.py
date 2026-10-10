@@ -83,5 +83,32 @@ class InputChainTests(unittest.TestCase):
             self.assertLess(at[0], accept_at, comment)
 
 
+class DnsBypassRuleTests(unittest.TestCase):
+    """Every encrypted-DNS port a LAN device could use to get round the DNS
+    filter is rejected before the general lan-out accept."""
+
+    def setUp(self):
+        with open(NFT_PATH) as fh:
+            self.rules = chain_body(fh.read(), "forward")
+
+    def _index(self, comment):
+        at = [i for i, r in enumerate(self.rules) if 'comment "%s"' % comment in r]
+        self.assertEqual(len(at), 1, comment)
+        return at[0]
+
+    def test_dns_over_quic_is_rejected_and_logged(self):
+        # Audit10Oct M8: UDP 853 is DNS-over-QUIC (RFC 9250). Only TCP 853
+        # (DoT) and UDP 443 were rejected, so DoQ fell through to lan-out.
+        rule = self.rules[self._index("doq-bypass")]
+        self.assertIn('iifname "ap0" udp dport 853', rule)
+        self.assertIn('log prefix "doq-bypass: "', rule)
+        self.assertIn("reject", rule)
+
+    def test_every_bypass_rule_comes_before_lan_out(self):
+        lan_out = self._index("lan-out")
+        for comment in ("dot-bypass", "doq-bypass", "doh-bypass", "quic-blocked"):
+            self.assertLess(self._index(comment), lan_out, comment)
+
+
 if __name__ == "__main__":
     unittest.main()

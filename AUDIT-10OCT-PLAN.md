@@ -507,3 +507,11 @@ H9 no journal purge; no deliberate outages on the real network.*
   - On recovery, `check_dns_failopen()` removes any fail-open rule still in the firewall even when the database says inactive, and writes `platform.dns_failopen_leftover_removed` to the audit log. If nft can't be read, the healthy path still works.
   - 4 new or rewritten tests failed on the old code.
   - Live state now: no fail-open rule, DB inactive.
+- **7B.7 (M8) done in code and staged. Live firewall load: waiting for user** (the unattended run doesn't touch the live ruleset).
+  - `gateway/nftables.conf` gets `iifname "ap0" udp dport 853 counter log prefix "doq-bypass: " reject comment "doq-bypass"` right after the DoT rule. `ingest.NFT_LOG_PREFIXES` gets `doq-bypass: ` (ships with Group 2; harmless until the rule exists). `dns_bypass_signal` already counts every bypass reason except `quic-blocked`, so it needed no change.
+  - **Gateway checks:** `nft -c -f` on the full new ruleset passes. The live `/etc/nftables.conf` differs from the new file only by this rule. IPv6 forwarding is 0, so not routed and no change needed.
+  - **Staged** at `~/nft-staged/nftables-7B7-doq.conf` on the Dell.
+  - **To apply without a full reload** (keeps quarantine and enrollment sets), insert after the DoT rule (handle 32 at 08:14):
+    `sudo nft add rule inet filter forward position 32 iifname "ap0" udp dport 853 counter log prefix \"doq-bypass: \" reject comment \"doq-bypass\"`
+    then `sudo cp ~/nft-staged/nftables-7B7-doq.conf /etc/nftables.conf` so it survives a reboot.
+  - 3 new tests failed on the old code.

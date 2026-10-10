@@ -595,6 +595,14 @@ class FlattenNftLogTests(unittest.TestCase):
         self.assertEqual(row["block_reason"], "quic-blocked")
         self.assertEqual(row["proto"], "UDP")
 
+
+    def test_doq_bypass_line_parsed(self):
+        # Audit10Oct M8: the new DNS-over-QUIC reject rule's log lines.
+        line = "doq-bypass: IN=ap0 SRC=10.10.0.53 DST=94.140.14.14 PROTO=UDP SPT=53001 DPT=853"
+        row = ingest.flatten_nft_log(line)
+        self.assertEqual(row["block_reason"], "doq-bypass")
+        self.assertEqual(row["dest_port"], 853)
+        self.assertEqual(row["proto"], "UDP")
     def test_unrelated_kernel_line_is_ignored(self):
         self.assertIsNone(ingest.flatten_nft_log("audit: type=1400 apparmor=STATUS operation=..."))
 

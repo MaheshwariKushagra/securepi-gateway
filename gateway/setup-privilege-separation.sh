@@ -102,7 +102,16 @@ fi
 echo "==> 4/6  code directories: root-owned, root-writable only"
 for d in /opt/securepi /opt/securepi-dpi; do
     if sudo test -d "$d"; then
-        sudo chown root:root "$d"
+        # Everything inside, not just the directory itself (Audit10Oct
+        # M19): a code file the console's user could write would undo the
+        # whole point of this step. List what was wrong, then fix it.
+        wrong=$(sudo find "$d" \( ! -user root -o -perm /022 \) ! -type l)
+        if [ -n "$wrong" ]; then
+            echo "   fixing ownership or write permission of:"
+            echo "$wrong" | sed 's/^/      /'
+        fi
+        sudo chown -R root:root "$d"
+        sudo chmod -R go-w "$d"
         sudo chmod 755 "$d"
     fi
 done

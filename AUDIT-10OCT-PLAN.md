@@ -521,3 +521,11 @@ H9 no journal purge; no deliberate outages on the real network.*
   - After a successful check, `/login` re-reads the password file and issues no session if it changed meanwhile.
   - A legacy rehash writes only if the file is unchanged (`rehash_if_unchanged`), under the same lock a password change takes (`replace_password`).
   - FastAPI isn't on the Mac, so the wiring is guarded by structural tests like `test_security_headers`. 12 new tests failed on the old code.
+- **7B.9 (H10, M7, M16, M17, M19) done in code.**
+  - **H10:** the rule editor saves `adfilter_rules.edited_module(current, edits)`, which keeps every field it doesn't show. `needs_scope_confirmation()` also asks for confirmation when a passthrough carve-out is removed.
+  - **M7:** `validate_rules` refuses a decrypt suffix that covers another module's suffix; the seed rules have none.
+  - **M16:** `csvCell` prefixes `'` to values starting with `= + - @`, tab or CR. Tested by running the function under node (`tests/test_console_js.py`).
+  - **M17:** `fetch_from_gateway()` quotes the URL for the remote shell (`shlex.quote`) and stops on a failed curl.
+  - **M19:** `setup-privilege-separation.sh` fixes ownership and write permission recursively and lists what it fixed (not run unattended). Read-only check of the gateway: no writable code. Two stray top-level copies `/opt/securepi/app.js` and `app.css` (`maheshwari:staff` 644, not served; the console serves `static/`), and four 7A `.bak` rule-file backups in `/opt/securepi-dpi` that the `securepi` group can write.
+  - Also fixed: the stale "stopgap" docstring (Q5).
+  - **Tests:** 15 new, which failed on the old code; one structural test updated for the recursive `chown`. **Group 2 gate:** 697 tests, py_compile, node --check and shellcheck all clean.

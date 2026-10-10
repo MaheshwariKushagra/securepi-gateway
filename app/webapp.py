@@ -2152,31 +2152,24 @@ def api_dpi_rules_set(body: DpiRulesUpdate):
     decrypt_suffixes - which changes what this gateway is even able to
     decrypt - needs an explicit confirm_privacy_scope_change=true, the
     same pattern step 5.5's resolver tuning uses for an equally
-    consequential change. "Audit" is a print() into the journal, same
-    stopgap every other filtering endpoint in this file already uses
-    until Stage 1's real audit_log table exists (step 1.5) - `reason` is
-    required for the same reason it's required on the allow/block
-    endpoints."""
+    consequential change. The change is printed to the journal and
+    written to the audit log; `reason` is required for the same reason
+    it's required on the allow/block endpoints."""
     if not body.reason.strip():
         raise HTTPException(400, "a reason is required")
     current = _read_dpi_rules()
     current_module = current["modules"].get(DPI_EDITED_MODULE, {})
-    new_module = {
+    # Only the fields this editor shows are replaced; everything else in
+    # the module is kept (Audit10Oct H10). The cosmetic settings are None
+    # when the request didn't mean to touch them - see DpiRulesUpdate.
+    new_module = adfilter_rules.edited_module(current_module, {
         "decrypt_suffixes": body.decrypt_suffixes,
         "ad_fields": body.ad_fields,
         "ad_renderers": body.ad_renderers,
         "blocked_paths": body.blocked_paths,
-        # None means "this request doesn't mean to touch cosmetic
-        # settings" - keep whatever's already on disk, not the Pydantic
-        # field default, so an edit to e.g. blocked_paths alone can never
-        # silently reset these. See DpiRulesUpdate's own docstring.
-        "cosmetic_injection_enabled": (
-            body.cosmetic_injection_enabled if body.cosmetic_injection_enabled is not None
-            else current_module.get("cosmetic_injection_enabled", False)),
-        "cosmetic_selectors": (
-            body.cosmetic_selectors if body.cosmetic_selectors is not None
-            else current_module.get("cosmetic_selectors", [])),
-    }
+        "cosmetic_injection_enabled": body.cosmetic_injection_enabled,
+        "cosmetic_selectors": body.cosmetic_selectors,
+    })
     # Everything else in the file (other modules, the pin settings) is
     # kept as it is on disk.
     new_rules = copy.deepcopy(current)
@@ -2186,11 +2179,11 @@ def api_dpi_rules_set(body: DpiRulesUpdate):
     except ValueError as e:
         raise HTTPException(400, str(e))
 
-    if set(new_module["decrypt_suffixes"]) != set(current_module.get("decrypt_suffixes", [])):
+    if adfilter_rules.needs_scope_confirmation(current_module, new_module):
         if not body.confirm_privacy_scope_change:
             raise HTTPException(400,
-                "changing decrypt_suffixes changes what this gateway is able to decrypt - "
-                "resend with confirm_privacy_scope_change=true to proceed")
+                "this changes what the gateway is able to decrypt (decrypt_suffixes, or a "
+                "passthrough carve-out removed) - resend with confirm_privacy_scope_change=true to proceed")
 
     new_rules["version"] = (current.get("version") or 0) + 1
     new_rules["updated_at"] = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())

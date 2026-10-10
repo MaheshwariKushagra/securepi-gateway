@@ -141,7 +141,10 @@ class CodeAndDataSeparationTests(unittest.TestCase):
 
     def test_setup_script_makes_the_code_directories_root_owned(self):
         src = self._source("gateway/setup-privilege-separation.sh")
-        self.assertIn('sudo chown root:root "$d"', src)
+        # Recursively since Audit10Oct M19: every file inside, not just
+        # the directory itself.
+        self.assertIn('sudo chown -R root:root "$d"', src)
+        self.assertIn('sudo chmod -R go-w "$d"', src)
         self.assertIn('for d in /opt/securepi /opt/securepi-dpi; do', src)
 
 

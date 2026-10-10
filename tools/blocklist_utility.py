@@ -41,6 +41,7 @@ Usage:
 import argparse
 import json
 import os
+import shlex
 import subprocess
 import sys
 import time
@@ -90,6 +91,19 @@ def _ssh_python(snippet, *args):
     return json.loads(out.stdout)
 
 
+def fetch_from_gateway(url):
+    """Fetch a list the gateway serves only on its own loopback, by running
+    curl there over SSH. The URL comes from the DNS filter's settings and
+    is put into a remote shell command, so it is quoted for that shell
+    (Audit10Oct M17), and a failed fetch stops the run rather than being
+    saved as an empty list."""
+    out = subprocess.run(["ssh", "-o", "BatchMode=yes", GATEWAY, "curl -sf " + shlex.quote(url)],
+                         capture_output=True, timeout=60)
+    if out.returncode != 0:
+        sys.exit("could not fetch %s on the gateway (curl exit %d)" % (url, out.returncode))
+    return out.stdout
+
+
 def fetch_inputs(workdir, days, exclude=()):
     os.makedirs(os.path.join(workdir, "lists"), exist_ok=True)
     lists = _ssh_python(LISTS_SNIPPET)
@@ -97,9 +111,7 @@ def fetch_inputs(workdir, days, exclude=()):
         path = os.path.join(workdir, "lists", "%s.txt" % lst["id"])
         if lst["url"].startswith("http://127.0.0.1"):
             # Served only on the gateway's loopback (app/intel.py).
-            out = subprocess.run(["ssh", "-o", "BatchMode=yes", GATEWAY, "curl -s " + lst["url"]],
-                                 capture_output=True, timeout=60)
-            data = out.stdout
+            data = fetch_from_gateway(lst["url"])
         else:
             req = urllib.request.Request(lst["url"], headers={"User-Agent": "securepi-blocklist-utility"})
             with urllib.request.urlopen(req, timeout=60) as resp:

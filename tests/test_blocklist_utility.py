@@ -55,6 +55,35 @@ class ParseAndMatchTests(unittest.TestCase):
         self.assertFalse(blu.blocks(r, "x.example.com"))
 
 
+class GatewayFetchTests(unittest.TestCase):
+    """Audit10Oct M17: the list URL went into the remote shell command
+    unquoted, and a failed fetch was saved as an empty list."""
+
+    def setUp(self):
+        self.orig = blu.subprocess.run
+        self.calls = []
+
+    def tearDown(self):
+        blu.subprocess.run = self.orig
+
+    def fake(self, returncode=0, stdout=b"||a.example^\n"):
+        def run(cmd, **kw):
+            self.calls.append(cmd)
+            return type("R", (), {"returncode": returncode, "stdout": stdout, "stderr": b"boom"})()
+        blu.subprocess.run = run
+
+    def test_the_url_is_quoted_for_the_remote_shell(self):
+        self.fake()
+        blu.fetch_from_gateway("http://127.0.0.1:8090/list.txt; touch /tmp/x")
+        remote = self.calls[0][-1]
+        self.assertEqual(remote, "curl -sf 'http://127.0.0.1:8090/list.txt; touch /tmp/x'")
+
+    def test_a_failed_fetch_stops_instead_of_saving_an_empty_list(self):
+        self.fake(returncode=7, stdout=b"")
+        with self.assertRaises(SystemExit):
+            blu.fetch_from_gateway("http://127.0.0.1:8090/list.txt")
+
+
 class AnalyseTests(unittest.TestCase):
     def test_unique_and_overlap(self):
         lists = [{"id": 1, "name": "A", "rules_count": 2}, {"id": 2, "name": "B", "rules_count": 1}]

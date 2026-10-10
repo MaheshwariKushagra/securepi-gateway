@@ -389,6 +389,59 @@ class SiteSwitchTests(unittest.TestCase):
         self.assertEqual(adfilter_rules.module_for_host(rules, "www.instagram.com")[0], "instagram")
 
 
+class EditorMergeTests(unittest.TestCase):
+    """Audit10Oct H10: the console's rule editor rebuilt the module from the
+    six fields it shows, dropping every other field - passthrough carve-
+    outs, never-touch paths, endpoint limits, prune operations."""
+
+    def test_fields_the_editor_doesnt_show_are_kept(self):
+        current = seed_rules()["modules"]["instagram"]
+        new = adfilter_rules.edited_module(current, {"ad_fields": ["x"], "cosmetic_selectors": None})
+        self.assertEqual(new["ad_fields"], ["x"])
+        for key in ("passthrough_suffixes", "never_touch_paths", "json_endpoints", "prune", "query_names"):
+            self.assertEqual(new[key], current[key], key)
+        self.assertEqual(new["cosmetic_selectors"], current["cosmetic_selectors"])   # None = leave alone
+        self.assertIsNot(new["prune"], current["prune"])                             # a copy, not shared
+
+    def test_changing_decrypt_suffixes_needs_confirmation(self):
+        old = {"decrypt_suffixes": ["youtube.com"], "passthrough_suffixes": []}
+        new = dict(old, decrypt_suffixes=["youtube.com", "example.org"])
+        self.assertTrue(adfilter_rules.needs_scope_confirmation(old, new))
+
+    def test_removing_a_passthrough_carve_out_needs_confirmation(self):
+        old = {"decrypt_suffixes": ["instagram.com"], "passthrough_suffixes": ["edge-chat.instagram.com"]}
+        new = dict(old, passthrough_suffixes=[])
+        self.assertTrue(adfilter_rules.needs_scope_confirmation(old, new))
+
+    def test_adding_a_carve_out_or_editing_ad_fields_needs_none(self):
+        old = {"decrypt_suffixes": ["instagram.com"], "passthrough_suffixes": [], "ad_fields": []}
+        self.assertFalse(adfilter_rules.needs_scope_confirmation(
+            old, dict(old, passthrough_suffixes=["chat.instagram.com"], ad_fields=["a"])))
+
+
+class OverlapValidationTests(unittest.TestCase):
+    """Audit10Oct M7: a suffix in one module that covers another module's
+    suffix made the owner of a host depend on dict order."""
+
+    def rules_with(self, a, b):
+        rules = seed_rules()
+        rules["modules"] = {"one": dict(rules["modules"]["youtube"], decrypt_suffixes=a),
+                            "two": dict(rules["modules"]["youtube"], decrypt_suffixes=b)}
+        return rules
+
+    def test_a_parent_and_child_suffix_in_different_modules_is_refused(self):
+        with self.assertRaises(ValueError):
+            adfilter_rules.validate_rules(self.rules_with(["example.com"], ["ads.example.com"]))
+        with self.assertRaises(ValueError):
+            adfilter_rules.validate_rules(self.rules_with(["ads.example.com"], ["example.com"]))
+
+    def test_look_alike_names_are_not_overlaps(self):
+        adfilter_rules.validate_rules(self.rules_with(["example.com"], ["notexample.com"]))
+
+    def test_the_seed_rules_have_no_overlap(self):
+        self.assertIsNotNone(seed_rules())
+
+
 class ModuleValidationTests(unittest.TestCase):
     def module(self, **kw):
         m = {"decrypt_suffixes": ["example.org"], "prune": [{"op": "drop_documents", "contains_key": "x"}]}

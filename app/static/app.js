@@ -1024,7 +1024,12 @@ async function updateIncidentStatus(id, status) {
 /* --------------------------------------------------------------- exports */
 
 function csvCell(v) {
-    const s = v === null || v === undefined ? "" : String(v);
+    let s = v === null || v === undefined ? "" : String(v);
+    // A cell starting with = + - @ (or a tab or carriage return) is read
+    // as a formula by spreadsheet apps, and device names come from DHCP,
+    // so a device can name itself "=HYPERLINK(...)". A leading apostrophe
+    // makes the spreadsheet show it as plain text (Audit10Oct M16).
+    if (/^[=+\-@\t\r]/.test(s)) s = "'" + s;
     return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
 }
 

@@ -370,7 +370,42 @@ def validate_rules(rules):
             if suffix in owner and owner[suffix] != name:
                 raise ValueError("decrypt suffix %s is in both %s and %s" % (suffix, owner[suffix], name))
             owner[suffix] = name
+    # A suffix that COVERS another module's suffix is the same problem one
+    # level down: "example.com" in one module and "ads.example.com" in
+    # another would both claim ads.example.com, and which module's rules
+    # (and which device switch) applied would depend on dict order
+    # (Audit10Oct M7).
+    for suffix, name in owner.items():
+        for other, other_name in owner.items():
+            if other_name != name and other.endswith("." + suffix):
+                raise ValueError("decrypt suffix %s (%s) covers %s (%s) - a host must belong to one module"
+                                 % (suffix, name, other, other_name))
     return rules
+
+
+def edited_module(current, edits):
+    """The module the console's rule editor saves: a copy of `current` with
+    only the fields in `edits` replaced. A value of None means "not sent,
+    keep what is there". Every field the editor doesn't show - passthrough
+    carve-outs, never-touch paths, endpoint and query limits, prune
+    operations - is kept. The editor used to rebuild the module from its
+    own six fields and drop the rest (Audit10Oct H10)."""
+    new = copy.deepcopy(current)
+    for key, value in edits.items():
+        if value is not None:
+            new[key] = value
+    return new
+
+
+def needs_scope_confirmation(old, new):
+    """True if an edit changes what the gateway is able to decrypt, so the
+    console must ask for an explicit confirmation: the decrypt suffixes
+    changed, or a passthrough carve-out was removed (which lets hosts it
+    protected be decrypted again)."""
+    if set(new.get("decrypt_suffixes", [])) != set(old.get("decrypt_suffixes", [])):
+        return True
+    removed = set(old.get("passthrough_suffixes", [])) - set(new.get("passthrough_suffixes", []))
+    return bool(removed)
 
 
 def all_decrypt_suffixes(rules):

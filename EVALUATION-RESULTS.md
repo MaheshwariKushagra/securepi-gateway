@@ -14,6 +14,15 @@ the network.
 Each of the four signals fired three times. "Detected" means the engine
 raised or extended an incident within 90 seconds of the attack starting.
 
+> **Note added 10 October 2026 (Audit10Oct M21):** `evaluate.py` starts its
+> latency clock when the attack command has *finished*, not when it started
+> (`wait_for_touch_after` takes its own start time after `run_in_ns(...)`
+> returns). The latencies below therefore leave out each attack's own
+> duration and understate time-to-detect by that much. The Stage 7.2
+> battery (`gateway/battery.py`, `EVALUATION-RESULTS-2.md`) measures from the
+> start of each run (`ttd_from_start_s`) and is the reference for detection
+> times; these Day 14 figures are kept as the historical record.
+
 | Signal | Runs detected | Latencies (s) | Average |
 |---|---|---|---|
 | Port scan | 3/3 | 72.1, 2.0, 2.0 | 25.4s |

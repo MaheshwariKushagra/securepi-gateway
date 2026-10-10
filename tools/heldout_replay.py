@@ -85,6 +85,11 @@ def poisson_interval(k, confidence=0.95):
 
 def rate(count, exposure, scale=1.0):
     """count/exposure with its 95% interval, all multiplied by scale."""
+    if not exposure:
+        # No exposure at all - e.g. every device had a single event, so
+        # no time between its first and last (Audit10Oct E2). A rate has no
+        # meaning here; say so instead of dividing by zero.
+        return {"count": count, "exposure": exposure, "rate": None, "ci95": None}
     lo, hi = poisson_interval(count)
     return {"count": count, "exposure": exposure,
             "rate": round(count / exposure * scale, 4),

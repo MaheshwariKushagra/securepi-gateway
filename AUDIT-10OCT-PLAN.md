@@ -593,3 +593,8 @@ H9 no journal purge; no deliberate outages on the real network.*
   - **M14** (temporary session, removed afterwards): `/api/overview` open = 468 and `/api/incidents?status=open` = 468, matching the database (new 468, investigating 0, resolved 312, false_positive 3).
   - **M10:** the live database holds 20,802 unattributed LAN events. The old scan shape took 90 ms per pass (every 2 s, inside the write transaction); the windowed one takes under 1 ms (0 events in the window).
   - **Not done live:** H7 (needs two real devices sharing a hostname) and the M12 browser check (no console password unattended).
+- **7B.18 (M20, M21, E2) done.**
+  - **M20:** `chaos.schedule_undo` exits before injecting anything if `systemd-run` fails to arm the undo timer. The run's end goes through `restore_and_disarm()`, which restores, checks the service, table or file is really back, and only then cancels the timer (otherwise it stays armed and says so).
+  - **E2:** `heldout_replay.rate()` returns no rate for zero exposure instead of dividing by it.
+  - **M21:** a dated note in `EVALUATION-RESULTS.md` §1 says `evaluate.py`'s latencies run from the end of each attack, and that the 7.2 battery is the reference.
+  - 6 new tests (`tests/test_chaos.py`, `tests/test_heldout_replay.py`) failed on the old code.

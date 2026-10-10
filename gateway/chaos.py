@@ -84,14 +84,46 @@ def disk_free_pct():
 
 
 def schedule_undo(name, seconds, command):
-    """An undo that runs whatever happens to this script."""
+    """An undo that runs whatever happens to this script. Exits - before
+    any fault is injected - if systemd won't arm it: a fault with no undo
+    behind it is exactly what this timer exists to prevent (Audit10Oct
+    M20; the return code used to be ignored)."""
     sh(["systemctl", "stop", name + ".timer"])
     sh(["systemctl", "reset-failed", name + ".service"])
-    sh(["systemd-run", "--quiet", "--unit", name, "--on-active=%d" % seconds] + command)
+    result = sh(["systemd-run", "--quiet", "--unit", name, "--on-active=%d" % seconds] + command)
+    if result.returncode != 0:
+        sys.exit("could not arm the undo timer, so nothing was broken: %s" % (result.stderr or "").strip())
 
 
 def cancel_undo(name):
     sh(["systemctl", "stop", name + ".timer"])
+
+
+def restore_and_disarm(scenario):
+    """Put back what `scenario` broke, check that it really is back, and
+    only then cancel the undo timer. If the check fails the timer is left
+    armed - it is the second chance (Audit10Oct M20: it used to be
+    cancelled first, before anything was confirmed). Returns whether the
+    restore was confirmed."""
+    if scenario in UNITS and unit_state(UNITS[scenario]) != "active":
+        sh(["systemctl", "start", UNITS[scenario]])
+    if scenario == "drop-wan":
+        sh(["nft", "delete", "table", "inet", "securepi_chaos"])
+    if os.path.exists(FILL_PATH):
+        os.remove(FILL_PATH)
+
+    if scenario in UNITS:
+        restored = unit_state(UNITS[scenario]) == "active"
+    elif scenario == "drop-wan":
+        restored = sh(["nft", "list", "table", "inet", "securepi_chaos"]).returncode != 0
+    else:
+        restored = not os.path.exists(FILL_PATH)
+    if restored:
+        cancel_undo("securepi-chaos-undo")
+    else:
+        print("chaos: the restore of %s is NOT confirmed - the undo timer is left armed" % scenario,
+              file=sys.stderr, flush=True)
+    return restored
 
 
 def observe(conn, scenario, since):
@@ -173,13 +205,7 @@ def main():
             cancel_undo("securepi-chaos-undo")
             timeline.append({"t": round(time.time(), 2), "note": "fill file removed"})
         time.sleep(1)
-    cancel_undo("securepi-chaos-undo")
-    if s in UNITS and unit_state(UNITS[s]) != "active":
-        sh(["systemctl", "start", UNITS[s]])
-    if s == "drop-wan":
-        sh(["nft", "delete", "table", "inet", "securepi_chaos"])
-    if os.path.exists(FILL_PATH):
-        os.remove(FILL_PATH)
+    restore_and_disarm(s)
     after = observe(conn, s, t_action - 1)
     print(json.dumps({"scenario": s, "t_action": t_action, "before": before, "timeline": timeline,
                       "after": after, "incidents": platform_incidents(conn, t_action - 1)}))

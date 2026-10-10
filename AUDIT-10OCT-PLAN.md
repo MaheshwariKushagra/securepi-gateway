@@ -626,3 +626,17 @@ H9 no journal purge; no deliberate outages on the real network.*
   - **Site map moved aside (C1, deny-by-default):** the orchestrator restored the map 0.73 s later. Inside that window the A33's `m.youtube.com` and `www.youtube.com` connections **passed through**; after the restore they were decrypted again.
   - **Cleanup:** enrollment ended (no enrollments, empty map, empty nft set, nothing pending); no aside files left; canary ok. The only journal errors were two pinned-client TLS refusals (expected).
   - Results are in `eval/results/{youtube-7B,sites,scope-check}/`.
+
+### Follow-up with the user present (10 Oct 2026, 13:00-13:10)
+
+- **7B.7 loaded and verified.** Ruleset backed up (`~/nft-backups/ruleset-pre-7B7-20261010-130231.nft`, `/etc/nftables.conf.bak-7B7-*`). The `doq-bypass` rule was added live after the DoT rule (handle 37, before `lan-out`), with no full reload. `/etc/nftables.conf` is replaced by the staged file and passes `nft -c`. **Probe from the A33** (10.10.0.50, on the real `ap0` path): UDP 853 to 94.140.14.14 was rejected (rule counter 1) and logged (`doq-bypass: ... SRC=10.10.0.50 DST=94.140.14.14`). Ingest stored it as a `bypass_attempt` with `block_reason='doq-bypass'`, attributed to device 2.
+- **Tidy-up.** The stray `/opt/securepi/app.js` and `app.css` (older 13 Sep copies, referenced nowhere) were moved to `/var/backups/securepi-7B/stray-20261010-130420/`. The updated `setup-privilege-separation.sh` ran (helper and sudoers in the repo were identical to live). It fixed the four 7A `.bak` rule files, and both code directories now have 0 off-policy files. The console user still reads the password file and takes the DB write lock; console 200; services active.
+- **H1 and H8 live, one outage** (`chaos.py stop-dns`, undo armed, test-harness device 5 with a temporary `kids` profile so the orchestrator really needs the DNS filter). The DNS filter was stopped at 13:05:26 for 60 s.
+  - **H1:** 25 s in, a quarantine of device 5 applied and verified (MAC in the set). Reconcile errors only on `clients`, `protection` and `rules`, and `policy_enforcement_failed` #795 was raised.
+  - **H8:** fail-open came on 18 s after the stop (2 rules) and stayed until +61 s. After recovery: 0 leftover rules, DB inactive, `doubleclick.net` blocked again.
+  - Incidents from the run: `platform_service_down`, `platform_dns_failopen`, `platform_stale`, #795.
+  - Test profile and quarantine ended (policies 111, 112). Final reconcile clean and healthy.
+- **H2 live.** Ingest was stopped, and 10,500 unique blocked names (`audit7b-h2-N.doubleclick.net`, answered locally) were queried in about 1 s; then ingest restarted. Its log shows "backlog beyond 20 pages" and then "caught up" within the first poll. **10,499 of 10,500 arrived, each exactly once.**
+  - The missing one (#9999) is skipped by the DNS filter's own API. Asked for entries `older_than` #10000, it returns #9998 next, although search finds #9999 (timestamps distinct, no tie). This is a paging quirk in AdGuard Home, not in ingest.
+  - The 10,499 test rows were removed afterwards.
+- **7.9:** left as the 3 Oct expert review (user's decision).

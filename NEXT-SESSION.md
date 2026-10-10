@@ -32,7 +32,9 @@ uncleanly around midday.
 - **Proxy:** video and binary responses stream instead of being buffered.
 - **Other fixes:** narrower hostname merge, one meaning of "open" incidents, only current threat indicators raise incidents, bounded attribution (old scan 90 ms every 2 s, new under 1 ms), console polls never overlap.
 
-**Waiting for you.**
+**Update 13:10 (user present):** the Dell's charger is back in; the DoQ rule is loaded and verified from the A33; the A33 checks are done (pre-rolls 0/10, Instagram ads 0/3 when on, scope clean); the privilege tidy-up is done; H1, H8 and H2 passed live. Items 1, 2, 4, 6 and 7 below are closed. Still open: 3 (journal purge, step 8.4) and 5 (Facebook capture).
+
+**Waiting for you** (as written at 08:50).
 1. **Charger** (above).
 2. **7B.7, DNS-over-QUIC block: staged, not loaded.** The run didn't touch the live firewall. To apply without a full reload (this keeps the quarantine and enrollment sets), add the rule after the DoT rule (handle 32 at 08:14; check first with `sudo nft -a list chain inet filter forward`):
    `ssh maheshwari@192.168.2.5 'sudo nft add rule inet filter forward position 32 iifname "ap0" udp dport 853 counter log prefix \"doq-bypass: \" reject comment \"doq-bypass\"'`

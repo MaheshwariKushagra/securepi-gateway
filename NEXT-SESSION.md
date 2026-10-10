@@ -3,7 +3,15 @@
 ## ★ Stage 8 (10 Oct 2026, 13:22-14:55): read this first
 
 Everything an agent could do for Stage 8 is done and committed locally (not pushed). Full detail:
-`STAGE8-RECORD.md` §3. What is left needs you:
+`STAGE8-RECORD.md` §3.
+
+**The Dell was shut down cleanly at 14:49 IST on 10 Oct 2026** (`systemctl poweroff`, at the user's
+request; no demo or test job was running). After powering it on:
+- `ssh maheshwari@192.168.2.5 'sudo securepi status'`: all services should be active.
+- Then `sudo systemctl start securepi-doh-refresh.service`. After a boot the DoH set holds only its
+  14 seed addresses until the daily refresh (M-15, item 4 below).
+
+What is left needs you:
 
 1. **Resolve incident #806 on the console** (Incidents → #806 → Resolved). It is the privacy-scope
    incident from the demo dry-run's deliberate canary sabotage; until it is resolved the Filtering

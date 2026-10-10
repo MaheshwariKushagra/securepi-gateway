@@ -31,10 +31,11 @@ low-cost machine into the three things a small office normally buys separately:
 <td width="33%" valign="top">
 
 ### Filter
-**DNS filtering** for every device, with 656,735 rules from five curated
-blocklists. DoT, known DoH and QUIC are blocked so devices can't route around it.
-**Selective HTTPS inspection** removes first-party YouTube ads for devices that opt in.
-It decrypts nothing else.
+**DNS filtering** for every device, with 392,229 rules from five curated
+blocklists. It also stops ad-network ads inside apps. DoT, known DoH and QUIC are
+blocked so devices can't route around it.
+**Selective HTTPS inspection** removes first-party ads on YouTube and Instagram (and,
+partly, Facebook) for devices that opt in, site by site. It decrypts nothing else.
 
 </td>
 <td width="33%" valign="top">
@@ -71,12 +72,13 @@ and puts back anything altered outside the console.
 | | Result | Source |
 |---|---|---|
 | **Alert-to-incident reduction** | **1,588 : 1** over a clean 24-hour window | [Evaluation §2](EVALUATION-RESULTS.md) |
-| **Third-party ad blocking** | **100%** (10/10 fixed test domains) | [Evaluation §4](EVALUATION-RESULTS.md) |
+| **Third-party ad blocking** | **−83% requests, −99% tracker companies**, 0/48 popular sites broken (240 page loads, 20 ad-heavy sites); matches uBlock Origin Lite | [Evaluation 2.0 §7.5](EVALUATION-RESULTS-2.md) |
+| **First-party ad removal (Tier 2)** | YouTube pre-rolls **10/10 → 0/30** videos, Instagram feed ads **4/6 → 0/6** runs (both on a real phone); Facebook partial | [Evaluation 2.0, Stage 7A](EVALUATION-RESULTS-2.md) |
 | **Detection** | 4 attack types × 3 runs each, **all detected**. 6/6 signals verified live. One real bug found and fixed along the way | [Evaluation §1](EVALUATION-RESULTS.md) |
-| **DNS rules enforced** | **656,735** across 5 curated lists | Live DNS filter |
+| **DNS rules enforced** | **392,229** across 5 curated lists (trimmed from 656,735 after measuring each list's unique contribution) | Live DNS filter |
 | **Memory under attack load** | **40%** of 3.6 GiB used, over 2 GiB free | [Evaluation §5](EVALUATION-RESULTS.md) |
 | **Throughput headroom** | Limited by the WAN (~30 Mbps). The inspection path itself ran at **39.9 Gbps** on virtual links | [Evaluation §6](EVALUATION-RESULTS.md) |
-| **Automated tests** | **362** unit tests (`make test`), all on synthetic data | [`tests/`](tests) |
+| **Automated tests** | **641** unit tests (`make test`), all on synthetic data | [`tests/`](tests) |
 
 ---
 
@@ -296,7 +298,8 @@ produces the reduction ratio.
 | `beacon` | RITA-style regularity score (coefficient of variation of timing + connection size) to one destination - a fixed-timer C2 check-in, not human or app traffic | score ≥ 0.8 over ≥ 8 connections in 3600 s | ![high](https://img.shields.io/badge/-high-f2545b?style=flat-square) | Command and Control · [T1071](https://attack.mitre.org/techniques/T1071/) |
 | `volume_anomaly` | Traffic far above **this device's own** baseline for this hour of day | z > 3.0 after 7 days of history | ![medium](https://img.shields.io/badge/-medium-f5a524?style=flat-square) | Exfiltration · [TA0010](https://attack.mitre.org/tactics/TA0010/) (tactic only) |
 | `new_device` | A device the registry has never seen | 30 s grace, 1 h lookback | ![low](https://img.shields.io/badge/-low-4f9cf9?style=flat-square) | *informational* |
-| `adblock_ineffective` | YouTube being decrypted but nothing stripped: a format change or server-side ad insertion | ≥ 5 decrypts, 0 stripped in 1 h | ![medium](https://img.shields.io/badge/-medium-f5a524?style=flat-square) | *health check of this platform* |
+| `adblock_ineffective` | A site (YouTube, Instagram, Facebook) being decrypted for a device but nothing stripped: a format change, or for YouTube server-side ad insertion | ≥ 5 decrypts, 0 stripped in 1 h, per device and site | ![medium](https://img.shields.io/badge/-medium-f5a524?style=flat-square) | *health check of this platform* |
+| `vpn_tunnel` | A device sending WireGuard, Cloudflare WARP or OpenVPN traffic: its DNS and web traffic bypass the gateway's filtering while the tunnel is up. Never adds to the risk score | ≥ 3 packets to a VPN port in 900 s | ![low](https://img.shields.io/badge/-low-4f9cf9?style=flat-square) | *informational* |
 
 <sub>¹ A blocklist hit on an ad or tracker domain, or an encrypted-DNS attempt, is not evidence of contact with attacker infrastructure or of intent to evade this network specifically (modern devices increasingly enable encrypted DNS by default for ordinary privacy reasons) - tagging either with a specific technique would overstate the finding. The reasoning is in <a href="app/playbooks.py"><code>app/playbooks.py</code></a>.</sub>
 
@@ -416,18 +419,20 @@ flowchart TD
 
 ### Two-tier ad blocking
 
-DNS filtering cannot remove YouTube ads, because the ad video comes from the same domain as the
-real video. Tier 2 handles that case, and it is limited in two ways: **only enrolled devices** are
-redirected, and **only allowlisted hostnames** are decrypted. The proxy sees the requested hostname
-(SNI) *before* any decryption. Banking, email and messaging connections pass through as encrypted bytes,
-and no certificate is ever presented for them.
+DNS filtering cannot remove YouTube, Instagram or Facebook ads, because they come from the same
+domain as the real content. Tier 2 handles those cases, and it is limited in three ways: **only
+enrolled devices** are redirected, **only the sites switched on for that device** are decrypted, and
+each site's rules may only rewrite its feed or player responses. The proxy sees the requested
+hostname (SNI) *before* any decryption. Banking, email and live-messaging connections pass through
+as encrypted bytes, and no certificate is ever presented for them. Each site beyond YouTube needed a
+written privacy review ([`docs/adblock-feasibility.md`](docs/adblock-feasibility.md)).
 
 ```mermaid
 %%{init: {'theme':'base','themeVariables':{'primaryColor':'#161d2b','primaryTextColor':'#e6ecf5','primaryBorderColor':'#2e3a50','secondaryColor':'#111722','tertiaryColor':'#0d121b','lineColor':'#4f9cf9','clusterBkg':'#0d121b','clusterBorder':'#2e3a50','titleColor':'#aab6c8','edgeLabelBackground':'#1d2534','textColor':'#8d99ad'},'flowchart':{'curve':'basis','padding':14,'nodeSpacing':38,'rankSpacing':46}}}%%
 flowchart TD
     Q["Device traffic"] --> DNS{"DNS query"}
     DNS -->|"any resolver, port 53"| DNAT["nftables DNAT<br/>forced to 10.10.0.1"]
-    DNAT --> AGH{"DNS filter<br/>656,735 rules"}
+    DNAT --> AGH{"DNS filter<br/>392,229 rules"}
     AGH -->|match| BLK["0.0.0.0 · blocked<br/><b>Tier 1</b>: every device"]
     AGH -->|clean| OK["resolved via DoT upstreams"]
 
@@ -437,10 +442,10 @@ flowchart TD
     Q --> TLS{"TCP 443 from an<br/>enrolled device?"}
     TLS -->|no| FWD["forwarded untouched"]
     TLS -->|yes| MITM["redirect to mitmproxy :8080"]
-    MITM --> SNI{"SNI on decrypt allowlist?<br/>youtube.com · googlevideo.com · ytimg.com …"}
+    MITM --> SNI{"SNI of a site switched on<br/>for this device?<br/>youtube · instagram · facebook"}
     SNI -->|no| PASS["passthrough, never decrypted"]
-    SNI -->|"yes, but 3 TLS failures<br/>(app pins its certificate)"| PIN["auto-passthrough for 24 h"]
-    SNI -->|yes| STRIP["remove adPlacements, playerAds, adSlots<br/>block ad-tracking paths<br/><b>Tier 2</b>: enrolled devices only"]
+    SNI -->|"yes, but 2 TLS failures from this client<br/>(an app that pins its certificate)"| PIN["auto-passthrough for that client, 24 h"]
+    SNI -->|yes| STRIP["remove the site's ad items from its feed or player data<br/>block ad-tracking paths<br/><b>Tier 2</b>: per device, per site"]
 
     classDef ext fill:#161d2b,stroke:#5a6679,stroke-width:1.5px,color:#e6ecf5
     classDef sensor fill:#0f2a1f,stroke:#2fbf71,stroke-width:1.5px,color:#d5f5e3
@@ -466,8 +471,10 @@ flowchart TD
 |---|---|
 | **Off after every reboot** | Enrollment has to be switched on deliberately each time and never persists silently. `securepi status` reports it explicitly |
 | **Auto-unenroll** | Each enrollment is an nftables set element with a **24 h timeout**, so the kernel expires it without needing a scheduler |
-| **Privacy-scope canary** | Every 15 minutes, `dpi/privacy_canary.py` checks the deployed addon's decision for a must-pass host and a must-decrypt host. If either is wrong, **every device is unenrolled** and a high-severity incident is raised |
-| **Pinning-aware passthrough** | Apps that pin their certificate stop being decrypted instead of staying broken |
+| **Privacy-scope canary** | Every 15 minutes, `dpi/privacy_canary.py` checks the deployed addon's decision for every site's hosts, look-alike names and never-decrypt hosts, both with every site switched on and with none. If any is wrong, **every device is unenrolled**, its open inspected connections are closed, and a high-severity incident is raised |
+| **Per-site switches** | Enrolment alone means YouTube only. Each further site is switched on per device on its device page, with its privacy note shown |
+| **Changes apply at once** | Enrolling, unenrolling or switching a site resets that device's open HTTPS connections, so its browser reconnects under the new setting within about a second |
+| **Pinning-aware passthrough** | Apps that pin their certificate stop being decrypted instead of staying broken. The bypass covers only the client that failed (recognised by its TLS ClientHello), so a pinned app doesn't switch ad removal off for the browser on the same phone |
 | **Effectiveness watchdog** | The `adblock_ineffective` signal reports when ad removal stops working (for example, server-side ad insertion) |
 | **Versioned rules** | The decrypt allowlist, ad fields and blocked paths are in [`dpi/adfilter-rules.json`](dpi/adfilter-rules.json), can be edited from the console, and are covered by tests |
 | **CA never leaves the gateway** | Generated on the box, root-only, excluded from git by `.gitignore` |
@@ -623,7 +630,8 @@ is in [`ENHANCEMENT-PLAN.md`](ENHANCEMENT-PLAN.md).
 | **4** | **Response and orchestration**: policy orchestrator with read-back and drift repair, MAC-keyed timed quarantine, IP/domain blocks, auto-response, filtering profiles and schedules, device trust, notifications | ![Complete](https://img.shields.io/badge/-complete-2fbf71?style=flat-square) |
 | **5** | **Ad blocking and privacy filtering**: telemetry, unbreak workflow, analytics, list health, Tier 2 lifecycle, privacy canary, pinning bypass, watchdog | ![Complete](https://img.shields.io/badge/-complete-2fbf71?style=flat-square) |
 | **6** | **Intelligence and console**: baselines, fingerprinting, settings, incident workbench, hunt, weekly report, responsive layout | ![Complete](https://img.shields.io/badge/-complete-2fbf71?style=flat-square) |
-| **7** | Evaluation 2.0: expanded benchmark battery, 7-day continuous run | ![Not started](https://img.shields.io/badge/-not_started-5a6679?style=flat-square) |
+| **7** | **Evaluation 2.0**: detection battery, precision/recall, ad-blocking benchmark, chaos tests, performance (the 7-day run and the participant study were replaced by one-session equivalents) | ![Complete](https://img.shields.io/badge/-complete-2fbf71?style=flat-square) |
+| **7A** | **Ad-blocking enhancement** ([`ADBLOCK-ENHANCEMENT-PLAN.md`](ADBLOCK-ENHANCEMENT-PLAN.md)): per-site modules (Instagram; Facebook, partly), per-device site switches, immediate switching, per-client pin bypass, in-app ad-network blocking measured | ![Complete](https://img.shields.io/badge/-complete-2fbf71?style=flat-square) |
 | **8** | Documentation and demo | ![Not started](https://img.shields.io/badge/-not_started-5a6679?style=flat-square) |
 
 <sub>Stages 5 and 6 were built before Stages 1–2 on purpose, where the order didn't affect correctness. Each of those decisions and its reasoning is recorded in the plan.</sub>

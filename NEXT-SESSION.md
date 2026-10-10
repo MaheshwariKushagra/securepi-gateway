@@ -59,7 +59,7 @@ ssh maheshwari@192.168.2.5 'sudo securepi enroll all'  # YouTube ad removal ON
 ssh maheshwari@192.168.2.5 'sudo securepi unenroll'    # back off
 ```
 
-DNS filtering (656,000+ rules across curated lists, plus a daily-refreshed
+DNS filtering (about 392,000 rules across curated lists, plus a daily-refreshed
 offline-threat-intel list) is always on for every device and needs no action.
 
 ---
@@ -432,7 +432,7 @@ script, canary and log-rotation units).
 - **F4 check on the A33** (the code is done): with the A33 enrolled, open YouTube in Chrome and in the app, and compare their `client_fp` values in the DPI telemetry.
 - **Stage 8, step 1:** the 7.9 usability fixes (F17 is already done).
 
-**Then Stage 8 (documentation and demo).** Queued inputs from Stage 7:
+**Then Stage 8 (documentation and demo).** For 8.1: the README's ad-blocking rows, rule count, test count and stage table were updated on 10 Oct 2026; its detection, memory and throughput rows still quote the first evaluation (`EVALUATION-RESULTS.md`) and need Stage 7's numbers. Queued inputs from Stage 7:
 1. **The 7.9 recommendations** (`heuristic-evaluation.md`, end), worst first:
    - dark-theme contrast: `--text-3`/`--muted` → about `#8792a6`;
    - a Risk column on the Devices list;

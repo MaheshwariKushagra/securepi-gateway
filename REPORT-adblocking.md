@@ -44,7 +44,7 @@ Two tiers were implemented, differing in coverage, capability and privacy cost.
                     ┌──────────────────────────────────────────┐
                     │        SecurePi Gateway                  │
    All devices ────▶│  TIER 1: DNS filtering                   │──▶ internet
-                    │  655,974 rules, 5 blocklists             │
+                    │  392,229 rules, 5 blocklists             │
                     │  Blocks third-party ad/tracker domains   │
                     │  Zero privacy cost, no device config     │
                     ├──────────────────────────────────────────┤
@@ -60,7 +60,7 @@ Two tiers were implemented, differing in coverage, capability and privacy cost.
 | Component | Choice |
 |---|---|
 | Resolver | DNS filter, headless, UI bound to `127.0.0.1` and never exposed |
-| Blocklists | Default DNS filter list, AdAway, HaGeZi Pro, OISD Big, Peter Lowe — **655,974 rules** |
+| Blocklists | AdGuard DNS filter, HaGeZi Pro, Peter Lowe, HaGeZi encrypted-DNS bypass, offline threat intel — **392,229 rules** (October 2026; OISD Big and AdAway were dropped after measuring that they added 0.6% of blocks between them, which cut the DNS filter's memory from 271 to 187 MB) |
 | Upstream | DNS-over-TLS to `1.1.1.1` / `1.0.0.1` |
 
 Three firewall controls were added, because filtering is only effective if it cannot be
@@ -193,7 +193,7 @@ determines whether such failures are caught.
 
 | Capability | Coverage | Status |
 |---|---|---|
-| Third-party ads and trackers | All devices | ✅ 655,974 rules active |
+| Third-party ads and trackers | All devices | ✅ 392,229 rules active |
 | DNS bypass prevention (hardcoded, DoH, DoT, QUIC) | All devices | ✅ enforced, 0 bypasses observed |
 | YouTube first-party pre-roll ads | Enrolled browser devices | ✅ blocked |
 | Ad telemetry endpoints | Enrolled devices | ✅ blocked (36 in one session) |
@@ -260,7 +260,7 @@ look*, not a dashboard that keeps reporting success on data it hasn't actually c
 
 | Metric | Method | Result obtained |
 |---|---|---|
-| Blocklist size | Query the resolver API | 655,974 rules, 5 lists |
+| Blocklist size | Query the resolver API | 392,229 rules, 5 lists (655,974 before the October trim) |
 | Third-party block rate | Fixed set of ad-heavy sites, filtering on vs. off | **−83% requests, −99% tracker companies** (7.5, 240 loads) |
 | First-party block rate, DNS only | YouTube with Tier 1 alone | **0%** — the measured boundary |
 | First-party block rate, Tier 2 | YouTube with inspection enabled | **Effective** — pre-rolls removed (7.5: 30/30 → 0/29) |

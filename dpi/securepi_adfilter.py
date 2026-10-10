@@ -182,13 +182,15 @@ def prune(node, ops, hits=None):
     removed = 0
     if isinstance(node, dict):
         for key, value in node.items():
+            done = False   # children already pruned by an innermost op
             if isinstance(value, list):
                 for op in ops:
                     if op["op"] != "drop_items" or op["list_key"] != key:
                         continue
-                    if op.get("innermost"):
+                    if op.get("innermost") and not done:
                         for item in value:
                             removed += prune(item, ops, hits)
+                        done = True
                     keep = [x for x in value if not _drop_item(x, op)]
                     if len(keep) != len(value):
                         n = len(value) - len(keep)
@@ -197,7 +199,8 @@ def prune(node, ops, hits=None):
                         if hits is not None:
                             label = "%s %s" % (key, op.get("where") or op.get("contains_key"))
                             hits[label] = hits.get(label, 0) + n
-            removed += prune(value, ops, hits)
+            if not done:
+                removed += prune(value, ops, hits)
     elif isinstance(node, list):
         for item in node:
             removed += prune(item, ops, hits)

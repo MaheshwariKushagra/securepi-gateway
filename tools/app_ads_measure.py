@@ -80,7 +80,8 @@ def wifi_cycle(serial, want_ip):
     adb(serial, "shell", "svc", "wifi", "disable")
     time.sleep(3)
     adb(serial, "shell", "svc", "wifi", "enable")
-    for _ in range(40):
+    # Up to 90 s: the tablet once took longer than 40 s to rejoin.
+    for _ in range(90):
         time.sleep(1)
         out = adb(serial, "shell", "ip", "-4", "addr", "show", "wlan0")
         if want_ip in out:

@@ -585,3 +585,11 @@ H9 no journal purge; no deliberate outages on the real network.*
   - The four page-level timers also check `SP.live`.
   - Tested structurally, plus a node run of `backgroundPoll` showing three overlapping ticks run the refresh once.
   - **Not done live:** a browser network-panel check needs a logged-in console session, and the console password isn't available unattended.
+- **Group 4 deployed and verified live (08:40-08:45).**
+  - **Backups:** `pre-group4-20261010-083944.tar.gz` and `.bak-7B-g4-*` copies. All services active; no journal errors.
+  - **M15:** two test indicators under source `audit-7b-test` (one current, one last listed 60 days ago), each queried 4 times from the gateway as the test-attacker device. Only the current one raised a `threat_intel` incident (#793).
+    - The gateway address `10.10.0.1` has been mapped to 19 battery devices over time, so its queries weren't attributed until its mapping to the test-attacker device was refreshed, as the battery itself does. That is pre-existing and not caused by 7B.
+    - Cleaned up: incident #793 and its 4 evidence links, and both indicators. No notification channels exist, so nothing was sent.
+  - **M14** (temporary session, removed afterwards): `/api/overview` open = 468 and `/api/incidents?status=open` = 468, matching the database (new 468, investigating 0, resolved 312, false_positive 3).
+  - **M10:** the live database holds 20,802 unattributed LAN events. The old scan shape took 90 ms per pass (every 2 s, inside the write transaction); the windowed one takes under 1 ms (0 events in the window).
+  - **Not done live:** H7 (needs two real devices sharing a hostname) and the M12 browser check (no console password unattended).

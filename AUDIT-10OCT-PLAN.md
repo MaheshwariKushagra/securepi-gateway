@@ -551,3 +551,7 @@ H9 no journal purge; no deliberate outages on the real network.*
   - **Engine:** `run_step` rolls back a failed step's uncommitted writes, so the next step's commit can't save them.
   - **Notifications:** `dispatch` keeps per-cycle limits. A channel that fails once is skipped for the rest of the cycle; its rows stay `failed` and the normal retry picks them up. Sending stops after `CYCLE_SEND_BUDGET_S = 20`, with the rest deferred, not lost.
   - 3 new tests failed on the old code; all pass now.
+- **7B.13 (M5, M6) done in code.**
+  - **M5:** a new `responseheaders` hook streams any decrypted response that isn't JSON, HTML, JavaScript or text, or is declared over 8 MiB. Video segments, images and downloads are no longer held in memory. A response with no content type is still buffered (`response()` can recognise JSON by its first character). `response()` returns at once for a streamed flow.
+  - **M6:** when `drop_documents` matches every document, the documents are kept and in-document pruning still runs (it used to be skipped entirely, so the response went out untouched); the case is logged. **Waiting for user:** what an "empty" streamed GraphQL reply should look like needs a live Facebook capture, so a chunk made only of sponsored stories with no inner list to prune still passes as it is.
+  - 5 new tests failed on the old code (one was first written so the addon's own try/except hid the failure; it was rewritten).

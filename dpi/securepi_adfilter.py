@@ -847,6 +847,34 @@ class SecurePiAdFilter:
                 self._write_rule_stats()
                 return
 
+    # Responses larger than this are never held in memory to be rewritten
+    # (Audit10Oct M5) - the ad-carrying JSON and HTML the rules work on is
+    # far smaller; a body this size is media or a download.
+    MAX_REWRITE_BYTES = 8 * 1024 * 1024
+    REWRITABLE_TYPES = ("json", "html", "javascript", "text/")
+
+    def responseheaders(self, flow):
+        """Runs when a decrypted response's headers arrive, before its body.
+
+        mitmproxy normally holds the whole body in memory before response()
+        runs - including video segments from googlevideo.com, which is in
+        YouTube's decrypt scope for its blocked paths. A body the rules
+        could never rewrite (not JSON, HTML, JavaScript or text, or bigger
+        than MAX_REWRITE_BYTES) is set to stream straight through instead
+        (Audit10Oct M5). A response with no content type at all is still
+        buffered, because response() can recognise JSON by its first
+        character."""
+        try:
+            headers = flow.response.headers
+            content_type = (headers.get("content-type", "") or "").lower()
+            length = headers.get("content-length")
+            too_big = length is not None and str(length).isdigit() and int(length) > self.MAX_REWRITE_BYTES
+            not_text = content_type != "" and not any(t in content_type for t in self.REWRITABLE_TYPES)
+            if too_big or not_text:
+                flow.response.stream = True
+        except Exception as exc:
+            logger.warning("securepi: responseheaders check failed: %s", exc)
+
     def response(self, flow):
         """
         Runs for each response on a connection we chose to decrypt.
@@ -857,6 +885,8 @@ class SecurePiAdFilter:
         and harder to evade than a list of special cases.
         """
         self._ensure_rules_fresh()
+        if getattr(flow.response, "stream", False):
+            return  # streamed through by responseheaders() - there is no body to read
         name, module = self._flow_module(flow)
         if module is None:
             return
@@ -895,7 +925,16 @@ class SecurePiAdFilter:
             for op in ops:
                 if op["op"] == "drop_documents" and separator is not None:
                     keep = [d for d in docs if not _contains_key(d, op["contains_key"])]
-                    if len(keep) != len(docs):
+                    if not keep:
+                        # Every document matched. Dropping them all used to
+                        # leave nothing to write, so the response went out
+                        # unchanged, ads and all (Audit10Oct M6). What an
+                        # empty reply should look like to the site isn't
+                        # known without a capture, so the documents stay and
+                        # the in-document pruning below still runs.
+                        logger.info("securepi: every document in a %s response matched %s - kept, "
+                                    "pruned inside instead", name, op["contains_key"])
+                    elif len(keep) != len(docs):
                         n = len(docs) - len(keep)
                         removed += n
                         label = "documents %s" % op["contains_key"]

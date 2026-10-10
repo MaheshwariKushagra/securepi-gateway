@@ -266,6 +266,23 @@ class FacebookModuleTests(unittest.TestCase):
         self.assertIn('"s3"', f.response.text)
         self.assertEqual(a.lines, [("ads_stripped", "facebook", 1)])
 
+    def test_when_every_document_is_sponsored_the_items_inside_are_still_pruned(self):
+        # Audit10Oct M6: drop_documents removing EVERY document left
+        # docs=[], and `if removed and docs` then skipped writing anything -
+        # the whole response went through with its ads. The documents are
+        # now kept and the in-document pruning still applies.
+        doc = {"data": {"viewer": {"news_feed": {"edges": [
+            {"node": {"id": "ad1", "th_dat_spo": {"ad_id": "1"}}},
+            {"node": {"id": "o1", "th_dat_spo": None}}]}}}, "extensions": {}}
+        body = "\r\n".join(json.dumps(doc) for _ in range(2))
+        a = quiet_addon()
+        f = flow("www.facebook.com", "/api/graphql/", body, query="CometNewsFeedPaginationQuery")
+        a.response(f)
+        prefix, docs, sep = addon.parse_json_documents(f.response.text)
+        self.assertEqual(len(docs), 2)
+        self.assertNotIn("ad_id", f.response.text)
+        self.assertIn('"o1"', f.response.text)
+
     def test_messages_query_is_not_parsed(self):
         a = quiet_addon()
         body = fb_stream()
@@ -387,6 +404,52 @@ class SiteSwitchTests(unittest.TestCase):
         rules["modules"]["instagram"]["decrypt_suffixes"] = ["instagram.com"]
         self.assertIsNone(adfilter_rules.module_for_host(rules, "edge-chat.instagram.com")[0])
         self.assertEqual(adfilter_rules.module_for_host(rules, "www.instagram.com")[0], "instagram")
+
+
+class StreamingTests(unittest.TestCase):
+    """Audit10Oct M5: every response on a decrypted connection was held in
+    memory whole - video segments from googlevideo.com included - and then
+    decoded as text. A response the rules can't rewrite now streams
+    straight through."""
+
+    def headers_flow(self, host, content_type, length=None):
+        headers = {"content-type": content_type}
+        if length is not None:
+            headers["content-length"] = str(length)
+        return types.SimpleNamespace(
+            request=types.SimpleNamespace(host=host, path="/x", headers={}),
+            response=types.SimpleNamespace(headers=headers, stream=False),
+            client_conn=types.SimpleNamespace(address=("10.10.0.53", 50000), sni=host))
+
+    def test_video_and_other_binary_bodies_stream(self):
+        a = quiet_addon()
+        for ctype in ("video/mp4", "application/vnd.yt-ump", "image/webp", "application/octet-stream"):
+            f = self.headers_flow("rr1---sn.googlevideo.com", ctype)
+            a.responseheaders(f)
+            self.assertTrue(f.response.stream, ctype)
+
+    def test_a_very_large_body_streams_even_if_it_is_json(self):
+        a = quiet_addon()
+        f = self.headers_flow("www.youtube.com", "application/json", 9 * 1024 * 1024)
+        a.responseheaders(f)
+        self.assertTrue(f.response.stream)
+
+    def test_rewritable_responses_are_still_buffered(self):
+        a = quiet_addon()
+        for ctype in ("application/json; charset=UTF-8", "text/html; charset=utf-8",
+                      "text/javascript", "application/x-javascript", ""):
+            f = self.headers_flow("www.youtube.com", ctype, 50000)
+            a.responseheaders(f)
+            self.assertFalse(f.response.stream, ctype)
+
+    def test_a_streamed_response_is_not_read(self):
+        a = quiet_addon()
+        f = flow("www.youtube.com", "/youtubei/v1/player", '{"adPlacements": [1]}')
+        f.response.stream = True
+        reads = []
+        f.response.get_text = lambda: reads.append(1) or '{"adPlacements": [1]}'
+        a.response(f)
+        self.assertEqual(reads, [])
 
 
 class EditorMergeTests(unittest.TestCase):

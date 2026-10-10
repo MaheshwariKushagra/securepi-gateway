@@ -618,3 +618,11 @@ H9 no journal purge; no deliberate outages on the real network.*
   - **Platform incidents:** all from before the run.
   - **README:** the test count is updated to 751.
 - **Run complete.** Summary for the user at the top of `NEXT-SESSION.md`.
+- **A33 live checks (10 Oct 2026, 12:25-12:45, phone on USB, real redirect)**, run from the forked session in worktree `a33-checks`.
+  - **YouTube only (7B.13, C1):** 10 videos, **0 pre-rolls**; 9 played (the first was buffering after Chrome's cold start, no ad on screen). 40 ad objects stripped, 50 ad paths blocked. Proxy memory 72 MB idle, mean 98 MB, peak 116 MB during playback (7.5 tablet: up to 221 MB). 0 request URLs in the proxy journal (H9 holds).
+  - **Instagram only, revocation (C1):** YouTube switched off with Chrome left running. All later YouTube connections passed through (15 decisions tagged `youtube`), none decrypted, and **3/3 control videos showed a pre-roll**.
+  - **Instagram feed** (`site_ads_measure_phone.py`, 3 pairs): off 3/3 runs with ads (19 ads, up to 3 "Sponsored" labels); **on 0/3** (0 ads, 0 labels); posts 8-9 in both.
+  - **Privacy scope** (`scope_check_device.py`, Instagram and YouTube on): **0 unexpected decryptions**. Three hosts timed out without a certificate to read; none was decrypted.
+  - **Site map moved aside (C1, deny-by-default):** the orchestrator restored the map 0.73 s later. Inside that window the A33's `m.youtube.com` and `www.youtube.com` connections **passed through**; after the restore they were decrypted again.
+  - **Cleanup:** enrollment ended (no enrollments, empty map, empty nft set, nothing pending); no aside files left; canary ok. The only journal errors were two pinned-client TLS refusals (expected).
+  - Results are in `eval/results/{youtube-7B,sites,scope-check}/`.

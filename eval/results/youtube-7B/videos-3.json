@@ -1,0 +1,72 @@
+{
+ "about": "Step 7.5 Tier 2 test: popular music videos (verified via YouTube oEmbed on 2 October 2026), first 30 used.",
+ "videos": [
+  {
+   "id": "CevxZvSJLk8",
+   "title": "Katy Perry - Roar",
+   "channel": "KatyPerryVEVO"
+  },
+  {
+   "id": "pRpeEdMmmQ0",
+   "title": "Shakira - Waka Waka (This Time for Africa) (The Official 2010 FIFA Wor",
+   "channel": "shakiraVEVO"
+  },
+  {
+   "id": "e-ORhEE9VVg",
+   "title": "Taylor Swift - Blank Space",
+   "channel": "Taylor Swift"
+  }
+ ],
+ "spare": [
+  {
+   "id": "ktvTqknDobU",
+   "title": "Imagine Dragons - Radioactive",
+   "channel": "ImagineDragonsVEVO"
+  },
+  {
+   "id": "YykjpeuMNEk",
+   "title": "Coldplay - Hymn For The Weekend (Official Video)",
+   "channel": "Coldplay"
+  },
+  {
+   "id": "8UVNT4wvIGY",
+   "title": "Gotye - Somebody That I Used To Know (feat. Kimbra) [Official Music Vi",
+   "channel": "Gotye"
+  },
+  {
+   "id": "CTFtOOh47oo",
+   "title": "French Montana - Unforgettable ft. Swae Lee",
+   "channel": "FrenchMontanaVEVO"
+  },
+  {
+   "id": "LjhCEhWiKXk",
+   "title": "Bruno Mars - Just The Way You Are (Official Music Video)",
+   "channel": "Bruno Mars"
+  },
+  {
+   "id": "hLQl3WQQoQ0",
+   "title": "Adele - Someone Like You (Official Music Video)",
+   "channel": "Adele"
+  },
+  {
+   "id": "1G4isv_Fylg",
+   "title": "Coldplay - Paradise (Official Video)",
+   "channel": "Coldplay"
+  },
+  {
+   "id": "DyDfgMOUjCI",
+   "title": "Billie Eilish - bad guy",
+   "channel": "BillieEilishVEVO"
+  },
+  {
+   "id": "7wtfhZwyrcc",
+   "title": "Imagine Dragons - Believer (Official Music Video)",
+   "channel": "ImagineDragonsVEVO"
+  },
+  {
+   "id": "iS1g8G_njx8",
+   "title": "Ariana Grande - Problem ft. Iggy Azalea",
+   "channel": "ArianaGrandeVevo"
+  }
+ ]
+}

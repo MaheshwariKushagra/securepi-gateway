@@ -51,6 +51,11 @@ class FakeBackends:
         self.protection_until = None
         self.ignore_mac_adds = False   # accept mac_add but don't keep it
         self.fail_rules = False        # The DNS filter refuses set_rules
+        # Audit10Oct C2: removals that return normally but change nothing,
+        # and client writes that are accepted but not kept.
+        self.sticky_deletes = False
+        self.ignore_client_adds = False
+        self.ignore_client_updates = False
         self.calls = []
 
     def _secs(self, s):
@@ -66,7 +71,8 @@ class FakeBackends:
 
     def mac_del(self, mac):
         self.calls.append(("mac_del", mac))
-        self.mac_set.pop(mac, None)
+        if not self.sticky_deletes:
+            self.mac_set.pop(mac, None)
 
     def ips(self):
         return self._secs(self.ip_set)
@@ -75,7 +81,8 @@ class FakeBackends:
         self.ip_set[ip] = None if seconds is None else self.clock() + seconds
 
     def ip_del(self, ip):
-        self.ip_set.pop(ip, None)
+        if not self.sticky_deletes:
+            self.ip_set.pop(ip, None)
 
     def enrolled(self):
         return self._secs(self.enroll_set)
@@ -86,7 +93,8 @@ class FakeBackends:
 
     def unenroll(self, ip):
         self.calls.append(("unenroll", ip))
-        self.enroll_set.pop(ip, None)
+        if not self.sticky_deletes:
+            self.enroll_set.pop(ip, None)
 
     def reset_https(self, ip):
         self.calls.append(("reset_https", ip))
@@ -97,15 +105,22 @@ class FakeBackends:
     def set_user_rules(self, rules):
         if self.fail_rules:
             raise adguard.AdGuardError("The DNS filter rejected POST /control/filtering/set_rules (HTTP 500)")
+        if self.sticky_deletes:
+            # Additions take; any line the new list leaves out stays anyway.
+            rules = list(rules) + [r for r in self.rules if r not in rules]
         self.rules = list(rules)
 
     def clients(self):
         return copy.deepcopy(self.client_list)
 
     def add_client(self, obj):
+        if self.ignore_client_adds:
+            return
         self.client_list.append(copy.deepcopy(obj))
 
     def update_client(self, name, obj):
+        if self.ignore_client_updates:
+            return
         for i, c in enumerate(self.client_list):
             if c["name"] == name:
                 self.client_list[i] = copy.deepcopy(obj)
@@ -228,11 +243,15 @@ class QuarantineTests(OrchestratorTestCase):
 
 class RollbackTests(OrchestratorTestCase):
     def test_injected_failure_rolls_back_and_marks_the_policy_failed(self):
-        self.b.mac_set["aa:bb:cc:00:00:02"] = None  # something already there, must survive
+        self.b.mac_set["aa:bb:cc:00:00:02"] = None  # something already there
         self.b.ignore_mac_adds = True               # the change is accepted but doesn't take
         with self.assertRaises(orchestrator.PolicyApplyError) as ctx:
             self.create("quarantine", 1)
-        self.assertIn("rolled back", str(ctx.exception))
+        # This fake ignores EVERY add, including the rollback's re-add of
+        # the element that was already there, so the rollback can't fully
+        # take. Before Audit10Oct C2 this still said "nothing was changed";
+        # the rollback is now read back and the message says what's true.
+        self.assertIn("rolling back did not fully take", str(ctx.exception))
         row = self.conn.execute("SELECT status, last_error FROM policies ORDER BY id DESC LIMIT 1").fetchone()
         self.assertEqual(row["status"], "failed")
         audit_row = self.conn.execute("SELECT action FROM audit_log WHERE action='policy.rolled_back'").fetchone()
@@ -253,6 +272,61 @@ class RollbackTests(OrchestratorTestCase):
             self.create("profile", 1, "strict_privacy")
         row = self.conn.execute("SELECT status FROM policies WHERE id=?", (first["id"],)).fetchone()
         self.assertEqual(row["status"], "active")
+
+
+class RemovalVerificationTests(OrchestratorTestCase):
+    """Audit10Oct C2: a removal is only verified against what used to be
+    managed. Checking against the NEW ownership record (which no longer
+    lists the removed item) passed even when the item was still there."""
+
+    def status(self, policy_id):
+        return self.conn.execute("SELECT status FROM policies WHERE id=?", (policy_id,)).fetchone()[0]
+
+    def test_a_rule_that_stays_after_ending_the_policy_is_caught(self):
+        p = self.create("block_domain", None, "tracker.example.com")
+        self.b.sticky_deletes = True
+        with self.assertRaises(orchestrator.PolicyApplyError):
+            orchestrator.end_policy(self.conn, p["id"], reason="test", backends=self.b, now=self.clock())
+        self.assertEqual(self.status(p["id"]), "active")
+
+    def test_an_unenroll_that_doesnt_take_is_caught(self):
+        p = self.create("enroll", 1, minutes=120)
+        self.b.sticky_deletes = True
+        with self.assertRaises(orchestrator.PolicyApplyError):
+            orchestrator.end_policy(self.conn, p["id"], reason="test", backends=self.b, now=self.clock())
+        self.assertEqual(self.status(p["id"]), "active")
+
+    def test_a_profile_that_isnt_reset_to_standard_is_caught(self):
+        p = self.create("profile", 1, "kids")
+        self.b.ignore_client_updates = True
+        with self.assertRaises(orchestrator.PolicyApplyError):
+            orchestrator.end_policy(self.conn, p["id"], reason="test", backends=self.b, now=self.clock())
+        self.assertEqual(self.status(p["id"]), "active")
+
+    def test_reconcile_recheck_catches_an_expired_rule_that_stays(self):
+        self.create("allow_domain", 1, "cdn.example.com", minutes=60)
+        self.b.sticky_deletes = True
+        self.clock.t += 3601
+        summary = self.reconcile()
+        self.assertIn("rules", summary["errors"])
+
+    def test_a_rollback_that_doesnt_take_is_reported_as_partial(self):
+        # The new device client is accepted but not kept, so verification
+        # fails; rolling back then can't remove the rule it added.
+        self.b.ignore_client_adds = True
+        self.b.sticky_deletes = True
+        with self.assertRaises(orchestrator.PolicyApplyError) as ctx:
+            self.create("block_domain", 1, "tracker.example.com")
+        self.assertIn("did not fully take", str(ctx.exception))
+        self.assertNotIn("nothing was changed", str(ctx.exception))
+        row = self.conn.execute("SELECT * FROM incidents WHERE signal_type='policy_enforcement_failed'").fetchone()
+        self.assertIsNotNone(row)
+
+    def test_a_clean_rollback_still_says_nothing_changed(self):
+        self.b.ignore_mac_adds = True
+        with self.assertRaises(orchestrator.PolicyApplyError) as ctx:
+            self.create("quarantine", 1)
+        self.assertIn("nothing was changed", str(ctx.exception))
 
 
 class DriftTests(OrchestratorTestCase):

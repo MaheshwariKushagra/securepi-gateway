@@ -472,3 +472,4 @@ used for the open decisions: M13 timer polls don't refresh the idle clock;
 H9 no journal purge; no deliberate outages on the real network.*
 
 - **Step 0** - branch `audit-7b` created; plan documents committed.
+- **7B.1 (C2) done** - `_apply_and_verify` and reconcile's re-check now verify against the previous ownership record. Rollbacks are read back. "Nothing was changed" is said only when that's true; otherwise the message says "rolling back did not fully take" and a `policy_enforcement_failed` incident is raised. The fake backend gained sticky deletes and ignored client writes. 5 new tests failed on the old code and pass now. One existing test had been asserting "rolled back" for a rollback that could not have worked (its fake ignores every add); it now expects the honest message. 647 tests pass.

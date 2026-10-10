@@ -1053,8 +1053,13 @@ def _apply_and_verify(conn, b, domains, now):
         for d in domains:
             new_applied[d] = _converge(conn, b, d, desired, snap[d], applied, now)
         after = _snapshot(b, domains)
+        # Checked against `applied` - what was managed BEFORE this change -
+        # not `new_applied`. A removal is only provable against the old
+        # record: the new one no longer lists the removed rule, client or
+        # enrollment, so a backend that accepted the delete but kept the
+        # item used to pass this check (Audit10Oct C2).
         mismatched = [d for d in domains
-                      if not _domain_matches(d, desired[d], after[d], new_applied, now)]
+                      if not _domain_matches(d, desired[d], after[d], applied, now)]
         if mismatched:
             error = "read-back did not match what was applied (%s)" % ", ".join(
                 DOMAIN_LABELS[d] for d in mismatched)
@@ -1072,9 +1077,75 @@ def _apply_and_verify(conn, b, domains, now):
         except BACKEND_ERRORS as e:
             rollback_errors.append("%s: %s" % (DOMAIN_LABELS[d], e))
     if rollback_errors:
+        _raise_rollback_incident(conn, error, "; ".join(rollback_errors), now)
         raise PolicyApplyError("%s - and rolling back also failed (%s); the next reconcile "
                                "will retry" % (error, "; ".join(rollback_errors)))
+
+    # Read the rollback back too, the same way the change itself was read
+    # back. "Nothing was changed" is only said when every touched
+    # enforcement point really is as it was before (Audit10Oct C2).
+    still_differ = []
+    for d in domains:
+        try:
+            if not _restored_matches(d, snap[d], _observe(b, d)):
+                still_differ.append(DOMAIN_LABELS[d])
+        except BACKEND_ERRORS as e:
+            still_differ.append("%s (could not read it back: %s)" % (DOMAIN_LABELS[d], e))
+    if still_differ:
+        _raise_rollback_incident(conn, error, "still different from before: " + ", ".join(still_differ), now)
+        raise PolicyApplyError("%s - rolling back did not fully take (%s still differ from before); "
+                               "the next reconcile will retry" % (error, ", ".join(still_differ)))
     raise PolicyApplyError("%s - rolled back, nothing was changed" % error)
+
+
+def _restored_matches(domain, snap, have):
+    """After a rollback: is this enforcement point back to the snapshot?
+
+    Compared by what matters, not byte for byte - set elements by their
+    keys (a timeout keeps counting down), rules as the exact list, DNS-filter
+    clients by name, ids and the settings the orchestrator writes."""
+    if domain in ("macs", "ips", "enrolled"):
+        return set(snap) == set(have)
+    if domain == "rules":
+        return list(have) == list(snap)
+    if domain == "protection":
+        return bool(have["enabled"]) == bool(snap["enabled"])
+    if domain == "clients":
+        before = {cl["name"]: cl for cl in snap}
+        now_ = {cl["name"]: cl for cl in have}
+        if set(before) != set(now_):
+            return False
+        for name, cl in before.items():
+            ids_before = sorted(i.lower() for i in cl.get("ids") or [])
+            ids_now = sorted(i.lower() for i in now_[name].get("ids") or [])
+            if ids_before != ids_now:
+                return False
+            # Only the fields the orchestrator itself writes.
+            wanted = {}
+            for key in _standard_settings():
+                if key == "blocked_services":
+                    wanted[key] = cl.get(key) or []
+                elif key == "safe_search":
+                    wanted[key] = cl.get(key) or {}
+                else:
+                    wanted[key] = cl.get(key)
+            if not profiles.client_matches(wanted, now_[name]):
+                return False
+        return True
+    raise ValueError(domain)
+
+
+def _raise_rollback_incident(conn, error, what, now):
+    """A change that failed AND could not be fully undone leaves enforcement
+    in a state nobody asked for, so it is an incident, not just an error
+    message on the policy."""
+    import correlation
+    correlation.raise_incident(
+        conn, None, "policy_enforcement_failed", "high",
+        "A policy change could not be fully rolled back",
+        "A change failed (%s) and rolling it back did not fully take: %s. "
+        "The orchestrator will keep retrying every cycle." % (error, what),
+        now, now, [])
 
 
 # ---------------------------------------------------------------- reconcile --
@@ -1375,7 +1446,9 @@ def reconcile(conn, backends=None, now=None):
                             summary["restored"].append(DOMAIN_LABELS[d])
                         new_applied[d] = _converge(conn, b, d, desired, have, applied, now)
                         after = _observe(b, d)
-                        if not _domain_matches(d, desired[d], after, new_applied, now):
+                        # Against the previous record, for the same reason
+                        # as in _apply_and_verify (Audit10Oct C2).
+                        if not _domain_matches(d, desired[d], after, applied, now):
                             raise PolicyApplyError("still doesn't match after re-applying")
                     else:
                         new_applied[d] = _record_for(d, desired)

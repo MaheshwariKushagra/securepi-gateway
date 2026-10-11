@@ -12,10 +12,19 @@ adds to it:
 Every action has an exact command or click path, the expected result and its timing, and a fallback.
 Every timing comes from a measurement on this gateway, with the source cited.
 
-> **Status (10 October 2026).** The script, its two helpers (`gateway/demo_attacks.py` and
-> `dpi/canary_demo.py`) and their tests are done. The technical dry-runs are recorded in [§9](#9-rehearsal-record).
-> The three rehearsals the plan asks for are a presenter's run-throughs with the phone in hand, and so
-> is the backup video ([§10](#10-backup-video)). Neither has been done yet.
+> **Phone-free since 11 October 2026.** The Samsung A33 the script was written for can no longer be
+> connected, so no segment needs a phone in hand any more (the user's decision, 11 Oct).
+> - **Segments 3, 7 and 8:** their policies are applied to the A33's existing device record (#2,
+>   `kushagra-s-a33`). The gateway enforces and verifies them for real, in the DNS filter and in the
+>   firewall's sets. Their effect is shown with the console's per-device domain test and the kernel
+>   sets, not with live traffic from the phone.
+> - **Segment 2:** shown network-wide, with `dig` from the gateway.
+> - **Segments 5b and 11:** shown from what the phone recorded when it was connected.
+>
+> §8 says this plainly. The phone version of the script is in git history (commit `79e8396`). The
+> helpers (`gateway/demo_attacks.py`, `dpi/canary_demo.py`) and their tests are unchanged. The dry-runs
+> and the three run-throughs of this version are recorded in [§9](#9-rehearsal-record), and the backup
+> recording in [§10](#10-backup-video).
 
 ---
 
@@ -24,17 +33,17 @@ Every timing comes from a measurement on this gateway, with the source cited.
 | # | Segment | Plan item | Expected timing (source) |
 |---|---|---|---|
 | 1 | Live overview; slow scan started | F§17.4-1, slow scan | detection ≈ 8 min later (7.2 median 494 s) |
-| 2 | Ad-heavy page, filtering paused then on | F§17.4-2 | immediate (7.5: −83 % requests across 20 sites) |
-| 3 | A broken link fixed for one device | per-device unbreak in 30 s | first allowed lookup at 11.8 s (`EVALUATION-RESULTS-2.md`, "Unbreak one site") |
+| 2 | Filtering paused for everyone, then on, seen with `dig` | F§17.4-2 | immediate (7.5: −83 % requests across 20 sites) |
+| 3 | A broken link fixed for one device (the A33's record) | per-device unbreak in 30 s | first allowed lookup at 11.8 s (`EVALUATION-RESULTS-2.md`, "Unbreak one site"); on stage, the device's domain test |
 | 4 | Device inventory and drill-down | F§17.4-3 | none (it is a page) |
 | 5 | Live attack: scan, brute force and beacon, forming a campaign | F§17.4-4, beaconing, campaign | brute force ≈ 78 s, scan ≈ 92 s, campaign ≈ 139 s, beacon ≈ 139 s (7.2 medians) |
-| 5b | DoH bypass from the phone, during 5's wait | DoH bypass blocked and detected | refused at once; incident within about one engine cycle after the 3rd attempt (threshold 3 in 300 s) |
+| 5b | DoH bypass, during 5's wait: the rule and the phone's recorded incident #447 | DoH bypass blocked and detected | recorded 26 Sep: refused at once, 87 packets logged, linked to #447; incident once 3 indicators fall inside 300 s |
 | 6 | The slow scan is caught; correlation value | F§17.4-4/5 | it arrives during this segment; reduction 200:1 (3 h live) / 47:1 (replay) (`REPORT.md` §6.1) |
-| 7 | Timed quarantine of the phone | F§17.4-6, timed quarantine | effective within one engine cycle; expiry 6-11 s after its time (4.2) |
+| 7 | Timed quarantine of the A33's record | F§17.4-6, timed quarantine | in the firewall's `quarantine_mac` set within one engine cycle; expiry 6-11 s after its time (4.2) |
 | 8 | Schedule-based service block | schedule-based block | block at the window's first second (4.3: 00:38:00 → blocked 00:38:01) |
 | 9 | Kill the IDS; then stop the DNS filter | F§17.4-7, kill-Suricata, fail-open DNS | IDS back < 1 s, so no incident; fail-open on at +16-18 s and off at +61-62 s, with an incident (7.7, 7B) |
 | 10 | Canary sabotaged: red, then safe | canary red→safe | red on the next console refresh (5 s) |
-| 11 | Instagram on for the phone only | 7A Instagram | feed ads 10/10 → 0/10 runs (7A); live-message hosts passthrough in every logged connection |
+| 11 | Instagram for one device: the recorded result | 7A Instagram | recorded: feed ads 10/10 → 0/10 runs (7A); live-message hosts passthrough in every logged connection |
 | 12 | Results | F§17.4-8 | `REPORT.md` §6 |
 
 ---
@@ -45,14 +54,11 @@ Every timing comes from a measurement on this gateway, with the source cited.
 |---|---|
 | **Gateway** | The Dell, lid closed, **on AC power**, all services active (`sudo securepi status`). |
 | **Presenter's Mac** | Not on SecurePi-Test: it stays on its own Wi-Fi and reaches the gateway over the management cable. It shows three windows: (1) Chrome with the console through `./mac-tunnel.sh start`, at `https://localhost:8000`; (2) Terminal **A**, `ssh -t maheshwari@192.168.2.5`, for commands; (3) Terminal **B**, a second SSH session, for the live decision log. |
-| **Phone (Samsung A33)** | On **SecurePi-Test**. **Chrome**, not the Instagram or YouTube app (pinned apps bypass inspection by design, §8 of `REPORT-adblocking.md`). The SecurePi inspection CA is installed (Settings → Security → Encryption & credentials → User certificates). The project's **test** Instagram account is signed in at `https://www.instagram.com/` in Chrome. It is mirrored to the Mac over USB with `scrcpy --stay-awake --window-title A33` (`/opt/homebrew/bin/scrcpy`; USB debugging on). |
+| **No phone** | Since 11 Oct the script needs none. The A33's device record stays on the gateway (Devices → #2, "Shri-Maheshwari-Ji", `kushagra-s-a33`, last address `10.10.0.50`) and stands in for it. Below it is called **PHONE**. |
 | **Optional attacker laptop** | Not needed. The attacks run inside the gateway's isolated test harness (`gateway/demo_attacks.py`). For a second, physical attacker, use `redteam/securepi_attack.py` from a laptop on SecurePi-Test instead (`redteam/README.md`). |
 
-The phone's device id and address appear on the Devices page (in the evaluation it was device 2 at
-`10.10.0.50`). Below it is called **PHONE**. Note its id and address before the demo.
-
-**Before the close-out.** `docs/CLOSE-OUT.md` removes the inspection CA from the phone and signs the
-test account out. Run the demo and its rehearsals **before** that.
+**Before the close-out.** `docs/CLOSE-OUT.md` deletes the Dell's test browser and purges the journal.
+Run the demo and its rehearsals **before** that.
 
 ---
 
@@ -73,12 +79,10 @@ Then:
   not show "edited". If it does, click Reset.
 - **Auto-quarantine off.** This is the default (Settings → Response). The campaign must not
   quarantine anything by itself during segment 5; quarantine is shown by hand in segment 7.
-- **The phone.** Is `t.co` still blocked for it? `dig +short @10.10.0.1 t.co` gives `0.0.0.0`
-  (checked 10 Oct 2026, rule `||t.co^`). Is there no "Allow t.co" rule left from a rehearsal?
-  (Response → active policies: no `allow_domain` for PHONE.) Chrome's Secure DNS is
-  **off** (Settings → Privacy and security → Use secure DNS).
-- **Instagram off for the phone.** On the phone's device page, "HTTPS ad removal (Tier 2)" shows
-  **Enroll device**, not "Enrolled".
+- **PHONE's record is clean.** `dig +short @10.10.0.1 t.co` gives `0.0.0.0` (rule `||t.co^`, checked
+  11 Oct 2026). Response has no active policy for PHONE (no `allow_domain`, no quarantine), and
+  `sudo nft list set inet filter quarantine_mac` has no elements. PHONE's filtering profile is
+  **Standard**, and its Tier 2 row shows **Enroll device**, not "Enrolled".
 
 ---
 
@@ -89,11 +93,9 @@ Then:
 | 1 | Mac: `cd ~/blah && ./mac-tunnel.sh start`, then open `https://localhost:8000` and sign in | Dashboard |
 | 2 | Terminal A: `sudo securepi status` | `-> all services active`, `Tier 1 ... active`, `Tier 2 ... OFF`, test harness `present` |
 | 3 | Terminal A: `sudo nft -j list set inet filter doh_resolvers \| jq '.nftables[1].set.elem \| length'` | about 1,400. **If it says 14**, the gateway has rebooted since the last daily refresh (`STAGE8-RECORD.md` M-15). Run `sudo systemctl start securepi-doh-refresh.service` and check again. |
-| 4 | Phone: join SecurePi-Test, open Chrome | It appears on the Devices page within 15 s |
-| 5 | Mac: `scrcpy --stay-awake --window-title A33` | The phone's screen on the Mac |
-| 6 | Terminal B: `sudo tail -n0 -f /var/log/securepi/dpi-events.jsonl \| jq -r --unbuffered '"\(.ts_iso) \(.decision) \(.sni)"'` | Silent: nothing is enrolled |
-| 7 | Console tabs, in order: Dashboard · Devices · PHONE's device page · Incidents · Response · Filtering | All load |
-| 8 | Phone: Chrome tabs `https://timesofindia.indiatimes.com/` and `https://www.instagram.com/` (signed in) | Both load |
+| 4 | Terminal B: `ssh -t maheshwari@192.168.2.5`, then `watch -n 2 'sudo nft list set inet filter quarantine_mac'` | No elements (it shows PHONE's MAC during segment 7) |
+| 5 | Console tabs, in order: Dashboard · Devices · PHONE's device page (`/devices/2`) · Incidents · Response · Filtering | All load |
+| 6 | `REPORT-adblocking.md` §13 open in a second browser window | For segment 11 |
 
 The incidents list shows the newest first. The evaluation's older open incidents stay below the new
 ones; set the status filter to **New** for the demo.
@@ -107,8 +109,8 @@ The times are targets. **If you are behind at 8:00, drop segment 3 (unbreak) and
 
 ### 0:00-1:00 · 1. A real network, right now; a slow scan starts
 
-- **Say:** "This is a gateway for a small network, running now: the phone here, plus an isolated test
-  network inside the gateway for attacks."
+- **Say:** "This is a gateway for a small network, running now, with an isolated test network inside
+  the gateway for attacks."
 - **Terminal A:**
   ```bash
   sudo python3 /opt/securepi-eval/demo_attacks.py slow-scan &
@@ -124,36 +126,43 @@ The times are targets. **If you are behind at 8:00, drop segment 3 (unbreak) and
 
 ### 1:00-3:00 · 2. Ad blocking, off then on
 
-- **Console:** PHONE's device page → Filtering profile row → **Pause** → **5 minutes**.
-- **Phone:** reload `timesofindia.indiatimes.com`. Ads and slower loading.
-- **Console:** **Resume** (the same row). **Phone:** reload. The ad slots are empty.
-- **Terminal A:**
-  ```bash
-  dig +short @10.10.0.1 doubleclick.net      # 0.0.0.0  (blocked)
-  dig +short @10.10.0.1 youtube.com          # real addresses: a DNS filter cannot touch ads served from youtube.com itself
-  ```
+- **Terminal A:** `dig +short @10.10.0.1 doubleclick.net`. Expected: `0.0.0.0` (blocked).
+- **Console:** Filtering → **Pause for everyone** (top right) → **5 minutes** → reason "demo" →
+  **Pause filtering**. A chip "Paused · 4m left" and **Resume now** appear. (The separate "Filtering is
+  on" button beside them is the DNS filter's own on/off state, and still reads "on" during a pause.)
+- **Terminal A:** the same `dig`. Expected: real addresses. The pause is a policy with an expiry, and
+  the DNS filter's own timer ends it too, so it resumes on time even if the orchestrator stops.
+- **Console:** **Resume now**. **Terminal A:** the same `dig`. Expected: `0.0.0.0` again, at once.
+- **Terminal A:** `dig +short @10.10.0.1 youtube.com`. Real addresses: a DNS filter cannot touch ads
+  served from youtube.com itself.
 - **Say:** "Across 20 ad-heavy sites, 83 % fewer requests and 99 % fewer tracker companies. But
   first-party ads, like YouTube's, come from the same domain as the video. That is segment 11."
-- **Fallback:** if the page looks the same both ways (a cached page), use `https://www.hindustantimes.com/`.
+- **Fallback:** if `dig` still shows `0.0.0.0` while paused, wait one engine cycle (15 s) and repeat.
 
 ### 3:00-4:00 · 3. A broken link, fixed for one device in under 30 s
 
-- **Phone:** open `https://t.co/`. It fails (DNS-blocked: `||t.co^`).
 - **Say:** "Links shared from X go through t.co, which the tracker list blocks. Someone on this phone
   says 'links are broken'."
-- **Console:** PHONE's device page → the recently-blocked list ("test and allow for this device") →
-  `t.co` → **Allow 1h** → reason "demo: X links". Start counting. *Allow 1h* removes itself after an hour.
-- **Phone:** reload. It opens. Measured: 11.8 s to the first allowed lookup (target 30 s).
-- **Say:** "Only this phone. Every other device still has t.co blocked." Show this with the
-  Filtering page's domain tester ("test a domain, network-wide or for one device"): network-wide,
-  `t.co` is still blocked.
-- **Fallback:** if Chrome shows a cached failure, open the link in an Incognito tab.
+- **Say:** "Someone says the Myntra shopping app on this phone is broken."
+- **Console:** PHONE's device page → **Recently Blocked** ("test and allow for this device") lists the
+  domains the phone was blocked on. Type `touch.myntra.com` in its box → **Check**: the toast says
+  **Blocked**. (Allow buttons appear only for domains the device was really blocked on. The list is its
+  last 500 blocked lookups, and DNS events are kept for 30 days, so the phone's list lasts until
+  about 9 November 2026.)
+- **Console:** the `touch.myntra.com` row → **Allow 1h** → the dialog "Allow touch.myntra.com for this
+  device for an hour?" → reason "demo: Myntra app" → **Allow for 1 hour**. *Allow 1h* removes itself
+  after an hour. **Check** again: **Allowed** ("Allowed by an explicit rule"). In the 11 Oct
+  run-throughs this was 1.1 s after the click.
+- **Say:** "Only this phone. Every other device still has it blocked." Filtering → **Why is this
+  blocked?** → `touch.myntra.com`, **Network-wide** → **Check domain**: still blocked.
+- **Measured live, when the phone was connected:** 11.8 s from the click to the phone's first allowed
+  lookup (target 30 s).
 
 ### 4:00-5:30 · 4. Devices, identified, scored, explained
 
-- **Console:** Devices. Then PHONE's page: type, vendor and OS with the evidence for each (the
-  hostname pattern, the connectivity-check lookups), risk score with its explanation, recent DNS, and
-  baseline.
+- **Console:** Devices → **Hide test devices** (the list otherwise starts with 100-odd harness
+  entries). Then PHONE's page: type, vendor and OS with the evidence for each (the hostname pattern,
+  the connectivity-check lookups), risk score with its explanation, recent DNS, and baseline.
 - **Say:** "Every incident is tied to a device, not an IP address. Addresses change; the device
   record follows the MAC and hostname."
 
@@ -186,13 +195,22 @@ The times are targets. **If you are behind at 8:00, drop segment 3 (unbreak) and
   - The 40-port scan also raises a `slow_port_scan` incident for the attacker. The slow signal
     counts ports over a longer window, and a fast scan satisfies it too. The dedicated slow scanner
     (segment 1) is the one that *only* the slow signal catches.
-- **While it runs (5b), on the phone:** Chrome → Settings → Privacy and security → Use secure DNS →
-  On → **Custom** → `https://8.8.8.8/dns-query`. Then browse to any new site, twice.
-  - Chrome reports it cannot reach the secure DNS provider (the `doh-bypass` rule rejects
-    `PHONE → 8.8.8.8:443`; measured: 87 packets rejected and logged).
-  - **Console → Incidents:** a **dns_bypass** incident for PHONE, "tried to bypass DNS filtering ... via
-    DoH", once three attempts fall inside 5 minutes.
-  - **Then turn Secure DNS off again** on the phone, or the rest of the demo has no DNS on it.
+- **While it runs (5b), the DoH bypass:**
+  - **Terminal A:**
+    ```bash
+    sudo nft list chain inet filter forward | grep -E 'doh-bypass|dot-bypass|doq-bypass'
+    sudo nft -j list set inet filter doh_resolvers | jq '.nftables[1].set.elem | length'   # about 1,400
+    ```
+    DoH to a known resolver, DoT (853/tcp) and DoQ (853/udp) from the Wi-Fi are rejected and logged.
+    The counters start at 0 after every boot.
+  - **Console:** Incidents → **#447, "Device tried to bypass DNS filtering 6 times"** (PHONE, 26 Sep).
+    Its evidence includes the phone's real DoH attempt: Chrome's Secure DNS set to
+    `https://8.8.8.8/dns-query`, 182 `doh-bypass` rejections (plus 4 DoT and 1 DoQ) at 08:30-08:31,
+    with 87 packets logged when it was measured (`EVALUATION-RESULTS-2.md`, real-device checks). The
+    incident's text still says "quic-blocked x4": an incident keeps the description it opened with,
+    and #447 opened on the phone's QUIC fallbacks at 08:06. (The phone's other bypass incidents, #580
+    among them, are QUIC only.) The signal raises an incident once three bypass indicators fall
+    inside 5 minutes.
 - **Console → Incidents** (status New): the attacker's incidents arrive one by one. Open the
   **campaign**: the kill chain with each stage's evidence and its ATT&CK tactic.
 - **Say:** "Three alerts became one story: discovery, credential access, command and control, on one
@@ -212,27 +230,33 @@ The times are targets. **If you are behind at 8:00, drop segment 3 (unbreak) and
 ### 9:00-10:00 · 7. Timed quarantine
 
 - **Console:** PHONE's device page → **Quarantine** → **15 minutes** → reason "demo".
-- **Phone:** reload any page. It fails within one engine cycle (15 s). Ping and DNS both stop; the
-  MAC is in `quarantine_mac`.
+- **Terminal B:** within one engine cycle (15 s) PHONE's MAC, `ca:25:f0:57:6d:87`, appears in
+  `quarantine_mac` with a timeout of about 15 minutes. The kernel drops everything from that MAC on
+  the Wi-Fi, so it holds across DHCP renewals, and the timeout ends it even if the orchestrator stops.
 - **Console → Response:** the active policy with its expiry time, and the audit entry.
-- **Release early:** device page → **Release**. The phone browses again. (The menu offers 15 min,
-  1 h, 24 h or until released; the 4.2 expiry measurement used a 120 s policy made through the API.)
+- **Release early:** device page → **Release** (no dialog). The toast says "Quarantine released", and
+  the MAC leaves the set within one engine cycle. (The
+  menu offers 15 min, 1 h, 24 h or until released; the 4.2 expiry measurement used a 120 s policy made
+  through the API.)
 - **Say:** "Every response is a policy with an expiry, verified against the kernel, and undone
   automatically. Measured: expired 6-11 s after its time."
 
 ### 10:00-11:00 · 8. A schedule-based service block
 
 - **Console:** Filtering → **Profiles & Schedules** → **Kids** → **Edit**. "Also block some services
-  during a daily window" is ticked. Keep the **Social networks** group (`group:social_network`, which
-  includes reddit) and set start = **the next minute** (e.g. now 10:42 → `10:43`), end = one hour
-  later → **Save and apply**.
-- **Console:** PHONE's device page → filtering profile → **Kids**. The row then reads
-  "Kids · schedule 10:43-11:43 ...", and "(active now)" once the window opens.
-- **Console:** PHONE's device page → **Test a domain** box: `www.reddit.com`.
+  during a daily window" is ticked. Under "Blocked during the window" keep **Social media** ticked
+  (it includes reddit) and set **From** = **the next minute** (e.g. now 10:42 → `10:43`), **Until** =
+  one hour later. (The time boxes show 12-hour times in a browser with that locale.) Type a reason,
+  which is required → **Save and apply**. The row then reads "edited" and gains **Reset**.
+- **Console:** PHONE's device page → DNS filtering profile → **Kids**. The toast says "Kids - verified
+  in the DNS filter", and the row reads "Kids · schedule 10:43-11:43 daily".
+- **Console:** PHONE's device page → **Recently Blocked** box: `www.reddit.com` → **Check**.
   - Before the start minute: allowed.
-  - From the start minute: **blocked (blocked service)**.
+  - From the start minute: **Blocked** ("part of a blocked service"). In the 11 Oct run-throughs it
+    switched within 7 s of the start minute.
 - **Say:** "Kids' default window is 21:00-07:00. I moved it so it opens in front of you."
-- **Phone:** after the start minute, open `https://www.reddit.com/`. Blocked.
+- Network-wide (Filtering → Why is this blocked?) `www.reddit.com` stays allowed: only PHONE is on
+  Kids.
 - **Fallback:** if the start minute passed while you were talking, the block is already on. Show the
   domain test, then the profile's schedule.
 
@@ -250,7 +274,6 @@ The times are targets. **If you are behind at 8:00, drop segment 3 (unbreak) and
     systemctl show suricata -p NRestarts -p ExecMainStartTimestamp      # NRestarts goes up by 1; start time = just now
     journalctl -u suricata -n 8 -o short --no-pager                     # "Sent signal SIGKILL" ... "Starting suricata.service"
     ```
-  - The phone notices nothing.
 - **Terminal A:**
   ```bash
   sudo python3 /opt/securepi-eval/chaos.py stop-dns --watch 75 | jq -c '.timeline[]?' | tail -20
@@ -261,8 +284,8 @@ The times are targets. **If you are behind at 8:00, drop segment 3 (unbreak) and
     | When | What |
     |---|---|
     | +0.1 s | AdGuardHome inactive |
-    | +11.3 s | incident `platform_service_down` |
-    | +17.4 s | the `dns-failopen` rules are in place, and incident `platform_dns_failopen` is raised. The **phone keeps resolving new sites**, unfiltered (7.7: 4 fresh names resolved through the redirect) |
+    | +1 to +29 s | incident `platform_service_down` (+11.3 s on 10 Oct, +1.2 s and +28.7 s in the 11 Oct run-throughs: it depends on where the health check's cycle is) |
+    | +17.4 s | the `dns-failopen` rules are in place, and incident `platform_dns_failopen` is raised. Devices keep resolving new sites, unfiltered (7.7: 4 fresh names resolved through the redirect) |
     | +61.3 s | AdGuardHome active again, and the fail-open rules are gone |
   - Show both incidents on the console. Afterwards, `dig +short @10.10.0.1 doubleclick.net` gives
     `0.0.0.0` again.
@@ -273,7 +296,8 @@ The times are targets. **If you are behind at 8:00, drop segment 3 (unbreak) and
 
 ### 12:30-13:30 · 10. The privacy canary: sabotaged, red, then safe
 
-- **Console:** Filtering → the **Privacy scope** chip (top of the page), "verified N min ago", green.
+- **Console:** Filtering → the **Tier 2: HTTPS Ad Removal** card → the **Privacy scope** chip,
+  "verified N min ago", green.
 - **Terminal A:**
   ```bash
   sudo /opt/securepi-dpi/bin/python3 /opt/securepi-dpi/canary_demo.py break
@@ -297,28 +321,18 @@ The times are targets. **If you are behind at 8:00, drop segment 3 (unbreak) and
   module`, then `resolve on the console to turn the badge green: incident #K (new)`.
 - **Console:** Incidents → #K → **Resolved**. The badge is **green** again.
 
-### 13:30-14:30 · 11. Instagram, for one device only
+### 13:30-14:30 · 11. Instagram, for one device only (recorded)
 
-- **Console:** PHONE's device page → **HTTPS ad removal (Tier 2)** → tick **Instagram** only (hover
-  shows its privacy note) → **Enroll device**. The toast says on for 24 h, for new connections only.
-- **Phone:** **close Chrome fully** (recent apps → swipe it away) and reopen it. Its connections to
-  Instagram from the prep are still open, and inspection applies only to new ones. Then go to
-  `https://www.instagram.com/` and scroll the feed. **No "Sponsored" posts.** Open the **inbox**. It
-  loads.
-- **Terminal B** shows the decisions as they happen:
-  ```
-  2026-..Z decrypt www.instagram.com
-  2026-..Z passthrough gateway.instagram.com
-  2026-..Z passthrough edge-chat.instagram.com
-  2026-..Z passthrough static.cdninstagram.com
-  ```
-- **Say:** "Only `www.instagram.com` is decrypted, and only for this phone. The live-message hosts,
-  `edge-chat` and `gateway`, are passed through untouched. In the evaluation log, every one of their
-  connections (2 and 60) was passthrough, never decrypted."
-- **Console:** **Enrolled · Unenroll**, then restart Chrome. The feed shows ads again.
-- **Fallback:** if Instagram shows a sign-in page, the test session has expired. Show the decision
-  log and the 10/10 → 0/10 result from `REPORT-adblocking.md` §13 instead. **Never sign in a personal
-  account for the demo.**
+- **Console:** PHONE's device page → **HTTPS ad removal (Tier 2)**. Hover over Instagram for its
+  privacy note: each site is ticked per device, off after every reboot, deny-by-default.
+- **Console:** the same page's Tier 2 tile, recorded while the phone was connected: **435 decrypted,
+  2,133 passed through, ads stripped from 91 responses, 265 ad objects removed.**
+- **Second window:** `REPORT-adblocking.md` §13. Instagram feed ads in **10 of 10 runs → 0 of 10**
+  with it on. The live-message hosts `edge-chat.instagram.com` and `gateway.instagram.com` were
+  passthrough in every logged connection (2 and 60), never decrypted.
+- **Say:** "Only `www.instagram.com` is decrypted, and only for the one device it is ticked for. The
+  canary in segment 10 checks that scope every 15 minutes."
+- **Not shown live:** enrolling needs a device that trusts the inspection CA, and none is connected.
 
 ### 14:30-15:00 · 12. Results
 
@@ -339,11 +353,10 @@ Show `REPORT.md` §6 (or the README's "At a glance"):
 |---|---|
 | A console page is blank or stale | Reload it. The tunnel runs from the Mac: `./mac-tunnel.sh status`, then `stop` and `start`. |
 | No attacker incidents after 3 min | `sudo securepi status`. Check that ingest and engine are active; `journalctl -u securepi-engine -n 20`. Re-run `demo_attacks.py campaign` (it registers a new device and uses new ports). |
-| The phone has no internet after segment 5b | Chrome Secure DNS is still on Custom. Turn it off. |
-| The phone has no internet after segment 7 | Release on the device page; check Response for an active quarantine; `sudo nft list set inet filter quarantine_mac`. |
+| PHONE's MAC stays in `quarantine_mac` after Release | Wait one engine cycle; check Response for an active quarantine. The set's own timeout ends it anyway. |
+| The domain test still says allowed after the schedule's start minute | Check that PHONE's profile row reads "Kids · schedule ... (active now)"; the schedule applies within one engine cycle (15 s). |
 | Fail-open did not engage | `chaos.py` already scheduled its own undo. Check `systemctl is-active AdGuardHome`, then `sudo systemctl start AdGuardHome`. |
 | The canary badge stays red after `restore` | The incident is still open: resolve it. If `restore` printed FAIL, the live addon really is wrong: stop and leave inspection off. |
-| Instagram ads still show | Was Chrome restarted after enrolling? Does the device page show "Enrolled" with Instagram ticked, and is the phone's IP in `sudo nft list set ip nat enrolled`? Is it Chrome, not the app? Is the inspection CA still installed? |
 | Anything else | Go on to the next segment and play that part of the backup video (§10). |
 
 ---
@@ -354,14 +367,13 @@ Run all of these. They return the gateway to the state in §3.
 
 | # | Undo | How |
 |---|---|---|
-| 1 | Phone's t.co allow | It ends by itself after the hour. To end it now: Response → the `allow_domain` policy for PHONE → End. |
-| 2 | Phone's profile | Device page → filtering profile → **Standard**. |
+| 1 | PHONE's touch.myntra.com allow | It ends by itself after the hour. To end it now: PHONE's device page → Active Policies → the Allow domain row → **End** (reason optional) → **End policy**. |
+| 2 | PHONE's profile | Device page → DNS filtering profile → **Standard**. |
 | 3 | Kids schedule | Filtering → Profiles & Schedules → Kids → **Reset** (back to 21:00-07:00). |
-| 4 | Instagram | Device page → **Enrolled · Unenroll** (if it was not ended on stage). |
-| 5 | Chrome Secure DNS on the phone | Off. |
-| 6 | Harness addresses | `sudo python3 /opt/securepi-eval/demo_attacks.py cleanup` |
-| 7 | Demo incidents | Leave them, or mark them resolved. The demo devices are labelled `[TEST HARNESS] demo ...`. |
-| 8 | Check | `sudo securepi status`; `sudo nft list set ip nat enrolled` (no elements); `canary_demo.py restore` (ok, no open incident). |
+| 4 | Quarantine | Ended on stage by Release; if not, Response → the quarantine policy for PHONE → End. |
+| 5 | Harness addresses | `sudo python3 /opt/securepi-eval/demo_attacks.py cleanup` |
+| 6 | Demo incidents | Leave them, or mark them resolved. The demo devices are labelled `[TEST HARNESS] demo ...`. |
+| 7 | Check | `sudo securepi status`; `sudo nft list set ip nat enrolled` and `... quarantine_mac` (no elements); `canary_demo.py restore` (ok, no open incident); Response: no active policy for PHONE. |
 
 ---
 
@@ -376,6 +388,11 @@ Run all of these. They return the gateway to the state in §3.
     live addon is never broken: mitmproxy reloads that file when it changes, so breaking it would
     really decrypt traffic.
   - The schedule's start time is moved so the window opens on stage.
+  - **No device is connected (since 11 Oct 2026).** Segments 3, 7 and 8 apply real policies to the
+    A33's existing record. The gateway enforces them in the DNS filter and in the firewall's sets,
+    but no live traffic from the phone shows their effect: the domain test and the kernel sets do.
+    Segment 2 is shown with `dig` from the gateway. Segments 5b and 11 show what the phone recorded
+    when it was connected; nothing in them happens live.
 
 ---
 
@@ -397,13 +414,34 @@ Not dry-run, because they need the phone in hand and a console sign-in: segments
 and 11. Each was measured live earlier, with the results cited in §1. They are what the presenter
 rehearsals cover.
 
-**Presenter rehearsals** (the plan's "rehearsed 3×", with the phone, against a clock):
+**Run-throughs of the phone-free script (11 October 2026).** The whole script, end to end, on the
+live gateway. Claude Code drove the console in Chrome through the Mac's tunnel and ran Terminal A's
+commands over SSH. There was no presenter and no audience, so they test the script and the gateway,
+not the delivery. The wall-clock times include the tools' own latency, so a presenter's timing still
+has to be found against a clock.
 
-| Rehearsal | Date | Total time | Segments that ran long or failed | Fix |
-|---|---|---|---|---|
-| 1 | | | | |
-| 2 | | | | |
-| 3 | | | | |
+| Run | Time (IST) | Result |
+|---|---|---|
+| 1 | 18:28:54-18:39 | **Aborted at segment 3, after finding two console bugs.** Segment 1's slow scan was detected in 490.8 s. Segment 2 passed, but the first item of "Pause for everyone" (5 minutes) was hidden behind the page tabs, and 15 minutes had to be used (`STAGE8-RECORD.md` M-22). In segment 3, every **Allow 1h** click had sent no domain and been refused with 422, since the button was added on 13 Sep. Its native `prompt()` also froze the browser until the operator dismissed it (M-23). Both bugs were fixed test-first, 770 tests pass, deployed at 18:38. The run's one-hour allow (policy #114) was ended. |
+| 2 | 18:40:12-18:53:45 | **Every segment passed.** 2: paused for 5 min from the fixed menu; `doubleclick.net` resolved at once, then was blocked again at once after **Resume now**. 3: the new dialog; PHONE allowed `touch.myntra.com` **1.1 s** after the click, still blocked network-wide. 5: campaign #45: brute force 75.7 s, port scan 91.7 s, beacon 152.2 s, kill chain C2 → Credential Access → Discovery. 6: slow scan **487.1 s**. 7: MAC in `quarantine_mac` within 1 s (timeout 15m59s), out of it after Release. 8: Kids 18:48-19:48; `www.reddit.com` allowed at 18:47:44, blocked at **18:48:07**, allowed network-wide. 9: kill-ids: never inactive, no incident. stop-dns: #826 at +1.2 s, fail-open #827 at +16.5 s, back at +60.4 s, off at +66.6 s. 10: #828, live addon SHA-256 unchanged (`308a5407…`), badge red, then green after Resolve. Put back by the console's own controls. |
+| 3 | 18:54:43-19:06:47 | **Every segment passed.** 2: as in run 2. 3: toasts "Blocked", then "Allowed for this device", then "Allowed by an explicit rule"; network-wide still blocked (`||touch.myntra.com^`). 4: **Hide test devices** leaves 6 devices. 5: campaign #46: port scan 79.1 s, brute force 79.6 s, beacon 140.8 s; the console showed four "New high-severity incident" toasts. 5b: #447 (320 linked events). 7: quarantined, "enforced at the firewall"; MAC in the set by 19:00:30, out by 19:00:44. 8: Kids 19:02-20:02; reddit allowed at 19:01:38, blocked at **19:02:14**. 6: slow scan **494.5 s**. 9: kill-ids clean; stop-dns: fail-open #835 at +18.5 s, #836 at +28.7 s, back at +60.4 s, off at +62.4 s. 10: #837, badge red, then green. Recorded for §10. |
+| 4 | 19:07:11-19:32:18 | **Every segment passed.** The long span is the agent's own tool latency (about 15 min lost in its waits), not the gateway. 2: pause and resume as before. 3: allowed for PHONE, blocked network-wide. 5: campaign #47: brute force 79.7 s, port scan 80.1 s, beacon 141.0 s. 7: MAC in the set by 19:12:10, out by 19:12:22. 8: Kids 19:14-20:14; reddit blocked by **19:14:02** (the before-reading was lost to a tool timeout). 6: slow scan **486.1 s**. 9: kill-ids clean; stop-dns: #844 at +13.4 s, fail-open #845 at +15.4 s, back at +61.4 s, off at +66.5 s. 10: #846, red, then green. |
+
+**What the run-throughs changed in this script.** Segment 3 uses `touch.myntra.com`, because Allow
+buttons exist only for domains the device was really blocked on. Segment 2 has its confirmation
+step. Segment 4 adds Hide test devices. Segment 5b uses incident #447, not #580 (#580 is QUIC only).
+Segment 8 says Social media and the required reason. Segment 9 gives the `platform_service_down`
+range. Segment 10 gives the badge's real place.
+
+**Seen, not fixed** (recorded in `STAGE8-RECORD.md`):
+- The console still has five native `prompt()`/`confirm()` dialogs off the demo path.
+- "Filtering is on" stays on during a network-wide pause.
+- In the automated runs, the first click on a menu right after a page load sometimes did not open
+  it (twice, both times right after navigation); it was not seen when the page had been idle a
+  moment, and may be the automation's own focus handling.
+
+**The presenter's own rehearsal**, against a clock with the script in hand, is still the
+presenter's to do: these run-throughs cannot rehearse the talk.
 
 ---
 
@@ -412,13 +450,18 @@ rehearsals cover.
 Record one full rehearsal that went well. A live demo fails at the worst moment (F§17.4); the
 video is what you play instead.
 
+**Recorded on 11 Oct 2026 (console only).** Run-through 3 (§9) was recorded in Chrome as an
+animated GIF: 50 frames, the recorder's maximum, from the dashboard through the segments it
+reached before the limit. It shows the console only, not Terminal A or B, and has no sound. It is
+kept outside the repository (`~/Downloads/securepi-demo-backup-20261011.gif` once exported). It is a
+fallback for the console segments; a full recording with the terminals and the talk still needs the
+steps below.
+
 1. **Mac screen:** press `Cmd + Shift + 5` → *Record Entire Screen* → Options → save to `~/Movies`.
-   The Mac's screen shows the console, Terminal A and B, and the phone through scrcpy.
-2. **Phone, at full resolution (optional, a second file):**
-   `scrcpy --stay-awake --record ~/Movies/securepi-demo-phone.mp4`
-3. **Name it** `securepi-demo-backup-YYYYMMDD.mov` and keep it **outside the repository**. A
+   The Mac's screen shows the console and Terminals A and B.
+2. **Name it** `securepi-demo-backup-YYYYMMDD.mov` and keep it **outside the repository**. A
    15-minute screen recording is several hundred MB.
-4. **Before trusting it:**
+3. **Before trusting it:**
    - watch it once end to end;
    - check that no password, test-account credential, or personal notification is visible;
-   - record with *Do Not Disturb* on both the Mac and the phone.
+   - record with *Do Not Disturb* on the Mac.

@@ -411,7 +411,13 @@ decision taken on 13 September. Final outcome, 10 October 2026:
     - the arm64 path, if the VM runs on Apple silicon;
     - package versions newer than the Dell's;
     - the first-install downloads: IDS rules, the DoH list, PyPI.
-- **8.3:** `docs/DEMO.md`.
+- **8.3:** `docs/DEMO.md`. Made phone-free on 11 Oct, because the A33 can no longer be connected.
+  Segments 3, 7 and 8 apply real policies to the phone's device record, shown with the domain test and
+  the firewall's sets. Segments 5b and 11 show recorded results, labelled as such. Three end-to-end
+  run-throughs on the live gateway passed every segment (`docs/DEMO.md` §9). A first, aborted run found
+  two console bugs, both fixed test-first: the device page's "Allow 1h" had sent no domain since
+  13 Sep, and a row menu's first item was hidden behind the page tabs (`STAGE8-RECORD.md` M-22,
+  M-23). The run-throughs had no presenter, so the talk itself is not rehearsed.
 - **8.4:** the close-out runbook (`docs/CLOSE-OUT.md`), executed only on the
   user's confirmation.
 

@@ -1,38 +1,31 @@
 # Starting the next session
 
-## ★ 11 Oct 2026 (17:15-18:05): read this first
+## ★ 11 Oct 2026 (17:15-19:35): read this first
 
 The Dell is **on** (booted 17:15, on the charger), all services active, Tier 2 off. GitHub is up to date.
-Detail: `STAGE8-RECORD.md` §3, 11 Oct entry, and M-20/M-21 in §2.
+Detail: `STAGE8-RECORD.md` §3 (11 Oct entries) and M-20 to M-24 in §2.
 
-Done this session:
-- **M-20 (new):** at boot the daily retention pass held the database write lock for about 40 s, so the
-  privacy canary crashed once (incident #816). Fixed (`8eb7532`): short batches, at most 1,000 events per
-  engine cycle. Measured on a copy of the live database. Live since 17:51.
-- **M-15:** `OnBootSec=2min` on the DoH refresh timer (`8eb7532`). Live since 17:51, so the "start the
-  refresh after each boot" step is no longer needed.
-- **8.2 installer applied on the gateway** (you ran it at 17:51; the permission policy refused it to the
-  agent): 11 changes, 0 warnings; `--check` afterwards: 0 changes. Backups of replaced files end
-  `.bak-install-20261011-175154`; the log is `~/install-apply-20261011.log` on the Dell.
-- **M-21:** `docs/CLOSE-OUT.md` §8 missed about 750 MB of old database copies, and its code-backup command
-  would have deleted nine of them as "old code". Corrected; nothing deleted.
+Done on 11 Oct:
+- **M-20, M-15 fixed and live; 8.2 installer applied** (you ran it; `--check` 0 changes). The
+  fresh-machine install was not run, by your decision; the report gives *estimated* results.
+- **Incident #806 resolved**, with #801-#816 and #818, each with a note and audit entries; privacy badge
+  green. #817 stays open (no client on the AP).
+- **Demo made phone-free** and **run through three times end to end, every segment passing**
+  (`docs/DEMO.md` §9). Run 1 found and fixed two console bugs (M-22 menu, M-23 "Allow 1h").
+- **Close-out:** items 1 and 2 already complete; M-21 corrected §8.
 
 What is left needs you:
 
-1. **Resolve incident #806 on the console** (Incidents → #806 → Resolved), plus the boot noise #815-#817
-   and the dry-run leftovers #803-#814 if you like.
-2. ~~Fresh-machine install~~: **not run, by your decision of 11 Oct.** The report gives estimated results,
-   labelled "estimated (not measured)" (`REPORT.md` §7.4, `docs/INSTALL.md` §12). If you ever run it,
-   replace them with the real ones.
-3. **Rehearse the demo 3 times with the A33 and record the backup video** (`docs/DEMO.md` §9-10). The
-   phone was not connected on 11 Oct.
-4. **Then the close-out** (`docs/CLOSE-OUT.md`; §8 corrected on 11 Oct).
+1. **Rehearse the talk yourself** against a clock with `docs/DEMO.md` (the run-throughs tested the
+   script and the gateway, not the delivery), and make the full-screen backup recording (§10).
+2. **Close-out after the demo** (`docs/CLOSE-OUT.md`): items 3 (test accounts) and 5 (remove the CA from
+   the A33 by hand), then 4 and 7 (irreversible), and decide 6 (destroy or rotate the CA) and §8.
+3. **Optional, recorded in M-24:** five native `prompt()`/`confirm()` dialogs off the demo path, and the
+   "Filtering is on" label during a pause.
 
-To watch:
-- The first live retention pass with the new code is due about 17:16 on 12 Oct. Check:
-  `journalctl -u securepi-engine | grep retention:` (no `database is locked` anywhere near it).
-- The DNS filter picks up its new working directory (`/opt/AdGuardHome`, M-12) at its next restart,
-  for example the next boot. After that boot, `sudo securepi status` should still show it active.
+To watch: the first live retention pass with the new code is due about 17:16 on 12 Oct
+(`journalctl -u securepi-engine | grep retention:`). The DNS filter picks up its new working directory
+at its next restart.
 
 ## ★ Stage 8 (10 Oct 2026, 13:22-14:55): superseded by the 11 Oct section above
 

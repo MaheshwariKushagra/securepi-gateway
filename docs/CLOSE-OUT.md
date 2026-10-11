@@ -10,6 +10,11 @@ undone.
 > values below are from 10 Oct 2026 at about 14:25 IST.
 >
 > **Run the demo first** (`docs/DEMO.md`): items 3, 4 and 5 remove what its Instagram segment needs.
+>
+> **Status, 11 Oct 2026 (19:35).** Items 1 and 2: complete; nothing to do (nothing enrolled, no test
+> browser or proxy running). Items 4 and 7: after the demo, by the operator's decision. Item 6:
+> CA kept for now (operator's decision). Items 3 and 5: the operator's, on the accounts and by hand on
+> the A33. §8 was corrected the same day (`STAGE8-RECORD.md` M-21).
 
 Order matters. Ending the enrolments and logging the accounts out (items 1-3) come before deleting
 anything (items 4-7), and the journal purge (item 7) comes last, so it also removes anything logged

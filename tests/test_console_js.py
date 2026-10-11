@@ -18,6 +18,8 @@ import unittest
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 APP_JS = os.path.join(REPO_ROOT, "app", "static", "app.js")
+APP_CSS = os.path.join(REPO_ROOT, "app", "static", "app.css")
+TEMPLATES = os.path.join(REPO_ROOT, "app", "templates")
 
 
 def _function_source(name):
@@ -26,6 +28,20 @@ def _function_source(name):
     m = re.search(r"\nfunction %s\(.*?\n}\n" % name, src, re.DOTALL)
     return m.group(0) if m else None
 
+
+
+def _dataset_name(attr):
+    """The name a browser gives data-<attr> in element.dataset (HTML spec):
+    a dash followed by a lowercase ASCII letter becomes that letter in upper
+    case; any other dash is kept."""
+    return re.sub(r"-([a-z])", lambda m: m.group(1).upper(), attr)
+
+
+def _css_z_index(selector):
+    with open(APP_CSS) as fh:
+        css = fh.read()
+    rule = re.search(r"(?m)^%s\s*\{([^}]*)\}" % re.escape(selector), css)
+    return int(re.search(r"z-index:\s*(\d+)", rule.group(1)).group(1))
 
 @unittest.skipIf(shutil.which("node") is None, "node is not installed")
 class CsvCellTests(unittest.TestCase):
@@ -118,6 +134,53 @@ class PollingTests(unittest.TestCase):
                 " setTimeout(() => process.stdout.write(String(runs)), 0); }, 0); }, 0);")
         out = subprocess.run(["node", "-e", code], capture_output=True, text=True, check=True).stdout
         self.assertEqual(out, "2")   # one while busy, one after it finished
+
+
+class DeviceAllowTests(unittest.TestCase):
+    """STAGE8-RECORD.md M-23, found by the 11 Oct 2026 demo run-through:
+    the device page's "Allow 1h" button was data-allow-1h, read back as
+    dataset.allow1h. A digit after a dash is not camel-cased, so the read
+    was undefined, the request carried no domain, and the gateway answered
+    422 to every click since the button was added on 13 Sep."""
+
+    def test_every_dataset_read_matches_an_attribute_the_rows_write(self):
+        src = _function_source("initDeviceBlocked")
+        written = {_dataset_name(a) for a in re.findall(r"data-([a-z0-9-]+)=", src)}
+        read = set(re.findall(r"\.dataset\.([A-Za-z0-9_]+)", src))
+        self.assertTrue(read)
+        # deviceId is read from the device page's own template (data-device-id).
+        self.assertEqual(read - written - {"deviceId"}, set())
+
+    def test_no_data_attribute_has_a_digit_after_a_dash(self):
+        paths = [APP_JS] + [os.path.join(TEMPLATES, f) for f in sorted(os.listdir(TEMPLATES))]
+        offenders = []
+        for path in paths:
+            with open(path) as fh:
+                for n, line in enumerate(fh, 1):
+                    for m in re.finditer(r"data-[a-z0-9-]*-[0-9][a-z0-9-]*", line):
+                        offenders.append("%s:%d %s" % (os.path.basename(path), n, m.group(0)))
+        self.assertEqual(offenders, [])
+
+    def test_the_reason_is_asked_in_the_console_dialog_not_a_native_prompt(self):
+        # A native prompt() blocks the page (it froze the run-through's
+        # browser) and looks unlike every other console dialog.
+        src = _function_source("initDeviceBlocked")
+        self.assertNotRegex(src, r"(^|[^.\w])prompt\(")
+        self.assertIn("spDialog(", src)
+        self.assertIn("reasonField(", src)
+
+
+class MenuStackingTests(unittest.TestCase):
+    """STAGE8-RECORD.md M-22, found by the same run-through: row menus and the
+    sticky page tabs (.subnav) both had z-index 30. The tabs come later in
+    the page, so they were drawn over the first item of the Filtering page's
+    "Pause for everyone" menu ("5 minutes"), and a click there hit a tab."""
+
+    def test_row_menus_open_above_the_sticky_page_tabs(self):
+        self.assertGreater(_css_z_index(".row-menu-list"), _css_z_index(".subnav"))
+
+    def test_row_menus_still_go_under_the_top_bar_when_scrolled(self):
+        self.assertLess(_css_z_index(".row-menu-list"), _css_z_index(".topbar"))
 
 
 if __name__ == "__main__":

@@ -1041,7 +1041,9 @@ a.barlabel:hover { color: var(--accent); }
 .row-menu:not(.open) .row-menu-list { display: none; opacity: 0; transform: translateY(-4px) scale(.98); }
 @starting-style { .row-menu.open .row-menu-list { opacity: 0; transform: translateY(-4px) scale(.98); } }
 .row-menu-list {
-    position: absolute; right: 0; top: 32px; z-index: 30; min-width: 184px;
+    /* 35: above the sticky page tabs (.subnav, 30), which drew over a menu's first
+       item; below the top bar (40). STAGE8-RECORD.md M-22. */
+    position: absolute; right: 0; top: 32px; z-index: 35; min-width: 184px;
     background: var(--surface-3); border: 1px solid var(--border-strong); border-radius: var(--r-sm);
     box-shadow: var(--shadow-lg); padding: 4px;
 }

@@ -1362,16 +1362,22 @@ function initDeviceBlocked() {
     const deviceId = wrap.dataset.deviceId;
 
     async function askAndAllow(domain, temporary) {
-        const reason = prompt(
-            temporary
-                ? `Why allow "${domain}" for this device for the next hour?`
-                : `Why allow "${domain}" for this device from now on?`
-        );
-        if (reason === null || !reason.trim()) return;  // cancelled, or empty
+        // The console's own dialog. The browser's native prompt box blocked the
+        // whole page and looked unlike every other dialog here (STAGE8-RECORD.md M-23).
+        const v = await spDialog({
+            title: temporary ? `Allow ${domain} for this device for an hour?` : `Allow ${domain} for this device?`,
+            icon: "i-check",
+            confirm: temporary ? "Allow for 1 hour" : "Allow",
+            description: temporary
+                ? "Only this device. It is blocked again automatically when the hour is up."
+                : "Only this device. It stays allowed until the rule is removed (Response).",
+            fields: [reasonField("")],
+        });
+        if (!v) return;  // cancelled
         try {
             const res = await fetch(`/api/devices/${deviceId}/filtering/allow`, {
                 method: "POST", headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ domain, reason: reason.trim(), temporary, hours: 1 }),
+                body: JSON.stringify({ domain, reason: v.reason, temporary, hours: 1 }),
             });
             if (!res.ok) throw new Error("request failed");
             toast("Allowed for this device", temporary ? `${domain} — for 1 hour` : domain, "ok");
@@ -1395,7 +1401,7 @@ function initDeviceBlocked() {
                     <span class="sev-dot high"></span>
                     <span class="mono grow" title="${esc(r.reason || '')}">${esc(r.domain)}</span>
                     <span class="dim">${r.count}× · ${esc(r.age)} ago</span>
-                    <button class="btn" data-allow-1h="${esc(r.domain)}" title="Allow for this device for 1 hour">Allow 1h</button>
+                    <button class="btn" data-allow-hour="${esc(r.domain)}" title="Allow for this device for 1 hour">Allow 1h</button>
                     <button class="btn" data-allow="${esc(r.domain)}" title="Allow for this device from now on">Allow</button>
                 </div>`).join("");
         } catch (err) {
@@ -1404,8 +1410,11 @@ function initDeviceBlocked() {
     }
 
     wrap.addEventListener("click", (e) => {
-        const oneHour = e.target.closest("[data-allow-1h]");
-        if (oneHour) { askAndAllow(oneHour.dataset.allow1h, true); return; }
+        // "hour", not "1h", in the attribute name: a digit after a dash is not
+        // camel-cased in element.dataset, so the old name read back as undefined
+        // and every click sent no domain (STAGE8-RECORD.md M-23).
+        const oneHour = e.target.closest("[data-allow-hour]");
+        if (oneHour) { askAndAllow(oneHour.dataset.allowHour, true); return; }
         const always = e.target.closest("[data-allow]");
         if (always) { askAndAllow(always.dataset.allow, false); }
     });

@@ -1,37 +1,36 @@
 # Starting the next session
 
-## ★ 11 Oct 2026 (17:15-17:50): read this first
+## ★ 11 Oct 2026 (17:15-18:05): read this first
 
 The Dell is **on** (booted 17:15, on the charger), all services active, Tier 2 off. GitHub is up to date.
 Detail: `STAGE8-RECORD.md` §3, 11 Oct entry, and M-20/M-21 in §2.
 
 Done this session:
 - **M-20 (new):** at boot the daily retention pass held the database write lock for about 40 s, so the
-  privacy canary crashed once (incident #816). Fixed in the repo (`8eb7532`): short batches, at most 1,000
-  events per engine cycle. Measured on a copy of the live database.
-- **M-15:** `OnBootSec=2min` added to the DoH refresh timer (`8eb7532`). The interim "start the refresh after
-  each boot" step is no longer needed once the installer is applied.
+  privacy canary crashed once (incident #816). Fixed (`8eb7532`): short batches, at most 1,000 events per
+  engine cycle. Measured on a copy of the live database. Live since 17:51.
+- **M-15:** `OnBootSec=2min` on the DoH refresh timer (`8eb7532`). Live since 17:51, so the "start the
+  refresh after each boot" step is no longer needed.
+- **8.2 installer applied on the gateway** (you ran it at 17:51; the permission policy refused it to the
+  agent): 11 changes, 0 warnings; `--check` afterwards: 0 changes. Backups of replaced files end
+  `.bak-install-20261011-175154`; the log is `~/install-apply-20261011.log` on the Dell.
 - **M-21:** `docs/CLOSE-OUT.md` §8 missed about 750 MB of old database copies, and its code-backup command
   would have deleted nine of them as "old code". Corrected; nothing deleted.
 
 What is left needs you:
 
-1. **Apply the installer on the gateway.** The session's permission policy refused it twice, so run it
-   yourself (the Dell's copy is current; `--check` at 17:45 gave 11 changes, 0 warnings):
-   `! ssh -t maheshwari@192.168.2.5 'cd ~/securepi-install-check && sudo ./gateway/install.sh'`
-   It restarts ingest, engine and web (app code changed) and the proxy (nothing enrolled). Then `--check`
-   again: expect 0 changes. Then:
-   `systemctl show securepi-doh-refresh.timer -p TimersMonotonic` (shows `OnBootUSec=2min`),
-   `stat -c %a /etc/hostapd/hostapd.conf` (600), `sudo securepi status` (all active).
-2. **Resolve incident #806 on the console** (Incidents → #806 → Resolved), plus the boot noise #815-#817
+1. **Resolve incident #806 on the console** (Incidents → #806 → Resolved), plus the boot noise #815-#817
    and the dry-run leftovers #803-#814 if you like.
-3. **Fresh-machine install (8.2 exit criterion):** a Lima VM on the Mac (`docs/INSTALL.md` §12).
-4. **Rehearse the demo 3 times with the A33 and record the backup video** (`docs/DEMO.md` §9-10). The
+2. **Fresh-machine install (8.2 exit criterion):** a Lima VM on the Mac (`docs/INSTALL.md` §12).
+3. **Rehearse the demo 3 times with the A33 and record the backup video** (`docs/DEMO.md` §9-10). The
    phone was not connected on 11 Oct.
-5. **Then the close-out** (`docs/CLOSE-OUT.md`; §8 corrected on 11 Oct).
+4. **Then the close-out** (`docs/CLOSE-OUT.md`; §8 corrected on 11 Oct).
 
-The first live retention pass with the new code is due about 17:16 on 12 Oct (the 11 Oct pass ran at
-17:16 with the old code). Check: `journalctl -u securepi-engine | grep retention:`.
+To watch:
+- The first live retention pass with the new code is due about 17:16 on 12 Oct. Check:
+  `journalctl -u securepi-engine | grep retention:` (no `database is locked` anywhere near it).
+- The DNS filter picks up its new working directory (`/opt/AdGuardHome`, M-12) at its next restart,
+  for example the next boot. After that boot, `sudo securepi status` should still show it active.
 
 ## ★ Stage 8 (10 Oct 2026, 13:22-14:55): superseded by the 11 Oct section above
 

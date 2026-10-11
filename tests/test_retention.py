@@ -6,9 +6,12 @@ Run via `make test`, or directly: python3 -m unittest tests.test_retention -v
 """
 
 import os
+import sqlite3
 import sys
+import tempfile
 import time
 import unittest
+from unittest import mock
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import fixtures  # noqa: E402
@@ -213,6 +216,24 @@ class RunRetentionIfDueTests(unittest.TestCase):
         self.assertEqual(conn.execute("SELECT count(*) FROM events").fetchone()[0], 1,
                           "the second old event must still be sitting there, unpruned")
 
+    def test_a_backlog_bigger_than_one_cycle_is_finished_over_the_next_cycles(self):
+        """STAGE8-RECORD.md M-20: one engine cycle deletes at most
+        MAX_EVENTS_PER_RUN events, so a big backlog never stops the engine
+        for long; the rest goes on the following cycles, and the day's
+        pass only counts as done once it has caught up."""
+        conn = fixtures.temp_db()
+        fixtures.insert_device(conn, 1)
+        now = time.time()
+        for _ in range(120):
+            fixtures.insert_flow(conn, 1, "1.1.1.1", 443, now - 20 * DAY)
+        with mock.patch.object(retention, "MAX_EVENTS_PER_RUN", 50, create=True), \
+                mock.patch.object(retention, "EVENT_DELETE_BATCH", 20, create=True), \
+                mock.patch.object(retention.time, "sleep"):
+            per_cycle = [retention.run_retention_if_due(conn, now + 15 * i) for i in range(4)]
+        self.assertEqual([r and r["events"] for r in per_cycle], [50, 50, 20, None],
+                         "50 a cycle until caught up, then not again the same day")
+        self.assertEqual(conn.execute("SELECT count(*) FROM events").fetchone()[0], 0)
+
     def test_runs_again_after_a_full_day(self):
         conn = fixtures.temp_db()
         fixtures.insert_device(conn, 1)
@@ -223,6 +244,128 @@ class RunRetentionIfDueTests(unittest.TestCase):
         second = retention.run_retention_if_due(conn, now + retention.RUN_INTERVAL_SECONDS + 1)
         self.assertIsNotNone(second)
         self.assertEqual(second["events"], 1)
+
+
+class _LockProbe:
+    """Wraps the connection retention runs on. Just before every statement
+    that deletes events, a second connection tries one write with no wait
+    at all. If retention still holds the write lock from its previous
+    delete, that write fails - what the privacy canary and the ingest's
+    DNS reader hit at boot on 11 Oct 2026 (STAGE8-RECORD.md M-20)."""
+
+    def __init__(self, conn, path, before_delete=None):
+        self._conn = conn
+        self._other = sqlite3.connect(path, timeout=0)
+        self.before_delete = before_delete
+        self.deletes = 0
+        self.blocked = 0
+        self.rows_per_delete = []
+
+    def execute(self, sql, params=()):
+        is_event_delete = sql.lstrip().upper().startswith("DELETE FROM EVENTS")
+        if is_event_delete:
+            if self.before_delete:
+                self.before_delete(self._other, self.deletes)
+            try:
+                self._other.execute("INSERT INTO probe VALUES (1)")
+                self._other.commit()
+            except sqlite3.OperationalError:
+                self._other.rollback()
+                self.blocked += 1
+            self.deletes += 1
+        cur = self._conn.execute(sql, params)
+        if is_event_delete:
+            self.rows_per_delete.append(cur.rowcount)
+        return cur
+
+    def __getattr__(self, name):
+        return getattr(self._conn, name)
+
+
+class RetentionYieldsTheWriteLockTests(unittest.TestCase):
+    """STAGE8-RECORD.md M-20: the first pass after the gateway had been
+    off for a day held the write lock for about 40 s, longer than any
+    other service waits (dbconn.BUSY_TIMEOUT_S). Retention must delete in
+    batches and let other writers in between them."""
+
+    BATCH = 50
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.path = os.path.join(self.tmp.name, "t.db")
+        conn = sqlite3.connect(self.path)
+        conn.row_factory = sqlite3.Row
+        conn.execute("PRAGMA journal_mode=WAL")
+        conn.execute("PRAGMA synchronous=OFF")  # test speed only
+        with open(fixtures.SCHEMA_PATH) as fh:
+            conn.executescript(fh.read())
+        conn.execute("CREATE TABLE probe (x INTEGER)")
+        fixtures.insert_device(conn, 1)
+        self.now = time.time()
+        # Three batches' worth of old flow events, a few old DNS events
+        # (the 30-day bucket), and recent ones of both that must stay.
+        for _ in range(self.BATCH * 2 + 20):
+            fixtures.insert_flow(conn, 1, "1.1.1.1", 443, self.now - 20 * DAY)
+        for _ in range(10):
+            fixtures.insert_dns_query(conn, 1, "example.com", self.now - 40 * DAY)
+        for _ in range(5):
+            fixtures.insert_flow(conn, 1, "1.1.1.1", 443, self.now - 2 * DAY)
+            fixtures.insert_dns_query(conn, 1, "example.com", self.now - 2 * DAY)
+        self.conn = conn
+        patches = [mock.patch.object(retention, "EVENT_DELETE_BATCH", self.BATCH, create=True),
+                   mock.patch.object(retention.time, "sleep")]
+        for p in patches:
+            p.start()
+            self.addCleanup(p.stop)
+
+    def tearDown(self):
+        self.conn.close()
+        self.tmp.cleanup()
+
+    def test_another_writer_gets_in_before_every_delete(self):
+        probe = _LockProbe(self.conn, self.path)
+        removed = retention.run_retention(probe, self.now)
+        self.assertGreaterEqual(probe.deletes, 3, "a backlog of three batches is three deletes")
+        self.assertEqual(probe.blocked, 0,
+                         "another service could not write while retention was running")
+        self.assertEqual(removed["events"], self.BATCH * 2 + 30)
+        self.assertEqual(self.conn.execute("SELECT count(*) FROM events").fetchone()[0], 10)
+
+    def test_no_single_delete_removes_more_than_one_batch(self):
+        probe = _LockProbe(self.conn, self.path)
+        retention.run_retention(probe, self.now)
+        self.assertTrue(probe.rows_per_delete)
+        self.assertLessEqual(max(probe.rows_per_delete), self.BATCH)
+
+    def test_pauses_between_batches_long_enough_for_a_waiting_writer(self):
+        # SQLite retries a waiting writer at most 100 ms apart; a shorter
+        # pause could let every retry miss the gap between two batches.
+        retention.run_retention(self.conn, self.now)
+        pauses = [c.args[0] for c in retention.time.sleep.call_args_list]
+        self.assertEqual(len(pauses), 2, "three batches, a pause between each pair")
+        self.assertTrue(all(p > 0.1 for p in pauses), pauses)
+
+    def test_an_event_linked_to_an_incident_after_the_scan_is_still_kept(self):
+        """Evidence-chain safety across the gap between finding the old
+        rows and deleting them: an event something links to an incident
+        in that gap must survive."""
+        oldest = self.conn.execute("SELECT min(id) FROM events").fetchone()[0]
+
+        def link_before_first_delete(other, n):
+            if n == 0:
+                other.execute(
+                    "INSERT INTO incidents (id, device_id, signal_type, severity, title, description,"
+                    " status, first_seen, last_seen, created_at, updated_at, evidence_count) VALUES"
+                    " (1, 1, 'port_scan', 'high', 't', 'd', 'new', ?, ?, ?, ?, 1)",
+                    (self.now, self.now, self.now, self.now))
+                other.execute("INSERT INTO incident_events (incident_id, event_id) VALUES (1, ?)",
+                              (oldest,))
+                other.commit()
+
+        probe = _LockProbe(self.conn, self.path, before_delete=link_before_first_delete)
+        retention.run_retention(probe, self.now)
+        self.assertEqual(self.conn.execute("SELECT count(*) FROM events WHERE id = ?",
+                                           (oldest,)).fetchone()[0], 1)
 
 
 class DbSizeTests(unittest.TestCase):

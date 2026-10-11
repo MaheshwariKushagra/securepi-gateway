@@ -50,6 +50,32 @@ INCIDENT_RETENTION_DAYS = 365
 DEVICE_HOURLY_RETENTION_DAYS = 180
 RUN_INTERVAL_SECONDS = 86400  # once a day
 
+# Old events are deleted in batches, with a commit after each one
+# (STAGE8-RECORD.md M-20). Until 11 Oct 2026 the whole pass was one
+# transaction. That day's first pass, after the gateway had been off for
+# a day, removed 2,960 events and held the database's write lock for
+# about 40 s. The gateway's disk is a 5,400 rpm hard drive, and every
+# deleted row is a random write in each of the nine indexes on `events`.
+# Every other service waits at most 30 s for that lock
+# (dbconn.BUSY_TIMEOUT_S), so the privacy canary crashed (incident #816)
+# and the ingest's DNS reader skipped a pass. Finding the rows is a plain
+# read and holds no write lock; only each batch's delete does.
+EVENT_DELETE_BATCH = 100
+# The pause between two batches. SQLite retries a writer that is waiting
+# for the lock at most 100 ms apart, so a longer pause guarantees it a
+# turn instead of losing every race to the next batch.
+BATCH_PAUSE_S = 0.2
+# The most old events one engine cycle deletes. A bigger backlog (a long
+# power-off, or the days when the Stage 7 campaign's rows age out) is
+# finished over the following cycles, 15 s apart, so detection never
+# stops for long: the ingest reports the engine as hung after 60 s
+# without a heartbeat (health_stale_after_seconds). Measured on a copy of
+# the live database (11 Oct 2026): 2,000 rows took 34 s on a cold cache,
+# then 17 s and 9 s as it warmed, so 2,000 left too little margin. 1,000
+# rows took 22 s cold, with no batch holding the lock longer than 4.4 s;
+# a backlog still goes at over 100,000 rows an hour.
+MAX_EVENTS_PER_RUN = 1000
+
 
 def prune_incidents(conn, now=None):
     now = now if now is not None else time.time()
@@ -70,30 +96,59 @@ def prune_incidents(conn, now=None):
     return count
 
 
-def prune_events(conn, now=None):
-    """Must run AFTER prune_incidents - see the module docstring's
-    evidence-chain safety note. Every DELETE excludes events still
-    linked via incident_events, regardless of how old they are."""
-    now = now if now is not None else time.time()
-    total = 0
+def _expired_event_ids(conn, now, limit):
+    """Ids of up to `limit` events past their retention window and not
+    linked to any incident, oldest first within each kind, returned in
+    ascending id order. A plain read: it takes no write lock."""
+    ids = []
     for event_type, days in EVENT_RETENTION_DAYS.items():
-        cutoff = now - days * 86400
-        cur = conn.execute(
-            """DELETE FROM events WHERE event_type = ? AND ts < ?
-                 AND id NOT IN (SELECT event_id FROM incident_events)""",
-            (event_type, cutoff),
-        )
-        total += cur.rowcount
+        ids += [r[0] for r in conn.execute(
+            "SELECT id FROM events WHERE event_type = ? AND ts < ?"
+            "  AND id NOT IN (SELECT event_id FROM incident_events)"
+            " ORDER BY ts LIMIT ?",
+            (event_type, now - days * 86400, limit - len(ids)),
+        )]
 
     default_cutoff = now - DEFAULT_EVENT_RETENTION_DAYS * 86400
     listed_types = tuple(EVENT_RETENTION_DAYS.keys())
     placeholders = ",".join("?" * len(listed_types))
-    cur = conn.execute(
-        "DELETE FROM events WHERE event_type NOT IN (%s) AND ts < ?"
-        "  AND id NOT IN (SELECT event_id FROM incident_events)" % placeholders,
-        listed_types + (default_cutoff,),
-    )
-    total += cur.rowcount
+    ids += [r[0] for r in conn.execute(
+        "SELECT id FROM events WHERE event_type NOT IN (%s) AND ts < ?"
+        "  AND id NOT IN (SELECT event_id FROM incident_events)"
+        " ORDER BY ts LIMIT ?" % placeholders,
+        listed_types + (default_cutoff, limit - len(ids)),
+    )]
+    # Neighbouring ids share pages on disk, so a sorted batch needs fewer
+    # seeks than one mixing event types.
+    ids.sort()
+    return ids
+
+
+def prune_events(conn, now=None, limit=None):
+    """Must run AFTER prune_incidents - see the module docstring's
+    evidence-chain safety note. Every DELETE excludes events still
+    linked via incident_events, regardless of how old they are.
+
+    Removes at most `limit` events (MAX_EVENTS_PER_RUN by default) and
+    returns how many it removed. Deletes in batches of EVENT_DELETE_BATCH,
+    committing after each one and pausing between them, so other services
+    can write in between (see EVENT_DELETE_BATCH). Commits its own work."""
+    now = now if now is not None else time.time()
+    ids = _expired_event_ids(conn, now, limit or MAX_EVENTS_PER_RUN)
+    total = 0
+    for start in range(0, len(ids), EVENT_DELETE_BATCH):
+        if start:
+            time.sleep(BATCH_PAUSE_S)
+        batch = ids[start:start + EVENT_DELETE_BATCH]
+        # The incident_events check again, at delete time: an event that
+        # something linked to an incident after the read above still stays.
+        cur = conn.execute(
+            "DELETE FROM events WHERE id IN (%s)"
+            "  AND id NOT IN (SELECT event_id FROM incident_events)" % ",".join("?" * len(batch)),
+            batch,
+        )
+        conn.commit()
+        total += cur.rowcount
     return total
 
 
@@ -123,12 +178,13 @@ def run_retention(conn, now=None):
     removed; does not print or track last-run itself, so it can be
     called directly (e.g. from a test) without those side effects."""
     now = now if now is not None else time.time()
-    removed = {
-        "incidents": prune_incidents(conn, now),
-        "events": prune_events(conn, now),
-        "device_hourly": prune_device_hourly(conn, now),
-        "suppressions": prune_expired_suppressions(conn, now),
-    }
+    removed = {"incidents": prune_incidents(conn, now)}
+    # Committed before the events pass, so the incident deletes don't hold
+    # the write lock while prune_events looks for old rows.
+    conn.commit()
+    removed["events"] = prune_events(conn, now)
+    removed["device_hourly"] = prune_device_hourly(conn, now)
+    removed["suppressions"] = prune_expired_suppressions(conn, now)
     conn.commit()
     return removed
 
@@ -148,7 +204,11 @@ def run_retention_if_due(conn, now=None):
     every cycle except the ~1-in-5760 that's actually due, the same
     'ride the existing loop, gate on a stored timestamp' pattern
     rollup.py already established. Returns the removed-counts dict on a
-    day it actually ran, None otherwise."""
+    cycle it actually ran, None otherwise.
+
+    A cycle that hits MAX_EVENTS_PER_RUN leaves the day's pass open, so
+    the next cycle carries on; it is stamped as done only once a cycle
+    finds fewer old events than that."""
     now = now if now is not None else time.time()
     row = conn.execute(
         "SELECT last_run_ts FROM signal_state WHERE signal_type='retention'"
@@ -158,6 +218,10 @@ def run_retention_if_due(conn, now=None):
         return None
 
     removed = run_retention(conn, now)
+    if removed["events"] >= MAX_EVENTS_PER_RUN:
+        print("retention: removed %d events, more to remove - continuing next cycle"
+              % removed["events"], flush=True)
+        return removed
     size = db_size_bytes(conn)
     print(
         "retention: removed %d incidents, %d events, %d device_hourly rows, %d expired "

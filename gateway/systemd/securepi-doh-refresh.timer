@@ -2,6 +2,11 @@
 Description=Daily refresh of the doh_resolvers nftables set (ENHANCEMENT-PLAN.md step 2.2)
 
 [Timer]
+# Also 2 minutes after every boot: loading /etc/nftables.conf at boot
+# leaves the set with only its 14 seed addresses, and Persistent= only
+# catches up a daily run missed while the machine was off
+# (STAGE8-RECORD.md M-15).
+OnBootSec=2min
 OnCalendar=daily
 RandomizedDelaySec=30m
 Persistent=true

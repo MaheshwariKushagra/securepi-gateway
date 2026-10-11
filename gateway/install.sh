@@ -583,8 +583,9 @@ done
 # nftables.conf seeds the DoH set with 14 well-known resolvers; a refresh
 # loads ~1,400 from HaGeZi's list (refresh-doh-set.sh refuses fewer than
 # 500), so anything under 500 means "not refreshed since the ruleset was
-# last loaded" - after every reboot, until the next daily run
-# (STAGE8-RECORD.md M-15).
+# last loaded". Since M-15 (STAGE8-RECORD.md) the timer also runs 2 minutes
+# after every boot, so this is only for a first install or a manual
+# `nft -f /etc/nftables.conf`.
 DOH_COUNT=$(nft -j list set inet filter doh_resolvers 2>/dev/null | jq '.nftables[1].set.elem | length' 2>/dev/null || echo 0)
 if [ "${DOH_COUNT:-0}" -lt 500 ]; then
     if would "refresh the DoH resolver set (it has $DOH_COUNT entries, only the static seed)"; then

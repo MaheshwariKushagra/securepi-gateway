@@ -21,7 +21,9 @@ What is left needs you:
 
 1. **Resolve incident #806 on the console** (Incidents → #806 → Resolved), plus the boot noise #815-#817
    and the dry-run leftovers #803-#814 if you like.
-2. **Fresh-machine install (8.2 exit criterion):** a Lima VM on the Mac (`docs/INSTALL.md` §12).
+2. ~~Fresh-machine install~~: **not run, by your decision of 11 Oct.** The report gives estimated results,
+   labelled "estimated (not measured)" (`REPORT.md` §7.4, `docs/INSTALL.md` §12). If you ever run it,
+   replace them with the real ones.
 3. **Rehearse the demo 3 times with the A33 and record the backup video** (`docs/DEMO.md` §9-10). The
    phone was not connected on 11 Oct.
 4. **Then the close-out** (`docs/CLOSE-OUT.md`; §8 corrected on 11 Oct).

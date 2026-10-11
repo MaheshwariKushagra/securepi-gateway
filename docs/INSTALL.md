@@ -6,14 +6,15 @@ it, what it installs, what to check afterwards, and how to undo it. It replaces 
 `GATEWAY-SETUP-RUNBOOK.md` and `STEP-1-INSTALL-UBUNTU.md`, which describe a network plan the gateway
 was never actually built with (`STAGE8-RECORD.md` M-1, M-13).
 
-> **Verification status (10 October 2026).**
+> **Verification status (11 October 2026).**
 >
 > | Check | Result |
 > |---|---|
 > | `bash -n` and `shellcheck` (all levels) | Clean. |
 > | `sudo ./gateway/install.sh --check` on the live gateway | Read-only. Reported 8 differences and no package-version warnings: the 7 known from the inventory, plus a post-reboot gap in the DoH resolver set that this check found (`STAGE8-RECORD.md` M-15). It reports 10 since the two demo helpers were added (14:36). Transcript in [§10](#10-evidence-the-check-run-on-the-live-gateway). |
-> | `sudo ./gateway/install.sh` (apply) on the live gateway | **Not run.** The session's permission policy blocked it as a production deploy; it is waiting on the operator's decision. |
-> | Fresh install on a blank machine or VM | **Not done yet**, so the step 8.2 exit criterion ("fresh-machine install from the docs alone") is still open. §12 describes how to run it in a VM. |
+> | `sudo ./gateway/install.sh` (apply) on the live gateway | **Done, 11 Oct 2026 17:51** (run by the operator; the session's permission policy blocked it for the agent). 11 changes, 0 warnings: the 10 above plus two Stage 8 fixes (`STAGE8-RECORD.md` M-15, M-20). The installer's service check: all active. |
+> | `--check` again after the apply | **0 changes, 0 warnings.** |
+> | Fresh install on a blank machine or VM | **Not run**, by the user's decision of 11 October 2026, so the step 8.2 exit criterion ("fresh-machine install from the docs alone") is not met. §12 describes the VM run, its estimated results (not measured) and what it would test. |
 >
 > The fresh-install path has therefore not been run end to end. Every command it runs was checked
 > against the live gateway's files, versions and permissions, as listed in this guide.
@@ -498,9 +499,31 @@ limactl shell securepi-test -- sudo env TEST_WITHOUT_WIFI=yes WAN_IF=eth0 MGMT_I
 limactl delete --force securepi-test && brew uninstall lima              # clean up
 ```
 
-**Not yet run.** These commands follow Lima 2.x's documented CLI and have not been executed. With
+**Not run** (the user's decision, 11 October 2026). These commands follow Lima 2.x's documented CLI and have not been executed. With
 `WAN_IF=MGMT_IF=eth0`, the rendered input chain accepts SSH on `eth0` (`ssh-management`), which is
 how `limactl shell` reaches the VM.
+
+**Estimated results (not measured).** On a blank Ubuntu Server 24.04 VM, the estimated results are:
+
+- every step makes changes, and the run exits 0;
+- the closing service check reports every service active, except the three Wi-Fi units skipped in this
+  mode;
+- the second `--check` reports 0 changes.
+
+These results are **estimated** from the live gateway's check and apply runs (§10 and the status box at
+the top). None of them has been observed.
+
+**What a real run would test that the live runs could not.** On the Dell every file already existed, so
+these paths have never run:
+
+| Path | Why it is untested |
+|---|---|
+| Console TLS certificate and both passwords created (step 8) | They existed on the Dell; the installer never overwrites them. |
+| A new database from `schema.sql` (step 11) | The live database already existed. |
+| The DPI virtual environment created and `requirements-dpi.txt` installed (step 13) | The venv already existed and matched the pins. |
+| The AdGuard Home download and its SHA-256 check (step 9) | The right version was already installed. On Apple silicon the VM is arm64, and the arm64 archive and checksum have never been fetched. |
+| Package versions newer than the Dell's (step 3) | A fresh VM installs the archive's current versions. The installer warns about a difference from §9; it does not fail. |
+| First-install downloads: IDS rules (`suricata-update`), the DoH list, PyPI (the DPI environment) | They need internet access from the VM. A failed rules download is a warning, and nothing retries it (there is no rules timer, `STAGE8-RECORD.md` M-6). A failed DoH-list download is a warning and is retried daily. |
 
 The dummy `ap0` does not survive a VM reboot. The summary's service check skips `hostapd`,
 `securepi-ap0` and `securepi-ap-follow-uplink` in this mode.

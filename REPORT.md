@@ -387,6 +387,30 @@ decision taken on 13 September. Final outcome, 10 October 2026:
   step and the user decided (10 Oct) to leave 7.9 as it is; they are future
   scope (§9).
 - **8.2:** the installer and pinned requirements; `docs/INSTALL.md`.
+  - **Verified on the live gateway.** `--check` on 10 Oct reported 8 differences, then 10 once the demo
+    helpers were added, every one explained (`docs/INSTALL.md` §10). The apply on 11 Oct (17:51) made
+    11 changes with 0 warnings, and a second `--check` reported 0 changes. The apply also shipped two
+    fixes found during Stage 8:
+    - the DoH resolver set now refills after every boot (`STAGE8-RECORD.md` M-15);
+    - retention now deletes in short batches, after its single long transaction locked out the other
+      services at a boot (M-20).
+  - **Not run: the plan's exit criterion, a fresh-machine install from the docs alone.** On 11 Oct the
+    user decided against the VM install, so the results below are estimated (`docs/INSTALL.md` §12).
+  - **Estimated results (not measured).** On a blank Ubuntu Server 24.04 VM with
+    `TEST_WITHOUT_WIFI=yes`, the estimated results are:
+    - every one of the 14 steps makes changes, and the run exits 0;
+    - the closing service check reports every service active, except the three Wi-Fi units it skips in
+      that mode;
+    - a second `--check` reports 0 changes.
+
+    These results are **estimated**, not measured. They rest on the live runs above, and on
+    checking each step's commands against the live gateway's files, versions and permissions.
+  - **What only a fresh install would test** (none of it has run):
+    - the steps that create things rather than replace them: the console's TLS certificate and
+      passwords, a new database, the DPI virtual environment, the AdGuard Home download;
+    - the arm64 path, if the VM runs on Apple silicon;
+    - package versions newer than the Dell's;
+    - the first-install downloads: IDS rules, the DoH list, PyPI.
 - **8.3:** `docs/DEMO.md`.
 - **8.4:** the close-out runbook (`docs/CLOSE-OUT.md`), executed only on the
   user's confirmation.
@@ -420,6 +444,7 @@ decision taken on 13 September. Final outcome, 10 October 2026:
   beyond link-local identity).
 - One radio: the AP must share the uplink's channel; a 5 GHz-only uplink
   cannot work.
+- The installer has run only on the gateway it was written from (check and apply, 11 Oct). A fresh-machine install, the 8.2 exit criterion, was not run; its results in §7.4 are estimated, so a rebuild from the docs is untested end to end.
 - Single host, no high availability; the gateway is a laptop on battery
   when unplugged.
 - Console aggregates slow to about 1 s on very busy days.
